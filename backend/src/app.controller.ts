@@ -6,7 +6,12 @@ export class AppController {
   constructor(private readonly appService: AppService) {}
 
   @Get()
-  getHello(): string {
-    return this.appService.getHello();
+  getRoot() {
+    return {
+      status: 'online',
+      name: 'GoldenERP Production API',
+      version: '1.0.0',
+      timestamp: new Date().toISOString(),
+    };
   }
 }

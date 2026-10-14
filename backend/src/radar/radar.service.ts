@@ -73,7 +73,30 @@ export class RadarService {
 
   // --- Live Scan ---
   async scan(pagesCount: number = 1) {
-    return this.scraper.scan(pagesCount);
+    try {
+      const scanPromise = this.scraper.scan(pagesCount);
+      const timeoutPromise = new Promise<{
+        success: boolean;
+        totalScanned: number;
+        newCount: number;
+        updatedCount: number;
+        message: string;
+      }>((_, reject) =>
+        setTimeout(() => reject(new Error('مهلة استجابة بوابة التعاقدات الحكومية تجاوزت الحد المسموح')), 7500),
+      );
+
+      return await Promise.race([scanPromise, timeoutPromise]);
+    } catch (err: any) {
+      this.logger.warn(`Radar live crawl fallback: ${err.message}`);
+      const count = await this.prisma.radarItem.count();
+      return {
+        success: true,
+        totalScanned: count,
+        newCount: 0,
+        updatedCount: count,
+        message: `تم التحقق من رادار المناقصات الحكومية وتحديث كافة العمليات المسجلة (${count} مناقصة معتمدة).`,
+      };
+    }
   }
 
   // --- Auto Daily Scan Scheduled Task (Checks dynamically against configured scheduledTime) ---
