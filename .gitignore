@@ -44,3 +44,5 @@ coverage/
 # Misc
 *.tsbuildinfo
 mysql_data/
+backend/uploads/*
+!backend/uploads/.gitkeep
