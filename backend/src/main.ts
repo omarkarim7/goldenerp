@@ -13,8 +13,10 @@ async function bootstrap() {
 
   // CORS
   app.enableCors({
-    origin: process.env.FRONTEND_URL ?? 'http://localhost:3000',
+    origin: true, // Allow all origins (Vercel, custom domain, localhost) with credentials
     credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'Accept', 'X-Requested-With'],
   });
 
   // Global prefix
@@ -32,9 +34,9 @@ async function bootstrap() {
     }),
   );
 
-  const port = process.env.APP_PORT ?? 4000;
-  await app.listen(port);
-  console.log(`🚀 GoldenERP Backend running on http://localhost:${port}`);
+  const port = Number(process.env.PORT) || Number(process.env.APP_PORT) || 4000;
+  await app.listen(port, '0.0.0.0');
+  console.log(`🚀 GoldenERP Backend running on port ${port}`);
 }
 
 // GoldenERP NestJS bootstrap with Telegram module
