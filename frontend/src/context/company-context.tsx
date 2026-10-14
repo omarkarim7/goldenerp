@@ -1,6 +1,7 @@
 "use client";
 
 import React, { createContext, useContext, useEffect, useState, useMemo, useCallback } from "react";
+import { API_BASE_URL } from "@/lib/api";
 
 export type CompanyCode = "ALL" | "A" | "B" | "C" | "D";
 
@@ -140,7 +141,7 @@ function parseAllowedCodes(role?: string | null, allowedStr?: string | null): st
     try {
       const token = localStorage.getItem("accessToken");
       if (!token) return;
-      const apiBase = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
+      const apiBase = API_BASE_URL;
       const res = await fetch(`${apiBase}/api/auth/me`, {
         headers: { Authorization: `Bearer ${token}` },
       });
@@ -211,7 +212,7 @@ function parseAllowedCodes(role?: string | null, allowedStr?: string | null): st
     setLoadingOverview(true);
     try {
       const token = localStorage.getItem("accessToken");
-      const apiBase = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
+      const apiBase = API_BASE_URL;
       const res = await fetch(`${apiBase}/api/companies/overview`, {
         headers: { Authorization: `Bearer ${token}` },
       });

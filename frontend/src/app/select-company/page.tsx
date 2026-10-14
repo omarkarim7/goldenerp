@@ -12,6 +12,7 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { useTheme } from "next-themes";
 import { toast } from "sonner";
 import { useCompany, CompanyCode } from "@/context/company-context";
+import { API_BASE_URL } from "@/lib/api";
 
 interface UserData {
   id: string;
@@ -50,7 +51,7 @@ export default function SelectCompanyPage() {
 
     // Always fetch fresh profile from backend so updated allowedCompanies take immediate effect
     if (token) {
-      const apiBase = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
+      const apiBase = API_BASE_URL;
       fetch(`${apiBase}/api/auth/me`, {
         headers: { Authorization: `Bearer ${token}` },
       })

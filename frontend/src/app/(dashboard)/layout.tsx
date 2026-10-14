@@ -18,6 +18,7 @@ import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { useNotifications } from "@/context/notifications-context";
 import { useCompany } from "@/context/company-context";
+import { API_BASE_URL } from "@/lib/api";
 
 function getPageTitle(pathname: string): string {
   if (pathname === "/dashboard") return "لوحة التحكم";
@@ -442,7 +443,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
     // Fetch fresh profile in background to keep permissions synced
     if (token) {
-      const apiBase = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
+      const apiBase = API_BASE_URL;
       fetch(`${apiBase}/api/auth/me`, {
         headers: { Authorization: `Bearer ${token}` },
       })

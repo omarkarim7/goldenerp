@@ -3,6 +3,7 @@
 import React, { createContext, useContext, useState, useEffect, useMemo, useCallback } from "react";
 import { toast } from "sonner";
 import { useCompany, CompanyCode } from "./company-context";
+import { API_BASE_URL } from "@/lib/api";
 
 export interface SystemNotification {
   id: string;
@@ -213,7 +214,7 @@ export function NotificationsProvider({ children }: { children: React.ReactNode 
     try {
       const token = localStorage.getItem("accessToken");
       if (!token) return;
-      const apiBase = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
+      const apiBase = API_BASE_URL;
       const compParam = selectedCompany && selectedCompany !== "ALL" ? `?company=${selectedCompany}` : "";
       const res = await fetch(`${apiBase}/api/notifications${compParam}`, {
         headers: { Authorization: `Bearer ${token}` },
@@ -283,7 +284,7 @@ export function NotificationsProvider({ children }: { children: React.ReactNode 
     try {
       const token = localStorage.getItem("accessToken");
       if (token) {
-        const apiBase = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
+        const apiBase = API_BASE_URL;
         fetch(`${apiBase}/api/notifications/${id}/read`, {
           method: "PATCH",
           headers: { Authorization: `Bearer ${token}` },
@@ -308,7 +309,7 @@ export function NotificationsProvider({ children }: { children: React.ReactNode 
     try {
       const token = localStorage.getItem("accessToken");
       if (token) {
-        const apiBase = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
+        const apiBase = API_BASE_URL;
         const query = targetComp ? `?company=${targetComp}` : "";
         fetch(`${apiBase}/api/notifications/read-all${query}`, {
           method: "PATCH",

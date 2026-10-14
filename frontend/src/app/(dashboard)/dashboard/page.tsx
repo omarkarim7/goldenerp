@@ -14,6 +14,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useNotifications } from "@/context/notifications-context";
 import { useCompany, CompanyCode } from "@/context/company-context";
+import { API_BASE_URL } from "@/lib/api";
 
 interface Stats {
   total: number;
@@ -70,7 +71,7 @@ export default function DashboardPage() {
       setLoading(true);
       try {
         const token = localStorage.getItem("accessToken");
-        const apiBase = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
+        const apiBase = API_BASE_URL;
 
         // 1. Fetch stats
         try {
