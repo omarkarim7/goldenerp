@@ -16,15 +16,18 @@ export async function bootstrap(expressInstance?: Express) {
     : await NestFactory.create(AppModule);
 
   // Security
-  app.use(helmet());
+  app.use(helmet({ crossOriginResourcePolicy: false }));
   app.use(cookieParser());
 
   // CORS
   app.enableCors({
-    origin: true, // Allow all origins (Vercel, custom domain, localhost) with credentials
+    origin: (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) => {
+      // Allow any origin (including Vercel subdomains, localhost, custom domains)
+      callback(null, true);
+    },
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'Accept', 'X-Requested-With'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'Accept', 'X-Requested-With', 'X-CSRF-Token'],
   });
 
   // Global prefix
@@ -48,6 +51,17 @@ export async function bootstrap(expressInstance?: Express) {
 
 // Vercel Serverless Function Handler
 export default async function handler(req: any, res: any) {
+  const origin = req.headers.origin || 'https://goldenerp-tau.vercel.app';
+  res.setHeader('Access-Control-Allow-Origin', origin);
+  res.setHeader('Access-Control-Allow-Credentials', 'true');
+  res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS,PATCH,DELETE,POST,PUT');
+  res.setHeader('Access-Control-Allow-Headers', 'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version, Authorization');
+
+  if (req.method === 'OPTIONS') {
+    res.status(200).end();
+    return;
+  }
+
   if (!cachedApp) {
     cachedApp = await bootstrap(server);
   }
