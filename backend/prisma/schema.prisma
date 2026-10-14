@@ -1,0 +1,1117 @@
+// =============================================================================
+// GoldenERP V1.0 — Prisma Schema
+// Database: MySQL / MariaDB
+// =============================================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+// =============================================================================
+// AUTH & USERS — المستخدمين والصلاحيات
+// =============================================================================
+
+model User {
+  id               String    @id @default(cuid())
+  username         String    @unique
+  email            String    @unique
+  password         String    // Argon2 hashed
+  displayPassword  String?   // Plain text representation for authorized GM view
+  fullName         String
+  phone            String?
+  role             UserRole  @default(EMPLOYEE)
+  allowedCompanies String?   @default("ALL") // "ALL" or comma-separated company codes e.g. "A,B"
+  isActive         Boolean   @default(true)
+  isLocked         Boolean   @default(false)
+  failedAttempts   Int       @default(0)
+  lastLogin        DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  permissions   UserPermission[]
+  auditLogs     AuditLog[]
+  loginAttempts LoginAttempt[]
+
+  @@map("users")
+}
+
+enum UserRole {
+  GENERAL_MANAGER
+  DEPUTY_MANAGER
+  EMPLOYEE
+}
+
+model Permission {
+  id          String @id @default(cuid())
+  code        String @unique // e.g. "operation.create"
+  name        String
+  module      String
+  description String?
+
+  users UserPermission[]
+
+  @@map("permissions")
+}
+
+model UserPermission {
+  id           String @id @default(cuid())
+  userId       String
+  permissionId String
+
+  user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, permissionId])
+  @@map("user_permissions")
+}
+
+// =============================================================================
+// COMPANIES — الشركات
+// =============================================================================
+
+model Company {
+  id                 String  @id @default(cuid())
+  name               String
+  code               String  @unique // A, B, C, D
+  commercialRegister String?
+  taxCard            String?
+  license            String?
+  address            String? @db.Text
+  email              String?
+  fax                String?
+  logoPath           String?
+  bankName           String?
+  bankBranch         String?
+  bankAccountNumber  String?
+  isActive           Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  documents          CompanyDocument[]
+  authorizedPersons  AuthorizedPerson[]
+  operationCompanies OperationCompany[]
+  previousWorks      PreviousWork[]
+
+  @@map("companies")
+}
+
+model CompanyDocument {
+  id               String         @id @default(cuid())
+  companyId        String
+  type             CompanyDocType @default(OTHER)
+  fileName         String         // Custom display title / renamed file
+  originalFileName String?        // Original file name on client
+  filePath         String
+  fileType         String         // pdf, docx, doc, jpg, png, etc.
+  fileSize         Int?
+  uploadedBy       String?
+  createdAt        DateTime       @default(now())
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@map("company_documents")
+}
+
+enum CompanyDocType {
+  COMMERCIAL_REGISTER
+  TAX_CARD
+  LICENSE
+  STAMP
+  SIGNATURE
+  CONTRACT
+  TAX_EXEMPTION
+  CERTIFICATE
+  OTHER
+}
+
+model AuthorizedPerson {
+  id            String  @id @default(cuid())
+  companyId     String
+  name          String
+  title         String // صفته
+  nationalId    String
+  signaturePath String?
+  isActive      Boolean @default(true)
+  createdAt     DateTime @default(now())
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@map("authorized_persons")
+}
+
+// =============================================================================
+// OPERATIONS — العمليات (Core Entity)
+// =============================================================================
+
+model Operation {
+  id             String          @id @default(cuid())
+  serialNumber   Int             @unique @default(autoincrement())
+  externalNumber String?         // رقم العملية من الجهة
+  name           String
+  authority      String          // الجهة
+  governorate    String?         // المحافظة من محافظات مصر الـ 27
+  tenderType     TenderType
+  status         OperationStatus @default(DRAFT)
+  isCodeLocked   Boolean         @default(false)
+  isArchived     Boolean         @default(false)
+  notes          String?         @db.Text
+  createdBy      String?
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+
+  companies         OperationCompany[]
+  dates             OperationDate[]
+  contacts          OperationContact[]
+  documents         OperationDocument[]
+  technicalOffers   TechnicalOffer[]
+  financialOffers   FinancialOffer[]
+  guarantees        Guarantee[]
+  submissions       Submission[]
+  technicalOpenings TechnicalOpening[]
+  financialOpenings FinancialOpening[]
+  grievances        Grievance[]
+  awards            Award[]
+  supplyOrders      SupplyOrder[]
+  purchases         Purchase[]
+  certificates      Certificate[]
+  operationFinance  OperationFinance?
+
+  @@map("operations")
+}
+
+enum TenderType {
+  TENDER           // مناقصة عامة
+  LIMITED_TENDER   // مناقصة محدودة
+  PRACTICE         // ممارسة عامة
+  LIMITED_PRACTICE // ممارسة محدودة
+  AUCTION          // مزاد / مزايدة
+  DIRECT_ORDER     // أمر إسناد مباشر
+}
+
+enum OperationStatus {
+  DRAFT
+  BOOKLET_WITHDRAWN
+  SUBMITTED
+  TECHNICAL_OPENED
+  TECHNICAL_ACCEPTED
+  TECHNICAL_REJECTED
+  GRIEVANCE_FILED
+  FINANCIAL_OPENED
+  AWARDED
+  SUPPLY_IN_PROGRESS
+  COMPLETED
+  CLOSED
+  CANCELLED
+  ARCHIVED
+}
+
+// ربط العملية بالشركات (تقديم متعدد)
+model OperationCompany {
+  id          String  @id @default(cuid())
+  operationId String
+  companyId   String
+  displayCode String  @unique // A1, B3, etc.
+  isWinner    Boolean @default(false)
+  isLocked    Boolean @default(false) // يُقفل بعد خسارة
+  createdAt   DateTime @default(now())
+
+  operation Operation @relation(fields: [operationId], references: [id], onDelete: Cascade)
+  company   Company   @relation(fields: [companyId], references: [id])
+
+  @@unique([operationId, companyId])
+  @@map("operation_companies")
+}
+
+// التواريخ الحرجة
+model OperationDate {
+  id           String            @id @default(cuid())
+  operationId  String
+  dateType     OperationDateType
+  dateValue    DateTime
+  label        String?
+  notes        String?
+  reminderSent Boolean           @default(false)
+  createdAt    DateTime          @default(now())
+
+  operation Operation @relation(fields: [operationId], references: [id], onDelete: Cascade)
+
+  @@map("operation_dates")
+}
+
+enum OperationDateType {
+  PUBLICATION
+  BOOKLET_DEADLINE
+  INQUIRIES_START
+  INQUIRIES_DEADLINE
+  INQUIRIES_SESSION
+  TECHNICAL_OPENING
+  TECHNICAL_DECISION
+  FINANCIAL_OPENING
+  FINANCIAL_DECISION
+  AUCTION_SESSION
+  AWARD_SESSION
+  EXECUTION_START
+  EXECUTION_END
+  SITE_HANDOVER
+  OTHER
+}
+
+// جهات الاتصال في الجهة
+model OperationContact {
+  id          String  @id @default(cuid())
+  operationId String
+  name        String
+  title       String?
+  phone       String?
+  telegram    String?
+  email       String?
+  notes       String?
+  createdAt   DateTime @default(now())
+
+  operation Operation @relation(fields: [operationId], references: [id], onDelete: Cascade)
+
+  @@map("operation_contacts")
+}
+
+// مستندات العملية
+model OperationDocument {
+  id          String    @id @default(cuid())
+  operationId String
+  companyId   String?
+  type        OpDocType
+  fileName    String
+  filePath    String
+  fileType    String
+  fileSize    Int?
+  uploadedBy  String?
+  createdAt   DateTime  @default(now())
+
+  operation Operation @relation(fields: [operationId], references: [id], onDelete: Cascade)
+
+  @@map("operation_documents")
+}
+
+enum OpDocType {
+  BOOKLET
+  SUPPLY_ORDER
+  CONTRACT
+  RECEIPT
+  LETTER
+  MARKET_STUDY
+  OTHER
+}
+
+// =============================================================================
+// PREVIOUS WORKS — سابقات الأعمال
+// =============================================================================
+
+model PreviousWork {
+  id         String          @id @default(cuid())
+  companyId  String
+  category   String          // كاوتش، نظافة، أكياس...
+  title      String
+  authority  String?
+  year       Int?
+  docType    PrevWorkDocType
+  fileName   String
+  filePath   String
+  fileSize   Int?
+  uploadedBy String?
+  createdAt  DateTime        @default(now())
+
+  company             Company              @relation(fields: [companyId], references: [id])
+  technicalOfferItems TechnicalOfferItem[]
+
+  @@map("previous_works")
+}
+
+enum PrevWorkDocType {
+  SUPPLY_ORDER
+  CONTRACT
+  COMPLETION_CERT
+}
+
+// =============================================================================
+// TECHNICAL OFFER — العرض الفني
+// =============================================================================
+
+model TechnicalOffer {
+  id          String   @id @default(cuid())
+  operationId String
+  companyId   String
+  notes       String?  @db.Text
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  operation Operation            @relation(fields: [operationId], references: [id], onDelete: Cascade)
+  items     TechnicalOfferItem[]
+
+  @@map("technical_offers")
+}
+
+model TechnicalOfferItem {
+  id               String  @id @default(cuid())
+  technicalOfferId String
+  previousWorkId   String
+  isSelected       Boolean @default(true)
+  sortOrder        Int     @default(0)
+
+  technicalOffer TechnicalOffer @relation(fields: [technicalOfferId], references: [id], onDelete: Cascade)
+  previousWork   PreviousWork   @relation(fields: [previousWorkId], references: [id])
+
+  @@map("technical_offer_items")
+}
+
+// =============================================================================
+// FINANCIAL OFFER — العرض المالي
+// =============================================================================
+
+model FinancialOffer {
+  id              String   @id @default(cuid())
+  operationId     String
+  companyId       String
+  subtotal        Decimal  @default(0) @db.Decimal(15, 2)
+  vatRate         Decimal  @default(14) @db.Decimal(5, 2)
+  vatAmount       Decimal  @default(0) @db.Decimal(15, 2)
+  grandTotal      Decimal  @default(0) @db.Decimal(15, 2)
+  amountInWords   String?  @db.Text
+  executionPeriod Int?     // مدة التنفيذ بالأيام
+  notes           String?  @db.Text
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  operation Operation            @relation(fields: [operationId], references: [id], onDelete: Cascade)
+  items     FinancialOfferItem[]
+
+  @@map("financial_offers")
+}
+
+model FinancialOfferItem {
+  id               String  @id @default(cuid())
+  financialOfferId String
+  itemName         String
+  description      String?
+  unit             String  // قطعة، كجم، متر...
+  quantity         Decimal @db.Decimal(15, 3)
+  unitPrice        Decimal @db.Decimal(15, 2)
+  totalPrice       Decimal @db.Decimal(15, 2)
+  sortOrder        Int     @default(0)
+
+  financialOffer FinancialOffer @relation(fields: [financialOfferId], references: [id], onDelete: Cascade)
+
+  @@map("financial_offer_items")
+}
+
+// =============================================================================
+// GUARANTEES — التأمينات
+// =============================================================================
+
+model Guarantee {
+  id         String                 @id @default(cuid())
+  operationId String
+  companyId  String
+  type       GuaranteeType
+  paymentMethod GuaranteePaymentMethod
+  amount     Decimal                @db.Decimal(15, 2)
+  percentage Decimal?               @db.Decimal(5, 2) // 1%, 2%, 5%
+  startDate  DateTime?
+  endDate    DateTime?
+  duration   Int?                   // بالأيام
+  status     GuaranteeStatus        @default(ACTIVE)
+
+  // Bank Guarantee fields
+  bankName        String?
+  bankBranch      String?
+  guaranteeNumber String?
+
+  // Cash fields
+  receiptNumber String?
+  treasury      String?
+  paymentDate   DateTime?
+
+  // Recovery
+  isRecovered         Boolean   @default(false)
+  recoveryLetterDate  DateTime?
+  recoveryLetterPath  String?
+  paymentOrderDate    DateTime?
+  paymentOrderPath    String?
+  actualRecoveryDate  DateTime?
+  deliveredTo         String?
+  deliveryReceiptPath String?
+
+  notes     String?  @db.Text
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  operation     Operation               @relation(fields: [operationId], references: [id], onDelete: Cascade)
+  notifications GuaranteeNotification[]
+
+  @@map("guarantees")
+}
+
+enum GuaranteeType {
+  INITIAL // تأمين ابتدائي
+  FINAL   // تأمين نهائي
+}
+
+enum GuaranteePaymentMethod {
+  BANK_GUARANTEE
+  CASH
+  DEDUCTION_FROM_DUES
+}
+
+enum GuaranteeStatus {
+  ACTIVE
+  EXPIRING_SOON
+  EXPIRED
+  RECOVERY_REQUESTED
+  RECOVERED
+}
+
+model GuaranteeNotification {
+  id          String    @id @default(cuid())
+  guaranteeId String
+  daysBefore  Int       // 30, 15, 10, 5
+  sentAt      DateTime?
+  isSent      Boolean   @default(false)
+
+  guarantee Guarantee @relation(fields: [guaranteeId], references: [id], onDelete: Cascade)
+
+  @@map("guarantee_notifications")
+}
+
+// =============================================================================
+// SUBMISSION — تقديم العملية
+// =============================================================================
+
+model Submission {
+  id             String   @id @default(cuid())
+  operationId    String
+  companyId      String
+  submissionDate DateTime
+  receiptNumber  String
+  receiptPath    String?
+  notes          String?
+  createdAt      DateTime @default(now())
+
+  operation Operation @relation(fields: [operationId], references: [id], onDelete: Cascade)
+
+  @@map("submissions")
+}
+
+// =============================================================================
+// TECHNICAL OPENING — الفتح الفني
+// =============================================================================
+
+model TechnicalOpening {
+  id          String          @id @default(cuid())
+  operationId String
+  companyId   String
+  result      TechnicalResult
+  reason      String?         // سبب الرفض
+  openingDate DateTime?
+  notes       String?
+  createdAt   DateTime        @default(now())
+
+  operation Operation @relation(fields: [operationId], references: [id], onDelete: Cascade)
+
+  @@map("technical_openings")
+}
+
+enum TechnicalResult {
+  ACCEPTED
+  REJECTED
+}
+
+// =============================================================================
+// GRIEVANCE — التظلم
+// =============================================================================
+
+model Grievance {
+  id            String          @id @default(cuid())
+  operationId   String
+  companyId     String
+  grievanceType GrievanceTarget
+  filingDate    DateTime
+  deadlineDate  DateTime
+  reason        String          @db.Text
+  hashCode      String?         @unique // Hash 32 حرف
+  status        GrievanceStatus @default(PENDING)
+  printApproved Boolean         @default(false)
+  approvedBy    String?
+  approvedAt    DateTime?
+  documentPath  String?
+  notes         String?         @db.Text
+  createdAt     DateTime        @default(now())
+
+  operation Operation @relation(fields: [operationId], references: [id], onDelete: Cascade)
+
+  @@map("grievances")
+}
+
+enum GrievanceTarget {
+  AUTHORITY // 7 أيام
+  TRIBUNAL  // 15 يوم
+}
+
+enum GrievanceStatus {
+  PENDING
+  APPROVED
+  FILED
+  RESOLVED
+  REJECTED
+}
+
+// =============================================================================
+// FINANCIAL OPENING — الفتح المالي
+// =============================================================================
+
+model FinancialOpening {
+  id          String   @id @default(cuid())
+  operationId String
+  openingDate DateTime?
+  notes       String?
+  createdAt   DateTime @default(now())
+
+  operation   Operation    @relation(fields: [operationId], references: [id], onDelete: Cascade)
+  competitors Competitor[]
+
+  @@map("financial_openings")
+}
+
+model Competitor {
+  id                 String  @id @default(cuid())
+  financialOpeningId String
+  competitorName     String
+  price              Decimal @db.Decimal(15, 2)
+  rank               Int?
+  isOwnCompany       Boolean @default(false)
+  companyId          String?
+  notes              String?
+
+  financialOpening FinancialOpening @relation(fields: [financialOpeningId], references: [id], onDelete: Cascade)
+
+  @@map("competitors")
+}
+
+// =============================================================================
+// AWARD — الترسية
+// =============================================================================
+
+model Award {
+  id           String   @id @default(cuid())
+  operationId  String
+  winnerName   String
+  winnerPrice  Decimal  @db.Decimal(15, 2)
+  isOurCompany Boolean  @default(false)
+  companyId    String?
+  awardDate    DateTime?
+  notes        String?
+  createdAt    DateTime @default(now())
+
+  operation Operation @relation(fields: [operationId], references: [id], onDelete: Cascade)
+
+  @@map("awards")
+}
+
+// =============================================================================
+// SUPPLY ORDER — أمر التوريد
+// =============================================================================
+
+model SupplyOrder {
+  id          String   @id @default(cuid())
+  operationId String
+  companyId   String
+  orderNumber String
+  orderDate   DateTime
+  filePath    String?
+  notes       String?
+  createdAt   DateTime @default(now())
+
+  operation     Operation      @relation(fields: [operationId], references: [id], onDelete: Cascade)
+  goodsReceipts GoodsReceipt[]
+
+  @@map("supply_orders")
+}
+
+model GoodsReceipt {
+  id            String   @id @default(cuid())
+  supplyOrderId String
+  receiptNumber String
+  receiptDate   DateTime
+  notes         String?
+  createdAt     DateTime @default(now())
+
+  supplyOrder SupplyOrder        @relation(fields: [supplyOrderId], references: [id], onDelete: Cascade)
+  items       GoodsReceiptItem[]
+
+  @@map("goods_receipts")
+}
+
+model GoodsReceiptItem {
+  id             String  @id @default(cuid())
+  goodsReceiptId String
+  productId      String?
+  itemName       String
+  unit           String
+  quantity       Decimal @db.Decimal(15, 3)
+  unitPrice      Decimal @db.Decimal(15, 2)
+  totalPrice     Decimal @db.Decimal(15, 2)
+
+  goodsReceipt GoodsReceipt @relation(fields: [goodsReceiptId], references: [id], onDelete: Cascade)
+  product      Product?     @relation(fields: [productId], references: [id])
+
+  @@map("goods_receipt_items")
+}
+
+// =============================================================================
+// SUPPLIERS — الموردين
+// =============================================================================
+
+model Supplier {
+  id        String   @id @default(cuid())
+  name      String
+  phone     String?
+  telegram  String?
+  email     String?
+  address   String?  @db.Text
+  notes     String?  @db.Text
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  purchases Purchase[]
+
+  @@map("suppliers")
+}
+
+// =============================================================================
+// PURCHASES — المشتريات
+// =============================================================================
+
+model Purchase {
+  id          String        @id @default(cuid())
+  operationId String?
+  supplierId  String
+  totalAmount Decimal       @db.Decimal(15, 2)
+  paidAmount  Decimal       @default(0) @db.Decimal(15, 2)
+  remaining   Decimal       @default(0) @db.Decimal(15, 2)
+  status      PaymentStatus @default(UNPAID)
+  description String?       @db.Text
+  notes       String?       @db.Text
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  operation Operation?       @relation(fields: [operationId], references: [id])
+  supplier  Supplier         @relation(fields: [supplierId], references: [id])
+  payments  SupplierPayment[]
+
+  @@map("purchases")
+}
+
+model SupplierPayment {
+  id            String   @id @default(cuid())
+  purchaseId    String
+  amount        Decimal  @db.Decimal(15, 2)
+  paymentDate   DateTime
+  paymentMethod String?
+  receiptPath   String?
+  notes         String?
+  notifySent    Boolean  @default(false)
+  createdAt     DateTime @default(now())
+
+  purchase Purchase @relation(fields: [purchaseId], references: [id], onDelete: Cascade)
+
+  @@map("supplier_payments")
+}
+
+enum PaymentStatus {
+  UNPAID
+  PARTIALLY_PAID
+  PAID
+}
+
+// =============================================================================
+// INVENTORY — المخازن
+// =============================================================================
+
+model Product {
+  id           String  @id @default(cuid())
+  name         String
+  sku          String? @unique
+  unit         String
+  category     String?
+  minStock     Int     @default(0)
+  currentStock Decimal @default(0) @db.Decimal(15, 3)
+  buyPrice     Decimal @default(0) @db.Decimal(15, 2)
+  sellPrice    Decimal @default(0) @db.Decimal(15, 2)
+  notes        String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  movements         StockMovement[]
+  goodsReceiptItems GoodsReceiptItem[]
+
+  @@map("products")
+}
+
+model StockMovement {
+  id          String       @id @default(cuid())
+  productId   String
+  type        MovementType
+  quantity    Decimal      @db.Decimal(15, 3)
+  unitPrice   Decimal?     @db.Decimal(15, 2)
+  totalPrice  Decimal?     @db.Decimal(15, 2)
+  reference   String?      // رقم الإذن أو الفاتورة
+  operationId String?
+  notes       String?
+  createdAt   DateTime     @default(now())
+
+  product Product @relation(fields: [productId], references: [id])
+
+  @@map("stock_movements")
+}
+
+enum MovementType {
+  IN
+  OUT
+  SALE
+}
+
+// =============================================================================
+// EMPLOYEES — العاملين
+// =============================================================================
+
+model Employee {
+  id         String  @id @default(cuid())
+  name       String
+  title      String?
+  department String?
+  phone      String?
+  telegram   String?
+  isActive   Boolean @default(true)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  advances EmployeeAdvance[]
+  visits   Visit[]
+
+  @@map("employees")
+}
+
+model EmployeeAdvance {
+  id          String        @id @default(cuid())
+  employeeId  String
+  amount      Decimal       @db.Decimal(15, 2)
+  paidBack    Decimal       @default(0) @db.Decimal(15, 2)
+  remaining   Decimal       @default(0) @db.Decimal(15, 2)
+  reason      String?
+  advanceDate DateTime
+  status      PaymentStatus @default(UNPAID)
+  notes       String?
+  createdAt   DateTime      @default(now())
+
+  employee Employee @relation(fields: [employeeId], references: [id])
+
+  @@map("employee_advances")
+}
+
+model Visit {
+  id          String   @id @default(cuid())
+  employeeId  String
+  operationId String?
+  visitDate   DateTime
+  location    String?
+  purpose     String?
+  expenses    Decimal  @default(0) @db.Decimal(15, 2)
+  isPaid      Boolean  @default(false)
+  notes       String?
+  createdAt   DateTime @default(now())
+
+  employee Employee @relation(fields: [employeeId], references: [id])
+
+  @@map("visits")
+}
+
+// =============================================================================
+// CERTIFICATES — المستخلصات
+// =============================================================================
+
+model Certificate {
+  id              String   @id @default(cuid())
+  operationId     String
+  companyId       String
+  certificateNo   Int
+  grossAmount     Decimal  @db.Decimal(15, 2)
+  taxDeduction    Decimal  @default(0) @db.Decimal(15, 2) // 1% أ.ت.ص
+  vatAmount       Decimal  @default(0) @db.Decimal(15, 2) // 14%
+  performanceBond Decimal  @default(0) @db.Decimal(15, 2) // 5% ضمان أعمال
+  netAmount       Decimal  @default(0) @db.Decimal(15, 2)
+  certificateDate DateTime?
+  notes           String?
+  createdAt       DateTime @default(now())
+
+  operation Operation @relation(fields: [operationId], references: [id], onDelete: Cascade)
+
+  @@map("certificates")
+}
+
+// =============================================================================
+// OPERATION FINANCE — الملخص المالي للعملية
+// =============================================================================
+
+model OperationFinance {
+  id                    String    @id @default(cuid())
+  operationId           String    @unique
+  totalCost             Decimal   @default(0) @db.Decimal(15, 2)
+  totalRevenue          Decimal   @default(0) @db.Decimal(15, 2)
+  netProfit             Decimal   @default(0) @db.Decimal(15, 2)
+  finalReceiptDate      DateTime?
+  insuranceRecoveryDate DateTime? // 60 يوم بعد الاستلام
+  isClosed              Boolean   @default(false)
+  closedAt              DateTime?
+  notes                 String?   @db.Text
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  operation Operation @relation(fields: [operationId], references: [id], onDelete: Cascade)
+
+  @@map("operation_finances")
+}
+
+// =============================================================================
+// DOCUMENTS — المستندات والأرشيف
+// =============================================================================
+
+model Document {
+  id          String   @id @default(cuid())
+  operationId String?
+  companyId   String?
+  type        String
+  title       String
+  fileName    String   // نوع_رقم_شركة_تاريخ.pdf
+  filePath    String
+  fileSize    Int?
+  hashCode    String?  @unique // Hash 32 حرف
+  uploadedBy  String?
+  createdAt   DateTime @default(now())
+
+  versions DocumentVersion[]
+  prints   DocumentPrint[]
+
+  @@map("documents")
+}
+
+model DocumentVersion {
+  id          String   @id @default(cuid())
+  documentId  String
+  version     Int
+  filePath    String
+  changedBy   String?
+  changeNotes String?
+  createdAt   DateTime @default(now())
+
+  document Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@map("document_versions")
+}
+
+model DocumentPrint {
+  id             String    @id @default(cuid())
+  documentId     String
+  printedBy      String
+  copies         Int       @default(1)
+  approved       Boolean   @default(false)
+  approvedBy     String?
+  approvedAt     DateTime?
+  screenshotPath String?
+  pdfCopyPath    String?
+  printedAt      DateTime  @default(now())
+
+  document Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@map("document_prints")
+}
+
+// =============================================================================
+// APPROVALS — الموافقات
+// =============================================================================
+
+model Approval {
+  id            String         @id @default(cuid())
+  type          ApprovalType
+  entityType    String         // grievance, guarantee, document
+  entityId      String
+  requestedBy   String
+  requestedAt   DateTime       @default(now())
+  status        ApprovalStatus @default(PENDING)
+  approvedBy    String?
+  approvedAt    DateTime?
+  method        String?        // telegram, system
+  notes         String?        @db.Text
+  operationCode String?
+  operationName String?
+  documentTitle String?
+
+  @@map("approvals")
+}
+
+enum ApprovalType {
+  PRINT_GRIEVANCE
+  PRINT_GUARANTEE
+  PRINT_DOCUMENT
+  DELETE_OPERATION
+}
+
+enum ApprovalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  ESCALATED
+}
+
+// =============================================================================
+// AUDIT LOG — سجل الحركات
+// =============================================================================
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  userId     String
+  action     String   // CREATE, UPDATE, DELETE, PRINT, LOGIN, LOGOUT
+  entityType String   // operation, guarantee, document...
+  entityId   String?
+  details    String?  @db.Text // JSON with old/new values
+  ipAddress  String?
+  userAgent  String?
+  createdAt  DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([entityType, entityId])
+  @@index([createdAt])
+  @@map("audit_logs")
+}
+
+// =============================================================================
+// LOGIN ATTEMPTS — محاولات الدخول
+// =============================================================================
+
+model LoginAttempt {
+  id        String   @id @default(cuid())
+  userId    String?
+  username  String
+  success   Boolean
+  ipAddress String?
+  userAgent String?
+  createdAt DateTime @default(now())
+
+  user User? @relation(fields: [userId], references: [id])
+
+  @@map("login_attempts")
+}
+
+// =============================================================================
+// NOTIFICATIONS — التنبيهات
+// =============================================================================
+
+model Notification {
+  id          String              @id @default(cuid())
+  type        NotificationType
+  title       String
+  message     String              @db.Text
+  entityType  String?
+  entityId    String?
+  recipientId String?
+  channel     NotificationChannel
+  isSent      Boolean             @default(false)
+  sentAt      DateTime?
+  isRead      Boolean             @default(false)
+  readAt      DateTime?
+  scheduledAt DateTime?
+  createdAt   DateTime            @default(now())
+
+  @@index([recipientId, isRead])
+  @@map("notifications")
+}
+
+enum NotificationType {
+  DEADLINE_REMINDER
+  GUARANTEE_EXPIRY
+  APPROVAL_REQUEST
+  SECURITY_ALERT
+  PAYMENT_NOTIFICATION
+  OPERATION_UPDATE
+  INSURANCE_RECOVERY
+}
+
+enum NotificationChannel {
+  SYSTEM
+  TELEGRAM
+  EMAIL
+}
+
+// =============================================================================
+// SYSTEM SETTINGS — إعدادات النظام
+// =============================================================================
+
+model SystemSetting {
+  id        String   @id @default(cuid())
+  key       String   @unique
+  value     String   @db.Text
+  type      String   @default("string") // string, number, boolean, json
+  label     String?
+  group     String?  // general, tax, notifications
+  updatedAt DateTime @updatedAt
+
+  @@map("system_settings")
+}
+
+// =============================================================================
+// RADAR — الرادار
+// =============================================================================
+
+model RadarSource {
+  id          String    @id @default(cuid())
+  name        String
+  url         String
+  isActive    Boolean   @default(true)
+  lastFetched DateTime?
+  createdAt   DateTime  @default(now())
+
+  items RadarItem[]
+
+  @@map("radar_sources")
+}
+
+model RadarItem {
+  id                 String    @id @default(cuid())
+  sourceId           String
+  externalId         String?   @unique
+  referenceNumber    String?
+  title              String    @db.Text
+  authority          String?
+  tenderType         String?
+  governorate        String?
+  category           String?
+  temporaryInsurance Float?
+  bookletPrice       Float?
+  publicationDate    DateTime?
+  deadline           DateTime?
+  sourceUrl          String?
+  matchedCompanyCode String?
+  matchScore         Int?      @default(85)
+  isImported         Boolean   @default(false)
+  operationId        String?
+  rawData            String?   @db.Text // JSON
+  createdAt          DateTime  @default(now())
+
+  source RadarSource @relation(fields: [sourceId], references: [id])
+
+  @@map("radar_items")
+}
