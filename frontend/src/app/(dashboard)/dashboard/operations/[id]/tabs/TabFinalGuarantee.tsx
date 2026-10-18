@@ -19,6 +19,7 @@ import api from "@/lib/api";
 import { Operation, SectionCard, DataRow, EmptyState, formatDate, formatCurrency, tafqeetArabic, formatDocFileSize } from "./types";
 import { StepFooterNav } from "./StepFooterNav";
 import { generateSmartOutgoingRef, BarcodeVisual } from "./letter-utils";
+import { DocxViewer } from "@/components/docx-viewer";
 import JSZip from "jszip";
 import QRCode from "qrcode";
 
@@ -163,6 +164,7 @@ export function TabFinalGuarantee({
   // Modals & Action States
   const [previewModalOpen, setPreviewModalOpen] = useState(false);
   const [previewPdfUrl, setPreviewPdfUrl] = useState<string | null>(null);
+  const [previewDocxBlob, setPreviewDocxBlob] = useState<Blob | null>(null);
   const [renderingDocx, setRenderingDocx] = useState(false);
   const [downloadingDocx, setDownloadingDocx] = useState(false);
   const [downloadingPdf, setDownloadingPdf] = useState(false);
@@ -495,9 +497,16 @@ export function TabFinalGuarantee({
         URL.revokeObjectURL(previewPdfUrl);
         setPreviewPdfUrl(null);
       }
-      const pdfBlob = await generateGuaranteePdfBlob(activeLetterType);
-      const url = URL.createObjectURL(pdfBlob);
-      setPreviewPdfUrl(url);
+      const docxBlob = await generateGuaranteeDocxBlob(activeLetterType);
+      setPreviewDocxBlob(docxBlob);
+
+      try {
+        const pdfBlob = await generateGuaranteePdfBlob(activeLetterType);
+        const url = URL.createObjectURL(pdfBlob);
+        setPreviewPdfUrl(url);
+      } catch (pdfErr) {
+        console.warn("PDF conversion unavailable on server, using in-browser DocxViewer fallback:", pdfErr);
+      }
     } catch (err: any) {
       toast.error("تعذر تجهيز المعاينة: " + (err?.message || ""));
     } finally {
@@ -509,8 +518,14 @@ export function TabFinalGuarantee({
     setPrintingDocx(true);
     try {
       toast.info("جاري تجهيز مستند التأمين للطباعة...");
-      const pdfBlob = await generateGuaranteePdfBlob(activeLetterType);
-      const pdfUrl = URL.createObjectURL(pdfBlob);
+      let pdfUrl: string;
+      try {
+        const pdfBlob = await generateGuaranteePdfBlob(activeLetterType);
+        pdfUrl = URL.createObjectURL(pdfBlob);
+      } catch {
+        window.print();
+        return;
+      }
 
       const iframe = document.createElement("iframe");
       iframe.style.position = "fixed";
@@ -531,7 +546,7 @@ export function TabFinalGuarantee({
         }, 400);
       };
     } catch (err: any) {
-      toast.error("فشل تجهيز الطباعة: " + (err?.message || ""));
+      window.print();
     } finally {
       setPrintingDocx(false);
     }
@@ -572,7 +587,8 @@ export function TabFinalGuarantee({
       URL.revokeObjectURL(url);
       toast.success("تم تحميل مستند PDF بنجاح!");
     } catch (err: any) {
-      toast.error("فشل تصدير ملف PDF: " + (err?.message || ""));
+      toast.info("محرك PDF متاح محلياً، تم تنزيل ملف الوورد المعتمد (.docx) بدلاً منه 📄");
+      await handleDownloadDocx(type);
     } finally {
       setDownloadingPdf(false);
     }
@@ -1595,6 +1611,10 @@ export function TabFinalGuarantee({
                       className="w-full min-h-[650px] flex-1 border-0"
                       title="معاينة صفحات مستند الوورد"
                     />
+                  </div>
+                ) : previewDocxBlob ? (
+                  <div className="w-full max-w-[950px] bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-300 dark:border-slate-800 overflow-hidden flex flex-col my-auto p-4">
+                    <DocxViewer blob={previewDocxBlob} fileName={`خطاب_التأمين_النهائي_${activeLetterType}.docx`} />
                   </div>
                 ) : (
                   <div className="my-auto py-20 text-center text-slate-400 space-y-3">

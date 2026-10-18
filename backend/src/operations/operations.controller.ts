@@ -534,13 +534,21 @@ export class OperationsController {
     if (!file || !file.buffer) {
       throw new BadRequestException('ملف Word (.docx) مطلوب للتحويل');
     }
-    const pdfBuffer = await this.operationsService.convertDocxBufferToPdf(file.buffer);
-    res.set({
-      'Content-Type': 'application/pdf',
-      'Content-Disposition': 'inline; filename="letter.pdf"',
-      'Content-Length': pdfBuffer.length,
-    });
-    res.end(pdfBuffer);
+    try {
+      const pdfBuffer = await this.operationsService.convertDocxBufferToPdf(file.buffer);
+      res.set({
+        'Content-Type': 'application/pdf',
+        'Content-Disposition': 'inline; filename="letter.pdf"',
+        'Content-Length': pdfBuffer.length,
+      });
+      res.end(pdfBuffer);
+    } catch (err: any) {
+      return res.status(503).json({
+        statusCode: 503,
+        message: 'محرك تحويل PDF المباشر متاح محلياً على نظام Windows فقط. يتم استخدام المعاينة المباشرة لملف الوورد على السحابة.',
+        error: 'Service Unavailable',
+      });
+    }
   }
 
   @Post('upload-cloud-pdf')

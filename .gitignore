@@ -52,3 +52,7 @@ scratch/
 frontend/scratch/
 frontend/scratch_*.docx
 /*.docx
+backend/scripts/sync-*.ts
+backend/scripts/debug-*.ts
+backend/scripts/test-*.ts
+

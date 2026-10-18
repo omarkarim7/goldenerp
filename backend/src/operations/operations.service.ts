@@ -1611,6 +1611,9 @@ export class OperationsService {
    * تحويل مستند Word (.docx) الأصلي المحدث مباشرة إلى PDF عالي الدقة عبر محرك Microsoft Word
    */
   async convertDocxBufferToPdf(docxBuffer: Buffer): Promise<Buffer> {
+    if (process.platform !== 'win32') {
+      throw new Error('Microsoft Word conversion engine is only available on Windows environments.');
+    }
     const randomId = Date.now() + '_' + Math.random().toString(36).substring(7);
     const tempDocx = path.join(os.tmpdir(), `goldenerp_doc_${randomId}.docx`);
     const tempPdf = path.join(os.tmpdir(), `goldenerp_doc_${randomId}.pdf`);

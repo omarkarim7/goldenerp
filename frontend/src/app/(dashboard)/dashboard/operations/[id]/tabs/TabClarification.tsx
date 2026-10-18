@@ -20,6 +20,7 @@ import { Operation, SectionCard, formatDate } from "./types";
 import { StepFooterNav } from "./StepFooterNav";
 import { generateSmartOutgoingRef, BarcodeVisual } from "./letter-utils";
 import { GOLDEN_STAMP_BASE64, GOLDEN_LOGO_BASE64 } from "./stamp-assets";
+import { DocxViewer } from "@/components/docx-viewer";
 import JSZip from "jszip";
 import QRCode from "qrcode";
 
@@ -295,6 +296,7 @@ export function TabClarification({
   // Modals & Document state
   const [previewModalOpen, setPreviewModalOpen] = useState(false);
   const [previewPdfUrl, setPreviewPdfUrl] = useState<string | null>(null);
+  const [previewDocxBlob, setPreviewDocxBlob] = useState<Blob | null>(null);
   const [renderingDocx, setRenderingDocx] = useState(false);
   const [downloadingDocx, setDownloadingDocx] = useState(false);
   const [downloadingPdf, setDownloadingPdf] = useState(false);
@@ -741,8 +743,8 @@ export function TabClarification({
 
       toast.success("تم تحويل وتنزيل ملف الـ PDF الرسمي بنجاح مطابقاً للوورد 100%! 📑✨");
     } catch (err: any) {
-      console.error(err);
-      toast.error("فشل تحويل وتنزيل PDF: " + (err?.response?.data?.message || err?.message || ""));
+      toast.info("محرك تحويل PDF متاح محلياً، تم تنزيل ملف الوورد المعتمد (.docx) بدلاً منه 📄");
+      await handleDownloadDocx();
     } finally {
       setDownloadingPdf(false);
     }
@@ -752,12 +754,18 @@ export function TabClarification({
   const loadOfficialPreview = async () => {
     setRenderingDocx(true);
     try {
-      const pdfBlob = await generateClarificationPdfBlob();
-      if (previewPdfUrl) {
-        URL.revokeObjectURL(previewPdfUrl);
+      const docxBlob = await generateClarificationDocxBlob();
+      setPreviewDocxBlob(docxBlob);
+      try {
+        const pdfBlob = await generateClarificationPdfBlob();
+        if (previewPdfUrl) {
+          URL.revokeObjectURL(previewPdfUrl);
+        }
+        const url = URL.createObjectURL(pdfBlob);
+        setPreviewPdfUrl(url);
+      } catch (pdfErr) {
+        console.warn("PDF conversion unavailable on server, using in-browser DocxViewer fallback:", pdfErr);
       }
-      const url = URL.createObjectURL(pdfBlob);
-      setPreviewPdfUrl(url);
     } catch (err: any) {
       console.error(err);
       toast.error("فشل تجهيز معاينة الوورد: " + (err?.response?.data?.message || err?.message || ""));
@@ -771,8 +779,14 @@ export function TabClarification({
     setPrintingDocx(true);
     try {
       toast.info("جاري تجهيز مستند الوورد الأصلي للطباعة بأعلى دقة...");
-      const pdfBlob = await generateClarificationPdfBlob();
-      const pdfUrl = URL.createObjectURL(pdfBlob);
+      let pdfUrl: string;
+      try {
+        const pdfBlob = await generateClarificationPdfBlob();
+        pdfUrl = URL.createObjectURL(pdfBlob);
+      } catch {
+        window.print();
+        return;
+      }
 
       // طباعة مستند الـ PDF الأصيل المولد من محرك Word مباشرة لضمان مطابقة القالب 100%
       const iframe = document.createElement("iframe");
@@ -796,8 +810,7 @@ export function TabClarification({
         }, 400);
       };
     } catch (err: any) {
-      console.warn("فشل تجهيز الطباعة:", err);
-      toast.error("فشل تجهيز الطباعة: " + (err?.message || ""));
+      window.print();
     } finally {
       setPrintingDocx(false);
     }
@@ -1875,6 +1888,10 @@ export function TabClarification({
                       className="w-full h-[78vh] min-h-[640px] rounded-xl border border-slate-700 shadow-2xl bg-white"
                       title="معاينة مستند الوورد الأصلي المعتمد"
                     />
+                  </div>
+                ) : previewDocxBlob ? (
+                  <div className="w-full max-w-[950px] bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-300 dark:border-slate-800 overflow-hidden flex flex-col my-auto p-4">
+                    <DocxViewer blob={previewDocxBlob} fileName="خطاب_توضيح.docx" />
                   </div>
                 ) : (
                   <div className="my-auto py-20 text-center">
