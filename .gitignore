@@ -46,3 +46,9 @@ coverage/
 mysql_data/
 backend/uploads/*
 !backend/uploads/.gitkeep
+
+# Scratch & Local temporary files
+scratch/
+frontend/scratch/
+frontend/scratch_*.docx
+/*.docx

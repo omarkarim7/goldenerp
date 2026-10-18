@@ -520,4 +520,68 @@ export class OperationsController {
   ) {
     return this.operationsService.deleteDocument(id, docId);
   }
+
+  @Post('convert-docx-to-pdf')
+  @UseInterceptors(
+    FileInterceptor('file', {
+      limits: { fileSize: 50 * 1024 * 1024 },
+    }),
+  )
+  async convertDocxToPdf(
+    @UploadedFile() file: Express.Multer.File,
+    @Res() res: Response,
+  ) {
+    if (!file || !file.buffer) {
+      throw new BadRequestException('ملف Word (.docx) مطلوب للتحويل');
+    }
+    const pdfBuffer = await this.operationsService.convertDocxBufferToPdf(file.buffer);
+    res.set({
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': 'inline; filename="letter.pdf"',
+      'Content-Length': pdfBuffer.length,
+    });
+    res.end(pdfBuffer);
+  }
+
+  @Post('upload-cloud-pdf')
+  @UseInterceptors(
+    FileInterceptor('file', {
+      limits: { fileSize: 50 * 1024 * 1024 },
+    }),
+  )
+  async uploadCloudPdf(@UploadedFile() file: Express.Multer.File) {
+    if (!file || !file.buffer) {
+      throw new BadRequestException('ملف PDF مطلوب للرفع السحابي');
+    }
+    return this.operationsService.uploadCloudPdf(file.buffer, file.originalname);
+  }
+
+  @Get('download-remote-file')
+  async downloadRemoteFile(
+    @Query('url') fileUrl: string,
+    @Query('fileName') fileName: string,
+    @Res() res: Response,
+  ) {
+    if (!fileUrl) {
+      throw new BadRequestException('رابط الملف مطلوب');
+    }
+    const finalName = fileName || 'document.pdf';
+    try {
+      const resp = await fetch(fileUrl);
+      if (!resp.ok) {
+        throw new BadRequestException('تعذر تحميل الملف من الخادم البعيد');
+      }
+      const buffer = Buffer.from(await resp.arrayBuffer());
+      const contentType = resp.headers.get('content-type') || 'application/octet-stream';
+      res.set({
+        'Content-Type': contentType,
+        'Content-Disposition': `attachment; filename="${encodeURIComponent(finalName)}"`,
+        'Content-Length': buffer.length,
+      });
+      res.end(buffer);
+    } catch (err: any) {
+      throw new BadRequestException('فشل تنزيل الملف: ' + (err.message || 'خطأ اتصال'));
+    }
+  }
 }
+

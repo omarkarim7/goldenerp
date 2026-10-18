@@ -63,6 +63,13 @@ const ARABIC_LABELS: Record<string, string> = {
   BANK_GUARANTEE: "خطاب ضمان بنكي",
   CASH: "سداد نقدي / خزينة",
   DEDUCTION_FROM_DUES: "خصم من مستحقات",
+  DEDUCTION: "خصم من مستحقات",
+  TRANSFER: "تحويل التأمين وسداد الفارق",
+
+  // Duration Units
+  DAYS: "أيام",
+  MONTHS: "شهور",
+  YEARS: "سنوات",
 
   // Guarantee & Generic Statuses
   ACTIVE: "ساري ونشط",

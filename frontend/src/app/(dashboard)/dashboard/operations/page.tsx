@@ -108,6 +108,13 @@ export default function OperationsPage() {
 
         const res = await api.get(`/operations?${params.toString()}`);
         setOperations(res.data);
+        if (typeof window !== "undefined" && Array.isArray(res.data)) {
+          for (const item of res.data) {
+            try {
+              sessionStorage.setItem(`cached_op_${item.id}`, JSON.stringify(item));
+            } catch {}
+          }
+        }
       } catch {
         // Handle error silently
       } finally {

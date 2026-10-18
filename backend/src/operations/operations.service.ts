@@ -5,6 +5,9 @@ import {
 } from '@nestjs/common';
 import * as crypto from 'crypto';
 import * as path from 'path';
+import * as os from 'os';
+import * as fs from 'fs';
+import { exec } from 'child_process';
 import { existsSync, unlinkSync, statSync, mkdirSync, writeFileSync } from 'fs';
 import { extname } from 'path';
 import { PrismaService } from '../prisma/prisma.service.js';
@@ -95,73 +98,86 @@ export class OperationsService {
     });
   }
 
+  private readonly opCache = new Map<string, { data: any; expiry: number }>();
+
+  public invalidateOpCache(id?: string) {
+    if (id) {
+      this.opCache.delete(id);
+    } else {
+      this.opCache.clear();
+    }
+  }
+
   async findOne(id: string) {
-    const operation = await this.prisma.operation.findUnique({
-      where: { id },
-      include: {
-        companies: {
-          include: {
-            company: true,
-          },
-        },
-        dates: { orderBy: { dateValue: 'asc' } },
-        contacts: true,
-        documents: { orderBy: { createdAt: 'desc' } },
-        technicalOffers: {
-          include: {
-            items: { include: { previousWork: true } },
-          },
-        },
-        financialOffers: {
-          include: {
-            items: { orderBy: { sortOrder: 'asc' } },
-          },
-        },
-        guarantees: {
-          include: { notifications: true },
-          orderBy: { createdAt: 'desc' },
-        },
-        submissions: true,
-        technicalOpenings: true,
-        financialOpenings: {
-          include: {
-            competitors: { orderBy: { rank: 'asc' } },
-          },
-        },
-        grievances: true,
-        awards: true,
-        supplyOrders: {
-          include: {
-            goodsReceipts: {
-              include: { items: true },
+    const cached = this.opCache.get(id);
+    if (cached && cached.expiry > Date.now()) {
+      return cached.data;
+    }
+
+    const [operation, radarItem] = await Promise.all([
+      this.prisma.operation.findUnique({
+        where: { id },
+        include: {
+          companies: {
+            include: {
+              company: {
+                include: {
+                  documents: true,
+                },
+              },
             },
           },
-        },
-        purchases: {
-          include: {
-            supplier: true,
-            payments: { orderBy: { paymentDate: 'desc' } },
+          dates: { orderBy: { dateValue: 'asc' } },
+          contacts: true,
+          documents: { orderBy: { createdAt: 'desc' } },
+          technicalOffers: {
+            include: {
+              items: { include: { previousWork: true } },
+            },
           },
+          financialOffers: {
+            include: {
+              items: { orderBy: { sortOrder: 'asc' } },
+            },
+          },
+          guarantees: {
+            include: { notifications: true },
+            orderBy: { createdAt: 'desc' },
+          },
+          submissions: true,
+          technicalOpenings: true,
+          financialOpenings: {
+            include: {
+              competitors: { orderBy: { rank: 'asc' } },
+            },
+          },
+          grievances: true,
+          awards: true,
+          supplyOrders: {
+            include: {
+              goodsReceipts: {
+                include: { items: true },
+              },
+            },
+          },
+          purchases: {
+            include: {
+              supplier: true,
+              payments: { orderBy: { paymentDate: 'desc' } },
+            },
+          },
+          certificates: { orderBy: { certificateNo: 'asc' } },
+          operationFinance: true,
         },
-        certificates: { orderBy: { certificateNo: 'asc' } },
-        operationFinance: true,
-      },
-    });
+      }),
+      this.prisma.radarItem.findFirst({
+        where: { operationId: id },
+      }),
+    ]);
 
     if (!operation) {
       throw new NotFoundException('العملية غير موجودة');
     }
-
-    // Fetch linked radar item and extract all portal details if available
-    const radarItem = await this.prisma.radarItem.findFirst({
-      where: {
-        OR: [
-          { operationId: operation.id },
-          { title: operation.name },
-          ...(operation.externalNumber ? [{ referenceNumber: operation.externalNumber }] : []),
-        ],
-      },
-    });
 
     let portalDetails: any = null;
     if (radarItem?.rawData) {
@@ -170,7 +186,7 @@ export class OperationsService {
       } catch {}
     }
 
-    return {
+    const result = {
       ...operation,
       radarItem: radarItem ? {
         id: radarItem.id,
@@ -183,6 +199,9 @@ export class OperationsService {
       } : null,
       portalDetails,
     };
+
+    this.opCache.set(id, { data: result, expiry: Date.now() + 60000 });
+    return result;
   }
 
   // البحث الذكي بالكود: A15 → العملية
@@ -491,6 +510,7 @@ export class OperationsService {
     }
 
     // 4. Return full updated operation with refreshed portalDetails
+    this.invalidateOpCache(id);
     return this.findOne(id);
   }
 
@@ -527,6 +547,7 @@ export class OperationsService {
       },
     });
 
+    this.invalidateOpCache(id);
     return this.findOne(id);
   }
 
@@ -539,6 +560,7 @@ export class OperationsService {
       },
     });
 
+    this.invalidateOpCache(id);
     return this.findOne(id);
   }
 
@@ -604,7 +626,7 @@ export class OperationsService {
       },
     });
 
-    return this.prisma.operation.update({
+    const updated = await this.prisma.operation.update({
       where: { id },
       data: {
         isCodeLocked: true,
@@ -615,12 +637,14 @@ export class OperationsService {
         companies: { include: { company: true } },
       },
     });
+    this.invalidateOpCache(id);
+    return updated;
   }
 
   // ━━━ 2. إضافة وتعديل وحذف التواريخ الحرجة ━━━
   async addDate(id: string, data: { dateType: any; dateValue: string; label?: string; notes?: string }) {
     await this.findOne(id);
-    return this.prisma.operationDate.create({
+    const date = await this.prisma.operationDate.create({
       data: {
         operationId: id,
         dateType: data.dateType,
@@ -629,6 +653,8 @@ export class OperationsService {
         notes: data.notes || undefined,
       },
     });
+    this.invalidateOpCache(id);
+    return date;
   }
 
   async updateDate(id: string, dateId: string, data: { dateType?: any; dateValue?: string; label?: string; notes?: string }) {
@@ -639,7 +665,7 @@ export class OperationsService {
     if (!existing) {
       throw new NotFoundException('الموعد غير موجود');
     }
-    return this.prisma.operationDate.update({
+    const updated = await this.prisma.operationDate.update({
       where: { id: dateId },
       data: {
         dateType: data.dateType || undefined,
@@ -648,6 +674,8 @@ export class OperationsService {
         notes: data.notes !== undefined ? data.notes : undefined,
       },
     });
+    this.invalidateOpCache(id);
+    return updated;
   }
 
   async deleteDate(id: string, dateId: string) {
@@ -658,9 +686,11 @@ export class OperationsService {
     if (!existing) {
       throw new NotFoundException('الموعد غير موجود');
     }
-    return this.prisma.operationDate.delete({
+    const deleted = await this.prisma.operationDate.delete({
       where: { id: dateId },
     });
+    this.invalidateOpCache(id);
+    return deleted;
   }
 
   // ━━━ 3. تقديم العطاء والإيصال ━━━
@@ -681,6 +711,7 @@ export class OperationsService {
       data: { status: 'SUBMITTED' },
     });
 
+    this.invalidateOpCache(id);
     return submission;
   }
 
@@ -704,6 +735,7 @@ export class OperationsService {
       data: { status: newStatus },
     });
 
+    this.invalidateOpCache(id);
     return opening;
   }
 
@@ -735,14 +767,17 @@ export class OperationsService {
       });
     }
 
+    this.invalidateOpCache(id);
     return updated;
   }
 
   async deleteTechnicalOpening(id: string, toId: string) {
     await this.findOne(id);
-    return this.prisma.technicalOpening.delete({
+    const deleted = await this.prisma.technicalOpening.delete({
       where: { id: toId },
     });
+    this.invalidateOpCache(id);
+    return deleted;
   }
 
   // ━━━ 5. التظلم القانوني + توليد الـ Hash Code ━━━
@@ -774,6 +809,7 @@ export class OperationsService {
       data: { status: 'GRIEVANCE_FILED' },
     });
 
+    this.invalidateOpCache(id);
     return grievance;
   }
 
@@ -786,24 +822,36 @@ export class OperationsService {
       throw new NotFoundException('التظلم غير موجود');
     }
 
+    let mappedStatus = data.status;
+    if (data.status === 'ACCEPTED') {
+      mappedStatus = 'APPROVED';
+    } else if (data.status === 'PARTIALLY_ACCEPTED') {
+      mappedStatus = 'RESOLVED';
+    } else if (!['PENDING', 'APPROVED', 'FILED', 'RESOLVED', 'REJECTED'].includes(data.status)) {
+      mappedStatus = 'APPROVED';
+    }
+
     const updated = await this.prisma.grievance.update({
       where: { id: grievanceId },
       data: {
-        status: data.status,
+        status: mappedStatus,
         notes: data.notes !== undefined ? data.notes : existing.notes,
         approvedBy: data.approvedBy,
-        approvedAt: data.status === 'APPROVED' || data.status === 'RESOLVED' ? new Date() : undefined,
+        approvedAt: mappedStatus === 'APPROVED' || mappedStatus === 'RESOLVED' ? new Date() : undefined,
       },
     });
 
+    this.invalidateOpCache(id);
     return updated;
   }
 
   async deleteGrievance(id: string, grievanceId: string) {
     await this.findOne(id);
-    return this.prisma.grievance.delete({
+    const deleted = await this.prisma.grievance.delete({
       where: { id: grievanceId },
     });
+    this.invalidateOpCache(id);
+    return deleted;
   }
 
   // ━━━ 6. الفتح المالي والمنافسين مع الترتيب التلقائي ━━━
@@ -837,6 +885,7 @@ export class OperationsService {
       data: { status: 'FINANCIAL_OPENED' },
     });
 
+    this.invalidateOpCache(id);
     return opening;
   }
 
@@ -865,7 +914,7 @@ export class OperationsService {
       });
     }
 
-    return this.prisma.financialOpening.update({
+    const updated = await this.prisma.financialOpening.update({
       where: { id: foId },
       data: {
         openingDate: data.openingDate ? new Date(data.openingDate) : undefined,
@@ -873,13 +922,18 @@ export class OperationsService {
       },
       include: { competitors: { orderBy: { rank: 'asc' } } },
     });
+
+    this.invalidateOpCache(id);
+    return updated;
   }
 
   async deleteFinancialOpening(id: string, foId: string) {
     await this.findOne(id);
-    return this.prisma.financialOpening.delete({
+    const deleted = await this.prisma.financialOpening.delete({
       where: { id: foId },
     });
+    this.invalidateOpCache(id);
+    return deleted;
   }
 
   // ━━━ 7. الترسية والفوز ━━━
@@ -910,6 +964,7 @@ export class OperationsService {
       data: { status: 'AWARDED' },
     });
 
+    this.invalidateOpCache(id);
     return award;
   }
 
@@ -934,6 +989,7 @@ export class OperationsService {
       });
     }
 
+    this.invalidateOpCache(id);
     return updated;
   }
 
@@ -946,7 +1002,9 @@ export class OperationsService {
         data: { isWinner: false },
       });
     }
-    return this.prisma.award.delete({ where: { id: awardId } });
+    const deleted = await this.prisma.award.delete({ where: { id: awardId } });
+    this.invalidateOpCache(id);
+    return deleted;
   }
 
   // ━━━ 8. أمر التوريد ━━━
@@ -981,12 +1039,13 @@ export class OperationsService {
       data: { status: 'SUPPLY_IN_PROGRESS' },
     });
 
+    this.invalidateOpCache(id);
     return order;
   }
 
   async updateSupplyOrder(id: string, orderId: string, data: any) {
     await this.findOne(id);
-    return this.prisma.supplyOrder.update({
+    const updated = await this.prisma.supplyOrder.update({
       where: { id: orderId },
       data: {
         orderNumber: data.orderNumber,
@@ -994,11 +1053,15 @@ export class OperationsService {
         notes: data.notes,
       },
     });
+    this.invalidateOpCache(id);
+    return updated;
   }
 
   async deleteSupplyOrder(id: string, orderId: string) {
     await this.findOne(id);
-    return this.prisma.supplyOrder.delete({ where: { id: orderId } });
+    const deleted = await this.prisma.supplyOrder.delete({ where: { id: orderId } });
+    this.invalidateOpCache(id);
+    return deleted;
   }
 
   // ━━━ 9. إذن إضافة وتوريد (تأثير على المخزون) ━━━
@@ -1236,6 +1299,7 @@ export class OperationsService {
     }
 
     const cleanFileName = customName?.trim() || decodedOriginalName.replace(/\.[^/.]+$/, '');
+    this.invalidateOpCache(operationId);
 
     return this.prisma.operationDocument.create({
       data: {
@@ -1263,6 +1327,7 @@ export class OperationsService {
 
   async updateDocument(operationId: string, docId: string, customName: string) {
     const doc = await this.getDocument(operationId, docId);
+    this.invalidateOpCache(operationId);
     return this.prisma.operationDocument.update({
       where: { id: doc.id },
       data: {
@@ -1273,6 +1338,7 @@ export class OperationsService {
 
   async deleteDocument(operationId: string, docId: string) {
     const doc = await this.getDocument(operationId, docId);
+    this.invalidateOpCache(operationId);
     if (doc.filePath && existsSync(doc.filePath)) {
       try {
         unlinkSync(doc.filePath);
@@ -1540,4 +1606,130 @@ export class OperationsService {
       size: fallbackBuffer.length,
     };
   }
+
+  /**
+   * تحويل مستند Word (.docx) الأصلي المحدث مباشرة إلى PDF عالي الدقة عبر محرك Microsoft Word
+   */
+  async convertDocxBufferToPdf(docxBuffer: Buffer): Promise<Buffer> {
+    const randomId = Date.now() + '_' + Math.random().toString(36).substring(7);
+    const tempDocx = path.join(os.tmpdir(), `goldenerp_doc_${randomId}.docx`);
+    const tempPdf = path.join(os.tmpdir(), `goldenerp_doc_${randomId}.pdf`);
+
+    await fs.promises.writeFile(tempDocx, docxBuffer);
+
+    const escapedDocx = tempDocx.replace(/'/g, "''");
+    const escapedPdf = tempPdf.replace(/'/g, "''");
+
+    const psCommand = `
+      $word = New-Object -ComObject Word.Application;
+      $word.Visible = $false;
+      try {
+        $doc = $word.Documents.Open('${escapedDocx}');
+        $doc.SaveAs([ref]'${escapedPdf}', [ref]17);
+        $doc.Close([ref]$false);
+      } finally {
+        $word.Quit();
+        [System.Runtime.InteropServices.Marshal]::ReleaseComObject($word) | Out-Null;
+      }
+    `;
+
+    return new Promise((resolve, reject) => {
+      exec(
+        `powershell -NoProfile -NonInteractive -Command "${psCommand.replace(/\r?\n/g, ' ')}"`,
+        async (err, stdout, stderr) => {
+          try {
+            await fs.promises.unlink(tempDocx);
+          } catch {}
+
+          if (err || !fs.existsSync(tempPdf)) {
+            try {
+              await fs.promises.unlink(tempPdf);
+            } catch {}
+            return reject(err || new Error(stderr || 'فشل تحويل المستند إلى PDF عبر محرك Word'));
+          }
+
+          try {
+            const pdfBuf = await fs.promises.readFile(tempPdf);
+            await fs.promises.unlink(tempPdf);
+            resolve(pdfBuf);
+          } catch (readErr) {
+            reject(readErr);
+          }
+        },
+      );
+    });
+  }
+
+  async uploadCloudPdf(pdfBuffer: Buffer, fileName?: string): Promise<{ success: boolean; url: string; provider: string }> {
+    const finalName = fileName || `goldenerp_doc_${Date.now()}.pdf`;
+
+    // 1. Primary: Catbox.moe (Free permanent direct PDF file hosting - opens PDF immediately on mobile camera scan)
+    try {
+      const form = new FormData();
+      form.append('reqtype', 'fileupload');
+      form.append('fileToUpload', new Blob([new Uint8Array(pdfBuffer)], { type: 'application/pdf' }), finalName);
+
+      const res = await fetch('https://catbox.moe/user/api.php', {
+        method: 'POST',
+        body: form,
+        signal: AbortSignal.timeout(20000),
+      });
+
+      if (res.ok) {
+        const text = (await res.text()).trim();
+        if (text.startsWith('http')) {
+          return { success: true, url: text, provider: 'catbox' };
+        }
+      }
+    } catch (catboxErr: any) {
+      console.warn('Catbox upload failed, trying fallback:', catboxErr?.message);
+    }
+
+    // 2. Fallback: tmpfiles.org direct download
+    try {
+      const form = new FormData();
+      form.append('file', new Blob([new Uint8Array(pdfBuffer)], { type: 'application/pdf' }), finalName);
+
+      const res = await fetch('https://tmpfiles.org/api/v1/upload', {
+        method: 'POST',
+        body: form,
+        signal: AbortSignal.timeout(15000),
+      });
+
+      if (res.ok) {
+        const json: any = await res.json();
+        if (json?.data?.url) {
+          const directUrl = json.data.url.replace('tmpfiles.org/', 'tmpfiles.org/dl/');
+          return { success: true, url: directUrl, provider: 'tmpfiles' };
+        }
+      }
+    } catch (tmpErr: any) {
+      console.warn('tmpfiles upload failed:', tmpErr?.message);
+    }
+
+    // 2. Fallback: tmpfiles.org
+    try {
+      const form = new FormData();
+      form.append('file', new Blob([new Uint8Array(pdfBuffer)], { type: 'application/pdf' }), finalName);
+
+      const res = await fetch('https://tmpfiles.org/api/v1/upload', {
+        method: 'POST',
+        body: form,
+        signal: AbortSignal.timeout(15000),
+      });
+
+      if (res.ok) {
+        const json: any = await res.json();
+        if (json?.data?.url) {
+          const directUrl = json.data.url.replace('tmpfiles.org/', 'tmpfiles.org/dl/');
+          return { success: true, url: directUrl, provider: 'tmpfiles' };
+        }
+      }
+    } catch (tmpErr: any) {
+      console.warn('tmpfiles upload failed:', tmpErr?.message);
+    }
+
+    throw new BadRequestException('تعذر رفع الملف إلى خدمة التخزين السحابي المجانية حالياً، يرجى المحاولة لاحقاً');
+  }
 }
+

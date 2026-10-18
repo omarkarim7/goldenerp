@@ -3,7 +3,7 @@ import type { NextConfig } from "next";
 const API_DESTINATION =
   process.env.API_URL ||
   process.env.NEXT_PUBLIC_API_URL ||
-  "https://goldenerp-api.vercel.app";
+  "http://localhost:4000";
 const cleanApiDestination = API_DESTINATION.replace(/\/api\/?$/, "").replace(/\/+$/, "");
 
 const nextConfig: NextConfig = {
