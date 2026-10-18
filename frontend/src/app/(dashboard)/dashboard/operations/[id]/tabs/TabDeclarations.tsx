@@ -21,7 +21,7 @@ import { StepFooterNav } from "./StepFooterNav";
 import { generateSmartOutgoingRef, BarcodeVisual } from "./letter-utils";
 import JSZip from "jszip";
 import QRCode from "qrcode";
-import { convertDocxBlobToPdfBlob } from "./client-pdf";
+import { getPdfBlobFromDocx } from "./client-pdf";
 
 export type DeclarationType = "specs" | "insurance" | "general_letter";
 
@@ -472,25 +472,10 @@ export function TabDeclarations({
     });
   };
 
-  // ━━━ تحويل المستند الأصلي إلى PDF عبر محرك Microsoft Word الرسمي أو محول العميل ━━━
+  // ━━━ تحويل المستند الأصلي إلى PDF ذكي وفوري ━━━
   const generateDeclarationPdfBlob = async (type: DeclarationType = activeDeclType): Promise<Blob> => {
     const docxBlob = await generateDeclarationDocxBlob(type);
-    try {
-      const formData = new FormData();
-      formData.append("file", docxBlob, `declaration_${type}_${registrationNumber}.docx`);
-
-      const res = await api.post("/operations/convert-docx-to-pdf", formData, {
-        headers: { "Content-Type": "multipart/form-data" },
-        responseType: "blob",
-        timeout: 8000,
-      });
-      if (res.data && res.data.size > 1000) {
-        return res.data;
-      }
-    } catch (err) {
-      console.warn("Backend PDF conversion unavailable or timed out, converting client-side:", err);
-    }
-    return await convertDocxBlobToPdfBlob(docxBlob);
+    return await getPdfBlobFromDocx(docxBlob, `declaration_${type}_${registrationNumber}.docx`);
   };
 
   // ━━━ رفع وتوثيق النسخة الرقمية المعتمدة سحابياً (مرة واحدة لمنع التكرار) ━━━

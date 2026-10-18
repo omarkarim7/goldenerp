@@ -22,7 +22,7 @@ import { generateSmartOutgoingRef, BarcodeVisual } from "./letter-utils";
 import { DocxViewer } from "@/components/docx-viewer";
 import JSZip from "jszip";
 import QRCode from "qrcode";
-import { convertDocxBlobToPdfBlob } from "./client-pdf";
+import { getPdfBlobFromDocx } from "./client-pdf";
 
 export type FinalGuaranteeLetterType =
   | "CASH"
@@ -445,22 +445,7 @@ export function TabFinalGuarantee({
 
   const generateGuaranteePdfBlob = async (type: FinalGuaranteeLetterType = activeLetterType): Promise<Blob> => {
     const docxBlob = await generateGuaranteeDocxBlob(type);
-    try {
-      const formData = new FormData();
-      formData.append("file", docxBlob, `final_guarantee_${type}_${registrationNumber}.docx`);
-
-      const res = await api.post("/operations/convert-docx-to-pdf", formData, {
-        headers: { "Content-Type": "multipart/form-data" },
-        responseType: "blob",
-        timeout: 8000,
-      });
-      if (res.data && res.data.size > 1000) {
-        return res.data;
-      }
-    } catch (err) {
-      console.warn("Backend PDF conversion unavailable or timed out, converting client-side:", err);
-    }
-    return await convertDocxBlobToPdfBlob(docxBlob);
+    return await getPdfBlobFromDocx(docxBlob, `final_guarantee_${type}_${registrationNumber}.docx`);
   };
 
   const handleUploadToCloud = async (type: FinalGuaranteeLetterType = activeLetterType, forceReupload = false) => {

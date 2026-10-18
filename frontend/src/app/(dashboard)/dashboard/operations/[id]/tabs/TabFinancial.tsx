@@ -21,7 +21,7 @@ import { StepFooterNav } from "./StepFooterNav";
 import { generateSmartOutgoingRef, BarcodeVisual } from "./letter-utils";
 import JSZip from "jszip";
 import QRCode from "qrcode";
-import { convertDocxBlobToPdfBlob } from "./client-pdf";
+import { getPdfBlobFromDocx } from "./client-pdf";
 
 // ━━━ تعريف بيانات بنود وبدائل العرض المالي ━━━
 export interface FinancialVariant {
@@ -955,20 +955,7 @@ export function TabFinancial({
     toast.info("جاري تحويل العرض المالي ورفعه سحابياً لاعتماد رمز QR المباشر... ⏳");
 
     try {
-      const docxBlob = await generateFinancialDocxBlob();
-      const formData = new FormData();
-      formData.append(
-        "file",
-        docxBlob,
-        `financial_offer_${registrationNumber || op.serialNumber}.docx`
-      );
-
-      const convertRes = await api.post("/operations/convert-docx-to-pdf", formData, {
-        headers: { "Content-Type": "multipart/form-data" },
-        responseType: "blob",
-      });
-
-      const pdfBlob = new Blob([convertRes.data], { type: "application/pdf" });
+      const pdfBlob = await generateFinancialPdfBlob();
       const uploadForm = new FormData();
       uploadForm.append(
         "file",
@@ -1014,29 +1001,13 @@ export function TabFinancial({
   };
 
 
-  // ━━━ تحويل المستند الأصلي إلى PDF عبر محرك Microsoft Word الرسمي أو محول العميل ━━━
+  // ━━━ تحويل المستند الأصلي إلى PDF ذكي وفوري ━━━
   const generateFinancialPdfBlob = async (): Promise<Blob> => {
     const docxBlob = await generateFinancialDocxBlob();
-    try {
-      const formData = new FormData();
-      formData.append(
-        "file",
-        docxBlob,
-        `financial_offer_${registrationNumber || op.serialNumber}.docx`
-      );
-
-      const res = await api.post("/operations/convert-docx-to-pdf", formData, {
-        headers: { "Content-Type": "multipart/form-data" },
-        responseType: "blob",
-        timeout: 8000,
-      });
-      if (res.data && res.data.size > 1000) {
-        return res.data;
-      }
-    } catch (err) {
-      console.warn("Backend PDF conversion unavailable or timed out, converting client-side:", err);
-    }
-    return await convertDocxBlobToPdfBlob(docxBlob);
+    return await getPdfBlobFromDocx(
+      docxBlob,
+      `financial_offer_${registrationNumber || op.serialNumber}.docx`
+    );
   };
 
   // ━━━ تحميل المعاينة الرسمية من محرك Word الأصلي ━━━
@@ -1051,8 +1022,8 @@ export function TabFinancial({
       const url = URL.createObjectURL(pdfBlob);
       setPreviewPdfUrl(url);
     } catch (err: any) {
-      console.error("فشل تحويل مستند الوورد الأصلي عبر Word COM:", err);
-      toast.error("تعذر تجهيز المعاينة: " + (err?.response?.data?.message || err?.message || ""));
+      console.error("فشل تجهيز معاينة العرض المالي:", err);
+      toast.error("تعذر تجهيز المعاينة: " + (err?.message || ""));
     } finally {
       setRenderingDocx(false);
     }

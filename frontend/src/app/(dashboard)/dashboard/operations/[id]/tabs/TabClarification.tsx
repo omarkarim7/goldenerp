@@ -23,7 +23,7 @@ import { GOLDEN_STAMP_BASE64, GOLDEN_LOGO_BASE64 } from "./stamp-assets";
 import { DocxViewer } from "@/components/docx-viewer";
 import JSZip from "jszip";
 import QRCode from "qrcode";
-import { convertDocxBlobToPdfBlob } from "./client-pdf";
+import { getPdfBlobFromDocx } from "./client-pdf";
 
 export interface ClarificationInquiryItem {
   id: string;
@@ -645,25 +645,10 @@ export function TabClarification({
     return await zip.generateAsync({ type: "blob" });
   };
 
-  // ━━━ تحويل وتوليد مستند PDF عالي الدقة (الخادم مع محول العميل الفوري) ━━━
+  // ━━━ تحويل وتوليد مستند PDF ذكي وفوري ━━━
   const generateClarificationPdfBlob = async (): Promise<Blob> => {
     const docxBlob = await generateClarificationDocxBlob();
-    try {
-      const formData = new FormData();
-      formData.append("file", docxBlob, `clarification_${registrationNumber}.docx`);
-
-      const res = await api.post("/operations/convert-docx-to-pdf", formData, {
-        headers: { "Content-Type": "multipart/form-data" },
-        responseType: "blob",
-        timeout: 8000,
-      });
-      if (res.data && res.data.size > 1000) {
-        return res.data;
-      }
-    } catch (err) {
-      console.warn("Backend PDF conversion unavailable or timed out, converting client-side:", err);
-    }
-    return await convertDocxBlobToPdfBlob(docxBlob);
+    return await getPdfBlobFromDocx(docxBlob, `clarification_${registrationNumber}.docx`);
   };
 
   // ━━━ رفع وتوثيق النسخة الرقمية المعتمدة سحابياً (مرة واحدة لمنع التكرار) ━━━

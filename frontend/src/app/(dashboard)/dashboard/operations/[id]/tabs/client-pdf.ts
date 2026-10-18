@@ -3,6 +3,7 @@
 import { jsPDF } from "jspdf";
 import html2canvas from "html2canvas";
 import { renderAsync } from "docx-preview";
+import api from "@/lib/api";
 
 /**
  * Universal Client-Side DOCX to PDF Converter
@@ -92,4 +93,39 @@ export async function convertDocxBlobToPdfBlob(docxBlob: Blob): Promise<Blob> {
       document.body.removeChild(container);
     }
   }
+}
+
+/**
+ * Smart PDF Generator:
+ * - When running on Vercel or any remote domain: Converts directly in the browser using convertDocxBlobToPdfBlob.
+ *   This avoids unnecessary 503 network errors in the browser console.
+ * - When running on local Windows (localhost): Attempts the local MS Word COM endpoint, with automatic fallback.
+ */
+export async function getPdfBlobFromDocx(
+  docxBlob: Blob,
+  fileName: string = "document.docx"
+): Promise<Blob> {
+  const isLocalWindowsServer =
+    typeof window !== "undefined" &&
+    (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1");
+
+  if (isLocalWindowsServer) {
+    try {
+      const formData = new FormData();
+      formData.append("file", docxBlob, fileName);
+      const res = await api.post("/operations/convert-docx-to-pdf", formData, {
+        headers: { "Content-Type": "multipart/form-data" },
+        responseType: "blob",
+        timeout: 6000,
+      });
+      if (res.data && res.data.size > 1000) {
+        return res.data;
+      }
+    } catch (err) {
+      console.warn("Local Word COM conversion failed, using in-browser converter:", err);
+    }
+  }
+
+  // On Vercel, cloud domain, or fallback: Instant client-side conversion
+  return await convertDocxBlobToPdfBlob(docxBlob);
 }
