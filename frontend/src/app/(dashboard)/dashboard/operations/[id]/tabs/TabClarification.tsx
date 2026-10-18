@@ -23,6 +23,7 @@ import { GOLDEN_STAMP_BASE64, GOLDEN_LOGO_BASE64 } from "./stamp-assets";
 import { DocxViewer } from "@/components/docx-viewer";
 import JSZip from "jszip";
 import QRCode from "qrcode";
+import { convertDocxBlobToPdfBlob } from "./client-pdf";
 
 export interface ClarificationInquiryItem {
   id: string;
@@ -644,17 +645,25 @@ export function TabClarification({
     return await zip.generateAsync({ type: "blob" });
   };
 
-  // ━━━ تحويل وتوليد مستند PDF عالي الدقة مباشرة عبر Word بالباك إند ━━━
+  // ━━━ تحويل وتوليد مستند PDF عالي الدقة (الخادم مع محول العميل الفوري) ━━━
   const generateClarificationPdfBlob = async (): Promise<Blob> => {
     const docxBlob = await generateClarificationDocxBlob();
-    const formData = new FormData();
-    formData.append("file", docxBlob, `clarification_${registrationNumber}.docx`);
+    try {
+      const formData = new FormData();
+      formData.append("file", docxBlob, `clarification_${registrationNumber}.docx`);
 
-    const res = await api.post("/operations/convert-docx-to-pdf", formData, {
-      headers: { "Content-Type": "multipart/form-data" },
-      responseType: "blob",
-    });
-    return res.data;
+      const res = await api.post("/operations/convert-docx-to-pdf", formData, {
+        headers: { "Content-Type": "multipart/form-data" },
+        responseType: "blob",
+        timeout: 8000,
+      });
+      if (res.data && res.data.size > 1000) {
+        return res.data;
+      }
+    } catch (err) {
+      console.warn("Backend PDF conversion unavailable or timed out, converting client-side:", err);
+    }
+    return await convertDocxBlobToPdfBlob(docxBlob);
   };
 
   // ━━━ رفع وتوثيق النسخة الرقمية المعتمدة سحابياً (مرة واحدة لمنع التكرار) ━━━
@@ -730,7 +739,7 @@ export function TabClarification({
   const handleDownloadPdf = async () => {
     setDownloadingPdf(true);
     try {
-      toast.info("جاري تحويل مستند الوورد الأصلي إلى PDF بأعلى دقة رسمية...");
+      toast.info("جاري تحويل وتجهيز مستند التوضيح بصيغة PDF الرسمية...");
       const pdfBlob = await generateClarificationPdfBlob();
       const downloadUrl = URL.createObjectURL(pdfBlob);
       const a = document.createElement("a");
@@ -741,10 +750,10 @@ export function TabClarification({
       document.body.removeChild(a);
       URL.revokeObjectURL(downloadUrl);
 
-      toast.success("تم تحويل وتنزيل ملف الـ PDF الرسمي بنجاح مطابقاً للوورد 100%! 📑✨");
+      toast.success("تم تنزيل ملف الـ PDF الرسمي بنجاح! 📑✨");
     } catch (err: any) {
-      toast.info("محرك تحويل PDF متاح محلياً، تم تنزيل ملف الوورد المعتمد (.docx) بدلاً منه 📄");
-      await handleDownloadDocx();
+      console.error("PDF generation failed:", err);
+      toast.error("فشل تحويل وتنزيل ملف PDF: " + (err?.message || ""));
     } finally {
       setDownloadingPdf(false);
     }

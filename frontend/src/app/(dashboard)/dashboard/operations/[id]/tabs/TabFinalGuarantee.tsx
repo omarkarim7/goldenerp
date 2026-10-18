@@ -22,6 +22,7 @@ import { generateSmartOutgoingRef, BarcodeVisual } from "./letter-utils";
 import { DocxViewer } from "@/components/docx-viewer";
 import JSZip from "jszip";
 import QRCode from "qrcode";
+import { convertDocxBlobToPdfBlob } from "./client-pdf";
 
 export type FinalGuaranteeLetterType =
   | "CASH"
@@ -444,14 +445,22 @@ export function TabFinalGuarantee({
 
   const generateGuaranteePdfBlob = async (type: FinalGuaranteeLetterType = activeLetterType): Promise<Blob> => {
     const docxBlob = await generateGuaranteeDocxBlob(type);
-    const formData = new FormData();
-    formData.append("file", docxBlob, `final_guarantee_${type}_${registrationNumber}.docx`);
+    try {
+      const formData = new FormData();
+      formData.append("file", docxBlob, `final_guarantee_${type}_${registrationNumber}.docx`);
 
-    const res = await api.post("/operations/convert-docx-to-pdf", formData, {
-      headers: { "Content-Type": "multipart/form-data" },
-      responseType: "blob",
-    });
-    return res.data;
+      const res = await api.post("/operations/convert-docx-to-pdf", formData, {
+        headers: { "Content-Type": "multipart/form-data" },
+        responseType: "blob",
+        timeout: 8000,
+      });
+      if (res.data && res.data.size > 1000) {
+        return res.data;
+      }
+    } catch (err) {
+      console.warn("Backend PDF conversion unavailable or timed out, converting client-side:", err);
+    }
+    return await convertDocxBlobToPdfBlob(docxBlob);
   };
 
   const handleUploadToCloud = async (type: FinalGuaranteeLetterType = activeLetterType, forceReupload = false) => {
@@ -587,8 +596,8 @@ export function TabFinalGuarantee({
       URL.revokeObjectURL(url);
       toast.success("تم تحميل مستند PDF بنجاح!");
     } catch (err: any) {
-      toast.info("محرك PDF متاح محلياً، تم تنزيل ملف الوورد المعتمد (.docx) بدلاً منه 📄");
-      await handleDownloadDocx(type);
+      console.error("PDF export failed:", err);
+      toast.error("فشل تصدير ملف PDF: " + (err?.message || ""));
     } finally {
       setDownloadingPdf(false);
     }
