@@ -18,7 +18,7 @@ import { toast } from "sonner";
 import api from "@/lib/api";
 import { Operation, SectionCard, formatDate, tafqeetArabic, formatCurrency } from "./types";
 import { StepFooterNav } from "./StepFooterNav";
-import { generateSmartOutgoingRef, BarcodeVisual } from "./letter-utils";
+import { generateSmartOutgoingRef, BarcodeVisual, cleanAllDocxXml } from "./letter-utils";
 import JSZip from "jszip";
 import QRCode from "qrcode";
 import { getPdfBlobFromDocx } from "./client-pdf";
@@ -830,6 +830,9 @@ export function TabFinancial({
       ftrXml = ftrXml.replace(/<w:color\s+w:val=\"(red|FF0000)\"[^>]*\/>/g, "");
       zip.file("word/footer1.xml", ftrXml);
     }
+
+    // إزالة كافة علامات التحديد الأحمر والعلامات المائية والصور التالفة
+    await cleanAllDocxXml(zip);
 
     return await zip.generateAsync({
       type: "blob",

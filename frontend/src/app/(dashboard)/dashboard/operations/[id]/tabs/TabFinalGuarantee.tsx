@@ -18,7 +18,7 @@ import { toast } from "sonner";
 import api from "@/lib/api";
 import { Operation, SectionCard, DataRow, EmptyState, formatDate, formatCurrency, tafqeetArabic, formatDocFileSize } from "./types";
 import { StepFooterNav } from "./StepFooterNav";
-import { generateSmartOutgoingRef, BarcodeVisual } from "./letter-utils";
+import { generateSmartOutgoingRef, BarcodeVisual, cleanAllDocxXml } from "./letter-utils";
 import { DocxViewer } from "@/components/docx-viewer";
 import JSZip from "jszip";
 import QRCode from "qrcode";
@@ -424,18 +424,8 @@ export function TabFinalGuarantee({
     }
 
     // Strip red highlights & colors in all XML files
-    for (const fileName of Object.keys(zip.files)) {
-      if (fileName.endsWith(".xml")) {
-        let xml = await zip.file(fileName)!.async("text");
-        xml = xml.replace(/<w:highlight\s+w:val="red"\s*\/>/gi, "");
-        xml = xml.replace(/<w:color\s+w:val="(?:FF0000|red)"\s*\/>/gi, "");
-        zip.file(fileName, xml);
-      }
-    }
-
-    docXml = docXml.replace(/<w:highlight\s+[^>]*\/>/g, "");
-    docXml = docXml.replace(/<w:color\s+w:val=\"(red|FF0000)\"[^>]*\/>/g, "");
-    zip.file("word/document.xml", docXml);
+    // إزالة كافة علامات التحديد الأحمر والعلامات المائية والصور التالفة
+    await cleanAllDocxXml(zip);
 
     return await zip.generateAsync({
       type: "blob",

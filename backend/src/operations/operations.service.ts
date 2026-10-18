@@ -1612,7 +1612,7 @@ export class OperationsService {
    */
   async convertDocxBufferToPdf(docxBuffer: Buffer): Promise<Buffer> {
     if (process.platform !== 'win32') {
-      throw new Error('Microsoft Word conversion engine is only available on Windows environments.');
+      throw new Error('محرك Microsoft Word متاح فقط على بيئة تشغيل Windows مع تثبيت Office.');
     }
     const randomId = Date.now() + '_' + Math.random().toString(36).substring(7);
     const tempDocx = path.join(os.tmpdir(), `goldenerp_doc_${randomId}.docx`);
@@ -1626,19 +1626,26 @@ export class OperationsService {
     const psCommand = `
       $word = New-Object -ComObject Word.Application;
       $word.Visible = $false;
+      $word.DisplayAlerts = 0;
+      $doc = $null;
       try {
-        $doc = $word.Documents.Open('${escapedDocx}');
+        $doc = $word.Documents.Open('${escapedDocx}', $false, $true);
         $doc.SaveAs([ref]'${escapedPdf}', [ref]17);
-        $doc.Close([ref]$false);
+        $doc.Close([ref]0);
       } finally {
-        $word.Quit();
+        $word.Quit([ref]0);
+        if ($doc -ne $null) {
+          [System.Runtime.InteropServices.Marshal]::ReleaseComObject($doc) | Out-Null;
+        }
         [System.Runtime.InteropServices.Marshal]::ReleaseComObject($word) | Out-Null;
+        [System.GC]::Collect();
       }
     `;
 
     return new Promise((resolve, reject) => {
       exec(
         `powershell -NoProfile -NonInteractive -Command "${psCommand.replace(/\r?\n/g, ' ')}"`,
+        { timeout: 45000, maxBuffer: 50 * 1024 * 1024 },
         async (err, stdout, stderr) => {
           try {
             await fs.promises.unlink(tempDocx);

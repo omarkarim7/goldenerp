@@ -155,3 +155,40 @@ export function BarcodeVisual({
     </div>
   );
 }
+
+/**
+ * Completely purges red highlights, red text colors, and any broken/unwanted
+ * picture watermarks (such as WordPictureWatermark) from all XML parts in a DOCX archive.
+ */
+export async function cleanAllDocxXml(zip: any): Promise<void> {
+  if (!zip || !zip.files) return;
+  for (const fileName of Object.keys(zip.files)) {
+    if (fileName.endsWith(".xml")) {
+      const entry = zip.file(fileName);
+      if (!entry) continue;
+      let xml = await entry.async("text");
+      let changed = false;
+
+      // 1. Remove red highlights and colorings
+      if (xml.includes("highlight") || xml.includes("color")) {
+        xml = xml.replace(/<w:highlight\s+[^>]*\/>/gi, "");
+        xml = xml.replace(/<w:color\s+w:val="(?:red|FF0000)"[^>]*\/>/gi, "");
+        changed = true;
+      }
+
+      // 2. Remove all picture watermarks and unwanted VML shapes
+      if (xml.includes("WordPictureWatermark") || xml.includes("WordWatermark")) {
+        xml = xml.replace(/<w:pict\b[^>]*>[\s\S]*?WordPictureWatermark[\s\S]*?<\/w:pict>/gi, "");
+        xml = xml.replace(/<v:shape\b[^>]*WordPictureWatermark[\s\S]*?<\/v:shape>/gi, "");
+        xml = xml.replace(/<w:pict\b[^>]*>[\s\S]*?WordWatermark[\s\S]*?<\/w:pict>/gi, "");
+        xml = xml.replace(/<v:shape\b[^>]*WordWatermark[\s\S]*?<\/v:shape>/gi, "");
+        changed = true;
+      }
+
+      if (changed) {
+        zip.file(fileName, xml);
+      }
+    }
+  }
+}
+

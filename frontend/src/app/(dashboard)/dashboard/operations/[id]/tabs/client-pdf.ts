@@ -96,36 +96,39 @@ export async function convertDocxBlobToPdfBlob(docxBlob: Blob): Promise<Blob> {
 }
 
 /**
- * Smart PDF Generator:
- * - When running on Vercel or any remote domain: Converts directly in the browser using convertDocxBlobToPdfBlob.
- *   This avoids unnecessary 503 network errors in the browser console.
- * - When running on local Windows (localhost): Attempts the local MS Word COM endpoint, with automatic fallback.
+ * Genuine Microsoft Word PDF Generator:
+ * Directly sends the generated DOCX to the backend /operations/convert-docx-to-pdf endpoint
+ * which executes native Microsoft Word (Word.Application COM) on Windows.
+ * Ensures 100% authentic Word typography, layout, borders, and margins without any browser distortion.
  */
 export async function getPdfBlobFromDocx(
   docxBlob: Blob,
   fileName: string = "document.docx"
 ): Promise<Blob> {
-  const isLocalWindowsServer =
-    typeof window !== "undefined" &&
-    (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1");
-
-  if (isLocalWindowsServer) {
-    try {
-      const formData = new FormData();
-      formData.append("file", docxBlob, fileName);
-      const res = await api.post("/operations/convert-docx-to-pdf", formData, {
-        headers: { "Content-Type": "multipart/form-data" },
-        responseType: "blob",
-        timeout: 6000,
-      });
-      if (res.data && res.data.size > 1000) {
-        return res.data;
-      }
-    } catch (err) {
-      console.warn("Local Word COM conversion failed, using in-browser converter:", err);
+  try {
+    const formData = new FormData();
+    formData.append("file", docxBlob, fileName);
+    const res = await api.post("/operations/convert-docx-to-pdf", formData, {
+      headers: { "Content-Type": "multipart/form-data" },
+      responseType: "blob",
+      timeout: 45000, // 45s for native Microsoft Word COM processing
+    });
+    if (res.data && res.data.size > 1000) {
+      return res.data;
     }
+    throw new Error("استجابة محرك Microsoft Word غير صالحة");
+  } catch (err: any) {
+    let errorDetail = err?.response?.data?.message || err?.message || "";
+    if (typeof errorDetail !== "string") {
+      errorDetail = "تعذر الاتصال بالسيرفر";
+    }
+    console.error("فشل تحويل مستند الوورد عبر محرك Microsoft Word:", err);
+    throw new Error(
+      "فشل تشغيل محرك Microsoft Word لتحويل المستند: " +
+      (errorDetail.includes("503") || errorDetail.includes("Windows")
+        ? "محرك Microsoft Word يتطلب تشغيل السيرفر على بيئة Windows مع تثبيت Office (مثل جهازك المحلي)."
+        : errorDetail)
+    );
   }
-
-  // On Vercel, cloud domain, or fallback: Instant client-side conversion
-  return await convertDocxBlobToPdfBlob(docxBlob);
 }
+

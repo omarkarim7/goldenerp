@@ -23,7 +23,7 @@ import {
   formatDocFileSize, tafqeetArabic
 } from "./types";
 import { StepFooterNav } from "./StepFooterNav";
-import { generateSmartOutgoingRef, BarcodeVisual } from "./letter-utils";
+import { generateSmartOutgoingRef, BarcodeVisual, cleanAllDocxXml } from "./letter-utils";
 import JSZip from "jszip";
 import QRCode from "qrcode";
 import { getPdfBlobFromDocx } from "./client-pdf";
@@ -714,14 +714,8 @@ export function TabBooklet({
       zip.file("word/footer1.xml", ftrXml);
     }
 
-    for (const fileName of Object.keys(zip.files)) {
-      if (fileName.endsWith(".xml")) {
-        let xml = await zip.file(fileName)!.async("text");
-        xml = xml.replace(/<w:highlight\s+w:val="red"\s*\/>/gi, "");
-        xml = xml.replace(/<w:color\s+w:val="(?:FF0000|red)"\s*\/>/gi, "");
-        zip.file(fileName, xml);
-      }
-    }
+    // إزالة كافة علامات التحديد الأحمر والعلامات المائية والصور التالفة
+    await cleanAllDocxXml(zip);
 
     return await zip.generateAsync({
       type: "blob",
