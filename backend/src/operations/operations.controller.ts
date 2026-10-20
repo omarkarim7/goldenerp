@@ -551,6 +551,19 @@ export class OperationsController {
     }
   }
 
+  @Post('open-in-word')
+  @UseInterceptors(
+    FileInterceptor('file', {
+      limits: { fileSize: 50 * 1024 * 1024 },
+    }),
+  )
+  async openInWord(@UploadedFile() file: Express.Multer.File) {
+    if (!file || !file.buffer) {
+      throw new BadRequestException('ملف Word (.docx) مطلوب للفتح');
+    }
+    return this.operationsService.openDocxInDesktopWord(file.buffer);
+  }
+
   @Post('upload-cloud-pdf')
   @UseInterceptors(
     FileInterceptor('file', {

@@ -33,6 +33,7 @@ import {
 import JSZip from "jszip";
 import QRCode from "qrcode";
 import { getPdfBlobFromDocx } from "./client-pdf";
+import { OnlyOfficeDocViewer } from "@/components/OnlyOfficeDocViewer";
 
 export type FinalGuaranteeLetterType =
   | "CASH"
@@ -182,6 +183,7 @@ export function TabFinalGuarantee({
   const [previewModalOpen, setPreviewModalOpen] = useState(false);
   const [previewPdfUrl, setPreviewPdfUrl] = useState<string | null>(null);
   const [previewDocxBlob, setPreviewDocxBlob] = useState<Blob | null>(null);
+  const [previewPdfBlob, setPreviewPdfBlob] = useState<Blob | null>(null);
   const [renderingDocx, setRenderingDocx] = useState(false);
   const [downloadingDocx, setDownloadingDocx] = useState(false);
   const [downloadingPdf, setDownloadingPdf] = useState(false);
@@ -445,7 +447,10 @@ export function TabFinalGuarantee({
 
   const generateGuaranteePdfBlob = async (type: FinalGuaranteeLetterType = activeLetterType): Promise<Blob> => {
     const docxBlob = await generateGuaranteeDocxBlob(type);
-    return await getPdfBlobFromDocx(docxBlob, `final_guarantee_${type}_${registrationNumber}.docx`);
+    setPreviewDocxBlob(docxBlob);
+    const pdf = await getPdfBlobFromDocx(docxBlob, `final_guarantee_${type}_${registrationNumber}.docx`);
+    setPreviewPdfBlob(pdf);
+    return pdf;
   };
 
   const handleUploadToCloud = async (type: FinalGuaranteeLetterType = activeLetterType, forceReupload = false) => {
@@ -1540,36 +1545,27 @@ export function TabFinalGuarantee({
                 </div>
               </div>
 
-              {/* Viewer Container */}
-              <div className="flex-1 overflow-hidden p-2 sm:p-4 bg-slate-200 dark:bg-slate-950 rounded-2xl flex flex-col items-center justify-start min-h-[640px] overflow-y-auto">
+              {/* View: OnlyOffice & Authentic Word Document Viewer */}
+              <div className="flex-1 overflow-hidden min-h-[640px]">
                 {renderingDocx ? (
-                  <div className="my-auto py-28 flex flex-col items-center justify-center gap-4 text-center">
-                    <div className="w-16 h-16 rounded-2xl bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center shadow-lg">
-                      <RefreshCw className="h-8 w-8 animate-spin text-emerald-500" />
+                  <div className="h-full min-h-[600px] flex flex-col items-center justify-center gap-4 text-center bg-slate-950 rounded-2xl">
+                    <div className="w-16 h-16 rounded-2xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-center shadow-lg">
+                      <RefreshCw className="h-8 w-8 animate-spin text-amber-500" />
                     </div>
                     <div className="space-y-1">
-                      <h4 className="text-base font-bold text-foreground">جاري فتح ومعالجة قالب الوورد الأصلي للتأمين النهائي...</h4>
-                      <p className="text-xs text-muted-foreground">
-                        يقوم محرك Microsoft Word بتطبيق المتغيرات وإزالة التمييزات الحمراء وإنتاج صفحات المستند بدقة متناهية
-                      </p>
+                      <h4 className="text-base font-bold text-white">جاري معالجة وتوليد المعاينة الأصلية لمستند الوورد...</h4>
+                      <p className="text-xs text-slate-400">تطبيق الباركود والمتغيرات وإزالة علامات التمييز الحمراء بدقة 100%</p>
                     </div>
                   </div>
-                ) : previewPdfUrl ? (
-                  <div className="w-full h-full flex flex-col items-center">
-                    <iframe
-                      src={`${previewPdfUrl}#toolbar=0&navpanes=0`}
-                      className="w-full h-[78vh] min-h-[640px] rounded-xl border border-slate-700 shadow-2xl bg-white"
-                      title="معاينة مستند الوورد الأصلي المعتمد"
-                    />
-                  </div>
                 ) : (
-                  <div className="my-auto py-20 text-center text-slate-400 space-y-3">
-                    <AlertCircle className="h-10 w-10 mx-auto text-amber-500" />
-                    <p className="text-sm">تعذر تحميل المعاينة تلقائياً</p>
-                    <Button size="sm" onClick={loadOfficialPreview} className="bg-emerald-600 text-white">
-                      إعادة المحاولة
-                    </Button>
-                  </div>
+                  <OnlyOfficeDocViewer
+                    documentTitle={`تأمين_نهائي_${activeLetterType}_${op.externalNumber || op.serialNumber}_${registrationNumber}.docx`}
+                    docxBlob={previewDocxBlob}
+                    pdfBlob={previewPdfBlob}
+                    onDownloadDocx={() => handleDownloadDocx(activeLetterType)}
+                    onDownloadPdf={() => handleDownloadPdf(activeLetterType)}
+                    onPrint={handlePrintWordDocument}
+                  />
                 )}
               </div>
             </div>

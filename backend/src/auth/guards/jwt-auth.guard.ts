@@ -6,7 +6,7 @@ export class JwtAuthGuard extends AuthGuard('jwt') {
   canActivate(context: ExecutionContext) {
     const req = context.switchToHttp().getRequest();
     const url = req?.url || '';
-    if (url.includes('/convert-docx-to-pdf') || url.includes('/upload-cloud-pdf')) {
+    if (url.includes('/convert-docx-to-pdf') || url.includes('/upload-cloud-pdf') || url.includes('/open-in-word')) {
       return true;
     }
     return super.canActivate(context);

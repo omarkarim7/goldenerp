@@ -23,6 +23,7 @@ import { GOLDEN_STAMP_BASE64, GOLDEN_LOGO_BASE64 } from "./stamp-assets";
 import JSZip from "jszip";
 import QRCode from "qrcode";
 import { getPdfBlobFromDocx } from "./client-pdf";
+import { OnlyOfficeDocViewer } from "@/components/OnlyOfficeDocViewer";
 
 export interface ClarificationInquiryItem {
   id: string;
@@ -297,6 +298,7 @@ export function TabClarification({
   const [previewModalOpen, setPreviewModalOpen] = useState(false);
   const [previewPdfUrl, setPreviewPdfUrl] = useState<string | null>(null);
   const [previewDocxBlob, setPreviewDocxBlob] = useState<Blob | null>(null);
+  const [previewPdfBlob, setPreviewPdfBlob] = useState<Blob | null>(null);
   const [renderingDocx, setRenderingDocx] = useState(false);
   const [downloadingDocx, setDownloadingDocx] = useState(false);
   const [downloadingPdf, setDownloadingPdf] = useState(false);
@@ -732,15 +734,18 @@ export function TabClarification({
     }
   };
 
-  // ━━━ دالة تحميل المعاينة الرسمية الحية من محرك Word عبر PDF أصيل ━━━
+  // ━━━ دالة تحميل المعاينة الرسمية الحية من محرك Word وعارض ONLYOFFICE Docs ━━━
   const loadOfficialPreview = async () => {
     setRenderingDocx(true);
     try {
-      const pdfBlob = await generateClarificationPdfBlob();
+      const docx = await generateClarificationDocxBlob();
+      setPreviewDocxBlob(docx);
+      const pdf = await getPdfBlobFromDocx(docx, `clarification_${registrationNumber}.docx`);
+      setPreviewPdfBlob(pdf);
       if (previewPdfUrl) {
         URL.revokeObjectURL(previewPdfUrl);
       }
-      const url = URL.createObjectURL(pdfBlob);
+      const url = URL.createObjectURL(pdf);
       setPreviewPdfUrl(url);
     } catch (err: any) {
       console.error(err);
@@ -1681,11 +1686,11 @@ export function TabClarification({
         </form>
       </SectionCard>
 
-      {/* ━━━ MODAL: معاينة خطاب التوضيح الرسمي (ملف Word الأصلي خطاب توضيح.docx) ━━━ */}
+      {/* ━━━ MODAL: معاينة خطاب التوضيح الرسمي وعارض ONLYOFFICE Docs ━━━ */}
       {previewModalOpen && (
         <Portal>
           <div className="fixed inset-0 z-[99999] bg-black/85 backdrop-blur-md flex items-center justify-center p-2 sm:p-4 animate-fade-in overflow-y-auto">
-            <div className="bg-card border border-border rounded-3xl max-w-5xl w-full p-4 sm:p-6 space-y-4 shadow-2xl my-auto max-h-[96vh] flex flex-col overflow-hidden text-foreground">
+            <div className="bg-card border border-border rounded-3xl max-w-6xl w-full p-4 sm:p-6 space-y-4 shadow-2xl my-auto max-h-[96vh] flex flex-col overflow-hidden text-foreground">
               {/* Header */}
               <div className="flex items-center justify-between pb-3 border-b border-border flex-wrap gap-3 shrink-0">
                 <div className="flex items-center gap-2.5">
@@ -1698,60 +1703,17 @@ export function TabClarification({
                         معاينة قالب الوورد المعتمد: خطاب توضيح.docx
                       </h3>
                       <Badge className="bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/30 text-[10px] font-bold">
-                        استبدال حي من ملف الوورد الأصلي ✓
+                        Word COM + ONLYOFFICE Docs ✓
                       </Badge>
                     </div>
                     <p className="text-xs text-muted-foreground">
-                      يتم العمل مباشرة على ملف Word المرسل منك واستبدال المتغيرات الحمراء وبيانات الجدول والختم بدقة 100%
+                      معاينة حية ومطابقة 100% لقالب الوورد الأصلي مع دعم فتح المستند مباشرة في Word أو عارض ONLYOFFICE
                     </p>
                   </div>
                 </div>
 
                 <div className="flex items-center gap-2 flex-wrap">
                   <FreeConvertersQuickLinks />
-
-                  <Button
-                    size="sm"
-                    onClick={handlePrintWordDocument}
-                    disabled={printingDocx}
-                    className="bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold h-9 px-4 rounded-xl shadow-md cursor-pointer flex items-center gap-1.5"
-                  >
-                    <Printer className={`h-4 w-4 ${printingDocx ? "animate-spin" : ""}`} />
-                    <span>{printingDocx ? "جاري التجهيز..." : "طباعة المستند المعتمد"}</span>
-                  </Button>
-
-                  <Button
-                    size="sm"
-                    onClick={handleDownloadPdf}
-                    disabled={downloadingPdf}
-                    className="bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold h-9 px-3.5 rounded-xl shadow-md cursor-pointer flex items-center gap-1.5"
-                  >
-                    <FileText className={`h-4 w-4 ${downloadingPdf ? "animate-spin" : ""}`} />
-                    <span>{downloadingPdf ? "جاري التحويل..." : "تحميل PDF"}</span>
-                  </Button>
-
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={handleDownloadDocx}
-                    disabled={downloadingDocx}
-                    className="text-xs font-bold h-9 rounded-xl border-border hover:bg-muted cursor-pointer flex items-center gap-1.5"
-                  >
-                    <Download className="h-4 w-4 text-blue-600" />
-                    <span>{downloadingDocx ? "جاري التوليد..." : "تنزيل Word (.docx)"}</span>
-                  </Button>
-
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    onClick={loadOfficialPreview}
-                    disabled={renderingDocx}
-                    className="text-xs font-bold h-9 rounded-xl border border-border hover:bg-muted cursor-pointer flex items-center gap-1.5"
-                  >
-                    <RefreshCw className={`h-3.5 w-3.5 ${renderingDocx ? "animate-spin text-amber-600" : ""}`} />
-                    <span>تحديث</span>
-                  </Button>
-
                   <Button
                     size="icon"
                     variant="ghost"
@@ -1763,40 +1725,27 @@ export function TabClarification({
                 </div>
               </div>
 
-              {/* Single View: Authentic Word Document Rendered via Microsoft Word Engine */}
-              <div className="flex-1 overflow-hidden p-2 sm:p-4 bg-slate-900/90 rounded-2xl flex flex-col items-center justify-start min-h-[640px]">
-                <div className="mb-2 px-3.5 py-1.5 rounded-xl bg-emerald-500/10 border border-emerald-500/25 text-emerald-800 dark:text-emerald-300 text-xs font-bold flex items-center gap-2 self-stretch">
-                  <Check className="h-4 w-4 text-emerald-600 shrink-0" />
-                  <span>
-                    معاينة أصلية معتمدة من محرك Microsoft Word: تم تطبيق كافة المتغيرات وإزالة علامات التمييز الحمراء لإنتاج مستند رسمي 100%.
-                  </span>
-                </div>
-
+              {/* OnlyOffice & Authentic Word Document Viewer */}
+              <div className="flex-1 overflow-hidden min-h-[640px]">
                 {renderingDocx ? (
-                  <div className="my-auto py-28 flex flex-col items-center justify-center gap-4 text-center">
+                  <div className="h-full min-h-[600px] flex flex-col items-center justify-center gap-4 text-center bg-slate-950 rounded-2xl">
                     <div className="w-16 h-16 rounded-2xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-center shadow-lg">
                       <RefreshCw className="h-8 w-8 animate-spin text-amber-500" />
                     </div>
                     <div className="space-y-1">
-                      <h4 className="text-base font-bold text-white">جاري فتح وتجهيز مستند الوورد الأصلي للمعاينة الفورية...</h4>
-                      <p className="text-xs text-slate-400">معاينة تفاعلية فورية لقالب الوورد (خطاب توضيح.docx) بدقة 100%</p>
+                      <h4 className="text-base font-bold text-white">جاري معالجة وتوليد المعاينة الأصلية لمستند الوورد...</h4>
+                      <p className="text-xs text-slate-400">تطبيق الباركود والمتغيرات وإزالة علامات التمييز الحمراء بدقة 100%</p>
                     </div>
                   </div>
-                ) : previewPdfUrl ? (
-                  <div className="w-full h-full flex flex-col items-center">
-                    <iframe
-                      src={`${previewPdfUrl}#toolbar=0&navpanes=0`}
-                      className="w-full h-[78vh] min-h-[640px] rounded-xl border border-slate-700 shadow-2xl bg-white"
-                      title="معاينة مستند الوورد الأصلي المعتمد"
-                    />
-                  </div>
                 ) : (
-                  <div className="my-auto py-20 text-center">
-                    <Button onClick={loadOfficialPreview} className="font-bold">
-                      <Eye className="h-4 w-4 ml-2" />
-                      عرض المعاينة الأصلية
-                    </Button>
-                  </div>
+                  <OnlyOfficeDocViewer
+                    documentTitle={`خطاب_توضيح_${op.externalNumber || op.serialNumber}_${registrationNumber}.docx`}
+                    docxBlob={previewDocxBlob}
+                    pdfBlob={previewPdfBlob}
+                    onDownloadDocx={handleDownloadDocx}
+                    onDownloadPdf={handleDownloadPdf}
+                    onPrint={handlePrintWordDocument}
+                  />
                 )}
               </div>
             </div>

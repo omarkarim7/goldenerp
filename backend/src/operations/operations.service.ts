@@ -1640,9 +1640,9 @@ export class OperationsService {
    */
   private async convertDocxViaWordCom(docxBuffer: Buffer): Promise<Buffer> {
     const randomId = Date.now() + '_' + Math.random().toString(36).substring(7);
-    const tempDocx = path.join(os.tmpdir(), `goldenerp_doc_${randomId}.docx`).replace(/\\/g, '/');
-    const tempPdf = path.join(os.tmpdir(), `goldenerp_doc_${randomId}.pdf`).replace(/\\/g, '/');
-    const tempPs1 = path.join(os.tmpdir(), `goldenerp_conv_${randomId}.ps1`);
+    const tempDocx = path.resolve(os.tmpdir(), `goldenerp_doc_${randomId}.docx`);
+    const tempPdf = path.resolve(os.tmpdir(), `goldenerp_doc_${randomId}.pdf`);
+    const tempPs1 = path.resolve(os.tmpdir(), `goldenerp_conv_${randomId}.ps1`);
 
     await fs.promises.writeFile(tempDocx, docxBuffer);
 
@@ -1652,8 +1652,8 @@ $word.Visible = $false
 $word.DisplayAlerts = 0
 $doc = $null
 try {
-  $doc = $word.Documents.Open("${tempDocx}", $false, $true)
-  $doc.SaveAs([ref]"${tempPdf}", [ref]17)
+  $doc = $word.Documents.Open('${tempDocx.replace(/'/g, "''")}')
+  $doc.SaveAs([ref]'${tempPdf.replace(/'/g, "''")}', [ref]17)
   $doc.Close([ref]0)
   Write-Output "SUCCESS_CONVERT"
 } catch {
@@ -1673,8 +1673,8 @@ try {
         `powershell -NoProfile -ExecutionPolicy Bypass -File "${tempPs1}"`,
         { timeout: 45000, maxBuffer: 50 * 1024 * 1024 },
         async (err, stdout, stderr) => {
-          try { await fs.promises.unlink(tempDocx); } catch {}
           try { await fs.promises.unlink(tempPs1); } catch {}
+          try { await fs.promises.unlink(tempDocx); } catch {}
 
           if (err || !fs.existsSync(tempPdf)) {
             try { await fs.promises.unlink(tempPdf); } catch {}
@@ -1683,7 +1683,8 @@ try {
 
           try {
             const pdfBuf = await fs.promises.readFile(tempPdf);
-            await fs.promises.unlink(tempPdf);
+            try { await fs.promises.unlink(tempPdf); } catch {}
+            this.logger.log(`تم تحويل المستند بنجاح عبر Microsoft Word Desktop COM! الحجم: ${pdfBuf.length} بايت`);
             resolve(pdfBuf);
           } catch (readErr) {
             reject(readErr);
@@ -1691,6 +1692,16 @@ try {
         },
       );
     });
+  }
+
+  /**
+   * فتح مستند Word مباشرة في برنامج Microsoft Word المثبت على الجهاز
+   */
+  async openDocxInDesktopWord(docxBuffer: Buffer): Promise<{ success: boolean; message: string }> {
+    const tempPath = path.resolve(os.tmpdir(), `goldenerp_letter_${Date.now()}.docx`);
+    await fs.promises.writeFile(tempPath, docxBuffer);
+    exec(`powershell -NoProfile -Command "Start-Process '${tempPath.replace(/'/g, "''")}'"`);
+    return { success: true, message: 'تم فتح المستند مباشرة في برنامج Microsoft Word' };
   }
 
   /**

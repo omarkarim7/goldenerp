@@ -33,6 +33,7 @@ import {
 import JSZip from "jszip";
 import QRCode from "qrcode";
 import { getPdfBlobFromDocx } from "./client-pdf";
+import { OnlyOfficeDocViewer } from "@/components/OnlyOfficeDocViewer";
 
 export type DeclarationType = "specs" | "insurance" | "general_letter";
 
@@ -201,6 +202,7 @@ export function TabDeclarations({
   // Modals & Document state
   const [previewModalOpen, setPreviewModalOpen] = useState(false);
   const [previewDocxBlob, setPreviewDocxBlob] = useState<Blob | null>(null);
+  const [previewPdfBlob, setPreviewPdfBlob] = useState<Blob | null>(null);
   const [previewPdfUrl, setPreviewPdfUrl] = useState<string | null>(null);
   const [renderingDocx, setRenderingDocx] = useState(false);
   const [downloadingDocx, setDownloadingDocx] = useState(false);
@@ -470,7 +472,10 @@ export function TabDeclarations({
   // ━━━ تحويل المستند الأصلي إلى PDF ذكي وفوري ━━━
   const generateDeclarationPdfBlob = async (type: DeclarationType = activeDeclType): Promise<Blob> => {
     const docxBlob = await generateDeclarationDocxBlob(type);
-    return await getPdfBlobFromDocx(docxBlob, `declaration_${type}_${registrationNumber}.docx`);
+    setPreviewDocxBlob(docxBlob);
+    const pdf = await getPdfBlobFromDocx(docxBlob, `declaration_${type}_${registrationNumber}.docx`);
+    setPreviewPdfBlob(pdf);
+    return pdf;
   };
 
   // ━━━ رفع وتوثيق النسخة الرقمية المعتمدة سحابياً (مرة واحدة لمنع التكرار) ━━━
@@ -1444,61 +1449,27 @@ export function TabDeclarations({
                 </div>
               </div>
 
-              {/* View: Authentic Microsoft Word Workspace View */}
-              <div className="flex-1 overflow-hidden p-2 sm:p-4 bg-slate-200 dark:bg-slate-950 rounded-2xl flex flex-col items-center justify-start min-h-[640px] overflow-y-auto">
-                <div className="mb-2 px-3.5 py-1.5 rounded-xl bg-emerald-500/10 border border-emerald-500/25 text-emerald-800 dark:text-emerald-300 text-xs font-bold flex items-center justify-between self-stretch gap-2">
-                  <div className="flex items-center gap-2">
-                    <Check className="h-4 w-4 text-emerald-600 shrink-0" />
-                    <span>
-                      تم تطبيق المتغيرات واستبدال الباركود السحابي وإزالة كافة علامات التمييز الحمراء لإنتاج مستند وورد معتمد ورسمي 100%.
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-1 shrink-0">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const nextType: Record<DeclarationType, DeclarationType> = {
-                          specs: "insurance",
-                          insurance: "general_letter",
-                          general_letter: "specs",
-                        };
-                        setActiveDeclType(nextType[activeDeclType]);
-                      }}
-                      className="text-xs font-bold underline hover:text-emerald-950 dark:hover:text-white cursor-pointer"
-                    >
-                      التبديل إلى: {activeDeclType === "specs" ? "إقرار التأمينات" : activeDeclType === "insurance" ? "خطاب عام" : "إقرار الشروط"} ↺
-                    </button>
-                  </div>
-                </div>
-
+              {/* View: OnlyOffice & Authentic Word Document Viewer */}
+              <div className="flex-1 overflow-hidden min-h-[640px]">
                 {renderingDocx ? (
-                  <div className="my-auto py-28 flex flex-col items-center justify-center gap-4 text-center">
-                    <div className="w-16 h-16 rounded-2xl bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center shadow-lg">
-                      <RefreshCw className="h-8 w-8 animate-spin text-emerald-500" />
+                  <div className="h-full min-h-[600px] flex flex-col items-center justify-center gap-4 text-center bg-slate-950 rounded-2xl">
+                    <div className="w-16 h-16 rounded-2xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-center shadow-lg">
+                      <RefreshCw className="h-8 w-8 animate-spin text-amber-500" />
                     </div>
                     <div className="space-y-1">
-                      <h4 className="text-base font-bold text-foreground">جاري فتح ومعالجة قالب الوورد الأصلي...</h4>
-                      <p className="text-xs text-muted-foreground">
-                        يقوم محرك Microsoft Word بتطبيق المتغيرات وإنتاج صفحات المستند كما تطبع بدقة متناهية
-                      </p>
+                      <h4 className="text-base font-bold text-white">جاري معالجة وتوليد المعاينة الأصلية لمستند الوورد...</h4>
+                      <p className="text-xs text-slate-400">تطبيق الباركود والمتغيرات وإزالة علامات التمييز الحمراء بدقة 100%</p>
                     </div>
                   </div>
-                ) : previewPdfUrl ? (
-                  <div className="w-full h-full flex flex-col items-center">
-                    <iframe
-                      src={`${previewPdfUrl}#toolbar=0&navpanes=0`}
-                      className="w-full h-[78vh] min-h-[640px] rounded-xl border border-slate-700 shadow-2xl bg-white"
-                      title="معاينة مستند الوورد الأصلي المعتمد"
-                    />
-                  </div>
                 ) : (
-                  <div className="my-auto py-20 text-center text-slate-400 space-y-3">
-                    <AlertCircle className="h-10 w-10 mx-auto text-amber-500" />
-                    <p className="text-sm">تعذر تحميل المعاينة تلقائياً</p>
-                    <Button size="sm" onClick={loadOfficialPreview} className="bg-emerald-600 text-white">
-                      إعادة المحاولة
-                    </Button>
-                  </div>
+                  <OnlyOfficeDocViewer
+                    documentTitle={`${activeDeclType === "specs" ? "إقرار_شروط" : activeDeclType === "insurance" ? "إقرار_تأمينات" : "خطاب_عام"}_${op.externalNumber || op.serialNumber}_${registrationNumber}.docx`}
+                    docxBlob={previewDocxBlob}
+                    pdfBlob={previewPdfBlob}
+                    onDownloadDocx={() => handleDownloadDocx(activeDeclType)}
+                    onDownloadPdf={() => handleDownloadPdf(activeDeclType)}
+                    onPrint={handlePrintWordDocument}
+                  />
                 )}
               </div>
             </div>

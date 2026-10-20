@@ -27,6 +27,7 @@ import { generateSmartOutgoingRef, cleanAllDocxXml, buildQrAnchorXml, injectSing
 import JSZip from "jszip";
 import QRCode from "qrcode";
 import { getPdfBlobFromDocx } from "./client-pdf";
+import { OnlyOfficeDocViewer } from "@/components/OnlyOfficeDocViewer";
 
 export type BookletLetterType =
   | "booklet_withdrawal"
@@ -741,7 +742,10 @@ export function TabBooklet({
   // ━━━ تحويل المستند الأصلي إلى PDF ذكي وفوري ━━━
   const generateBookletPdfBlob = async (type: BookletLetterType = activeLetterType): Promise<Blob> => {
     const docxBlob = await generateBookletDocxBlob(type);
-    return await getPdfBlobFromDocx(docxBlob, `booklet_letter_${type}_${registrationNumber}.docx`);
+    setPreviewDocxBlob(docxBlob);
+    const pdf = await getPdfBlobFromDocx(docxBlob, `booklet_letter_${type}_${registrationNumber}.docx`);
+    setPreviewPdfBlob(pdf);
+    return pdf;
   };
 
   // ━━━ رفع وتوثيق النسخة الرقمية سحابياً ━━━
@@ -846,6 +850,8 @@ export function TabBooklet({
 
   // ━━━ المعاينة الحية المطابقة لمحرك Microsoft Word ━━━
   const [previewModalOpen, setPreviewModalOpen] = useState(false);
+  const [previewDocxBlob, setPreviewDocxBlob] = useState<Blob | null>(null);
+  const [previewPdfBlob, setPreviewPdfBlob] = useState<Blob | null>(null);
   const [renderingDocx, setRenderingDocx] = useState(false);
   const [previewPdfUrl, setPreviewPdfUrl] = useState<string | null>(null);
   const [printingDocx, setPrintingDocx] = useState(false);
@@ -2543,17 +2549,10 @@ export function TabBooklet({
                 </div>
               </div>
 
-              {/* Authentic Word Document Rendered via Microsoft Word Engine */}
-              <div className="flex-1 overflow-hidden p-2 sm:p-4 bg-slate-900/90 rounded-2xl flex flex-col items-center justify-start min-h-[640px]">
-                <div className="mb-2 px-3.5 py-1.5 rounded-xl bg-emerald-500/10 border border-emerald-500/25 text-emerald-800 dark:text-emerald-300 text-xs font-bold flex items-center gap-2 self-stretch">
-                  <Check className="h-4 w-4 text-emerald-600 shrink-0" />
-                  <span>
-                    معاينة أصلية معتمدة من محرك Microsoft Word: تم تطبيق كافة المتغيرات وإزالة علامات التمييز الحمراء لإنتاج مستند رسمي 100%.
-                  </span>
-                </div>
-
+              {/* Authentic Word & OnlyOffice Document Viewer */}
+              <div className="flex-1 overflow-hidden min-h-[640px]">
                 {renderingDocx ? (
-                  <div className="my-auto py-28 flex flex-col items-center justify-center gap-4 text-center">
+                  <div className="h-full min-h-[600px] flex flex-col items-center justify-center gap-4 text-center bg-slate-950 rounded-2xl">
                     <div className="w-16 h-16 rounded-2xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-center shadow-lg">
                       <RefreshCw className="h-8 w-8 animate-spin text-amber-500" />
                     </div>
@@ -2566,21 +2565,15 @@ export function TabBooklet({
                       </p>
                     </div>
                   </div>
-                ) : previewPdfUrl ? (
-                  <div className="w-full h-full flex flex-col items-center">
-                    <iframe
-                      src={`${previewPdfUrl}#toolbar=0&navpanes=0`}
-                      className="w-full h-[78vh] min-h-[640px] rounded-xl border border-slate-700 shadow-2xl bg-white"
-                      title="معاينة مستند الوورد الأصلي المعتمد"
-                    />
-                  </div>
                 ) : (
-                  <div className="my-auto py-20 text-center">
-                    <Button onClick={loadOfficialPreview} className="font-bold">
-                      <Eye className="h-4 w-4 ml-2" />
-                      عرض المعاينة الأصلية
-                    </Button>
-                  </div>
+                  <OnlyOfficeDocViewer
+                    documentTitle={`${CURRENT_FILE_ARABIC_NAME[activeLetterType]}_${op.externalNumber || op.serialNumber}_${registrationNumber}.docx`}
+                    docxBlob={previewDocxBlob}
+                    pdfBlob={previewPdfBlob}
+                    onDownloadDocx={() => handleDownloadDocx(activeLetterType)}
+                    onDownloadPdf={() => handleDownloadPdf(activeLetterType)}
+                    onPrint={handlePrintWordDocument}
+                  />
                 )}
               </div>
             </div>

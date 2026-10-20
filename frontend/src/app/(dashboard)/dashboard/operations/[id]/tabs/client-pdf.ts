@@ -105,30 +105,35 @@ export async function getPdfBlobFromDocx(
   docxBlob: Blob,
   fileName: string = "document.docx"
 ): Promise<Blob> {
-  try {
-    const formData = new FormData();
-    formData.append("file", docxBlob, fileName);
-    const res = await api.post("/operations/convert-docx-to-pdf", formData, {
-      headers: { "Content-Type": "multipart/form-data" },
-      responseType: "blob",
-      timeout: 35000,
-    });
-    if (res.data && res.data.size > 1000) {
-      return res.data;
-    }
-  } catch (err: any) {
-    console.warn("محرك Microsoft Word بالسيرفر غير متاح حالياً، جاري التحويل الفوري بالمتصفح كبديل ذكي:", err?.message);
+  const formData = new FormData();
+  formData.append("file", docxBlob, fileName);
+
+  const res = await api.post("/operations/convert-docx-to-pdf", formData, {
+    headers: { "Content-Type": "multipart/form-data" },
+    responseType: "blob",
+    timeout: 45000,
+  });
+
+  if (res.data && res.data.size > 1000) {
+    return res.data;
   }
 
-  // البديل الفوري التلقائي داخل المتصفح (docx-preview + html2canvas + jsPDF)
-  try {
-    return await convertDocxBlobToPdfBlob(docxBlob);
-  } catch (fallbackErr: any) {
-    console.error("فشل التحويل الداخلي أيضاً:", fallbackErr);
-    throw new Error(
-      "تعذر تحويل المستند إلى PDF. يمكنك تنزيل ملف الوورد (.docx) واستخدام خدمات التحويل المجانية مثل Adobe Acrobat أو iLovePDF."
-    );
-  }
+  throw new Error("تعذر استلام ملف الـ PDF المحول من خادم Microsoft Word");
+}
+
+/**
+ * فتح مستند Word الأصلي المحدث مباشرة داخل برنامج Microsoft Word على جهاز الكمبيوتر
+ */
+export async function openDocxInDesktopWord(
+  docxBlob: Blob,
+  fileName: string = "letter.docx"
+): Promise<{ success: boolean; message: string }> {
+  const formData = new FormData();
+  formData.append("file", docxBlob, fileName);
+  const res = await api.post("/operations/open-in-word", formData, {
+    headers: { "Content-Type": "multipart/form-data" },
+  });
+  return res.data;
 }
 
 /**
