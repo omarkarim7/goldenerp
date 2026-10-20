@@ -545,7 +545,7 @@ export class OperationsController {
     } catch (err: any) {
       return res.status(503).json({
         statusCode: 503,
-        message: 'محرك تحويل PDF المباشر متاح محلياً على نظام Windows فقط. يتم استخدام المعاينة المباشرة لملف الوورد على السحابة.',
+        message: err?.message || 'فشل تحويل المستند إلى PDF',
         error: 'Service Unavailable',
       });
     }

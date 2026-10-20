@@ -1608,12 +1608,44 @@ export class OperationsService {
   }
 
   /**
-   * تحويل مستند Word (.docx) الأصلي المحدث مباشرة إلى PDF عالي الدقة عبر محرك Microsoft Word
+   * تحويل مستند Word (.docx) الأصلي المحدث مباشرة إلى PDF عالي الدقة
+   * - محلياً على Windows: استخدام محرك Microsoft Word Desktop الأصلي (Word COM) مجاناً وبلا حدود.
+   * - على Vercel / السحابة (أو عند تعذر COM): استخدام محرك CloudConvert (Microsoft Office Engine) المعتمد.
    */
   async convertDocxBufferToPdf(docxBuffer: Buffer): Promise<Buffer> {
-    if (process.platform !== 'win32') {
-      throw new Error('محرك Microsoft Word متاح فقط على بيئة تشغيل Windows مع تثبيت Office.');
+    let lastError: any = null;
+
+    // 1. الأولوية الأولى محلياً على نظام Windows: محرك Microsoft Word COM المباشر
+    if (process.platform === 'win32') {
+      try {
+        return await this.convertDocxViaWordCom(docxBuffer);
+      } catch (comErr: any) {
+        lastError = comErr;
+        console.warn('تحويل Word COM المحلي لم ينجح، جاري التحويل عبر CloudConvert:', comErr?.message);
+      }
     }
+
+    // 2. الأولوية الثانية (على سحابة Vercel أو كبديل ذكي): محرك CloudConvert الرسمي
+    const cloudConvertKey = process.env.CLOUDCONVERT_API_KEY;
+    if (cloudConvertKey) {
+      try {
+        return await this.convertDocxViaCloudConvert(docxBuffer, cloudConvertKey);
+      } catch (cloudErr: any) {
+        lastError = cloudErr;
+        console.error('فشل تحويل المستند عبر محرك CloudConvert:', cloudErr?.message);
+      }
+    }
+
+    throw new Error(
+      lastError?.message ||
+      'لا يوجد محرك تحويل متوفر (يرجى تشغيل السيرفر محلياً على Windows أو ضبط مفتاح CLOUDCONVERT_API_KEY في السحابة).'
+    );
+  }
+
+  /**
+   * تحويل المستند عبر محرك Microsoft Word Desktop على بيئة Windows
+   */
+  private async convertDocxViaWordCom(docxBuffer: Buffer): Promise<Buffer> {
     const randomId = Date.now() + '_' + Math.random().toString(36).substring(7);
     const tempDocx = path.join(os.tmpdir(), `goldenerp_doc_${randomId}.docx`);
     const tempPdf = path.join(os.tmpdir(), `goldenerp_doc_${randomId}.pdf`);
@@ -1668,6 +1700,92 @@ export class OperationsService {
         },
       );
     });
+  }
+
+  /**
+   * تحويل المستند عبر محرك CloudConvert الرسمي السحابي (Microsoft Office Engine)
+   */
+  private async convertDocxViaCloudConvert(docxBuffer: Buffer, apiKey: string): Promise<Buffer> {
+    const jobRes = await fetch('https://api.cloudconvert.com/v2/jobs', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        tasks: {
+          'import-doc': { operation: 'import/upload' },
+          'convert-doc': {
+            operation: 'convert',
+            input: 'import-doc',
+            output_format: 'pdf',
+            engine: 'office',
+          },
+          'export-doc': {
+            operation: 'export/url',
+            input: 'convert-doc',
+          },
+        },
+      }),
+    });
+
+    const jobData: any = await jobRes.json();
+    if (!jobRes.ok || !jobData?.data?.id) {
+      throw new Error(`خطأ في إنشاء مهمة CloudConvert: ${jobData?.message || jobRes.statusText}`);
+    }
+
+    const uploadTask = jobData.data.tasks.find((t: any) => t.name === 'import-doc');
+    if (!uploadTask?.result?.form?.url) {
+      throw new Error('تعذر الحصول على رابط رفع المستند لـ CloudConvert');
+    }
+
+    const uploadUrl = uploadTask.result.form.url;
+    const uploadParams = uploadTask.result.form.parameters || {};
+
+    const formData = new FormData();
+    for (const [key, val] of Object.entries(uploadParams)) {
+      formData.append(key, val as any);
+    }
+    formData.append(
+      'file',
+      new Blob([new Uint8Array(docxBuffer)], {
+        type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      }),
+      'document.docx',
+    );
+
+    const uploadRes = await fetch(uploadUrl, {
+      method: 'POST',
+      body: formData,
+    });
+
+    if (!uploadRes.ok) {
+      throw new Error(`فشل رفع المستند إلى خوادم CloudConvert (${uploadRes.status})`);
+    }
+
+    const waitRes = await fetch(`https://api.cloudconvert.com/v2/jobs/${jobData.data.id}/wait`, {
+      headers: { Authorization: `Bearer ${apiKey}` },
+    });
+
+    const finishedJob: any = await waitRes.json();
+    if (finishedJob?.data?.status !== 'finished') {
+      const failedTask = finishedJob?.data?.tasks?.find((t: any) => t.status === 'error');
+      throw new Error(`فشل تحويل المستند في CloudConvert: ${failedTask?.message || 'خطأ غير معروف'}`);
+    }
+
+    const exportTask = finishedJob.data.tasks.find((t: any) => t.name === 'export-doc');
+    const pdfUrl = exportTask?.result?.files?.[0]?.url;
+    if (!pdfUrl) {
+      throw new Error('لم يتم العثور على رابط ملف الـ PDF الناتج من التحويل');
+    }
+
+    const pdfResp = await fetch(pdfUrl);
+    if (!pdfResp.ok) {
+      throw new Error(`فشل تنزيل ملف الـ PDF من CloudConvert (${pdfResp.status})`);
+    }
+
+    const arrayBuf = await pdfResp.arrayBuffer();
+    return Buffer.from(arrayBuf);
   }
 
   async uploadCloudPdf(pdfBuffer: Buffer, fileName?: string): Promise<{ success: boolean; url: string; provider: string }> {
