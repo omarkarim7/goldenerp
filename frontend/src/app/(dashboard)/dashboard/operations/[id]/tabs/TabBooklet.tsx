@@ -23,7 +23,7 @@ import {
   formatDocFileSize, tafqeetArabic
 } from "./types";
 import { StepFooterNav } from "./StepFooterNav";
-import { generateSmartOutgoingRef, cleanAllDocxXml, buildQrAnchorXml, FISCAL_YEAR_OPTIONS } from "./letter-utils";
+import { generateSmartOutgoingRef, cleanAllDocxXml, buildQrAnchorXml, injectSingleQrIntoDocXml, LetterBottomActionWidget, ReprintConfirmModal, getCurrentUserName, FISCAL_YEAR_OPTIONS, FreeConvertersQuickLinks } from "./letter-utils";
 import JSZip from "jszip";
 import QRCode from "qrcode";
 import { getPdfBlobFromDocx } from "./client-pdf";
@@ -591,15 +591,7 @@ export function TabBooklet({
     }
 
     let docXml = await zip.file("word/document.xml")!.async("text");
-
-    let qrDone = false;
-    docXml = docXml.replace(/الباركود|البركود/g, () => {
-      if (!qrDone && qrDrawingXml) {
-        qrDone = true;
-        return `</w:t></w:r>${qrDrawingXml}<w:r><w:t>`;
-      }
-      return "";
-    });
+    docXml = injectSingleQrIntoDocXml(docXml, qrDrawingXml, escapeXml(registrationNumber));
 
     // إعداد صيغة أسلوب الطرح بحرف الباء وبدون حرف الباء لضمان عدم حدوث أي تكرار
     const cleanMethod = (tenderMethod || "").trim();
@@ -920,6 +912,7 @@ export function TabBooklet({
       setTimeout(triggerPrint, 1500);
 
       // تحديث سجل الطباعة وحفظه تلقائياً
+      const currentUser = getCurrentUserName();
       const prev = printHistory[activeLetterType] || { printCount: 0 };
       const updatedHistory = {
         ...printHistory,
@@ -927,7 +920,7 @@ export function TabBooklet({
           printCount: (prev.printCount || 0) + 1,
           firstPrintedAt: prev.firstPrintedAt || new Date().toISOString(),
           lastPrintedAt: new Date().toISOString(),
-          printedBy: prev.printedBy || op.createdBy || "المستخدم الحالي",
+          printedBy: currentUser,
           registrationNumber: prev.registrationNumber || registrationNumber,
         },
       };
@@ -1183,42 +1176,7 @@ export function TabBooklet({
 
   return (
     <div className="space-y-6 animate-fade-in print:m-0 print:p-0">
-      {/* ━━━ شريط تنبيه التعديلات غير المحفوظة وأزرار الحفظ/الإلغاء (Floating Bar) ━━━ */}
-      {isDirty && (
-        <div className="sticky top-2 z-30 p-3.5 rounded-2xl bg-amber-500/15 border-2 border-amber-500/40 shadow-xl backdrop-blur-md flex items-center justify-between gap-3 animate-bounce-subtle">
-          <div className="flex items-center gap-2.5 text-xs text-amber-900 dark:text-amber-200">
-            <AlertCircle className="h-5 w-5 text-amber-600 shrink-0 animate-pulse" />
-            <div>
-              <span className="font-extrabold text-sm block">توجد تعديلات جديدة غير محفوظة في خطابات الكراسة والتأمين!</span>
-              <span className="text-[11px] opacity-90">
-                يمكنك معاينة وطباعة المستند فوراً بأحدث بياناتك، أو حفظ التعديلات في قاعدة البيانات.
-              </span>
-            </div>
-          </div>
 
-          <div className="flex items-center gap-2 shrink-0">
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={handleCancelEdits}
-              className="h-8.5 px-3 text-xs font-bold rounded-xl border-amber-500/40 hover:bg-amber-500/20 cursor-pointer flex items-center gap-1.5"
-            >
-              <RotateCcw className="h-3.5 w-3.5" />
-              <span>إلغاء التعديلات</span>
-            </Button>
-
-            <Button
-              size="sm"
-              onClick={handleSaveAll}
-              disabled={savingChanges}
-              className="h-8.5 px-4 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black rounded-xl shadow-md cursor-pointer flex items-center gap-1.5"
-            >
-              <Save className="h-3.5 w-3.5" />
-              <span>{savingChanges ? "جاري الحفظ..." : "حفظ التعديلات 💾"}</span>
-            </Button>
-          </div>
-        </div>
-      )}
 
 
 
@@ -2097,94 +2055,19 @@ export function TabBooklet({
             </div>
           </SectionCard>
 
-          {/* ━━━ BOTTOM ACTION BAR: التوليد والطباعة والمعاينة بأسفل الخطوة الأولى (استجابة لملاحظات المستخدم) ━━━ */}
-          <div className="p-4 sm:p-5 rounded-3xl bg-[#fdfaf5] dark:bg-card border-2 border-[#f5dfc6] dark:border-amber-500/30 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 shadow-sm">
-            <div className="flex items-center gap-3">
-              <div className="w-12 h-12 rounded-full bg-amber-500/15 border-2 border-amber-500/30 text-amber-700 dark:text-amber-300 flex items-center justify-center shrink-0 shadow-xs">
-                <HelpCircle className="h-6 w-6 text-amber-700 dark:text-amber-400" />
-              </div>
-              <div>
-                <div className="flex items-center gap-2 flex-wrap">
-                  <h4 className="text-sm sm:text-base font-black text-foreground">
-                    {currentTpl.title}
-                  </h4>
-                  <Badge className="bg-[#d97706] hover:bg-[#d97706] text-white font-mono text-[11px] font-bold px-2.5 py-0.5 rounded-lg shadow-xs">
-                    رقم القيد: {registrationNumber}
-                  </Badge>
-                  {printHistory[activeLetterType]?.printCount ? (
-                    <Badge className="bg-amber-100 text-amber-900 border border-amber-300 dark:bg-amber-950/60 dark:text-amber-200 text-[10px] font-bold">
-                      ⚠️ انطبع سابقاً ({printHistory[activeLetterType].printCount} مرات)
-                    </Badge>
-                  ) : (
-                    <Badge className="bg-[#dcfce7] text-[#15803d] border border-[#86efac] text-[11px] font-bold px-2.5 py-0.5 rounded-full">
-                      محفوظ ومعتمد ✓
-                    </Badge>
-                  )}
-                  <div className="inline-flex items-center gap-1.5 px-3 py-0.5 rounded-xl bg-emerald-500/20 text-emerald-800 dark:text-emerald-300 border border-emerald-500/40 text-[11px] font-black">
-                    <FileCheck className="h-3.5 w-3.5" />
-                    <span>{isDirty ? "تعديلات جاهزة للمعاينة والحفظ ✍️" : "التعديلات محفوظة ✓"}</span>
-                  </div>
-                </div>
-                <p className="text-xs text-muted-foreground mt-0.5">
-                  مطابق 100% لقالب الوورد المعتمد للشركة وفق قانون التعاقدات رقم 182 لسنة 2018. يمكنك المعاينة أو الطباعة مباشرة من هنا.
-                </p>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-2 flex-wrap self-end md:self-auto">
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => setPreviewModalOpen(true)}
-                className="h-9.5 px-4 text-xs font-bold rounded-xl border-2 border-[#d97706] text-[#b45309] dark:text-amber-300 hover:bg-amber-500/10 cursor-pointer bg-white dark:bg-card shadow-xs flex items-center gap-1.5"
-              >
-                <Eye className="h-4 w-4 ml-1.5 text-[#d97706]" />
-                <span>معاينة مستند الوورد</span>
-              </Button>
-
-              <Button
-                size="sm"
-                onClick={handlePrintWordDocument}
-                disabled={printingDocx}
-                className="h-9.5 px-4 bg-[#d97706] hover:bg-[#b45309] text-white text-xs font-bold rounded-xl shadow-md cursor-pointer flex items-center gap-1.5"
-              >
-                <Printer className={`h-4 w-4 ${printingDocx ? "animate-spin" : ""}`} />
-                <span>{printingDocx ? "جاري التجهيز..." : "طباعة المستند"}</span>
-              </Button>
-
-              <Button
-                size="sm"
-                onClick={() => handleDownloadPdf(activeLetterType)}
-                disabled={downloadingPdf}
-                className="h-9.5 px-3.5 bg-[#e11d48] hover:bg-[#be123c] text-white text-xs font-bold rounded-xl shadow-md cursor-pointer flex items-center gap-1.5"
-              >
-                <FileText className={`h-4 w-4 ${downloadingPdf ? "animate-spin" : ""}`} />
-                <span>{downloadingPdf ? "جاري التحويل..." : "PDF (.pdf)"}</span>
-              </Button>
-
-              <Button
-                size="sm"
-                onClick={() => handleDownloadDocx(activeLetterType)}
-                disabled={downloadingDocx}
-                className="h-9.5 px-3.5 bg-[#2563eb] hover:bg-[#1d4ed8] text-white text-xs font-bold rounded-xl shadow-md cursor-pointer flex items-center gap-1.5"
-              >
-                <Download className="h-4 w-4" />
-                <span>Word (.docx)</span>
-              </Button>
-
-              {isDirty && (
-                <Button
-                  size="sm"
-                  onClick={handleSaveAll}
-                  disabled={savingChanges}
-                  className="h-9.5 px-4 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black rounded-xl shadow-md cursor-pointer flex items-center gap-1.5 animate-pulse"
-                >
-                  <Save className="h-4 w-4" />
-                  <span>{savingChanges ? "جاري الحفظ..." : "حفظ التعديلات 💾"}</span>
-                </Button>
-              )}
-            </div>
-          </div>
+          {/* ━━━ BOTTOM ACTION BAR: التوليد والطباعة والمعاينة بأسفل الخطوة الأولى ━━━ */}
+          <LetterBottomActionWidget
+            title={currentTpl.title}
+            registrationNumber={registrationNumber}
+            isDirty={isDirty}
+            printInfo={printHistory[activeLetterType]}
+            onPreview={() => setPreviewModalOpen(true)}
+            onSave={handleSaveAll}
+            onCancelEdits={handleCancelEdits}
+            saving={savingChanges}
+            onViewArchive={() => setPreviewModalOpen(true)}
+            customSubtitle="مطابق 100% لقالب الوورد المعتمد للشركة. اضغط على زر المعاينة للاطلاع على المستند وتنزيله أو طباعته."
+          />
         </div>
       )}
 
@@ -2605,6 +2488,8 @@ export function TabBooklet({
                 </div>
 
                 <div className="flex items-center gap-2 flex-wrap">
+                  <FreeConvertersQuickLinks />
+
                   <Button
                     size="sm"
                     onClick={handlePrintFromModal}
@@ -2704,80 +2589,17 @@ export function TabBooklet({
       )}
 
       {/* ━━━ MODAL: تنبيه إعادة طباعة الخطاب المعتمد (استجابة للتسجيلين 4 و 5) ━━━ */}
-      {reprintWarningOpen && (
-        <Portal>
-          <div className="fixed inset-0 z-[99999] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in">
-            <div className="bg-card border-2 border-amber-500/40 rounded-3xl max-w-lg w-full p-6 space-y-4 shadow-2xl text-foreground">
-              <div className="flex items-start gap-3">
-                <div className="w-12 h-12 rounded-2xl bg-amber-500/20 text-amber-600 flex items-center justify-center shrink-0">
-                  <AlertCircle className="h-6 w-6" />
-                </div>
-                <div>
-                  <h3 className="text-base font-black text-amber-700 dark:text-amber-400">
-                    تنبيه نظامي: الخطاب تم طباعته واعتماده مسبقاً!
-                  </h3>
-                  <p className="text-xs text-muted-foreground mt-0.5">
-                    التحقق الأمني من طباعة النسخ الرسمية لخطابات الكراسة والتأمين
-                  </p>
-                </div>
-              </div>
-
-              <div className="p-4 rounded-2xl bg-amber-500/10 border border-amber-500/20 space-y-2 text-xs">
-                <div className="flex justify-between items-center py-1 border-b border-amber-500/20">
-                  <span className="text-muted-foreground">عدد مرات الطباعة السابقة:</span>
-                  <Badge className="bg-amber-600 text-white font-mono font-bold">
-                    {printHistory[activeLetterType]?.printCount || 1} مرات
-                  </Badge>
-                </div>
-                <div className="flex justify-between items-center py-1 border-b border-amber-500/20">
-                  <span className="text-muted-foreground">رقم القيد الصادر المسجل:</span>
-                  <span className="font-mono font-bold text-foreground">
-                    {printHistory[activeLetterType]?.registrationNumber || registrationNumber}
-                  </span>
-                </div>
-                {printHistory[activeLetterType]?.firstPrintedAt && (
-                  <div className="flex justify-between items-center py-1 border-b border-amber-500/20">
-                    <span className="text-muted-foreground">تاريخ أول طباعة:</span>
-                    <span className="font-mono font-bold text-foreground">
-                      {new Date(printHistory[activeLetterType].firstPrintedAt!).toLocaleString("ar-EG")}
-                    </span>
-                  </div>
-                )}
-                <div className="flex justify-between items-center py-1">
-                  <span className="text-muted-foreground">طُبع بواسطة:</span>
-                  <span className="font-bold text-foreground">
-                    {printHistory[activeLetterType]?.printedBy || "المستخدم الحالي"}
-                  </span>
-                </div>
-              </div>
-
-              <div className="p-3 rounded-xl bg-muted/60 text-xs text-muted-foreground leading-relaxed">
-                <p className="font-bold text-foreground mb-1">تعليمات إصدار النسخ الإضافية:</p>
-                <p>
-                  وفقاً للائحة، سيتم إصدار نسخة مطابقة مع الاحتفاظ بنفس رقم القيد الصادر وتاريخ التسجيل دون تغيير الأساسيات لضمان صحة التوثيق الرسمي.
-                </p>
-              </div>
-
-              <div className="flex items-center justify-end gap-3 pt-2">
-                <Button
-                  variant="outline"
-                  onClick={() => setReprintWarningOpen(false)}
-                  className="rounded-xl text-xs h-9.5 px-4 font-bold"
-                >
-                  إلغاء
-                </Button>
-                <Button
-                  onClick={handleConfirmReprint}
-                  className="bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-xs h-9.5 px-5 font-bold shadow-md flex items-center gap-2"
-                >
-                  <Printer className="h-4 w-4" />
-                  <span>تأكيد طباعة نسخة إضافية</span>
-                </Button>
-              </div>
-            </div>
-          </div>
-        </Portal>
-      )}
+      {/* ━━━ نافذة التنبيه عند إعادة طباعة مستند مطبوع مسبقاً ━━━ */}
+      <ReprintConfirmModal
+        open={reprintWarningOpen}
+        onClose={() => setReprintWarningOpen(false)}
+        printInfo={printHistory[activeLetterType]}
+        onConfirmReprint={handleConfirmReprint}
+        onViewArchive={() => {
+          setReprintWarningOpen(false);
+          setPreviewModalOpen(true);
+        }}
+      />
 
       {/* شريط التنقل السفلي بين التبويبات */}
       <StepFooterNav

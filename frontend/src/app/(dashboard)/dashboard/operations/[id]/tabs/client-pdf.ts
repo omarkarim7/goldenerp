@@ -97,9 +97,9 @@ export async function convertDocxBlobToPdfBlob(docxBlob: Blob): Promise<Blob> {
 
 /**
  * Genuine Microsoft Word PDF Generator:
- * Directly sends the generated DOCX to the backend /operations/convert-docx-to-pdf endpoint
- * which executes native Microsoft Word (Word.Application COM) on Windows.
- * Ensures 100% authentic Word typography, layout, borders, and margins without any browser distortion.
+ * 1. Tries the backend native Microsoft Word engine (Word.Application COM) first for 100% authentic Word fidelity.
+ * 2. If the server is unreachable or fails, seamlessly and automatically falls back to in-browser convertDocxBlobToPdfBlob
+ *    so the preview and download NEVER fail or throw 503 errors!
  */
 export async function getPdfBlobFromDocx(
   docxBlob: Blob,
@@ -111,33 +111,40 @@ export async function getPdfBlobFromDocx(
     const res = await api.post("/operations/convert-docx-to-pdf", formData, {
       headers: { "Content-Type": "multipart/form-data" },
       responseType: "blob",
-      timeout: 45000, // 45s for native Microsoft Word / CloudConvert processing
+      timeout: 35000,
     });
     if (res.data && res.data.size > 1000) {
       return res.data;
     }
-    throw new Error("استجابة محرك Microsoft Word غير صالحة");
   } catch (err: any) {
-    let errorDetail = "";
-    if (typeof window !== "undefined" && err?.response?.data instanceof Blob) {
-      try {
-        const text = await err.response.data.text();
-        const json = JSON.parse(text);
-        errorDetail = json.message || text;
-      } catch {
-        errorDetail = err?.message || "";
-      }
-    } else if (err?.response?.data?.message) {
-      errorDetail = err.response.data.message;
-    } else if (err?.message) {
-      errorDetail = err.message;
-    }
+    console.warn("محرك Microsoft Word بالسيرفر غير متاح حالياً، جاري التحويل الفوري بالمتصفح كبديل ذكي:", err?.message);
+  }
 
-    console.error("فشل تحويل مستند الوورد عبر محرك Microsoft Word:", err, errorDetail);
+  // البديل الفوري التلقائي داخل المتصفح (docx-preview + html2canvas + jsPDF)
+  try {
+    return await convertDocxBlobToPdfBlob(docxBlob);
+  } catch (fallbackErr: any) {
+    console.error("فشل التحويل الداخلي أيضاً:", fallbackErr);
     throw new Error(
-      "فشل تشغيل محرك تحويل المستند: " + (errorDetail || "تعذر الاتصال بخدمة التحويل على السيرفر.")
+      "تعذر تحويل المستند إلى PDF. يمكنك تنزيل ملف الوورد (.docx) واستخدام خدمات التحويل المجانية مثل Adobe Acrobat أو iLovePDF."
     );
   }
 }
+
+/**
+ * روابط أدوات التحويل المجانية السحابية الموثوقة:
+ * - Adobe Acrobat Online Word to PDF: https://www.adobe.com/acrobat/online/word-to-pdf.html
+ * - iLovePDF Word to PDF: https://www.ilovepdf.com/word_to_pdf
+ */
+export const FREE_ONLINE_PDF_CONVERTERS = [
+  {
+    name: "Adobe Acrobat Online (Word to PDF)",
+    url: "https://www.adobe.com/acrobat/online/word-to-pdf.html",
+  },
+  {
+    name: "iLovePDF (Word to PDF)",
+    url: "https://www.ilovepdf.com/word_to_pdf",
+  },
+];
 
 

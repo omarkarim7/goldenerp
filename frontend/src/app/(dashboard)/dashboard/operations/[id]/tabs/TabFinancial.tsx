@@ -18,7 +18,18 @@ import { toast } from "sonner";
 import api from "@/lib/api";
 import { Operation, SectionCard, formatDate, tafqeetArabic, formatCurrency } from "./types";
 import { StepFooterNav } from "./StepFooterNav";
-import { generateSmartOutgoingRef, cleanAllDocxXml, buildQrAnchorXml, FISCAL_YEAR_OPTIONS } from "./letter-utils";
+import {
+  generateSmartOutgoingRef,
+  cleanAllDocxXml,
+  buildQrAnchorXml,
+  injectSingleQrIntoDocXml,
+  LetterBottomActionWidget,
+  ReprintConfirmModal,
+  getCurrentUserName,
+  PrintHistoryEntry,
+  FISCAL_YEAR_OPTIONS,
+  FreeConvertersQuickLinks,
+} from "./letter-utils";
 import JSZip from "jszip";
 import QRCode from "qrcode";
 import { getPdfBlobFromDocx } from "./client-pdf";
@@ -720,22 +731,7 @@ export function TabFinancial({
 
     // 1. استبدال كافة المتغيرات في word/document.xml
     let docXml = await zip.file("word/document.xml")!.async("text");
-
-    // استبدال كلمة الباركود بالأعلى في P0 برمز QR الرقمي المباشر (الصفحة الأولى فقط)
-    let qrDone = false;
-    docXml = docXml.replace(/الباركود|البركود/g, () => {
-      if (!qrDone && qrDrawingXml) {
-        qrDone = true;
-        return `</w:t></w:r>${qrDrawingXml}<w:r><w:t>`;
-      }
-      return "";
-    });
-    if (!qrDone && qrDrawingXml && docXml.includes("Ad26111000001")) {
-      qrDone = true;
-      docXml = docXml.replace("Ad26111000001", `${escapeXml(registrationNumber)}</w:t></w:r>${qrDrawingXml}<w:r><w:t>`);
-    } else {
-      docXml = docXml.replace(/Ad26111000001/g, escapeXml(registrationNumber));
-    }
+    docXml = injectSingleQrIntoDocXml(docXml, qrDrawingXml, escapeXml(registrationNumber));
 
     // صفة ولقب المرسل إليه والجهة الإدارية
     docXml = docXml.replace(/الأستاذ/g, escapeXml(recipientPrefix));
@@ -1036,12 +1032,18 @@ export function TabFinancial({
     }
   };
 
-  // ━━━ طباعة مستند الوورد الأصلي عبر PDF عالي الدقة ━━━
-  const handlePrintWordDocument = async () => {
-    if (isDirty) {
-      toast.warning("يجب حفظ التعديلات أولاً قبل الطباعة!");
-      return;
+  // ━━━ سجل الطباعة وتنبيه إعادة الطباعة ━━━
+  const [printHistory, setPrintHistory] = useState<Record<string, PrintHistoryEntry>>(() => {
+    let notesObj: any = {};
+    if (op.notes && op.notes.startsWith("{")) {
+      try { notesObj = JSON.parse(op.notes); } catch (e) {}
     }
+    return notesObj.financialOfferDocx?.printHistory || notesObj.financialOfferLetter?.printHistory || {};
+  });
+  const [reprintWarningOpen, setReprintWarningOpen] = useState(false);
+
+  // ━━━ دالة تنفيذ الطباعة وتحديث سجل الطباعة الرسمي ━━━
+  const executePrintDoc = async () => {
     setPrintingDocx(true);
     try {
       toast.info("جاري تجهيز مستند العرض المالي للطباعة بأعلى دقة...");
@@ -1058,21 +1060,70 @@ export function TabFinancial({
       iframe.src = pdfUrl;
       document.body.appendChild(iframe);
 
-      iframe.onload = () => {
-        setTimeout(() => {
-          iframe.focus();
-          try {
-            iframe.contentWindow?.print();
-          } catch {
-            window.open(pdfUrl, "_blank")?.print();
-          }
-        }, 400);
+      const triggerPrint = () => {
+        iframe.focus();
+        try {
+          iframe.contentWindow?.print();
+        } catch {
+          window.open(pdfUrl, "_blank")?.print();
+        }
       };
+
+      iframe.onload = () => setTimeout(triggerPrint, 350);
+      setTimeout(triggerPrint, 1500);
+
+      const currentUser = getCurrentUserName();
+      const prev = printHistory["financial"] || { printCount: 0 };
+      const updatedHistory = {
+        ...printHistory,
+        financial: {
+          printCount: (prev.printCount || 0) + 1,
+          firstPrintedAt: prev.firstPrintedAt || new Date().toISOString(),
+          lastPrintedAt: new Date().toISOString(),
+          printedBy: currentUser,
+          registrationNumber: prev.registrationNumber || registrationNumber,
+        },
+      };
+      setPrintHistory(updatedHistory);
+
+      try {
+        let notesObj: any = {};
+        if (op.notes && op.notes.startsWith("{")) {
+          notesObj = JSON.parse(op.notes);
+        }
+        const existingFin = notesObj.financialOfferDocx || {};
+        existingFin.printHistory = updatedHistory;
+        notesObj.financialOfferDocx = existingFin;
+        await api.patch(`/operations/${op.id}`, { notes: JSON.stringify(notesObj) });
+      } catch (e) {
+        console.warn("Could not persist print history:", e);
+      }
+
+      toast.success("تم إرسال المستند للطباعة وتحديث سجل الطباعة بنجاح ✓");
     } catch (err: any) {
       toast.error("فشل تجهيز الطباعة: " + (err?.response?.data?.message || err?.message || ""));
     } finally {
       setPrintingDocx(false);
     }
+  };
+
+  // ━━━ طباعة مستند الوورد الأصلي مع التحقق من الطباعة السابقة ━━━
+  const handlePrintWordDocument = async () => {
+    if (isDirty) {
+      toast.warning("يجب حفظ التعديلات أولاً قبل الطباعة!");
+      return;
+    }
+    const currentInfo = printHistory["financial"];
+    if (currentInfo && currentInfo.printCount > 0) {
+      setReprintWarningOpen(true);
+      return;
+    }
+    await executePrintDoc();
+  };
+
+  const handleConfirmReprint = async () => {
+    setReprintWarningOpen(false);
+    await executePrintDoc();
   };
 
   // ━━━ تحميل ملف Word الأصلي (.docx) ━━━
@@ -1151,41 +1202,7 @@ export function TabFinancial({
   return (
     <div className="space-y-6 animate-fade-in print:m-0 print:p-0">
       {/* ━━━ شريط تنبيه التعديلات غير المحفوظة وأزرار الحفظ/الإلغاء (حسب طلب المستخدم بدقة) ━━━ */}
-      {isDirty && (
-        <div className="sticky top-2 z-30 p-3.5 rounded-2xl bg-amber-500/15 border-2 border-amber-500/40 shadow-xl backdrop-blur-md flex items-center justify-between gap-3 animate-bounce-subtle">
-          <div className="flex items-center gap-2.5 text-xs text-amber-900 dark:text-amber-200">
-            <AlertCircle className="h-5 w-5 text-amber-600 shrink-0 animate-pulse" />
-            <div>
-              <span className="font-extrabold text-sm block">توجد تعديلات جديدة غير محفوظة في العرض المالي!</span>
-              <span className="text-[11px] opacity-90">
-                أزرار المعاينة والطباعة مقفلة لحين حفظ التعديلات لضمان دقة وتطابق المستند المطبوع.
-              </span>
-            </div>
-          </div>
 
-          <div className="flex items-center gap-2 shrink-0">
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={handleCancelEdits}
-              className="h-8.5 px-3 text-xs font-bold rounded-xl border-amber-500/40 hover:bg-amber-500/20 cursor-pointer flex items-center gap-1.5"
-            >
-              <RotateCcw className="h-3.5 w-3.5" />
-              <span>إلغاء التعديلات</span>
-            </Button>
-
-            <Button
-              size="sm"
-              onClick={handleSaveOffer}
-              disabled={savingOffer}
-              className="h-8.5 px-4 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black rounded-xl shadow-md cursor-pointer flex items-center gap-1.5"
-            >
-              <Save className="h-3.5 w-3.5" />
-              <span>{savingOffer ? "جاري الحفظ..." : "حفظ التعديلات 💾"}</span>
-            </Button>
-          </div>
-        </div>
-      )}
 
 
 
@@ -1963,6 +1980,8 @@ export function TabFinancial({
                 </div>
 
                 <div className="flex items-center gap-2 flex-wrap">
+                  <FreeConvertersQuickLinks />
+
                   <Button
                     size="sm"
                     onClick={handlePrintWordDocument}
@@ -2061,106 +2080,33 @@ export function TabFinancial({
       )}
 
       {/* ━━━ BOTTOM ACTION BAR: التوليد والطباعة والمعاينة بأسفل مرحلة العرض المالي ━━━ */}
-      <div className="p-4 sm:p-5 rounded-3xl bg-[#fdfaf5] dark:bg-card border-2 border-[#f5dfc6] dark:border-amber-500/30 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 shadow-sm">
-        <div className="flex items-center gap-3">
-          <div className="w-12 h-12 rounded-full bg-teal-500/15 border-2 border-teal-500/30 text-teal-700 dark:text-teal-300 flex items-center justify-center shrink-0 shadow-xs">
-            <Coins className="h-6 w-6 text-teal-700 dark:text-teal-400" />
-          </div>
-          <div>
-            <div className="flex items-center gap-2 flex-wrap">
-              <h4 className="text-sm sm:text-base font-black text-foreground">
-                العرض المالي وجدول الأسعار والكميات
-              </h4>
-              <Badge className="bg-[#d97706] hover:bg-[#d97706] text-white font-mono text-[11px] font-bold px-2.5 py-0.5 rounded-lg shadow-xs">
-                رقم القيد: {registrationNumber}
-              </Badge>
-              {isDirty ? (
-                <Badge className="bg-amber-100 text-amber-900 border border-amber-300 dark:bg-amber-950/60 dark:text-amber-200 text-[10px] font-bold animate-pulse">
-                  تعديلات غير محفوظة ⚠️
-                </Badge>
-              ) : (
-                <Badge className="bg-[#dcfce7] text-[#15803d] border border-[#86efac] text-[11px] font-bold px-2.5 py-0.5 rounded-full">
-                  محفوظ ومعتمد ✓
-                </Badge>
-              )}
-              <div className="inline-flex items-center gap-1.5 px-3 py-0.5 rounded-xl bg-emerald-500/20 text-emerald-800 dark:text-emerald-300 border border-emerald-500/40 text-[11px] font-black">
-                <FileCheck className="h-3.5 w-3.5" />
-                <span>{isDirty ? "تعديلات جاهزة للمعاينة والحفظ ✍️" : "التعديلات محفوظة ✓"}</span>
-              </div>
-            </div>
-            <p className="text-xs text-muted-foreground mt-0.5">
-              مطابق 100% لقالب الوورد الأصلي للشركة (عرض مالى.docx). يمكنك المعاينة أو الطباعة مباشرة من هنا.
-            </p>
-          </div>
-        </div>
+      <LetterBottomActionWidget
+        title="العرض المالي وجدول الأسعار والكميات"
+        registrationNumber={registrationNumber}
+        isDirty={isDirty}
+        printInfo={printHistory["financial"]}
+        onPreview={() => setPreviewModalOpen(true)}
+        onSave={handleSaveOffer}
+        onCancelEdits={handleCancelEdits}
+        saving={savingOffer}
+        onViewArchive={() => setPreviewModalOpen(true)}
+        icon={Coins}
+        iconColor="text-teal-700 dark:text-teal-400"
+        iconBg="bg-teal-500/15 border-teal-500/30"
+        customSubtitle="مطابق 100% لقالب الوورد الأصلي للشركة (عرض مالى.docx). اضغط على زر المعاينة للاطلاع على المستند وتنزيله أو طباعته."
+      />
 
-        <div className="flex items-center gap-2 flex-wrap self-end md:self-auto">
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => setPreviewModalOpen(true)}
-            disabled={isDirty}
-            title={isDirty ? "يجب حفظ التعديلات أولاً لتفعيل المعاينة الرسمية" : "معاينة مستند الوورد المعتمد"}
-            className={`h-9.5 px-4 text-xs font-bold rounded-xl border-2 border-[#d97706] text-[#b45309] dark:text-amber-300 hover:bg-amber-500/10 cursor-pointer bg-white dark:bg-card shadow-xs flex items-center gap-1.5 ${
-              isDirty ? "opacity-50 cursor-not-allowed bg-muted/40" : ""
-            }`}
-          >
-            {isDirty ? <Lock className="h-4 w-4" /> : <Eye className="h-4 w-4 ml-1.5 text-[#d97706]" />}
-            <span>معاينة مستند الوورد</span>
-          </Button>
-
-          <Button
-            size="sm"
-            onClick={handlePrintWordDocument}
-            disabled={printingDocx || isDirty}
-            title={isDirty ? "يجب حفظ التعديلات أولاً للطباعة" : "طباعة العرض المالي"}
-            className={`h-9.5 px-4 bg-[#d97706] hover:bg-[#b45309] text-white text-xs font-bold rounded-xl shadow-md cursor-pointer flex items-center gap-1.5 ${
-              isDirty ? "opacity-50 cursor-not-allowed bg-muted text-muted-foreground" : ""
-            }`}
-          >
-            {isDirty ? <Lock className="h-4 w-4" /> : <Printer className={`h-4 w-4 ${printingDocx ? "animate-spin" : ""}`} />}
-            <span>{printingDocx ? "جاري التجهيز..." : "طباعة المستند"}</span>
-          </Button>
-
-          <Button
-            size="sm"
-            onClick={handleDownloadPdf}
-            disabled={downloadingPdf || isDirty}
-            title={isDirty ? "يجب حفظ التعديلات أولاً للتحميل" : "تحميل بصيغة PDF"}
-            className={`h-9.5 px-3.5 bg-[#e11d48] hover:bg-[#be123c] text-white text-xs font-bold rounded-xl shadow-md cursor-pointer flex items-center gap-1.5 ${
-              isDirty ? "opacity-50 cursor-not-allowed bg-muted text-muted-foreground" : ""
-            }`}
-          >
-            <FileText className={`h-4 w-4 ${downloadingPdf ? "animate-spin" : ""}`} />
-            <span>{downloadingPdf ? "جاري التحويل..." : "PDF (.pdf)"}</span>
-          </Button>
-
-          <Button
-            size="sm"
-            onClick={handleDownloadDocx}
-            disabled={downloadingDocx || isDirty}
-            title={isDirty ? "يجب حفظ التعديلات أولاً للتحميل" : "تحميل بصيغة Word"}
-            className={`h-9.5 px-3.5 bg-[#2563eb] hover:bg-[#1d4ed8] text-white text-xs font-bold rounded-xl shadow-md cursor-pointer flex items-center gap-1.5 ${
-              isDirty ? "opacity-50 cursor-not-allowed bg-muted text-muted-foreground" : ""
-            }`}
-          >
-            <Download className="h-4 w-4" />
-            <span>{downloadingDocx ? "جاري التوليد..." : "Word (.docx)"}</span>
-          </Button>
-
-          {isDirty && (
-            <Button
-              size="sm"
-              onClick={handleSaveOffer}
-              disabled={savingOffer}
-              className="h-9.5 px-4 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black rounded-xl shadow-md cursor-pointer flex items-center gap-1.5 animate-pulse"
-            >
-              <Save className="h-4 w-4" />
-              <span>{savingOffer ? "جاري الحفظ..." : "حفظ التعديلات 💾"}</span>
-            </Button>
-          )}
-        </div>
-      </div>
+      {/* ━━━ نافذة التنبيه عند إعادة طباعة مستند مطبوع مسبقاً ━━━ */}
+      <ReprintConfirmModal
+        open={reprintWarningOpen}
+        onClose={() => setReprintWarningOpen(false)}
+        printInfo={printHistory["financial"]}
+        onConfirmReprint={handleConfirmReprint}
+        onViewArchive={() => {
+          setReprintWarningOpen(false);
+          setPreviewModalOpen(true);
+        }}
+      />
 
       {/* شريط التنقل السفلي */}
       <StepFooterNav
