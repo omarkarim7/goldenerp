@@ -18,7 +18,6 @@ import { toast } from "sonner";
 import api from "@/lib/api";
 import { Operation, SectionCard, formatDate, tafqeetArabic, formatCurrency } from "./types";
 import { StepFooterNav } from "./StepFooterNav";
-import { DocxViewer } from "@/components/docx-viewer";
 import {
   generateSmartOutgoingRef,
   cleanAllDocxXml,
@@ -1015,12 +1014,17 @@ export function TabFinancial({
     );
   };
 
-  // ━━━ تحميل المعاينة الفورية لمستند Word ━━━
+  // ━━━ تحميل المعاينة الرسمية من محرك Word ━━━
   const loadOfficialPreview = async () => {
     setRenderingDocx(true);
     try {
-      const docxBlob = await generateFinancialDocxBlob();
-      setPreviewDocxBlob(docxBlob);
+      if (previewPdfUrl) {
+        URL.revokeObjectURL(previewPdfUrl);
+        setPreviewPdfUrl(null);
+      }
+      const pdfBlob = await generateFinancialPdfBlob();
+      const url = URL.createObjectURL(pdfBlob);
+      setPreviewPdfUrl(url);
     } catch (err: any) {
       console.error("فشل تجهيز معاينة العرض المالي:", err);
       toast.error("تعذر تجهيز المعاينة: " + (err?.message || ""));
@@ -2053,9 +2057,13 @@ export function TabFinancial({
                       </p>
                     </div>
                   </div>
-                ) : previewDocxBlob ? (
-                  <div className="w-full max-w-[950px] bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-300 dark:border-slate-800 overflow-hidden flex flex-col my-auto p-4">
-                    <DocxViewer blob={previewDocxBlob} fileName={`عرض_مالي_${op.serialNumber || "365"}_${registrationNumber}.docx`} />
+                ) : previewPdfUrl ? (
+                  <div className="w-full h-full flex flex-col items-center">
+                    <iframe
+                      src={`${previewPdfUrl}#toolbar=0&navpanes=0`}
+                      className="w-full h-[78vh] min-h-[640px] rounded-xl border border-slate-700 shadow-2xl bg-white"
+                      title="معاينة مستند الوورد الأصلي المعتمد"
+                    />
                   </div>
                 ) : (
                   <div className="my-auto py-20 text-center text-slate-400 space-y-3">

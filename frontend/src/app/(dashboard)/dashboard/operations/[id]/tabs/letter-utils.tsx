@@ -315,14 +315,16 @@ export function formatPrintedBy(printedBy?: string): string {
 
 /**
  * Generates Floating DrawingML XML for QR Code:
- * - Ultra-compact size: 320000 x 320000 (~0.88cm) so it NEVER interferes with or wraps text
- * - Positioned at far-left (X: 360000 ~ 1.0cm from paper edge)
- * - Directly under the header line (Y: 1050000 ~ 2.9cm)
+ * - Positioned exactly in the user's designated red circle area:
+ *   - Under the horizontal header separator line (Y: 1550000 ~ 4.3cm from top)
+ *   - In the left margin area inside the page frame (X: 800000 ~ 2.2cm from left)
+ * - Size: Slightly larger as requested (~1.45cm = 520000 x 520000 EMUs)
  * - behindDoc="1" (Behind Text) & layoutInCell="0" & wrapNone & allowOverlap="1"
  */
 export function buildQrAnchorXml(): string {
-  return `<w:r><w:drawing><wp:anchor distT="0" distB="0" distL="0" distR="0" simplePos="0" relativeHeight="251658240" behindDoc="1" locked="1" layoutInCell="0" allowOverlap="1"><wp:simplePos x="0" y="0"/><wp:positionH relativeFrom="page"><wp:posOffset>360000</wp:posOffset></wp:positionH><wp:positionV relativeFrom="page"><wp:posOffset>1050000</wp:posOffset></wp:positionV><wp:extent cx="320000" cy="320000"/><wp:effectExtent l="0" t="0" r="0" b="0"/><wp:wrapNone/><wp:docPr id="777" name="DocQR"/><wp:cNvGraphicFramePr><a:graphicFrameLocks xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" noChangeAspect="1"/></wp:cNvGraphicFramePr><a:graphic xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:pic xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:nvPicPr><pic:cNvPr id="0" name="qr.png"/><pic:cNvPicPr/></pic:nvPicPr><pic:blipFill><a:blip r:embed="rIdQR"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill><pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="320000" cy="320000"/></a:xfrm><a:prstGeom prst="rect"/></pic:spPr></pic:pic></a:graphicData></a:graphic></wp:anchor></w:drawing></w:r>`;
+  return `<w:r><w:drawing><wp:anchor distT="0" distB="0" distL="0" distR="0" simplePos="0" relativeHeight="251658240" behindDoc="1" locked="1" layoutInCell="0" allowOverlap="1"><wp:simplePos x="0" y="0"/><wp:positionH relativeFrom="page"><wp:posOffset>750000</wp:posOffset></wp:positionH><wp:positionV relativeFrom="page"><wp:posOffset>1550000</wp:posOffset></wp:positionV><wp:extent cx="520000" cy="520000"/><wp:effectExtent l="0" t="0" r="0" b="0"/><wp:wrapNone/><wp:docPr id="777" name="DocQR"/><wp:cNvGraphicFramePr><a:graphicFrameLocks xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" noChangeAspect="1"/></wp:cNvGraphicFramePr><a:graphic xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:pic xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:nvPicPr><pic:cNvPr id="0" name="qr.png"/><pic:cNvPicPr/></pic:nvPicPr><pic:blipFill><a:blip r:embed="rIdQR"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill><pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="520000" cy="520000"/></a:xfrm><a:prstGeom prst="rect"/></pic:spPr></pic:pic></a:graphicData></a:graphic></wp:anchor></w:drawing></w:r>`;
 }
+
 
 /**
  * Injects QR Code strictly into the first page only and safely handles XML tags
