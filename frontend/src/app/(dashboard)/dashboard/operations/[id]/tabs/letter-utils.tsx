@@ -315,57 +315,50 @@ export function formatPrintedBy(printedBy?: string): string {
 
 /**
  * Generates Floating DrawingML XML for QR Code:
- * - Positioned at bottom-left corner directly above the footer line (as requested by user)
- * - Safe margin inside page frame (X: 650000 ~ 1.8cm from left)
- * - Above the footer divider line (Y: 9200000 ~ 25.5cm from top)
- * - Size: ~1.45cm (520000 x 520000 EMUs)
- * - behindDoc="1" (Behind Text) & layoutInCell="0" & wrapNone & allowOverlap="1"
+ * - Matching EXACT coordinates and properties from user's ground-truth file
+ *   (خطاب_توضيح_617_AZ26101800172 (1).docx):
+ *   - Under the horizontal header separator line (Y: 899160 EMU ~ 2.497cm from top)
+ *   - Left-aligned within border frame (X: 426720 EMU ~ 1.185cm from left)
+ *   - Size: 519430 x 519430 EMU (~1.44cm)
+ *   - behindDoc="1" & locked="1" & layoutInCell="0" & wrapNone & allowOverlap="1"
  */
 export function buildQrAnchorXml(): string {
-  return `<w:r><w:drawing><wp:anchor distT="0" distB="0" distL="0" distR="0" simplePos="0" relativeHeight="251658240" behindDoc="1" locked="1" layoutInCell="0" allowOverlap="1"><wp:simplePos x="0" y="0"/><wp:positionH relativeFrom="page"><wp:posOffset>650000</wp:posOffset></wp:positionH><wp:positionV relativeFrom="page"><wp:posOffset>9200000</wp:posOffset></wp:positionV><wp:extent cx="520000" cy="520000"/><wp:effectExtent l="0" t="0" r="0" b="0"/><wp:wrapNone/><wp:docPr id="777" name="DocQR"/><wp:cNvGraphicFramePr><a:graphicFrameLocks xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" noChangeAspect="1"/></wp:cNvGraphicFramePr><a:graphic xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:pic xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:nvPicPr><pic:cNvPr id="0" name="qr.png"/><pic:cNvPicPr/></pic:nvPicPr><pic:blipFill><a:blip r:embed="rIdQR"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill><pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="520000" cy="520000"/></a:xfrm><a:prstGeom prst="rect"/></pic:spPr></pic:pic></a:graphicData></a:graphic></wp:anchor></w:drawing></w:r>`;
+  return `<w:r><w:rPr><w:noProof/></w:rPr><w:drawing><wp:anchor distT="0" distB="0" distL="0" distR="0" simplePos="0" relativeHeight="251658240" behindDoc="1" locked="1" layoutInCell="0" allowOverlap="1" wp14:anchorId="435524D4" wp14:editId="1E16E09C"><wp:simplePos x="0" y="0"/><wp:positionH relativeFrom="page"><wp:posOffset>426720</wp:posOffset></wp:positionH><wp:positionV relativeFrom="page"><wp:posOffset>899160</wp:posOffset></wp:positionV><wp:extent cx="519430" cy="519430"/><wp:effectExtent l="0" t="0" r="0" b="0"/><wp:wrapNone/><wp:docPr id="777" name="DocQR"/><wp:cNvGraphicFramePr><a:graphicFrameLocks xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" noChangeAspect="1"/></wp:cNvGraphicFramePr><a:graphic xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:pic xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:nvPicPr><pic:cNvPr id="0" name="qr.png"/><pic:cNvPicPr/></pic:nvPicPr><pic:blipFill><a:blip r:embed="rIdQR"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill><pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="519430" cy="519430"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr></pic:pic></a:graphicData></a:graphic></wp:anchor></w:drawing></w:r>`;
 }
 
 
 /**
- * Injects QR Code strictly into the first page only and safely handles XML tags
- * to avoid any unclosed <w:r> or tag mismatches.
+ * Injects QR Code strictly into the first page only and cleans the container paragraph
+ * so that no residual text or whitespace causes text overlapping.
  */
 export function injectSingleQrIntoDocXml(
   docXml: string,
   qrDrawingXml: string,
   registrationNumber: string
 ): string {
-  // 1. Remove entire whitespace runs immediately preceding the QR placeholder so it doesn't wrap or push text
-  docXml = docXml.replace(
-    /<w:r\b[^>]*>(?:<w:rPr>[\s\S]*?<\/w:rPr>)?<w:t\b[^>]*>\s{2,}<\/w:t><\/w:r>(?=\s*<w:r\b[^>]*>(?:<w:rPr>[\s\S]*?<\/w:rPr>)?<w:t\b[^>]*>(?:الباركود|البركود)<\/w:t><\/w:r>)/g,
-    ""
-  );
-
-  // 2. Replace the first complete <w:r> containing only whitespace and الباركود/البركود with the QR drawing XML
   let qrDone = false;
+
+  // 1. Replace the entire contents of the paragraph containing the QR placeholder (الباركود أو البركود)
+  // with the QR drawing + single space, matching the ground-truth document structure 100%.
+  // This cleans out any residual template titles ('خطاب توضيح', 'عرض فني', etc.) that cause overlapping!
+  const spaceRun = '<w:r><w:rPr><w:rFonts w:asciiTheme="minorHAnsi" w:hAnsiTheme="minorHAnsi" w:cstheme="minorHAnsi" w:hint="cs"/><w:b/><w:bCs/><w:sz w:val="28"/><w:szCs w:val="28"/><w:u w:val="single"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t xml:space="preserve"> </w:t></w:r>';
+
   docXml = docXml.replace(
-    /<w:r\b[^>]*>(?:<w:rPr>[\s\S]*?<\/w:rPr>)?<w:t\b[^>]*>\s*(?:الباركود|البركود)\s*<\/w:t><\/w:r>/g,
-    () => {
+    /(<w:p\b[^>]*>)(?:<w:pPr>[\s\S]*?<\/w:pPr>)?[\s\S]*?(?:الباركود|البركود)[\s\S]*?(<\/w:p>)/,
+    (match, pStart, pEnd) => {
       if (!qrDone && qrDrawingXml) {
         qrDone = true;
-        return qrDrawingXml;
+        const pPrMatch = match.match(/<w:pPr>[\s\S]*?<\/w:pPr>/);
+        const pPr = pPrMatch
+          ? pPrMatch[0]
+          : '<w:pPr><w:spacing w:after="0"/><w:ind w:right="227"/><w:rPr><w:rFonts w:asciiTheme="minorHAnsi" w:hAnsiTheme="minorHAnsi"/><w:b/><w:bCs/><w:u w:val="single"/><w:lang w:bidi="ar-EG"/></w:rPr></w:pPr>';
+        return `${pStart}${pPr}${qrDrawingXml}${spaceRun}${pEnd}`;
       }
-      return "";
+      return match;
     }
   );
 
-  // 3. Fallback: if الباركود was embedded inside text, replace text safely without breaking XML
-  if (!qrDone) {
-    docXml = docXml.replace(/\s*(?:الباركود|البركود)\s*/g, () => {
-      if (!qrDone && qrDrawingXml) {
-        qrDone = true;
-        return `</w:t></w:r>${qrDrawingXml}<w:r><w:t>`;
-      }
-      return "";
-    });
-  }
-
-  // 4. Registration number fallback
+  // Fallback: registration number
   if (!qrDone && qrDrawingXml && docXml.includes("Ad26111000001")) {
     qrDone = true;
     docXml = docXml.replace("Ad26111000001", `${registrationNumber}</w:t></w:r>${qrDrawingXml}<w:r><w:t>`);
