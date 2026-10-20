@@ -1304,11 +1304,26 @@ export class OperationsService {
     const cleanFileName = customName?.trim() || decodedOriginalName.replace(/\.[^/.]+$/, '');
     this.invalidateOpCache(operationId);
 
+    const validOpDocTypes = Object.values(OpDocType);
+    let safeType: OpDocType = OpDocType.OTHER;
+    const rawTypeUpper = String(type || '').toUpperCase();
+    if (type && validOpDocTypes.includes(type as any)) {
+      safeType = type as OpDocType;
+    } else if (rawTypeUpper === 'CLARIFICATION' || rawTypeUpper === 'LETTER' || rawTypeUpper === 'ADDENDUM') {
+      safeType = OpDocType.LETTER;
+    } else if (rawTypeUpper === 'RECEIPT') {
+      safeType = OpDocType.RECEIPT;
+    } else if (rawTypeUpper === 'BOOKLET') {
+      safeType = OpDocType.BOOKLET;
+    } else if (rawTypeUpper === 'MARKET_STUDY') {
+      safeType = OpDocType.MARKET_STUDY;
+    }
+
     return this.prisma.operationDocument.create({
       data: {
         operationId,
         companyId: assignedCompanyId,
-        type,
+        type: safeType,
         fileName: cleanFileName,
         filePath: file.path.replace(/\\/g, '/'),
         fileType: rawExt,
@@ -1319,10 +1334,33 @@ export class OperationsService {
   }
 
   async getDocument(operationId: string, docId: string) {
-    const doc = await this.prisma.operationDocument.findFirst({
+    let doc = await this.prisma.operationDocument.findFirst({
       where: { id: docId, operationId },
     });
     if (!doc) {
+      doc = await this.prisma.operationDocument.findUnique({
+        where: { id: docId },
+      });
+    }
+    if (!doc) {
+      const compDoc = await this.prisma.companyDocument.findUnique({
+        where: { id: docId },
+      });
+      if (compDoc) {
+        return {
+          id: compDoc.id,
+          operationId,
+          companyId: compDoc.companyId,
+          type: OpDocType.OTHER,
+          fileName: compDoc.originalFileName || compDoc.fileName,
+          filePath: compDoc.filePath,
+          fileType: compDoc.fileType,
+          fileSize: compDoc.fileSize,
+          uploadedBy: 'الشركة المشاركة',
+          createdAt: compDoc.createdAt,
+          updatedAt: (compDoc as any).updatedAt || compDoc.createdAt,
+        } as any;
+      }
       throw new NotFoundException('المستند غير موجود');
     }
     return doc;
@@ -1335,6 +1373,38 @@ export class OperationsService {
       where: { id: doc.id },
       data: {
         fileName: customName.trim(),
+      },
+    });
+  }
+
+  async replaceDocumentFile(operationId: string, docId: string, file: Express.Multer.File, customName?: string) {
+    const doc = await this.getDocument(operationId, docId);
+    this.invalidateOpCache(operationId);
+
+    // Remove old physical file if exists
+    if (doc.filePath && existsSync(doc.filePath)) {
+      try {
+        unlinkSync(doc.filePath);
+      } catch (err) {
+        console.error('Error removing old file:', err);
+      }
+    }
+
+    const rawExt = extname(file.originalname).replace('.', '').toLowerCase();
+    let decodedOriginalName = file.originalname;
+    try {
+      decodedOriginalName = Buffer.from(file.originalname, 'latin1').toString('utf8');
+    } catch {}
+
+    const cleanFileName = customName?.trim() || decodedOriginalName.replace(/\.[^/.]+$/, '');
+
+    return this.prisma.operationDocument.update({
+      where: { id: doc.id },
+      data: {
+        fileName: cleanFileName,
+        filePath: file.path.replace(/\\/g, '/'),
+        fileType: rawExt,
+        fileSize: file.size,
       },
     });
   }
@@ -1616,14 +1686,14 @@ export class OperationsService {
    * - المحرك الثاني (تلقائي): سكربت تحويل سحابي ذكي ومجاني 100% عبر iLovePDF (يعمل آلياً بدون أي مفاتيح API أو تكلفة).
    */
   async convertDocxBufferToPdf(docxBuffer: Buffer): Promise<Buffer> {
-    // 1. محاولة التحويل عبر محرك Microsoft Word Desktop المحلي أولاً (بدقة 100% وبكامل الخطوط)
+    // 1. محاولة التحويل عبر محرك Microsoft Word Desktop المحلي أولاً (بدقة 100% وبكامل الخطوط على Windows)
     if (process.platform === 'win32') {
       try {
         return await this.convertDocxViaWordCom(docxBuffer);
       } catch (comErr: any) {
-        this.logger.warn(`المحاولة الأولى عبر Word COM فشلت (${comErr?.message})، جاري إعادة المحاولة الفورية...`);
+        this.logger.warn(`المحاولة الأولى عبر Word COM فشلت (${comErr?.message})، جاري إعادة المحاولة...`);
         try {
-          await new Promise((r) => setTimeout(r, 1200));
+          await new Promise((r) => setTimeout(r, 1000));
           return await this.convertDocxViaWordCom(docxBuffer);
         } catch (retryErr: any) {
           this.logger.warn(`فشلت إعادة محاولة Word COM المحلي: ${retryErr?.message}`);
@@ -1631,13 +1701,128 @@ export class OperationsService {
       }
     }
 
-    // 2. التحويل البديل لبيئات الخوادم التي لا تدعم Word Desktop
+    // 2. محاولة التحويل عبر ONLYOFFICE Document Server (إذا تم إعداده للإنتاج السحابي)
+    if (process.env.ONLYOFFICE_CONVERTER_URL || process.env.ONLYOFFICE_URL) {
+      try {
+        return await this.convertDocxViaOnlyOffice(docxBuffer);
+      } catch (ooErr: any) {
+        this.logger.warn(`فشل التحويل عبر خادم ONLYOFFICE: ${ooErr?.message}`);
+      }
+    }
+
+    // 3. محاولة التحويل عبر LibreOffice Headless (المحرك الافتراضي للينكس / VPS)
+    try {
+      return await this.convertDocxViaLibreOffice(docxBuffer);
+    } catch (loErr: any) {
+      this.logger.warn(`محرك LibreOffice Headless غير متاح أو فشل (${loErr?.message})`);
+    }
+
+    // 4. التحويل الاحتياطي السحابي العام الذكي (iLovePDF)
     try {
       return await this.convertDocxViaFreeILovePdf(docxBuffer);
     } catch (webErr: any) {
-      this.logger.error(`فشل التحويل البديل أيضاً: ${webErr?.message}`);
+      this.logger.error(`فشلت جميع محركات التحويل: ${webErr?.message}`);
       throw new Error('تعذر تحويل المستند إلى PDF عبر محركات التحويل المتاحة');
     }
+  }
+
+  /**
+   * تحويل المستند عبر خادم ONLYOFFICE Document Server ConvertService
+   */
+  private async convertDocxViaOnlyOffice(docxBuffer: Buffer): Promise<Buffer> {
+    const onlyOfficeUrl = process.env.ONLYOFFICE_CONVERTER_URL || process.env.ONLYOFFICE_URL;
+    if (!onlyOfficeUrl) {
+      throw new Error('ONLYOFFICE URL is not configured');
+    }
+
+    const endpoint = onlyOfficeUrl.endsWith('.ashx')
+      ? onlyOfficeUrl
+      : `${onlyOfficeUrl.replace(/\/+$/, '')}/ConvertService.ashx`;
+
+    const randomId = Date.now() + '_' + Math.random().toString(36).substring(7);
+    const base64Data = docxBuffer.toString('base64');
+    const dataUri = `data:application/vnd.openxmlformats-officedocument.wordprocessingml.document;base64,${base64Data}`;
+
+    this.logger.log(`تحويل المستند عبر ONLYOFFICE ConvertService: ${endpoint}...`);
+
+    const res = await fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+      },
+      body: JSON.stringify({
+        async: false,
+        filetype: 'docx',
+        key: randomId,
+        outputtype: 'pdf',
+        title: `document_${randomId}.docx`,
+        url: dataUri,
+      }),
+    });
+
+    if (!res.ok) {
+      throw new Error(`ONLYOFFICE ConvertService returned status ${res.status}`);
+    }
+
+    const json = (await res.json()) as any;
+    if (!json.fileUrl) {
+      throw new Error(`ONLYOFFICE did not return fileUrl: ${JSON.stringify(json)}`);
+    }
+
+    const pdfRes = await fetch(json.fileUrl);
+    if (!pdfRes.ok) {
+      throw new Error(`Failed to download converted PDF from ONLYOFFICE: ${pdfRes.status}`);
+    }
+
+    const arrayBuf = await pdfRes.arrayBuffer();
+    return Buffer.from(arrayBuf);
+  }
+
+  /**
+   * تحويل المستند عبر LibreOffice Headless (سيرفرات Linux / VPS / Windows)
+   */
+  private async convertDocxViaLibreOffice(docxBuffer: Buffer): Promise<Buffer> {
+    const uploadDir = path.resolve(process.cwd(), 'uploads');
+    if (!fs.existsSync(uploadDir)) {
+      fs.mkdirSync(uploadDir, { recursive: true });
+    }
+
+    const randomId = Date.now() + '_' + Math.random().toString(36).substring(7);
+    const tempDocx = path.resolve(uploadDir, `goldenerp_lo_${randomId}.docx`);
+    const expectedPdf = path.resolve(uploadDir, `goldenerp_lo_${randomId}.pdf`);
+
+    await fs.promises.writeFile(tempDocx, docxBuffer);
+
+    const loBinary =
+      process.env.LIBREOFFICE_PATH ||
+      (process.platform === 'win32'
+        ? 'C:\\Program Files\\LibreOffice\\program\\soffice.exe'
+        : 'soffice');
+
+    return new Promise((resolve, reject) => {
+      const cmd = `"${loBinary}" --headless --convert-to pdf --outdir "${uploadDir}" "${tempDocx}"`;
+
+      exec(cmd, { timeout: 45000 }, async (err, stdout, stderr) => {
+        try { await fs.promises.unlink(tempDocx); } catch {}
+
+        if (fs.existsSync(expectedPdf)) {
+          try {
+            const pdfBuf = await fs.promises.readFile(expectedPdf);
+            await fs.promises.unlink(expectedPdf);
+            if (pdfBuf.length > 1000) {
+              this.logger.log(`تم تحويل المستند بنجاح عبر LibreOffice Headless! الحجم: ${pdfBuf.length} بايت`);
+              return resolve(pdfBuf);
+            }
+          } catch (readErr) {
+            try { await fs.promises.unlink(expectedPdf); } catch {}
+            return reject(readErr);
+          }
+        }
+
+        reject(err || new Error(stderr || 'فشل تحويل المستند عبر LibreOffice Headless'));
+      });
+    });
   }
 
   /**
@@ -1857,60 +2042,56 @@ try {
   }
 
   async uploadCloudPdf(pdfBuffer: Buffer, fileName?: string): Promise<{ success: boolean; url: string; provider: string }> {
-    const finalName = fileName || `goldenerp_doc_${Date.now()}.pdf`;
+    const rawName = fileName || `goldenerp_doc_${Date.now()}.pdf`;
+    const finalName = rawName.endsWith('.pdf') ? rawName : `${rawName}.pdf`;
 
-    // 1. Primary: Catbox.moe (Free permanent direct PDF file hosting - opens PDF immediately on mobile camera scan)
+    // 1. Save local permanent copy in uploads/cloud_docs
+    const cloudDocsDir = path.resolve(process.cwd(), 'uploads', 'cloud_docs');
+    if (!fs.existsSync(cloudDocsDir)) {
+      fs.mkdirSync(cloudDocsDir, { recursive: true });
+    }
+    const localFilePath = path.resolve(cloudDocsDir, finalName);
+    try {
+      await fs.promises.writeFile(localFilePath, pdfBuffer);
+    } catch (saveErr) {
+      console.warn('Failed to save local cloud_docs copy:', saveErr);
+    }
+
+    // 2. Primary: Catbox.moe (Free permanent direct PDF link - opens PDF directly in mobile camera scan)
     try {
       const form = new FormData();
       form.append('reqtype', 'fileupload');
-      form.append('fileToUpload', new Blob([new Uint8Array(pdfBuffer)], { type: 'application/pdf' }), finalName);
+      form.append('fileToUpload', new File([new Uint8Array(pdfBuffer)], finalName, { type: 'application/pdf' }));
 
       const res = await fetch('https://catbox.moe/user/api.php', {
         method: 'POST',
+        headers: {
+          'User-Agent':
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+        },
         body: form,
-        signal: AbortSignal.timeout(20000),
+        signal: AbortSignal.timeout(25000),
       });
 
       if (res.ok) {
         const text = (await res.text()).trim();
-        if (text.startsWith('http')) {
+        if (text.startsWith('http') && (text.endsWith('.pdf') || text.includes('files.catbox.moe'))) {
+          this.logger.log(`تم رفع المستند سحابياً بنجاح عبر Catbox: ${text}`);
           return { success: true, url: text, provider: 'catbox' };
         }
       }
     } catch (catboxErr: any) {
-      console.warn('Catbox upload failed, trying fallback:', catboxErr?.message);
+      console.warn('Catbox upload failed:', catboxErr?.message);
     }
 
-    // 2. Secondary Fallback: Gofile.io (Fast, free cloud storage)
-    try {
-      const serverRes = await fetch('https://api.gofile.io/servers', {
-        signal: AbortSignal.timeout(10000),
-      });
-      if (serverRes.ok) {
-        const serverJson: any = await serverRes.json();
-        const server = serverJson?.data?.servers?.[0]?.name;
-        if (server) {
-          const form = new FormData();
-          form.append('file', new Blob([new Uint8Array(pdfBuffer)], { type: 'application/pdf' }), finalName);
-          const uploadRes = await fetch(`https://${server}.gofile.io/contents/uploadfile`, {
-            method: 'POST',
-            body: form,
-            signal: AbortSignal.timeout(25000),
-          });
-          if (uploadRes.ok) {
-            const uploadJson: any = await uploadRes.json();
-            const downloadPage = uploadJson?.data?.downloadPage;
-            if (downloadPage) {
-              return { success: true, url: downloadPage, provider: 'gofile' };
-            }
-          }
-        }
-      }
-    } catch (gofileErr: any) {
-      console.warn('Gofile upload failed:', gofileErr?.message);
+    // 3. Fallback: If PUBLIC_APP_URL is set, use direct backend URL
+    if (process.env.PUBLIC_APP_URL) {
+      const publicBase = process.env.PUBLIC_APP_URL.replace(/\/+$/, '');
+      const directUrl = `${publicBase}/api/operations/public-doc/${encodeURIComponent(finalName)}`;
+      return { success: true, url: directUrl, provider: 'goldenerp_cloud' };
     }
 
-    throw new BadRequestException('تعذر رفع الملف إلى خدمة التخزين السحابي المجانية حالياً (Catbox/Gofile)، يرجى المحاولة لاحقاً');
+    throw new BadRequestException('تعذر توثيق المستند سحابياً حالياً، يرجى المحاولة مرة أخرى');
   }
 }
 

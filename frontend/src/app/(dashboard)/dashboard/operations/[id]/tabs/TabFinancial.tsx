@@ -30,6 +30,12 @@ import {
   FISCAL_YEAR_OPTIONS,
   LetterQrCloudCard,
   PdfExportLoadingModal,
+  getUnifiedOperationRegistrationNumber,
+  regenerateUnifiedRegistrationNumber,
+  FiscalYearSelect,
+  replaceDocxFiscalAndDate,
+  replaceDocxChairman,
+  sanitizeChairmanTitle,
 } from "./letter-utils";
 import JSZip from "jszip";
 import QRCode from "qrcode";
@@ -252,14 +258,10 @@ export function TabFinancial({
 
   const currentCompany = currentCompanyLink?.company;
 
-  // رقم القيد الصادر الذكي
+  // رقم القيد الصادر الذكي الموحد للعملية
   const [registrationNumber, setRegistrationNumber] = useState(() => {
     if (savedFin?.registrationNumber) return savedFin.registrationNumber;
-    return generateSmartOutgoingRef({
-      companyCode: currentCompanyLink?.displayCode || "Ad",
-      tenderType: op.tenderType || "LIMITED_TENDER",
-      dateStr: new Date().toISOString(),
-    });
+    return getUnifiedOperationRegistrationNumber(op, currentCompanyLink?.displayCode);
   });
 
   // كود العملية بالشركة
@@ -321,10 +323,10 @@ export function TabFinancial({
     return savedFin?.subjectTarget || "للأصناف";
   });
   const [operationRegisteredName, setOperationRegisteredName] = useState(() => {
-    return savedFin?.operationRegisteredName || op.name || "توريد كاوتش وبطاريات للسيارات";
+    return savedFin?.operationRegisteredName || op.name || "";
   });
   const [operationNumber, setOperationNumber] = useState(() => {
-    return savedFin?.operationNumber || op.externalNumber || String(op.serialNumber || "365");
+    return savedFin?.operationNumber || op.externalNumber || (op.serialNumber ? String(op.serialNumber) : "") || "";
   });
   const [fiscalYear, setFiscalYear] = useState(() => {
     return savedFin?.fiscalYear || "2024 / 2025";
@@ -336,6 +338,24 @@ export function TabFinancial({
     if (d?.date) return formatDate(d.date);
     return "14/ 1 /2024";
   });
+
+  // مزامنة تلقائية للبيانات إذا تغيرت العملية الأصلية دون وجود تعديل يدوي محفوظ
+  useEffect(() => {
+    if (!savedFin?.operationRegisteredName && op.name) {
+      setOperationRegisteredName(op.name);
+    }
+    if (!savedFin?.operationNumber && (op.externalNumber || op.serialNumber)) {
+      setOperationNumber(op.externalNumber || String(op.serialNumber));
+    }
+    if (!savedFin?.recipientTitleAndAuthority && op.authority) {
+      setRecipientTitleAndAuthority(`مدير الادارة العامة للمشتريات والمخازن بـ ${op.authority}`);
+    }
+    if (!savedFin?.financialOpeningDate) {
+      const d = op.dates?.find((dt: any) => dt.type === "FINANCIAL_OPENING" || dt.title?.includes("مالي") || dt.type === "TECHNICAL_OPENING");
+      if (d?.dateValue) setFinancialOpeningDate(formatDate(d.dateValue));
+      else if (d?.date) setFinancialOpeningDate(formatDate(d.date));
+    }
+  }, [op.name, op.externalNumber, op.serialNumber, op.authority, op.dates, savedFin]);
 
   // ━━━ 3. جدول الأصناف والأسعار (12 عمود) ━━━
   const [items, setItems] = useState<FinancialOfferItem[]>(() => {
@@ -463,7 +483,7 @@ export function TabFinancial({
     return savedFin?.financeManagerName || "محمود إبراهيم";
   });
   const [boardChairman, setBoardChairman] = useState(() => {
-    return savedFin?.boardChairman || "يعتمد ،،،،،، رئيس مجلس الإدارة";
+    return sanitizeChairmanTitle(savedFin?.boardChairman);
   });
 
   // ━━━ 6. تتبع حالة التعديل والحفظ (isDirty control) ━━━
@@ -687,14 +707,15 @@ export function TabFinancial({
   };
 
   // إعادة توليد رقم القيد
-  const handleRegenerateRef = () => {
-    const fresh = generateSmartOutgoingRef({
-      companyCode: currentCompanyLink?.displayCode || "Ad",
-      tenderType: op.tenderType || "LIMITED_TENDER",
-      dateStr: new Date().toISOString(),
+  const handleRegenerateRef = async () => {
+    await regenerateUnifiedRegistrationNumber({
+      op,
+      companyCode: currentCompanyLink?.displayCode || "AZ",
+      onSuccess: (fresh) => {
+        setRegistrationNumber(fresh);
+        onRefresh();
+      },
     });
-    setRegistrationNumber(fresh);
-    toast.success(`تم تحديث رقم القيد إلى: ${fresh}`);
   };
 
   // ━━━ محرك استبدال المتغيرات مباشرة في قالب الوورد الأصلي (عرض مالى.docx) ━━━
@@ -752,8 +773,7 @@ export function TabFinancial({
     docXml = docXml.replace(/365/g, escapeXml(operationNumber));
 
     // العام المالي وموعد فتح المظروف
-    docXml = docXml.replace(/2024\s*\/\s*2025/g, escapeXml(fiscalYear));
-    docXml = docXml.replace(/14\/\s*1\s*\/2024/g, escapeXml(financialOpeningDate));
+    docXml = replaceDocxFiscalAndDate(docXml, fiscalYear, financialOpeningDate);
 
     // مدة الضمان وشروط وتغطية الضمان
     docXml = docXml.replace(/<w:t>سنة<\/w:t>/g, `<w:t>${escapeXml(warrantyDuration)}</w:t>`);
@@ -786,6 +806,9 @@ export function TabFinancial({
     docXml = docXml.replace(/المهندس\s*المختص\s*:/g, escapeXml(specialistTitle));
     docXml = docXml.replace(/أحمد محمد/g, escapeXml(specialistName));
     docXml = docXml.replace(/اسم/g, escapeXml(financeManagerName || " "));
+
+    // اعتماد رئيس مجلس الإدارة (الاعتماد النهائي) مع الحفاظ التام على "يعتمد ،،،،،،" في سطرها المستقل
+    docXml = replaceDocxChairman(docXml, boardChairman);
 
     // استبدال جدول الأصناف والأسعار بالكامل (Table 0)
     const tblStart = docXml.indexOf("<w:tbl>");
@@ -896,6 +919,7 @@ export function TabFinancial({
       };
 
       currentNotesObj.financialOfferDocx = finPayload;
+      currentNotesObj.fiscalYear = fiscalYear;
 
       await api.patch(`/operations/${op.id}`, {
         notes: JSON.stringify(currentNotesObj),
@@ -946,7 +970,7 @@ export function TabFinancial({
       setSpecialistTitle(snap.specialistTitle);
       setSpecialistName(snap.specialistName);
       setFinanceManagerName(snap.financeManagerName);
-      setBoardChairman(snap.boardChairman);
+      setBoardChairman(sanitizeChairmanTitle(snap.boardChairman));
       toast.info("تم التراجع عن التعديلات غير المحفوظة وإعادة النموذج للحالة السابقة ↺");
     } catch {
       toast.error("تعذر التراجع عن التعديلات");
@@ -1158,6 +1182,14 @@ export function TabFinancial({
           lastPrintedAt: new Date().toISOString(),
           printedBy: currentUser,
           registrationNumber: prev.registrationNumber || registrationNumber,
+          items: [
+            ...(prev.items || []),
+            {
+              printedAt: new Date().toISOString(),
+              printedBy: currentUser,
+              registrationNumber: registrationNumber,
+            },
+          ],
         },
       };
       setPrintHistory(updatedHistory);
@@ -1638,42 +1670,11 @@ export function TabFinancial({
                 className="h-9 text-xs font-mono"
               />
             </div>
-            <div className="space-y-1">
-              <Label className="text-[11px] font-bold">العام المالي</Label>
-              <Select
-                value={FISCAL_YEAR_OPTIONS.includes(fiscalYear) ? fiscalYear : "other"}
-                onValueChange={(val) => {
-                  if (!val || val === "other") {
-                    setFiscalYear("");
-                  } else {
-                    setFiscalYear(val || "");
-                  }
-                }}
-              >
-                <SelectTrigger className="h-9 text-xs font-mono">
-                  <SelectValue placeholder="اختر العام المالي" />
-                </SelectTrigger>
-                <SelectContent>
-                  {FISCAL_YEAR_OPTIONS.map((y) => (
-                    <SelectItem key={y} value={y} className="text-xs font-mono">
-                      {y}
-                    </SelectItem>
-                  ))}
-                  <SelectItem value="other" className="text-xs font-bold text-amber-600">
-                    أخرى (كتابة يدوي)
-                  </SelectItem>
-                </SelectContent>
-              </Select>
-              {(!FISCAL_YEAR_OPTIONS.includes(fiscalYear) || fiscalYear === "other") && (
-                <Input
-                  placeholder="مثال: 2026 / 2027"
-                  value={fiscalYear === "other" ? "" : fiscalYear}
-                  onChange={(e) => setFiscalYear(e.target.value)}
-                  className="h-8.5 text-xs font-mono mt-1 text-center"
-                  autoFocus
-                />
-              )}
-            </div>
+            <FiscalYearSelect
+              value={fiscalYear}
+              onChange={setFiscalYear}
+              label="العام المالي"
+            />
             <div className="space-y-1">
               <Label className="text-[11px] font-bold">جلسة فتح المظروف</Label>
               <Input
@@ -2084,6 +2085,7 @@ export function TabFinancial({
               <Input
                 value={boardChairman}
                 onChange={(e) => setBoardChairman(e.target.value)}
+                placeholder="رئيس مجلس الإدارة"
                 className="h-9 text-xs font-bold text-center"
               />
             </div>
@@ -2180,6 +2182,7 @@ export function TabFinancial({
         subtitle="عند مسح الباركود بكاميرا الموبايل يتم فتح صفحة النسخة الرقمية المعتمدة للعرض المالي فوراً بدون الحاجة لأي تسجيل دخول."
         badgeText="مدمج بموضع كلمة (الباركود) بالأعلى ورقم القيد بالتذييل"
         gradientClass="from-teal-500/10 via-emerald-500/10 to-transparent border-teal-500/25"
+        isModifiedAfterUpload={isDirty}
       />
 
       {/* ━━━ BOTTOM ACTION BAR: التوليد والطباعة والمعاينة بأسفل مرحلة العرض المالي ━━━ */}

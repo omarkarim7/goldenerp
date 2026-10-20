@@ -18,7 +18,28 @@ import { toast } from "sonner";
 import api from "@/lib/api";
 import { Operation, SectionCard, formatDate } from "./types";
 import { StepFooterNav } from "./StepFooterNav";
-import { generateSmartOutgoingRef, cleanAllDocxXml, buildQrAnchorXml, injectSingleQrIntoDocXml, LetterBottomActionWidget, ReprintConfirmModal, getCurrentUserName, PrintHistoryEntry, FISCAL_YEAR_OPTIONS, LetterQrCloudCard, PdfExportLoadingModal } from "./letter-utils";
+import {
+  generateSmartOutgoingRef,
+  cleanAllDocxXml,
+  buildQrAnchorXml,
+  injectSingleQrIntoDocXml,
+  LetterBottomActionWidget,
+  ReprintConfirmModal,
+  getCurrentUserName,
+  PrintHistoryEntry,
+  FISCAL_YEAR_OPTIONS,
+  LetterQrCloudCard,
+  PdfExportLoadingModal,
+  getUnifiedOperationRegistrationNumber,
+  regenerateUnifiedRegistrationNumber,
+  FiscalYearSelect,
+  OperationDocArchiveCard,
+  getSharedOperationScope,
+  replaceDocxScope,
+  replaceDocxFiscalAndDate,
+  replaceDocxChairman,
+  sanitizeChairmanTitle,
+} from "./letter-utils";
 import { GOLDEN_STAMP_BASE64, GOLDEN_LOGO_BASE64 } from "./stamp-assets";
 import JSZip from "jszip";
 import QRCode from "qrcode";
@@ -132,16 +153,10 @@ export function TabClarification({
     return `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}/${d.getFullYear()}`;
   });
 
-  // رقم القيد الذكي (Ad26111000001) - يدعم اليوم والشهر والسنة بدقة (التسجيل 5)
+  // رقم القيد الذكي الموحد للعملية بالكامل
   const [registrationNumber, setRegistrationNumber] = useState<string>(() => {
     if (savedLetter?.registrationNumber) return savedLetter.registrationNumber;
-    return generateSmartOutgoingRef({
-      companyCode: currentCompanyLink?.displayCode || "Ad",
-      tenderType: op.tenderType || "LIMITED_TENDER",
-      dateStr: new Date().toISOString(),
-      sequenceNumber: op.serialNumber || 1,
-      includeDay: true,
-    });
+    return getUnifiedOperationRegistrationNumber(op, currentCompanyLink?.displayCode);
   });
 
   const [companyCommercialRegister, setCompanyCommercialRegister] = useState(
@@ -225,16 +240,16 @@ export function TabClarification({
     savedLetter?.subjectTarget || "للأصناف"
   );
   const [operationRegisteredName, setOperationRegisteredName] = useState(
-    savedLetter?.operationRegisteredName || op.name || "توريد مواسير ومهمات شبكات المياه"
+    savedLetter?.operationRegisteredName || op.name || ""
   );
   const [operationNumber, setOperationNumber] = useState(
-    savedLetter?.operationNumber || op.externalNumber || String(op.serialNumber || "365")
+    savedLetter?.operationNumber || op.externalNumber || (op.serialNumber ? String(op.serialNumber) : "") || ""
   );
   const [tenderMethod, setTenderMethod] = useState(
     savedLetter?.tenderMethod || "بالمناقصة المحدودة"
   );
   const [operationScope, setOperationScope] = useState(
-    savedLetter?.operationScope || (op as any).description || "توريد كاوتش وبطاريات للسيارات للجامعه"
+    getSharedOperationScope(op, savedLetter?.operationScope)
   );
   const [fiscalYear, setFiscalYear] = useState(
     savedLetter?.fiscalYear || "2024 / 2025"
@@ -242,11 +257,33 @@ export function TabClarification({
 
   // تاريخ جلسة فتح المظروف الفني
   const [technicalOpeningDate, setTechnicalOpeningDate] = useState(() => {
+    if (savedLetter?.technicalOpeningDate) return savedLetter.technicalOpeningDate;
     const d = op.dates?.find((dt: any) => dt.type === "TECHNICAL_OPENING" || dt.title?.includes("فني"));
     if (d?.dateValue) return formatDate(d.dateValue);
     if (d?.date) return formatDate(d.date);
     return "14/ 1 /2024";
   });
+
+  // مزامنة تلقائية للبيانات إذا تغيرت العملية الأصلية دون وجود تعديل يدوي مخصص محفوظ
+  useEffect(() => {
+    if (!savedLetter?.operationRegisteredName && op.name) {
+      setOperationRegisteredName(op.name);
+    }
+    if (!savedLetter?.operationScope && (op.name || (op as any).description)) {
+      setOperationScope(getSharedOperationScope(op));
+    }
+    if (!savedLetter?.operationNumber && (op.externalNumber || op.serialNumber)) {
+      setOperationNumber(op.externalNumber || String(op.serialNumber));
+    }
+    if (!savedLetter?.recipientTitleAndAuthority && op.authority) {
+      setRecipientTitleAndAuthority(`مدير الادارة العامة للمشتريات والمخازن بـ ${op.authority}`);
+    }
+    if (!savedLetter?.technicalOpeningDate) {
+      const d = op.dates?.find((dt: any) => dt.type === "TECHNICAL_OPENING" || dt.title?.includes("فني"));
+      if (d?.dateValue) setTechnicalOpeningDate(formatDate(d.dateValue));
+      else if (d?.date) setTechnicalOpeningDate(formatDate(d.date));
+    }
+  }, [op.name, op.externalNumber, op.serialNumber, op.authority, op.dates, savedLetter]);
 
   // ━━━ 3. أسباب التوضيح والطلب الرسمي (وحيث... لذا...) ━━━
   const [inquiryAspect, setInquiryAspect] = useState(
@@ -287,7 +324,9 @@ export function TabClarification({
   const [financeManagerName, setFinanceManagerName] = useState(() => {
     return savedLetter?.financeManagerName || savedLetter?.financeManagerSignature || "محمود إبراهيم";
   });
-  const [boardChairman, setBoardChairman] = useState("يعتمد ،،،،،، رئيس مجلس الإدارة");
+  const [boardChairman, setBoardChairman] = useState(() => {
+    return sanitizeChairmanTitle(savedLetter?.boardChairman);
+  });
 
   // مسمى البند بترويسة الجدول (البند / الصنف / ...)
   const [itemHeaderLabel, setItemHeaderLabel] = useState(
@@ -395,7 +434,7 @@ export function TabClarification({
       setSpecialistTitle(snap.specialistTitle);
       setSpecialistName(snap.specialistName);
       setFinanceManagerName(snap.financeManagerName);
-      setBoardChairman(snap.boardChairman);
+      setBoardChairman(sanitizeChairmanTitle(snap.boardChairman));
       setCloudPdfUrl(snap.cloudPdfUrl);
       toast.info("تم التراجع عن التعديلات وإعادة الخطاب للحالة السابقة ↺");
     } catch {
@@ -420,17 +459,16 @@ export function TabClarification({
   const [responseRefNo, setResponseRefNo] = useState("");
   const [uploadingResponse, setUploadingResponse] = useState(false);
 
-  // إعادة توليد رقم القيد عند تغيير الشركة أو التاريخ
-  const handleRegenerateRef = () => {
-    const fresh = generateSmartOutgoingRef({
-      companyCode: currentCompanyLink?.displayCode || "Ad",
-      tenderType: op.tenderType || "LIMITED_TENDER",
-      dateStr: new Date().toISOString(),
-      sequenceNumber: op.serialNumber || 1,
-      includeDay: true,
+  // إعادة توليد رقم القيد الموحد للعملية مع الحفاظ على التوابت وتحديث الباك إند
+  const handleRegenerateRef = async () => {
+    await regenerateUnifiedRegistrationNumber({
+      op,
+      companyCode: currentCompanyLink?.displayCode || "AZ",
+      onSuccess: (fresh) => {
+        setRegistrationNumber(fresh);
+        onRefresh();
+      },
     });
-    setRegistrationNumber(fresh);
-    toast.success(`تم تحديث رقم القيد باليوم والشهر والسنة: ${fresh} (التسجيل 5)`);
   };
 
   // إضافة وحذف بنود الجدول
@@ -536,15 +574,11 @@ export function TabClarification({
     docXml = docXml.replace(/\(بالمناقصة المحدودة\)/g, escapeXml(formattedTender));
     docXml = docXml.replace(/بالمناقصة المحدودة/g, escapeXml(tenderMethod.trim()));
 
-    // نطاق وموضوع العملية
-    docXml = docXml.replace(/\(\s*توريد كاوتش وبطاريات للسيارات للجامعه\s*\)/g, `(${escapeXml(operationScope)})`);
-    docXml = docXml.replace(/توريد كاوتش وبطاريات للسيارات للجامعه/g, escapeXml(operationScope));
+    // نطاق وموضوع العملية (استبدال موثوق وشامل عبر تاج XML المشترك)
+    docXml = replaceDocxScope(docXml, operationScope);
 
-    // العام المالي
-    docXml = docXml.replace(/2024\s*\/\s*2025/g, escapeXml(fiscalYear));
-
-    // موعد فتح المظروف الفني
-    docXml = docXml.replace(/14\/\s*1\s*\/2024/g, escapeXml(technicalOpeningDate));
+    // العام المالي وتاريخ فتح المظروف الفني
+    docXml = replaceDocxFiscalAndDate(docXml, fiscalYear, technicalOpeningDate);
 
     // وحيث: نوع الاستفسار (إزالة أي أقواس تلقائياً ليكون النص طبيعياً)
     docXml = docXml.replace(/وحيث\s*\(\s*عن نوع الاستفسار من الناحية\s*\)/g, `وحيث ${escapeXml(inquiryAspect)}`);
@@ -562,10 +596,12 @@ export function TabClarification({
     docXml = docXml.replace(/أحمد محمد/g, escapeXml(specialistName));
 
     // اسم المدير المالي (مكتوب "اسم" أو "توقيع صورة أو اسم")
-    docXml = docXml.replace("<w:t>اسم</w:t>", `<w:t>${escapeXml(financeManagerName || " ")}</w:t>`);
     docXml = docXml.replace(/توقيع صورة\s*أو اسم/g, escapeXml(financeManagerName || " "));
     docXml = docXml.replace(/توقيع صورة/g, escapeXml(financeManagerName || " "));
     docXml = docXml.replace(/أو اسم/g, "");
+
+    // اعتماد رئيس مجلس الإدارة (الاعتماد النهائي) مع الحفاظ التام على "يعتمد ،،،،،،" في سطرها المستقل
+    docXml = replaceDocxChairman(docXml, boardChairman);
 
     // مسمى البند بترويسة الجدول (البند / الصنف / ...)
     docXml = docXml.replace("<w:t>البند</w:t>", `<w:t>${escapeXml(itemHeaderLabel || "البند")}</w:t>`);
@@ -866,6 +902,14 @@ export function TabClarification({
           lastPrintedAt: new Date().toISOString(),
           printedBy: currentUser,
           registrationNumber: prev.registrationNumber || registrationNumber,
+          items: [
+            ...(prev.items || []),
+            {
+              printedAt: new Date().toISOString(),
+              printedBy: currentUser,
+              registrationNumber: registrationNumber,
+            },
+          ],
         },
       };
       setPrintHistory(updatedHistory);
@@ -990,6 +1034,9 @@ export function TabClarification({
         cloudPdfUrl,
       };
 
+      existingNotesObj.operationScope = operationScope;
+      existingNotesObj.fiscalYear = fiscalYear;
+
       await api.patch(`/operations/${op.id}`, {
         notes: JSON.stringify(existingNotesObj),
       });
@@ -1015,7 +1062,7 @@ export function TabClarification({
     try {
       const formData = new FormData();
       formData.append("file", responseFile);
-      formData.append("type", "CLARIFICATION");
+      formData.append("type", "LETTER");
       formData.append("companyId", selectedCompanyId || "");
       formData.append(
         "fileName",
@@ -1271,39 +1318,10 @@ export function TabClarification({
               />
             </div>
 
-            <div className="space-y-1.5">
-              <Label className="text-xs font-bold text-foreground">العام المالي *</Label>
-              <div className="flex gap-2">
-                <Select
-                  value={FISCAL_YEAR_OPTIONS.includes(fiscalYear) ? fiscalYear : "other"}
-                  onValueChange={(val) => {
-                    if (val !== "other") setFiscalYear(val);
-                  }}
-                >
-                  <SelectTrigger className="h-9.5 text-xs font-mono rounded-xl">
-                    <SelectValue placeholder="اختر العام المالي" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {FISCAL_YEAR_OPTIONS.map((yr) => (
-                      <SelectItem key={yr} value={yr} className="text-xs font-mono">
-                        {yr}
-                      </SelectItem>
-                    ))}
-                    <SelectItem value="other" className="text-xs font-bold text-amber-600">
-                      أخرى (تحديد يدوي)
-                    </SelectItem>
-                  </SelectContent>
-                </Select>
-                {(!FISCAL_YEAR_OPTIONS.includes(fiscalYear) || fiscalYear === "other") && (
-                  <Input
-                    value={fiscalYear === "other" ? "" : fiscalYear}
-                    onChange={(e) => setFiscalYear(e.target.value)}
-                    placeholder="2024 / 2025"
-                    className="h-9.5 text-xs font-mono rounded-xl text-center w-36"
-                  />
-                )}
-              </div>
-            </div>
+            <FiscalYearSelect
+              value={fiscalYear}
+              onChange={setFiscalYear}
+            />
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
@@ -1555,7 +1573,7 @@ export function TabClarification({
         }
       >
         <div className="space-y-4">
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
             <div className="space-y-1.5">
               <Label className="text-xs font-bold text-foreground">صفة المختص *</Label>
               <Input
@@ -1584,6 +1602,18 @@ export function TabClarification({
                 value={financeManagerName}
                 onChange={(e) => setFinanceManagerName(e.target.value)}
                 placeholder="محمود إبراهيم"
+                className="h-9.5 text-xs font-bold rounded-xl"
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <Label className="text-xs font-bold text-foreground">
+                اعتماد رئيس مجلس الإدارة (الاعتماد النهائي) *
+              </Label>
+              <Input
+                value={boardChairman}
+                onChange={(e) => setBoardChairman(e.target.value)}
+                placeholder="رئيس مجلس الإدارة"
                 className="h-9.5 text-xs font-bold rounded-xl"
               />
             </div>
@@ -1660,6 +1690,16 @@ export function TabClarification({
             <span>{uploadingResponse ? "جاري الرفع والتوثيق..." : "رفع وتوثيق رد الجهة بالأرشيف"}</span>
           </Button>
         </form>
+
+        <OperationDocArchiveCard
+          title="أرشيف ردود جهة الإسناد والملاحق التوضيحية المعتمدة"
+          description="عرض ومطالعة وتعديل واستبدال الملاحق التوضيحية الرسمية المعتمدة الصادرة من جهة الإسناد"
+          docs={clarificationDocs}
+          opId={op.id}
+          onRefresh={onRefresh}
+          onPreviewDoc={onPreviewDoc}
+          onDownloadDoc={onDownloadDoc}
+        />
       </SectionCard>
 
       {/* ━━━ MODAL: معاينة خطاب التوضيح الرسمي وعارض ONLYOFFICE Docs ━━━ */}
@@ -1740,6 +1780,7 @@ export function TabClarification({
         subtitle="عند مسح الباركود بكاميرا الموبايل يتم فتح النسخة الرقمية المعتمدة لخطاب التوضيح فوراً بدون الحاجة لأي تسجيل دخول."
         badgeText="مدمج بموضع كلمة (الباركود) بالأعلى ورقم القيد بالتذييل"
         gradientClass="from-amber-500/10 via-orange-500/10 to-transparent border-amber-500/25"
+        isModifiedAfterUpload={isDirty}
       />
 
       {/* ━━━ BOTTOM ACTION BAR: التوليد والطباعة والمعاينة بأسفل مرحلة خطاب التوضيح ━━━ */}

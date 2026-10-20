@@ -1,6 +1,6 @@
 "use client";
 
-import React from "react";
+import React, { useState } from "react";
 
 /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
    LETTER MODE & OUTGOING NUMBER UTILITIES
@@ -196,12 +196,166 @@ export async function cleanAllDocxXml(zip: any): Promise<void> {
         changed = true;
       }
 
+      // 3. Normalize Arabic justification to prevent broken kashidas/tatweel stretching across engines
+      if (xml.includes("highKashida") || xml.includes("mediumKashida")) {
+        xml = xml.replace(/<w:jc\s+w:val="(?:highKashida|mediumKashida)"\s*\/>/gi, '<w:jc w:val="both"/>');
+        changed = true;
+      }
+
+      // 4. Ensure universal Arabic font fallbacks in rFonts
+      if (xml.includes('w:ascii="Arabic Typesetting"') && !xml.includes('w:cs="Arabic Typesetting"')) {
+        xml = xml.replace(/w:ascii="Arabic Typesetting"/g, 'w:ascii="Arabic Typesetting" w:cs="Arabic Typesetting"');
+        changed = true;
+      }
+
       if (changed) {
         zip.file(fileName, xml);
       }
     }
   }
 }
+
+/**
+ * هروب محارف XML الخاصة
+ */
+export function escapeXml(str: string): string {
+  if (!str) return "";
+  return str
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&apos;");
+}
+
+/**
+ * استخراج نطاق وموضوع التوريد المشترك ("لزوم كذا") من العملية أو الملاحظات
+ */
+export function getSharedOperationScope(op: any, specificSavedScope?: string): string {
+  if (specificSavedScope && specificSavedScope.trim()) return specificSavedScope.trim();
+  try {
+    if (op.notes && op.notes.startsWith("{")) {
+      const parsed = JSON.parse(op.notes);
+      if (parsed.operationScope && parsed.operationScope.trim()) return parsed.operationScope.trim();
+      if (parsed.bookletLettersDocx?.operationScope && parsed.bookletLettersDocx.operationScope.trim()) {
+        return parsed.bookletLettersDocx.operationScope.trim();
+      }
+      if (parsed.clarificationLetterDocx?.operationScope && parsed.clarificationLetterDocx.operationScope.trim()) {
+        return parsed.clarificationLetterDocx.operationScope.trim();
+      }
+    }
+  } catch {}
+  return (op as any).description || op.name || "";
+}
+
+/**
+ * استبدال نطاق وموضوع التوريد لزوم العملية ("لزوم كذا") بشكل متين وشامل
+ * يبحث عن النص المحصور بين "لزوم" و "طرفكم" عبر كافة وسوم الوورد المتقطعة
+ */
+export function replaceDocxScope(docXml: string, scopeText: string): string {
+  if (!scopeText || !scopeText.trim()) return docXml;
+  const safeScope = escapeXml(scopeText.trim());
+
+  // Anchor 1: نهاية وسم <w:r> الحاوي لكلمة "لزوم" أو "وطبيعتها"
+  // Anchor 2: كامل وسم <w:r> الحاوي لكلمة "طرفكم" مع الإبقاء عليه دون أي تغيير في خطه وتنسيقه
+  const scopeRegex = /(<w:t[^>]*>[^<]*(?:لزوم|وطبيعتها)[^<]*<\/w:t><\/w:r>)([\s\S]*?)(<w:r\b[^>]*>(?:(?!<\/w:r>)[\s\S])*?<w:t[^>]*>[^<]*طرفكم[^<]*<\/w:t>[\s\S]*?<\/w:r>)/g;
+  let replaced = false;
+  let result = docXml.replace(scopeRegex, (_match, anchor1, _between, anchor2) => {
+    replaced = true;
+    return (
+      anchor1 +
+      '<w:r><w:rPr><w:rFonts w:hint="cs"/><w:b/><w:bCs/><w:sz w:val="32"/><w:szCs w:val="32"/><w:highlight w:val="red"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t xml:space="preserve"> (' +
+      safeScope +
+      ') </w:t></w:r>' +
+      anchor2
+    );
+  });
+
+  // 2. إذا لم يكن متبوعاً بـ "طرفكم" مباشرة، استبدال العبارة التقليدية
+  if (!replaced) {
+    result = result.replace(/توريد كاوتش وبطاريات للسيارات للجامعه/g, safeScope);
+    result = result.replace(/توريد كاوتش وبطاريات[\s\S]*?للجامع[ةه]/g, safeScope);
+  }
+  return result;
+}
+
+/**
+ * استبدال السنة المالية وموعد جلسة فتح المظاريف مع الحفاظ بنسبة 100% على عبارة "لفتح المظروف الفنى ." وخطها وتنسيقها الأصلي
+ */
+export function replaceDocxFiscalAndDate(
+  docXml: string,
+  fiscalYear: string,
+  openingDate: string
+): string {
+  const safeFiscal = escapeXml((fiscalYear || "2024 / 2025").trim());
+  const safeDate = escapeXml((openingDate || "14/ 1 /2024").trim());
+
+  // Anchor 1: نهاية وسم <w:r> الحاوي لـ "للعام المالى"
+  // Anchor 2: كامل وسم <w:r> الحاوي لـ "لفتح المظروف" (يُحفظ كما هو كاملاً مع "الفنى ." وخطه الأصلي)
+  const fiscalDateRegex = /(<w:t[^>]*>[^<]*للعام\s*المال[ىي][^<]*<\/w:t><\/w:r>)([\s\S]*?)(<w:r\b[^>]*>(?:(?!<\/w:r>)[\s\S])*?<w:t[^>]*>[^<]*لفتح\s*المظروف[^<]*<\/w:t>[\s\S]*?<\/w:r>)/g;
+  let replaced = false;
+  let result = docXml.replace(fiscalDateRegex, (_match, anchor1, _between, anchor2) => {
+    replaced = true;
+    return (
+      anchor1 +
+      '<w:r><w:rPr><w:rFonts w:hint="cs"/><w:b/><w:bCs/><w:sz w:val="32"/><w:szCs w:val="32"/><w:highlight w:val="red"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t xml:space="preserve"> ' +
+      safeFiscal +
+      ' </w:t></w:r>' +
+      '<w:r><w:rPr><w:rFonts w:hint="cs"/><w:b/><w:bCs/><w:sz w:val="32"/><w:szCs w:val="32"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t xml:space="preserve"> والمحدد لها جلسة ( </w:t></w:r>' +
+      '<w:r><w:rPr><w:rFonts w:hint="cs"/><w:b/><w:bCs/><w:sz w:val="32"/><w:szCs w:val="32"/><w:highlight w:val="red"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t xml:space="preserve">' +
+      safeDate +
+      '</w:t></w:r>' +
+      '<w:r><w:rPr><w:rFonts w:hint="cs"/><w:b/><w:bCs/><w:sz w:val="32"/><w:szCs w:val="32"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t xml:space="preserve"> ) </w:t></w:r>' +
+      anchor2
+    );
+  });
+
+  // 2. كاحتياط للمواضع المنفصلة
+  if (!replaced) {
+    result = result.replace(/2024\s*\/\s*2025/g, safeFiscal);
+    result = result.replace(/14\/\s*1\s*\/2024/g, safeDate);
+  }
+  return result;
+}
+
+/**
+ * تنظيف مسمى رئيس مجلس الإدارة لضمان عدم احتوائه على كلمة "يعتمد" أو الفواصل
+ * حتى لا يندمج "يعتمد" مع المسمى في سطر واحد
+ */
+export function sanitizeChairmanTitle(title?: string): string {
+  if (!title) return "رئيس مجلس الإدارة";
+  return title.replace(/يعتمد\s*،*/g, "").trim() || "رئيس مجلس الإدارة";
+}
+
+/**
+ * استبدال توقيع رئيس مجلس الإدارة مع الحفاظ بنسبة 100% على كلمة "يعتمد ،،،،،،" في سطرها المستقل أعلى التوقيع كما هي في قوالب الوورد الرسمية.
+ */
+export function replaceDocxChairman(docXml: string, rawChairman: string): string {
+  const cleanChairman = sanitizeChairmanTitle(rawChairman);
+  const safeChairman = escapeXml(cleanChairman);
+
+  let replaced = false;
+  // 1. صيغة القوالب التي يكون فيها "رئيس مجلس" في وسم و "الإدارة" في وسم آخر (مثل العرض الفني والمالي)
+  let result = docXml.replace(
+    /<w:t[^>]*>رئيس\s*مجلس\s*<\/w:t>[\s\S]*?<w:t[^>]*>ال[إا]دارة<\/w:t>/g,
+    () => {
+      replaced = true;
+      return `<w:t>${safeChairman}</w:t>`;
+    }
+  );
+  // 2. صيغة القوالب التي يكون فيها "رئيس مجلس الإدارة/الادارة" في وسم واحد
+  if (!replaced) {
+    result = result.replace(
+      /<w:t[^>]*>رئيس\s*مجلس\s*ال[إا]دارة<\/w:t>/g,
+      () => {
+        replaced = true;
+        return `<w:t>${safeChairman}</w:t>`;
+      }
+    );
+  }
+  return result;
+}
+
 
 import {
   Eye,
@@ -227,11 +381,24 @@ import {
   RefreshCw,
   Copy,
   ArrowRight,
+  Trash2,
+  Edit3,
+  Upload,
+  Paperclip,
+  Loader2,
+  BookOpen,
+  FileSpreadsheet,
+  Image as ImageIcon,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Portal } from "@/components/ui/portal";
 import { toast } from "sonner";
+import api from "@/lib/api";
+import { formatDocFileSize } from "./types";
 
 export function FreeConvertersQuickLinks({ className = "" }: { className?: string }) {
   return null;
@@ -248,10 +415,11 @@ export interface LetterQrCloudCardProps {
   subtitle?: string;
   badgeText?: string;
   gradientClass?: string;
+  isModifiedAfterUpload?: boolean;
 }
 
 /**
- * بطاقة الباركود الذكي ورمز QR والرفع السحابي المجاني (Catbox.moe / Gofile.io)
+ * بطاقة الباركود الذكي ورمز QR والرفع السحابي المجاني (Catbox.moe / رابط PDF مباشر)
  * موضوعة دائماً بأسفل الصفحة بجوار شريط الإجراءات والانتقال لعدم إعاقة ملء الخانات
  */
 export function LetterQrCloudCard({
@@ -262,13 +430,14 @@ export function LetterQrCloudCard({
   uploadingCloud,
   onUploadToCloud,
   title = "الباركود الذكي ورمز QR الرقمي المعتمد (PDF)",
-  subtitle = "عند مسح الباركود بكاميرا الموبايل يتم فتح النسخة الرقمية المعتمدة فوراً بدون الحاجة لأي تسجيل دخول.",
+  subtitle = "عند مسح الباركود بكاميرا الموبايل يتم فتح النسخة الرقمية المعتمدة فوراً بصيغة PDF مباشرة بدون الحاجة لأي تسجيل دخول.",
   badgeText = "مدمج بموضع كلمة (الباركود) بالأعلى ورقم القيد بالتذييل",
   gradientClass = "from-amber-500/10 via-orange-500/10 to-transparent border-amber-500/25",
+  isModifiedAfterUpload = false,
 }: LetterQrCloudCardProps) {
-  // تصفية وحجب أي روابط سابقة لموقع tmpfiles لأن المستخدم طلب الاعتماد حصرياً على Catbox و Gofile
-  const isTmpFiles = cloudPdfUrl && cloudPdfUrl.includes("tmpfiles.org");
-  const effectiveCloudUrl = isTmpFiles ? "" : cloudPdfUrl;
+  // تصفية وحجب أي روابط سابقة لمواقع وسيطة لا تفتح الـ PDF مباشرة مثل tmpfiles أو مجلدات gofile
+  const isInvalidCloud = cloudPdfUrl && (cloudPdfUrl.includes("tmpfiles.org") || cloudPdfUrl.includes("gofile.io"));
+  const effectiveCloudUrl = isInvalidCloud ? "" : cloudPdfUrl;
 
   return (
     <div className={`p-4 rounded-2xl bg-gradient-to-r ${gradientClass} border space-y-3 my-4 shadow-sm transition-all`}>
@@ -288,7 +457,7 @@ export function LetterQrCloudCard({
               {effectiveCloudUrl && (
                 <Badge className="bg-blue-500/15 text-blue-700 dark:text-blue-300 border-blue-500/30 text-[10px] font-bold flex items-center gap-1">
                   <Cloud className="h-3 w-3" />
-                  <span>رابط سحابي دائم متاح لأي هاتف ✓ (Catbox/Gofile)</span>
+                  <span>رابط PDF مباشر دائم يفتح فوراً بالكاميرا ✓</span>
                 </Badge>
               )}
             </div>
@@ -312,7 +481,7 @@ export function LetterQrCloudCard({
                 className="inline-flex items-center gap-1.5 text-xs font-bold text-blue-600 dark:text-blue-400 hover:underline px-3 py-1.5 rounded-xl bg-card border border-border"
               >
                 <ExternalLink className="h-3.5 w-3.5" />
-                <span>فتح ملف PDF السحابي</span>
+                <span>فتح ملف PDF المباشر</span>
               </a>
               <Button
                 type="button"
@@ -334,8 +503,10 @@ export function LetterQrCloudCard({
                 variant="outline"
                 onClick={() => onUploadToCloud(true)}
                 disabled={uploadingCloud}
-                className="border-border text-foreground hover:bg-muted text-xs font-bold h-9 px-3 rounded-xl cursor-pointer flex items-center gap-1"
-                title="تحديث وإعادة رفع النسخة السحابية على Catbox / Gofile"
+                className={`border-border text-foreground hover:bg-muted text-xs font-bold h-9 px-3 rounded-xl cursor-pointer flex items-center gap-1 ${
+                  isModifiedAfterUpload ? "border-amber-500 text-amber-600 bg-amber-500/10 animate-pulse" : ""
+                }`}
+                title="تحديث وإعادة رفع النسخة السحابية المباشرة"
               >
                 <RefreshCw className={`h-3.5 w-3.5 ${uploadingCloud ? "animate-spin" : ""}`} />
                 <span>إعادة الرفع والتحديث ↻</span>
@@ -350,11 +521,19 @@ export function LetterQrCloudCard({
               className="bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-700 hover:to-orange-700 text-white font-bold text-xs h-9 px-3.5 rounded-xl shadow-md cursor-pointer flex items-center gap-1.5"
             >
               <Cloud className={`h-4 w-4 ${uploadingCloud ? "animate-spin" : ""}`} />
-              <span>{uploadingCloud ? "جاري الرفع السحابي (Catbox/Gofile)..." : "رفع وتوثيق النسخة الرقمية سحابياً لرمز QR ☁️"}</span>
+              <span>{uploadingCloud ? "جاري الرفع السحابي المباشر..." : "رفع وتوثيق النسخة الرقمية سحابياً لرمز QR ☁️"}</span>
             </Button>
           )}
         </div>
       </div>
+
+      {/* تنبيه ذكي عند تعديل البيانات بعد الرفع السحابي */}
+      {effectiveCloudUrl && isModifiedAfterUpload && (
+        <div className="flex items-center gap-2 p-2.5 rounded-xl bg-amber-500/15 border border-amber-500/40 text-amber-900 dark:text-amber-200 text-xs font-bold animate-pulse">
+          <AlertTriangle className="h-4 w-4 text-amber-600 shrink-0" />
+          <span>⚠️ تنبيه: تم إجراء تعديلات على بيانات الخطاب، يُفضل الضغط على &quot;إعادة الرفع والتحديث ↻&quot; لتحديث النسخة السحابية المربوطة بالباركود.</span>
+        </div>
+      )}
     </div>
   );
 }
@@ -421,6 +600,13 @@ export function PdfExportLoadingModal({
 
 
 
+export interface PrintHistoryItem {
+  printedAt: string;
+  printedBy: string;
+  registrationNumber?: string;
+  archiveDocId?: string;
+}
+
 export interface PrintHistoryEntry {
   printCount: number;
   firstPrintedAt?: string;
@@ -428,6 +614,7 @@ export interface PrintHistoryEntry {
   printedBy?: string;
   registrationNumber?: string;
   archiveDocId?: string;
+  items?: PrintHistoryItem[];
 }
 
 const ROLE_ARABIC_MAP: Record<string, string> = {
@@ -553,6 +740,160 @@ export function injectSingleQrIntoDocXml(
 
 
 /**
+ * نافذة تفاصيل وسجل طباعة المستند الرسمي
+ */
+export function PrintHistoryDetailsModal({
+  isOpen,
+  onClose,
+  title,
+  registrationNumber,
+  printInfo,
+  onPreviewPdf,
+}: {
+  isOpen: boolean;
+  onClose: () => void;
+  title: string;
+  registrationNumber: string;
+  printInfo?: PrintHistoryEntry;
+  onPreviewPdf?: () => void;
+}) {
+  if (!isOpen || !printInfo) return null;
+
+  const count = printInfo.printCount || 0;
+  const items: PrintHistoryItem[] =
+    printInfo.items && printInfo.items.length > 0
+      ? printInfo.items
+      : [
+          ...(printInfo.firstPrintedAt
+            ? [
+                {
+                  printedAt: printInfo.firstPrintedAt,
+                  printedBy: printInfo.printedBy || "المدير العام",
+                  registrationNumber: printInfo.registrationNumber || registrationNumber,
+                },
+              ]
+            : []),
+          ...(printInfo.lastPrintedAt && printInfo.lastPrintedAt !== printInfo.firstPrintedAt
+            ? [
+                {
+                  printedAt: printInfo.lastPrintedAt,
+                  printedBy: printInfo.printedBy || "المدير العام",
+                  registrationNumber: printInfo.registrationNumber || registrationNumber,
+                },
+              ]
+            : []),
+        ];
+
+  return (
+    <Portal>
+      <div className="fixed inset-0 z-[999999] bg-black/80 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4 animate-fade-in text-foreground">
+        <div className="bg-card border border-border rounded-3xl max-w-xl w-full p-5 sm:p-6 space-y-4 shadow-2xl relative">
+          {/* Header */}
+          <div className="flex items-center justify-between pb-3 border-b border-border">
+            <div className="flex items-center gap-2.5">
+              <div className="w-10 h-10 rounded-2xl bg-amber-500/15 text-amber-600 flex items-center justify-center shadow-xs">
+                <Printer className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="font-extrabold text-base text-foreground">سجل طباعة المستند الرسمي</h3>
+                <p className="text-xs text-muted-foreground">{title}</p>
+              </div>
+            </div>
+            <button
+              onClick={onClose}
+              className="w-8 h-8 rounded-xl hover:bg-muted flex items-center justify-center text-muted-foreground hover:text-foreground cursor-pointer"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+
+          {/* Summary Stats */}
+          <div className="grid grid-cols-2 gap-2 text-center p-3 bg-muted/40 rounded-2xl border border-border">
+            <div>
+              <p className="text-[11px] text-muted-foreground font-semibold">إجمالي مرات الطباعة</p>
+              <p className="text-lg font-black text-amber-600">{count} مرات</p>
+            </div>
+            <div>
+              <p className="text-[11px] text-muted-foreground font-semibold">رقم القيد الصادر</p>
+              <p className="text-xs font-mono font-bold text-foreground mt-1">{registrationNumber}</p>
+            </div>
+          </div>
+
+          {/* Log Items */}
+          <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
+            <h5 className="text-xs font-bold text-muted-foreground">تفاصيل وتواريخ عمليات الطباعة المعتمدة:</h5>
+            {items.length > 0 ? (
+              items.map((it, idx) => (
+                <div
+                  key={idx}
+                  className="p-3 rounded-xl border border-border bg-background flex items-center justify-between gap-3 text-xs shadow-2xs"
+                >
+                  <div className="space-y-0.5">
+                    <div className="flex items-center gap-1.5 font-bold text-foreground">
+                      <User className="w-3.5 h-3.5 text-amber-600" />
+                      <span>{formatPrintedBy(it.printedBy)}</span>
+                    </div>
+                    <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground font-mono">
+                      <Clock className="w-3 h-3 text-amber-600" />
+                      <span>{it.printedAt ? new Date(it.printedAt).toLocaleString("ar-EG") : "غير محدد"}</span>
+                    </div>
+                  </div>
+
+                  {onPreviewPdf && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => {
+                        onClose();
+                        onPreviewPdf();
+                      }}
+                      className="h-8 px-3 text-xs font-bold rounded-xl border-amber-500/40 text-amber-700 dark:text-amber-300 hover:bg-amber-500/10 cursor-pointer flex items-center gap-1.5 shadow-2xs"
+                      title="معاينة نسخة الـ PDF الرسمية المعتمدة"
+                    >
+                      <Eye className="w-3.5 h-3.5" />
+                      <span>عرض الـ PDF 📄</span>
+                    </Button>
+                  )}
+                </div>
+              ))
+            ) : (
+              <div className="p-4 text-center rounded-xl bg-background border border-border text-xs text-muted-foreground space-y-1">
+                <p>طُبع بواسطة: <strong className="text-foreground">{formatPrintedBy(printInfo.printedBy)}</strong></p>
+                <p className="text-[11px] font-mono">
+                  {printInfo.lastPrintedAt ? new Date(printInfo.lastPrintedAt).toLocaleString("ar-EG") : ""}
+                </p>
+                {onPreviewPdf && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => {
+                      onClose();
+                      onPreviewPdf();
+                    }}
+                    className="mt-2 h-8 px-3 text-xs font-bold rounded-xl border-amber-500/40 text-amber-700 dark:text-amber-300 hover:bg-amber-500/10 cursor-pointer"
+                  >
+                    <Eye className="w-3.5 h-3.5 ml-1" />
+                    <span>عرض الـ PDF 📄</span>
+                  </Button>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Footer */}
+          <div className="pt-2 border-t border-border flex items-center justify-between">
+            <p className="text-[11px] text-muted-foreground">يتم قيد وتوثيق كل أمر طباعة رسمياً في قاعدة البيانات</p>
+            <Button size="sm" onClick={onClose} className="rounded-xl px-4 text-xs font-bold cursor-pointer">
+              إغلاق
+            </Button>
+          </div>
+        </div>
+      </div>
+    </Portal>
+  );
+}
+
+/**
  * Unified Letter Bottom Action Widget:
  * - Single main button: [معاينة مستند الوورد]
  * - Displays previous print audit info (who, when, count)
@@ -565,6 +906,7 @@ export function LetterBottomActionWidget({
   isDirty = false,
   printInfo,
   onPreview,
+  onPreviewPdfDirect,
   onSave,
   onCancelEdits,
   saving = false,
@@ -579,6 +921,7 @@ export function LetterBottomActionWidget({
   isDirty?: boolean;
   printInfo?: PrintHistoryEntry;
   onPreview: () => void;
+  onPreviewPdfDirect?: () => void;
   onSave?: () => void;
   onCancelEdits?: () => void;
   saving?: boolean;
@@ -588,6 +931,7 @@ export function LetterBottomActionWidget({
   iconColor?: string;
   iconBg?: string;
 }) {
+  const [showHistoryModal, setShowHistoryModal] = useState(false);
   const hasPrinted = printInfo && printInfo.printCount > 0;
 
   return (
@@ -650,7 +994,11 @@ export function LetterBottomActionWidget({
               </Badge>
 
               {hasPrinted ? (
-                <Badge className="bg-amber-100 text-amber-900 border border-amber-300 dark:bg-amber-950/60 dark:text-amber-200 text-[11px] font-bold px-2.5 py-0.5 rounded-full flex items-center gap-1">
+                <Badge
+                  onClick={() => setShowHistoryModal(true)}
+                  className="bg-amber-100 hover:bg-amber-200 text-amber-900 border border-amber-300 dark:bg-amber-950/60 dark:text-amber-200 text-[11px] font-bold px-2.5 py-0.5 rounded-full flex items-center gap-1 cursor-pointer transition-all shadow-xs"
+                  title="اضغط للاطلاع على سجل وتفاصيل من قام بالطباعة وتواريخهم ومعاينة الـ PDF المطبوع"
+                >
                   <Printer className="h-3 w-3" />
                   <span>طُبع سابقاً ({printInfo.printCount} مرات)</span>
                 </Badge>
@@ -727,6 +1075,16 @@ export function LetterBottomActionWidget({
           )}
         </div>
       </div>
+
+      {/* نافذة تفاصيل سجل الطباعة والمستخدمين والتواريخ */}
+      <PrintHistoryDetailsModal
+        isOpen={showHistoryModal}
+        onClose={() => setShowHistoryModal(false)}
+        title={title}
+        registrationNumber={registrationNumber}
+        printInfo={printInfo}
+        onPreviewPdf={onPreviewPdfDirect || onPreview}
+      />
     </div>
   );
 }
@@ -839,6 +1197,499 @@ export function ReprintConfirmModal({
         </div>
       </div>
     </Portal>
+  );
+}
+
+/**
+ * ━━━ استخراج أو توليد رقم القيد الصادر الموحد للعملية بالكامل ━━━
+ * يضمن تطابق رقم القيد في كافة الخطابات والمراحل (كراسة، توضيح، إقرارات، عروض فنية ومالية)
+ */
+export function getUnifiedOperationRegistrationNumber(op: any, companyCode?: string): string {
+  try {
+    if (op.notes && op.notes.startsWith("{")) {
+      const parsed = JSON.parse(op.notes);
+      if (parsed.unifiedRegistrationNumber) {
+        return parsed.unifiedRegistrationNumber;
+      }
+      if (parsed.bookletLettersDocx?.registrationNumber) {
+        return parsed.bookletLettersDocx.registrationNumber;
+      }
+      if (parsed.clarificationLetter?.registrationNumber) {
+        return parsed.clarificationLetter.registrationNumber;
+      }
+      if (parsed.declarationsDocx?.registrationNumber) {
+        return parsed.declarationsDocx.registrationNumber;
+      }
+      if (parsed.technicalOfferLetter?.registrationNumber) {
+        return parsed.technicalOfferLetter.registrationNumber;
+      }
+    }
+  } catch {}
+
+  const comp = (companyCode || op.companies?.[0]?.displayCode || "AZ").trim();
+  const dateStr = new Date().toISOString();
+  const initialSeq = 100 + ((op.serialNumber || 1) % 900);
+  return generateSmartOutgoingRef({
+    companyCode: comp,
+    tenderType: op.tenderType || "LIMITED_TENDER",
+    dateStr,
+    sequenceNumber: initialSeq,
+    includeDay: true,
+  });
+}
+
+/**
+ * ━━━ توليد رقم قيد صادر ذكي جديد وعشوائي بالكامل وتحديثه في قاعدة البيانات لكافة المراحل ━━━
+ * الثوابت: الرموز وتاريخ اليوم
+ * المتغير: الرقم العشوائي (5 أرقام)
+ * القيود: مرتان كحد أقصى للعملية الواحدة منعاً لتضارب المرجعيات الصادرة
+ */
+export async function regenerateUnifiedRegistrationNumber({
+  op,
+  companyCode,
+  onSuccess,
+}: {
+  op: any;
+  companyCode?: string;
+  onSuccess?: (newRef: string) => void;
+}): Promise<string | null> {
+  let notesObj: any = {};
+  try {
+    if (op.notes && op.notes.startsWith("{")) {
+      notesObj = JSON.parse(op.notes);
+    }
+  } catch {}
+
+  const currentCount = Number(notesObj.regUpdateCount || 0);
+  if (currentCount >= 2) {
+    toast.error("تم الوصول للحد الأقصى لتحديث رقم القيد (مرتان كحد أقصى للعملية الواحدة للحفاظ على المرجعية الرسمية المعتمدة)");
+    return null;
+  }
+
+  // الجزء الثابت: الرمز وتاريخ اليوم
+  const comp = (companyCode || op.companies?.[0]?.displayCode || "AZ").trim();
+  const tenderType = op.tenderType || "LIMITED_TENDER";
+
+  // توليد رقم عشوائي ديناميكي للسلسلة (5 أرقام عشوائية)
+  const randomSeq = Math.floor(10000 + Math.random() * 89999);
+
+  const newRef = generateSmartOutgoingRef({
+    companyCode: comp,
+    tenderType,
+    dateStr: new Date().toISOString(),
+    sequenceNumber: randomSeq,
+    includeDay: true,
+  });
+
+  // تحديث قاعدة البيانات مركزياً وتحديث كافة السجلات الفرعية
+  notesObj.unifiedRegistrationNumber = newRef;
+  notesObj.regUpdateCount = currentCount + 1;
+
+  if (notesObj.bookletLettersDocx) notesObj.bookletLettersDocx.registrationNumber = newRef;
+  if (notesObj.clarificationLetter) notesObj.clarificationLetter.registrationNumber = newRef;
+  if (notesObj.declarationsDocx) notesObj.declarationsDocx.registrationNumber = newRef;
+  if (notesObj.technicalOfferLetter) notesObj.technicalOfferLetter.registrationNumber = newRef;
+  if (notesObj.financialOfferDocx) notesObj.financialOfferDocx.registrationNumber = newRef;
+  if (notesObj.finalGuaranteeLetter) notesObj.finalGuaranteeLetter.registrationNumber = newRef;
+
+  try {
+    await api.patch(`/operations/${op.id}`, {
+      notes: JSON.stringify(notesObj),
+    });
+    const remaining = 2 - (currentCount + 1);
+    toast.success(`تم تحديث وتعميم رقم القيد الجديد: ${newRef} لكافة خطابات ومراحل العملية بنجاح! 🔢✨ (متبقي ${remaining} تحديث)`);
+    onSuccess?.(newRef);
+    return newRef;
+  } catch (err: any) {
+    toast.error(err?.response?.data?.message || "فشل حفظ رقم القيد الجديد بقاعدة البيانات");
+    return null;
+  }
+}
+
+/**
+ * ━━━ قائمة العام المالي مع خيار التحديد اليدوي (أخرى) المطور ━━━
+ */
+export function FiscalYearSelect({
+  value,
+  onChange,
+  className = "",
+  label = "العام المالي *",
+}: {
+  value: string;
+  onChange: (val: string) => void;
+  className?: string;
+  label?: string;
+}) {
+  const isPredefined = FISCAL_YEAR_OPTIONS.includes(value);
+  const [isCustom, setIsCustom] = useState(!isPredefined && Boolean(value));
+
+  return (
+    <div className={`space-y-1.5 ${className}`}>
+      <Label className="text-xs font-bold text-foreground">{label}</Label>
+      <div className="flex gap-2 items-center">
+        {!isCustom ? (
+          <Select
+            value={isPredefined ? value : "other"}
+            onValueChange={(val) => {
+              if (val === "other") {
+                setIsCustom(true);
+              } else {
+                onChange(val || "");
+              }
+            }}
+          >
+            <SelectTrigger className="h-9.5 text-xs font-mono rounded-xl bg-background font-bold">
+              <SelectValue placeholder="اختر العام المالي" />
+            </SelectTrigger>
+            <SelectContent>
+              {FISCAL_YEAR_OPTIONS.map((yr) => (
+                <SelectItem key={yr} value={yr} className="text-xs font-mono font-bold">
+                  {yr}
+                </SelectItem>
+              ))}
+              <SelectItem value="other" className="text-xs font-black text-amber-600 focus:text-amber-700">
+                ✏️ أخرى (تحديد يدوي)
+              </SelectItem>
+            </SelectContent>
+          </Select>
+        ) : (
+          <div className="flex items-center gap-2 w-full">
+            <Input
+              autoFocus
+              value={value}
+              onChange={(e) => onChange(e.target.value)}
+              placeholder="مثال: 2023 / 2024"
+              className="h-9.5 text-xs font-mono font-bold bg-background rounded-xl text-center flex-1"
+            />
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setIsCustom(false);
+                if (!FISCAL_YEAR_OPTIONS.includes(value)) {
+                  onChange(FISCAL_YEAR_OPTIONS[0]);
+                }
+              }}
+              className="h-9.5 px-3 text-xs font-bold rounded-xl border-border text-muted-foreground hover:text-foreground shrink-0 cursor-pointer"
+              title="العودة للاختيار من القائمة المحددة مسبقاً"
+            >
+              القائمة 📋
+            </Button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * ━━━ COMPONENT: أرشيف وإدارة مستندات العملية الموحد والشامل ━━━
+ * يوفر أدوات تحكم كاملة للمستندات والصور (معاينة 👁️، تحميل ⬇️، استبدال الملف 🔄، تعديل الاسم ✏️، حذف 🗑️)
+ */
+export function OperationDocArchiveCard({
+  title,
+  description,
+  docs,
+  opId,
+  onRefresh,
+  onPreviewDoc,
+  onDownloadDoc,
+  icon: Icon = FileCheck,
+  iconColor = "text-blue-600",
+  emptyMessage = "لم يتم رفع أي مستندات في هذا القسم بعد.",
+  badgeLabel,
+  className = "",
+}: {
+  title: string;
+  description?: string;
+  docs: any[];
+  opId: string;
+  onRefresh: () => void;
+  onPreviewDoc?: (doc: any) => void;
+  onDownloadDoc?: (doc: any) => void;
+  icon?: any;
+  iconColor?: string;
+  emptyMessage?: string;
+  badgeLabel?: string;
+  className?: string;
+}) {
+  const [renamingDocId, setRenamingDocId] = useState<string | null>(null);
+  const [renameValue, setRenameValue] = useState("");
+  const [savingRename, setSavingRename] = useState(false);
+
+  const [replacingDocId, setReplacingDocId] = useState<string | null>(null);
+  const [replacingLoading, setReplacingLoading] = useState(false);
+  const replaceFileInputRef = React.useRef<HTMLInputElement>(null);
+
+  const [deletingDocId, setDeletingDocId] = useState<string | null>(null);
+
+  // بدء تعديل التسمية
+  const startRename = (doc: any) => {
+    setRenamingDocId(doc.id);
+    setRenameValue(doc.fileName || "");
+  };
+
+  // حفظ التسمية الجديدة
+  const handleSaveRename = async (docId: string) => {
+    if (!renameValue.trim()) {
+      toast.error("اسم المستند لا يمكن أن يكون فارغاً");
+      return;
+    }
+    setSavingRename(true);
+    try {
+      await api.patch(`/operations/${opId}/documents/${docId}`, {
+        fileName: renameValue.trim(),
+      });
+      toast.success("تم تعديل اسم المستند بنجاح! ✏️");
+      setRenamingDocId(null);
+      onRefresh();
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message || "فشل تعديل اسم المستند");
+    } finally {
+      setSavingRename(false);
+    }
+  };
+
+  // بدء استبدال الملف
+  const triggerFileReplace = (docId: string) => {
+    setReplacingDocId(docId);
+    replaceFileInputRef.current?.click();
+  };
+
+  // رفع الملف البديل الجديد
+  const handleFileReplaced = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !replacingDocId) return;
+
+    setReplacingLoading(true);
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      await api.put(`/operations/${opId}/documents/${replacingDocId}/file`, formData, {
+        headers: { "Content-Type": "multipart/form-data" },
+      });
+      toast.success(`تم استبدال وتحديث الملف بنجاح! 📁🔄 (${file.name})`);
+      onRefresh();
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message || "فشل استبدال الملف");
+    } finally {
+      setReplacingLoading(false);
+      setReplacingDocId(null);
+      if (replaceFileInputRef.current) replaceFileInputRef.current.value = "";
+    }
+  };
+
+  // حذف المستند
+  const handleDelete = async (docId: string) => {
+    if (!confirm("هل أنت متأكد من رغبتك في حذف هذا المستند من الأرشيف نهائياً؟")) return;
+    setDeletingDocId(docId);
+    try {
+      await api.delete(`/operations/${opId}/documents/${docId}`);
+      toast.success("تم حذف المستند بنجاح من الأرشيف 🗑️");
+      onRefresh();
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message || "فشل حذف المستند");
+    } finally {
+      setDeletingDocId(null);
+    }
+  };
+
+  return (
+    <div className={`p-4 sm:p-5 rounded-3xl bg-card border border-border shadow-sm space-y-4 ${className}`}>
+      {/* Hidden file input for replacement */}
+      <input
+        ref={replaceFileInputRef}
+        type="file"
+        accept=".pdf,.docx,.doc,.xlsx,.xls,image/*"
+        onChange={handleFileReplaced}
+        className="hidden"
+      />
+
+      {/* Header */}
+      <div className="flex items-center justify-between pb-3 border-b border-border flex-wrap gap-2">
+        <div className="flex items-center gap-2.5">
+          <div className="w-9 h-9 rounded-xl bg-blue-500/10 flex items-center justify-center shrink-0">
+            <Icon className={`h-5 w-5 ${iconColor}`} />
+          </div>
+          <div>
+            <h4 className="text-xs sm:text-sm font-extrabold text-foreground">{title}</h4>
+            <p className="text-[11px] text-muted-foreground">{description || "أرشيف رسمي موثق متكامل مع خيارات المعاينة والاستبدال والتنزيل"}</p>
+          </div>
+        </div>
+
+        <Badge className="bg-blue-500/15 text-blue-700 dark:text-blue-300 border border-blue-500/30 text-[10px] font-bold">
+          {badgeLabel || `${docs.length} مستندات بأرشيف العملية`}
+        </Badge>
+      </div>
+
+      {/* Documents Grid */}
+      {docs.length > 0 ? (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+          {docs.map((doc: any) => {
+            const rawExt = (doc.fileType || "").toLowerCase() || (doc.fileName.split(".").pop() || "").toLowerCase();
+            const isPdf = rawExt === "pdf" || doc.fileName?.toLowerCase().endsWith(".pdf");
+            const isDocx = rawExt.includes("doc") || doc.fileName?.toLowerCase().includes(".doc");
+            const isExcel = rawExt.includes("xls") || doc.fileName?.toLowerCase().includes(".xls");
+            const isImage = rawExt.includes("png") || rawExt.includes("jpg") || rawExt.includes("jpeg") || rawExt.includes("webp");
+
+            const isEditingThis = renamingDocId === doc.id;
+            const isDeletingThis = deletingDocId === doc.id;
+            const isReplacingThis = replacingDocId === doc.id && replacingLoading;
+
+            return (
+              <div
+                key={doc.id}
+                className="p-3.5 rounded-2xl border border-border bg-muted/20 hover:border-blue-500/40 hover:bg-muted/40 transition-all flex flex-col justify-between gap-3 shadow-2xs group"
+              >
+                {/* Top Info */}
+                <div className="flex items-start gap-2.5">
+                  <div
+                    className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 font-bold text-[10px] shadow-2xs ${
+                      isPdf
+                        ? "bg-rose-500/15 text-rose-600 border border-rose-500/30"
+                        : isDocx
+                        ? "bg-blue-500/15 text-blue-600 border border-blue-500/30"
+                        : isExcel
+                        ? "bg-emerald-500/15 text-emerald-600 border border-emerald-500/30"
+                        : isImage
+                        ? "bg-purple-500/15 text-purple-600 border border-purple-500/30"
+                        : "bg-muted text-foreground border border-border"
+                    }`}
+                  >
+                    {isPdf ? "PDF" : isDocx ? "DOC" : isExcel ? "XLS" : isImage ? "IMG" : <FileText className="h-4 w-4" />}
+                  </div>
+
+                  <div className="min-w-0 flex-1 space-y-1">
+                    {isEditingThis ? (
+                      <div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
+                        <Input
+                          autoFocus
+                          value={renameValue}
+                          onChange={(e) => setRenameValue(e.target.value)}
+                          className="h-8 text-xs font-bold rounded-lg bg-background"
+                          placeholder="اسم المستند"
+                        />
+                        <Button
+                          size="sm"
+                          onClick={() => handleSaveRename(doc.id)}
+                          disabled={savingRename}
+                          className="h-8 px-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold shrink-0 cursor-pointer"
+                        >
+                          {savingRename ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => setRenamingDocId(null)}
+                          className="h-8 w-8 p-0 rounded-lg hover:bg-muted shrink-0 cursor-pointer"
+                        >
+                          <X className="h-3.5 w-3.5" />
+                        </Button>
+                      </div>
+                    ) : (
+                      <div className="space-y-0.5">
+                        <p className="text-xs font-black text-foreground truncate" title={doc.fileName}>
+                          {doc.fileName}
+                        </p>
+                        <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground font-mono flex-wrap">
+                          <span>{formatDocFileSize(doc.fileSize)}</span>
+                          <span>•</span>
+                          <span>{doc.createdAt ? new Date(doc.createdAt).toLocaleDateString("ar-EG") : ""}</span>
+                          {doc.uploadedBy && (
+                            <>
+                              <span>•</span>
+                              <span className="text-foreground/80 font-medium">{doc.uploadedBy}</span>
+                            </>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Bottom Actions Bar */}
+                <div className="flex items-center justify-between pt-2 border-t border-border/60 gap-1.5 flex-wrap">
+                  <div className="flex items-center gap-1">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => onPreviewDoc?.(doc)}
+                      className="h-7.5 px-2.5 text-[11px] font-bold rounded-lg border-border hover:border-blue-500 hover:text-blue-600 cursor-pointer flex items-center gap-1 shadow-2xs"
+                      title="معاينة وفتح المستند"
+                    >
+                      <Eye className="h-3.5 w-3.5" />
+                      <span>معاينة</span>
+                    </Button>
+
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => onDownloadDoc?.(doc)}
+                      className="h-7.5 px-2.5 text-[11px] font-bold rounded-lg border-border hover:border-emerald-500 hover:text-emerald-600 cursor-pointer flex items-center gap-1 shadow-2xs"
+                      title="تحميل وتنزيل المستند"
+                    >
+                      <Download className="h-3.5 w-3.5" />
+                      <span>تحميل</span>
+                    </Button>
+                  </div>
+
+                  <div className="flex items-center gap-0.5">
+                    {/* تعديل الاسم */}
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      onClick={() => startRename(doc)}
+                      className="h-7.5 w-7.5 rounded-lg text-muted-foreground hover:text-foreground cursor-pointer"
+                      title="تعديل تسمية المستند"
+                    >
+                      <Edit3 className="h-3.5 w-3.5" />
+                    </Button>
+
+                    {/* تغيير واستبدال الملف */}
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      onClick={() => triggerFileReplace(doc.id)}
+                      disabled={isReplacingThis}
+                      className="h-7.5 w-7.5 rounded-lg text-muted-foreground hover:text-blue-600 hover:bg-blue-500/10 cursor-pointer"
+                      title="استبدال وتغيير الملف بملف جديد"
+                    >
+                      {isReplacingThis ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin text-blue-600" />
+                      ) : (
+                        <Upload className="h-3.5 w-3.5" />
+                      )}
+                    </Button>
+
+                    {/* حذف المستند */}
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      onClick={() => handleDelete(doc.id)}
+                      disabled={isDeletingThis}
+                      className="h-7.5 w-7.5 rounded-lg text-muted-foreground hover:text-red-600 hover:bg-red-500/10 cursor-pointer"
+                      title="حذف المستند من الأرشيف"
+                    >
+                      {isDeletingThis ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin text-red-500" />
+                      ) : (
+                        <Trash2 className="h-3.5 w-3.5" />
+                      )}
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      ) : (
+        <div className="p-6 text-center rounded-2xl bg-muted/20 border border-dashed border-border space-y-1">
+          <p className="text-xs font-bold text-foreground">{emptyMessage}</p>
+          <p className="text-[11px] text-muted-foreground">عند رفع أي ملف سيظهر فوراً في هذه القائمة مع كافة أدوات المعاينة، الاستبدال، والتنزيل.</p>
+        </div>
+      )}
+    </div>
   );
 }
 

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
 import {
   Package,
   Printer,
@@ -23,6 +23,15 @@ import {
   ArrowDownToLine,
   ExternalLink,
   Sparkles,
+  Edit3,
+  Trash2,
+  RefreshCw,
+  File,
+  Image as ImageIcon,
+  Check,
+  Receipt,
+  HelpCircle,
+  TrendingUp,
 } from "lucide-react";
 import JSZip from "jszip";
 import { Button } from "@/components/ui/button";
@@ -46,8 +55,11 @@ import { StepFooterNav } from "./StepFooterNav";
 
 export type FileCategory =
   | "ALL"
-  | "LETTERS"
+  | "BOOKLET_INSURANCE"
+  | "CLARIFICATIONS"
   | "COMPANY_DOCS"
+  | "MARKET_STUDY"
+  | "LETTERS"
   | "TECH_ENVELOPE"
   | "FIN_ENVELOPE";
 
@@ -55,15 +67,17 @@ export interface DossierItem {
   id: string;
   name: string;
   description: string;
-  category: "LETTERS" | "COMPANY_DOCS" | "RECEIPTS" | "FINANCIAL" | "TECHNICAL";
+  category: "LETTERS" | "COMPANY_DOCS" | "BOOKLET_INSURANCE" | "CLARIFICATIONS" | "MARKET_STUDY" | "RECEIPTS" | "FINANCIAL" | "TECHNICAL";
+  sourceTab: "كراسة الشروط والتأمين" | "ردود الاستفسارات والتوضيحات" | "مستندات الشركة الرسمية" | "دراسة السوق" | "خطابات ومخرجات العطاء";
   envelope: "المظروف الفني" | "المظروف المالي" | "مستندات عامة مشتركة";
-  fileType: "pdf" | "docx" | "xlsx" | "image" | "doc";
+  fileType: "pdf" | "docx" | "xlsx" | "image" | "doc" | "other";
   templatePath?: string;
   templateKey?: "clarification" | "technical" | "financial" | "specs" | "insurance";
   cloudUrl?: string;
   docRef?: any;
   companyDocRef?: any;
   size?: number;
+  uploadedAt?: string;
 }
 
 export function TabSubmissionPackage({
@@ -96,6 +110,17 @@ export function TabSubmissionPackage({
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
   const [checklistOpen, setChecklistOpen] = useState(false);
 
+  // أدوات إدارة وتعديل واستبدال وحذف المستندات في أرشيف العملية
+  const [renamingDocId, setRenamingDocId] = useState<string | null>(null);
+  const [renameValue, setRenameValue] = useState("");
+  const [savingRename, setSavingRename] = useState(false);
+
+  const [replacingDocId, setReplacingDocId] = useState<string | null>(null);
+  const [replacingLoading, setReplacingLoading] = useState(false);
+  const replaceFileInputRef = useRef<HTMLInputElement>(null);
+
+  const [deletingDocId, setDeletingDocId] = useState<string | null>(null);
+
   // حالة تسجيل تسليم العطاء
   const [addingSubmission, setAddingSubmission] = useState(false);
   const [submissionDate, setSubmissionDate] = useState(new Date().toISOString().split("T")[0]);
@@ -120,223 +145,231 @@ export function TabSubmissionPackage({
   const insCloudUrl = savedNotes?.declarationsDocx?.cloudPdfUrlInsurance || "";
   const finCloudUrl = savedNotes?.financialOfferDocx?.cloudPdfUrl || "";
 
-  // ━━━ قائمة الملفات الموحدة والشاملة ━━━
+  // ━━━ قائمة الملفات الفعلية المتاحة بالعملية (الملفات الحقيقية فقط بدون عناصر وهمية) ━━━
   const packageFiles: DossierItem[] = useMemo(() => {
     const list: DossierItem[] = [];
 
     // ─────────────────────────────────────────────────────────────
-    // 1. خطابات وقوالب العطاء المعتمدة (تحميل مباشر بصيغة Word و PDF)
+    // 1. المستندات المرفوعة فعلياً بالعملية (op.documents)
+    // ─────────────────────────────────────────────────────────────
+    (op.documents || []).forEach((d: any) => {
+      const fileNameLower = (d.fileName || "").toLowerCase();
+      const rawExt = (d.fileType || "").toLowerCase();
+      const isImg = ["png", "jpg", "jpeg", "webp", "gif"].includes(rawExt);
+      const isDocx = ["docx", "doc"].includes(rawExt);
+      const isXls = ["xlsx", "xls", "csv"].includes(rawExt);
+      const fType: DossierItem["fileType"] = isDocx ? "docx" : isXls ? "xlsx" : isImg ? "image" : "pdf";
+
+      let cat: DossierItem["category"] = "BOOKLET_INSURANCE";
+      let sourceTab: DossierItem["sourceTab"] = "كراسة الشروط والتأمين";
+      let env: DossierItem["envelope"] = "المظروف الفني";
+
+      if (
+        fileNameLower.includes("توضيح") ||
+        fileNameLower.includes("ملحق") ||
+        fileNameLower.includes("استفسار") ||
+        fileNameLower.includes("رد الجهة")
+      ) {
+        cat = "CLARIFICATIONS";
+        sourceTab = "ردود الاستفسارات والتوضيحات";
+        env = "المظروف الفني";
+      } else if (d.type === "MARKET_STUDY" || fileNameLower.includes("دراسة") || fileNameLower.includes("عرض سعر")) {
+        cat = "MARKET_STUDY";
+        sourceTab = "دراسة السوق";
+        env = "مستندات عامة مشتركة";
+      } else if (d.type === "BOOKLET" || fileNameLower.includes("كراسة")) {
+        cat = "BOOKLET_INSURANCE";
+        sourceTab = "كراسة الشروط والتأمين";
+        env = "المظروف الفني";
+      } else if (d.type === "RECEIPT" || fileNameLower.includes("إيصال") || fileNameLower.includes("سداد") || fileNameLower.includes("تأمين")) {
+        cat = "BOOKLET_INSURANCE";
+        sourceTab = "كراسة الشروط والتأمين";
+        env = fileNameLower.includes("كراسة") ? "المظروف الفني" : "المظروف المالي";
+      }
+
+      list.push({
+        id: `op-doc-${d.id}`,
+        name: d.fileName || "مستند عملية رسمي",
+        description: `مستند مرفوع بحجم ${d.fileSize ? formatDocFileSize(d.fileSize) : "غير محدد"} • ${d.uploadedBy || "مسؤول العملية"}`,
+        category: cat,
+        sourceTab,
+        envelope: env,
+        fileType: fType,
+        docRef: d,
+        size: d.fileSize,
+        uploadedAt: d.createdAt,
+      });
+    });
+
+    // ─────────────────────────────────────────────────────────────
+    // 2. مستندات الشركة المشاركة المرفوعة فعلياً (compDocs)
+    // ─────────────────────────────────────────────────────────────
+    const compDocs = selectedCompanyRel?.company?.documents || [];
+    compDocs.forEach((cd: any) => {
+      const rawExt = (cd.fileType || "").toLowerCase();
+      const isImg = ["png", "jpg", "jpeg", "webp", "gif"].includes(rawExt);
+      const isDocx = ["docx", "doc"].includes(rawExt);
+      const isXls = ["xlsx", "xls", "csv"].includes(rawExt);
+      const fType: DossierItem["fileType"] = isDocx ? "docx" : isXls ? "xlsx" : isImg ? "image" : "pdf";
+
+      list.push({
+        id: `comp-doc-${cd.id}`,
+        name: cd.originalFileName || cd.fileName || "مستند رسمي للشركة",
+        description: `مستند قانوني معتمد لشركة ${selectedCompanyRel?.company?.name || "المشاركة"} • ${cd.fileSize ? formatDocFileSize(cd.fileSize) : ""}`,
+        category: "COMPANY_DOCS",
+        sourceTab: "مستندات الشركة الرسمية",
+        envelope: "المظروف الفني",
+        fileType: fType,
+        companyDocRef: cd,
+        size: cd.fileSize,
+        uploadedAt: cd.createdAt,
+      });
+    });
+
+    // ─────────────────────────────────────────────────────────────
+    // 3. نماذج وخطابات العطاء الرسمية المعتمدة (Word & PDF)
     // ─────────────────────────────────────────────────────────────
     list.push({
       id: "letter-clarification-docx",
       name: "خطاب التوضيح والاستفسارات الرسمي (Word)",
       description: "مستند Word رسمي معتمد بالترويسة والباركود وجدول الاستفسارات",
       category: "LETTERS",
+      sourceTab: "خطابات ومخرجات العطاء",
       envelope: "المظروف الفني",
       fileType: "docx",
       templateKey: "clarification",
       templatePath: "/templates/clarification_template.docx",
     });
 
-    list.push({
-      id: "letter-clarification-pdf",
-      name: "خطاب التوضيح والاستفسارات الرسمي (نسخة PDF رقمية)",
-      description: "النسخة الرقمية المعتمدة لخطاب التوضيح مع رمز QR",
-      category: "LETTERS",
-      envelope: "المظروف الفني",
-      fileType: "pdf",
-      templateKey: "clarification",
-      cloudUrl: clrCloudUrl,
-    });
+    if (clrCloudUrl) {
+      list.push({
+        id: "letter-clarification-pdf",
+        name: "خطاب التوضيح والاستفسارات الرسمي (نسخة PDF رقمية)",
+        description: "النسخة الرقمية المعتمدة لخطاب التوضيح مع رمز QR",
+        category: "LETTERS",
+        sourceTab: "خطابات ومخرجات العطاء",
+        envelope: "المظروف الفني",
+        fileType: "pdf",
+        templateKey: "clarification",
+        cloudUrl: clrCloudUrl,
+      });
+    }
 
     list.push({
       id: "letter-technical-docx",
       name: "العرض الفني والمواصفات الفنية والبدائل (Word)",
-      description: "مستند Word للعرض الفني بالجدول المدمج 8 أعمدة والبدائل",
+      description: "مستند Word للعرض الفني بالجدول المدمج 8 أعمدة والبدائل الفنية",
       category: "LETTERS",
+      sourceTab: "خطابات ومخرجات العطاء",
       envelope: "المظروف الفني",
       fileType: "docx",
       templateKey: "technical",
       templatePath: "/templates/technical_offer_template.docx",
     });
 
-    list.push({
-      id: "letter-technical-pdf",
-      name: "العرض الفني والمواصفات الرسمية (نسخة PDF رقمية)",
-      description: "النسخة الرقمية المعتمدة للعرض الفني مع رمز QR الرقمي",
-      category: "LETTERS",
-      envelope: "المظروف الفني",
-      fileType: "pdf",
-      templateKey: "technical",
-      cloudUrl: techCloudUrl,
-    });
+    if (techCloudUrl) {
+      list.push({
+        id: "letter-technical-pdf",
+        name: "العرض الفني والمواصفات الرسمية (نسخة PDF رقمية)",
+        description: "النسخة الرقمية المعتمدة للعرض الفني مع رمز QR الرقمي",
+        category: "LETTERS",
+        sourceTab: "خطابات ومخرجات العطاء",
+        envelope: "المظروف الفني",
+        fileType: "pdf",
+        templateKey: "technical",
+        cloudUrl: techCloudUrl,
+      });
+    }
 
     list.push({
       id: "letter-financial-docx",
       name: "العرض المالي وجدول الأسعار والتفقيط (Word)",
       description: "مستند Word للعرض المالي الرسمي بأعمدة سعر الوحدة والإجمالي والتفقيط",
       category: "LETTERS",
+      sourceTab: "خطابات ومخرجات العطاء",
       envelope: "المظروف المالي",
       fileType: "docx",
       templateKey: "financial",
       templatePath: "/templates/financial_offer_template.docx",
     });
 
-    list.push({
-      id: "letter-financial-pdf",
-      name: "العرض المالي وجدول الأسعار (نسخة PDF رقمية)",
-      description: "النسخة الرقمية المعتمدة للعرض المالي مع رمز QR",
-      category: "LETTERS",
-      envelope: "المظروف المالي",
-      fileType: "pdf",
-      templateKey: "financial",
-      cloudUrl: finCloudUrl,
-    });
+    if (finCloudUrl) {
+      list.push({
+        id: "letter-financial-pdf",
+        name: "العرض المالي وجدول الأسعار (نسخة PDF رقمية)",
+        description: "النسخة الرقمية المعتمدة للعرض المالي مع رمز QR",
+        category: "LETTERS",
+        sourceTab: "خطابات ومخرجات العطاء",
+        envelope: "المظروف المالي",
+        fileType: "pdf",
+        templateKey: "financial",
+        cloudUrl: finCloudUrl,
+      });
+    }
 
     list.push({
       id: "decl-specs-docx",
       name: "إقرار الالتزام بكراسة الشروط والمواصفات (Word)",
       description: "إقرار وتعهد قانوني بالالتزام بكافة الشروط الفنية والمالية",
       category: "LETTERS",
+      sourceTab: "خطابات ومخرجات العطاء",
       envelope: "المظروف الفني",
       fileType: "docx",
       templateKey: "specs",
       templatePath: "/templates/declaration_specs_template.docx",
     });
 
-    list.push({
-      id: "decl-specs-pdf",
-      name: "إقرار الالتزام بكراسة الشروط (نسخة PDF رقمية)",
-      description: "النسخة الرقمية المعتمدة للإقرار مع رمز QR",
-      category: "LETTERS",
-      envelope: "المظروف الفني",
-      fileType: "pdf",
-      templateKey: "specs",
-      cloudUrl: specsCloudUrl,
-    });
+    if (specsCloudUrl) {
+      list.push({
+        id: "decl-specs-pdf",
+        name: "إقرار الالتزام بكراسة الشروط (نسخة PDF رقمية)",
+        description: "النسخة الرقمية المعتمدة للإقرار مع رمز QR",
+        category: "LETTERS",
+        sourceTab: "خطابات ومخرجات العطاء",
+        envelope: "المظروف الفني",
+        fileType: "pdf",
+        templateKey: "specs",
+        cloudUrl: specsCloudUrl,
+      });
+    }
 
     list.push({
       id: "decl-insurance-docx",
       name: "إقرار الالتزام بالتأمينات والعمالة والمساواة (Word)",
       description: "إقرار قانوني بالالتزام بالتأمينات وحسن معاملة الموظفين",
       category: "LETTERS",
+      sourceTab: "خطابات ومخرجات العطاء",
       envelope: "المظروف الفني",
       fileType: "docx",
       templateKey: "insurance",
       templatePath: "/templates/declaration_insurance_template.docx",
     });
 
-    list.push({
-      id: "decl-insurance-pdf",
-      name: "إقرار الالتزام بالتأمينات والعمالة (نسخة PDF رقمية)",
-      description: "النسخة الرقمية المعتمدة لإقرار التأمينات",
-      category: "LETTERS",
-      envelope: "المظروف الفني",
-      fileType: "pdf",
-      templateKey: "insurance",
-      cloudUrl: insCloudUrl,
-    });
-
-    // ─────────────────────────────────────────────────────────────
-    // 2. مستندات الشركة القانونية العامة (تُجلب من ملفات الشركة)
-    // ─────────────────────────────────────────────────────────────
-    const compDocs = selectedCompanyRel?.company?.documents || [];
-
-    const standardLegal = [
-      { key: "COMMERCIAL_REGISTER", label: "السجل التجاري الساري والحديث للشركة" },
-      { key: "TAX_CARD", label: "البطاقة الضريبية الرسمية السارية" },
-      { key: "VAT_CERTIFICATE", label: "شهادة التسجيل بضريبة القيمة المضافة" },
-      { key: "CONTRACT", label: "عقد تأسيس الشركة وصحيفة الاستثمار" },
-      { key: "CONTRACTORS_UNION", label: "شهادة القيد بالاتحاد المصري للمقاولين / بوابة التعاقدات" },
-      { key: "FINANCIAL_STATEMENTS", label: "القوائم المالية والمركز المالي وشهادة المحاسب القانوني" },
-      { key: "PREVIOUS_WORKS", label: "سابقة الأعمال وشهادات الخبرة للمشروعات المماثلة" },
-      { key: "INSURANCE_RECEIPT", label: "شهادة التأمينات الاجتماعية وسداد اشتراكات العمالة" },
-      { key: "AUTHORIZATION", label: "تفويض رسمي بالتوقيع والتقديم باسم الشركة" },
-      { key: "ID_CARD", label: "صورة بطاقة الرقم القومي للمفوض بالتوقيع" },
-    ];
-
-    standardLegal.forEach((std) => {
-      const matched = compDocs.find(
-        (cd: any) =>
-          cd.type === std.key ||
-          cd.fileName?.includes(std.label.split(" ")[0]) ||
-          cd.fileName?.includes(std.key)
-      );
-
+    if (insCloudUrl) {
       list.push({
-        id: `comp-std-${std.key}`,
-        name: std.label,
-        description: matched ? `ملف مرفوع بحجم ${formatDocFileSize(matched.fileSize || 0)}` : "مستند قانوني قياسي للشركة المشاركة بالعطاء",
-        category: "COMPANY_DOCS",
+        id: "decl-insurance-pdf",
+        name: "إقرار الالتزام بالتأمينات والعمالة (نسخة PDF رقمية)",
+        description: "النسخة الرقمية المعتمدة لإقرار التأمينات",
+        category: "LETTERS",
+        sourceTab: "خطابات ومخرجات العطاء",
         envelope: "المظروف الفني",
-        fileType: (matched?.fileType as any) || "pdf",
-        companyDocRef: matched,
-        size: matched?.fileSize,
+        fileType: "pdf",
+        templateKey: "insurance",
+        cloudUrl: insCloudUrl,
       });
-    });
-
-    // المستندات الإضافية المرفوعة للشركة
-    compDocs.forEach((cd: any) => {
-      if (!list.some((x) => x.companyDocRef?.id === cd.id)) {
-        list.push({
-          id: `comp-custom-${cd.id}`,
-          name: cd.fileName || "مستند شركة مؤرشف",
-          description: "مستند مرفوع ضمن ملفات الشركة",
-          category: "COMPANY_DOCS",
-          envelope: "المظروف الفني",
-          fileType: cd.fileType || "pdf",
-          companyDocRef: cd,
-          size: cd.fileSize,
-        });
-      }
-    });
-
-    // ─────────────────────────────────────────────────────────────
-    // 3. مستندات العملية وكراسة الشروط والتأمينات
-    // ─────────────────────────────────────────────────────────────
-    (op.documents || []).forEach((d: any) => {
-      let cat: DossierItem["category"] = "RECEIPTS";
-      let env: DossierItem["envelope"] = "المظروف الفني";
-
-      if (d.type === "RECEIPT") {
-        cat = "RECEIPTS";
-        env = d.fileName?.includes("كراسة") ? "المظروف الفني" : "المظروف المالي";
-      } else if (d.type === "BOOKLET") {
-        cat = "TECHNICAL";
-        env = "المظروف الفني";
-      } else if (d.type === "MARKET_STUDY") {
-        cat = "TECHNICAL";
-        env = "مستندات عامة مشتركة";
-      }
-
-      list.push({
-        id: `op-doc-${d.id}`,
-        name: d.fileName || "مستند عملية رسمي",
-        description: `مستند مرفوع بحجم ${d.fileSize ? formatDocFileSize(d.fileSize) : "غير محدد"}`,
-        category: cat,
-        envelope: env,
-        fileType: d.fileType || "pdf",
-        docRef: d,
-        size: d.fileSize,
-      });
-    });
-
-    // التأمينات الابتدائية
-    (op.guarantees || []).forEach((g: any) => {
-      if (g.type === "INITIAL") {
-        list.push({
-          id: `guar-${g.id}`,
-          name: `أصل خطاب الضمان / إيصال التأمين الابتدائي (${formatCurrency(g.amount)})`,
-          description: `البنك: ${g.bankName || "خزينة الجهة"} • ساري حتى: ${g.validUntil ? formatDate(g.validUntil) : "جلسة البت"}`,
-          category: "RECEIPTS",
-          envelope: "المظروف المالي",
-          fileType: "pdf",
-        });
-      }
-    });
+    }
 
     return list;
-  }, [op, selectedCompanyRel, techCloudUrl, clrCloudUrl, specsCloudUrl, insCloudUrl, finCloudUrl]);
+  }, [
+    op.documents,
+    selectedCompanyRel?.company?.documents,
+    selectedCompanyRel?.company?.name,
+    techCloudUrl,
+    clrCloudUrl,
+    specsCloudUrl,
+    insCloudUrl,
+    finCloudUrl,
+  ]);
 
   // حالة تحديد الملفات للـ ZIP
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
@@ -345,13 +378,60 @@ export function TabSubmissionPackage({
     setSelectedIds(packageFiles.map((f) => f.id));
   }, [packageFiles.length]);
 
+  // إحصائيات الفئات الذكية
+  const bookletInsuranceCount = useMemo(
+    () => packageFiles.filter((f) => f.category === "BOOKLET_INSURANCE" || f.category === "RECEIPTS").length,
+    [packageFiles]
+  );
+  const clarificationsCount = useMemo(
+    () => packageFiles.filter((f) => f.category === "CLARIFICATIONS").length,
+    [packageFiles]
+  );
+  const companyDocsCount = useMemo(
+    () => packageFiles.filter((f) => f.category === "COMPANY_DOCS").length,
+    [packageFiles]
+  );
+  const marketStudyCount = useMemo(
+    () => packageFiles.filter((f) => f.category === "MARKET_STUDY").length,
+    [packageFiles]
+  );
+  const lettersCount = useMemo(
+    () => packageFiles.filter((f) => f.category === "LETTERS").length,
+    [packageFiles]
+  );
+  const techCount = useMemo(
+    () => packageFiles.filter((f) => f.envelope === "المظروف الفني").length,
+    [packageFiles]
+  );
+  const finCount = useMemo(
+    () => packageFiles.filter((f) => f.envelope === "المظروف المالي").length,
+    [packageFiles]
+  );
+
   // تصفية الملفات بحسب الفئة النشطة
   const filteredFiles = useMemo(() => {
     if (activeCategory === "ALL") return packageFiles;
-    if (activeCategory === "LETTERS") return packageFiles.filter((f) => f.category === "LETTERS");
-    if (activeCategory === "COMPANY_DOCS") return packageFiles.filter((f) => f.category === "COMPANY_DOCS");
-    if (activeCategory === "TECH_ENVELOPE") return packageFiles.filter((f) => f.envelope === "المظروف الفني");
-    if (activeCategory === "FIN_ENVELOPE") return packageFiles.filter((f) => f.envelope === "المظروف المالي");
+    if (activeCategory === "BOOKLET_INSURANCE") {
+      return packageFiles.filter((f) => f.category === "BOOKLET_INSURANCE" || f.category === "RECEIPTS");
+    }
+    if (activeCategory === "CLARIFICATIONS") {
+      return packageFiles.filter((f) => f.category === "CLARIFICATIONS");
+    }
+    if (activeCategory === "COMPANY_DOCS") {
+      return packageFiles.filter((f) => f.category === "COMPANY_DOCS");
+    }
+    if (activeCategory === "MARKET_STUDY") {
+      return packageFiles.filter((f) => f.category === "MARKET_STUDY");
+    }
+    if (activeCategory === "LETTERS") {
+      return packageFiles.filter((f) => f.category === "LETTERS");
+    }
+    if (activeCategory === "TECH_ENVELOPE") {
+      return packageFiles.filter((f) => f.envelope === "المظروف الفني");
+    }
+    if (activeCategory === "FIN_ENVELOPE") {
+      return packageFiles.filter((f) => f.envelope === "المظروف المالي");
+    }
     return packageFiles;
   }, [packageFiles, activeCategory]);
 
@@ -448,6 +528,104 @@ export function TabSubmissionPackage({
       blob: new Blob([content], { type: "text/plain;charset=utf-8" }),
       fileName: `${safeTitle}.txt`,
     };
+  };
+
+  // ━━━ دالة المعاينة الشاملة للمستند ━━━
+  const handlePreviewItem = (item: DossierItem) => {
+    if (item.docRef) {
+      onPreviewDoc?.(item.docRef);
+      return;
+    }
+    if (item.companyDocRef) {
+      onPreviewDoc?.({
+        ...item.companyDocRef,
+        id: item.companyDocRef.id,
+        fileName: item.name,
+        filePath: item.companyDocRef.filePath,
+        fileType: item.companyDocRef.fileType,
+      });
+      return;
+    }
+    if (item.cloudUrl) {
+      window.open(item.cloudUrl, "_blank");
+      return;
+    }
+    if (item.templatePath) {
+      handleDownloadSingleItem(item);
+      return;
+    }
+  };
+
+  // ━━━ تعديل اسم المستند وحفظه بالباك إند ━━━
+  const startRename = (doc: any) => {
+    setRenamingDocId(doc.id);
+    setRenameValue(doc.fileName || "");
+  };
+
+  const handleSaveRename = async (docId: string) => {
+    if (!renameValue.trim()) {
+      toast.error("اسم المستند لا يمكن أن يكون فارغاً");
+      return;
+    }
+    setSavingRename(true);
+    try {
+      await api.patch(`/operations/${op.id}/documents/${docId}`, {
+        fileName: renameValue.trim(),
+      });
+      toast.success("تم تعديل اسم المستند بنجاح! ✏️");
+      setRenamingDocId(null);
+      onRefresh();
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message || "فشل تعديل اسم المستند");
+    } finally {
+      setSavingRename(false);
+    }
+  };
+
+  // ━━━ استبدال وتحديث الملف بالباك إند ━━━
+  const triggerFileReplace = (docId: string) => {
+    setReplacingDocId(docId);
+    replaceFileInputRef.current?.click();
+  };
+
+  const handleFileReplaced = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !replacingDocId) return;
+
+    setReplacingLoading(true);
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("fileName", file.name.replace(/\.[^/.]+$/, ""));
+
+      await api.put(`/operations/${op.id}/documents/${replacingDocId}/file`, formData, {
+        headers: { "Content-Type": "multipart/form-data" },
+      });
+
+      toast.success("تم استبدال وتحديث الملف بنجاح! 🔄");
+      onRefresh();
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message || "فشل استبدال الملف");
+    } finally {
+      setReplacingLoading(false);
+      setReplacingDocId(null);
+      if (replaceFileInputRef.current) replaceFileInputRef.current.value = "";
+    }
+  };
+
+  // ━━━ حذف المستند من أرشيف العملية ━━━
+  const handleDeleteDoc = async (docId: string) => {
+    if (!confirm("هل أنت متأكد من رغبتك في حذف هذا المستند من أرشيف العملية؟")) return;
+    setDeletingDocId(docId);
+    try {
+      await api.delete(`/operations/${op.id}/documents/${docId}`);
+      toast.success("تم حذف المستند بنجاح 🗑️");
+      onRefresh();
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message || "فشل حذف المستند");
+    } finally {
+      setDeletingDocId(null);
+    }
   };
 
   // ━━━ تحميل مستند منفرد مباشرة إلى جهاز المستخدم ━━━
@@ -578,13 +756,16 @@ export function TabSubmissionPackage({
     }
   };
 
-  const techCount = packageFiles.filter((f) => f.envelope === "المظروف الفني").length;
-  const finCount = packageFiles.filter((f) => f.envelope === "المظروف المالي").length;
-  const companyDocsCount = packageFiles.filter((f) => f.category === "COMPANY_DOCS").length;
-  const lettersCount = packageFiles.filter((f) => f.category === "LETTERS").length;
-
   return (
     <div className="space-y-6 animate-fade-in">
+      {/* Hidden file input for document replacement */}
+      <input
+        ref={replaceFileInputRef}
+        type="file"
+        onChange={handleFileReplaced}
+        className="hidden"
+      />
+
       <SectionCard
         title="تجهيز وطباعة وحزم ملفات التقديم الرسمي"
         icon={Package}
@@ -601,6 +782,15 @@ export function TabSubmissionPackage({
         }
         actions={
           <div className="flex items-center gap-2 flex-wrap">
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => setChecklistOpen(true)}
+              className="border-border text-xs font-bold h-9 rounded-xl cursor-pointer flex items-center gap-1.5 hover:bg-muted"
+            >
+              <Printer className="h-3.5 w-3.5 text-blue-600" />
+              <span>كشف محتويات المظاريف</span>
+            </Button>
 
             <Button
               size="sm"
@@ -670,7 +860,6 @@ export function TabSubmissionPackage({
             </Select>
           </div>
         </div>
-
 
         {/* نموذج تسجيل محضر تسليم العطاء */}
         {addingSubmission && (
@@ -768,8 +957,11 @@ export function TabSubmissionPackage({
             <div className="flex items-center gap-1.5 flex-wrap">
               {[
                 { id: "ALL", label: `كافة الملفات (${packageFiles.length})`, icon: Layers },
-                { id: "LETTERS", label: `خطابات وقوالب العطاء (${lettersCount})`, icon: FileText },
+                { id: "BOOKLET_INSURANCE", label: `الكراسة والتأمين (${bookletInsuranceCount})`, icon: Receipt },
+                { id: "CLARIFICATIONS", label: `الاستفسارات والملاحق (${clarificationsCount})`, icon: HelpCircle },
+                { id: "MARKET_STUDY", label: `دراسة السوق (${marketStudyCount})`, icon: TrendingUp },
                 { id: "COMPANY_DOCS", label: `مستندات الشركة الرسمية (${companyDocsCount})`, icon: Building2 },
+                { id: "LETTERS", label: `نماذج ومخرجات العطاء (${lettersCount})`, icon: FileText },
                 { id: "TECH_ENVELOPE", label: `المظروف الفني (${techCount})`, icon: FileCheck },
                 { id: "FIN_ENVELOPE", label: `المظروف المالي (${finCount})`, icon: Coins },
               ].map((tab) => {
@@ -801,7 +993,7 @@ export function TabSubmissionPackage({
                 onClick={toggleSelectAll}
                 className="h-8 px-3 text-xs font-bold rounded-xl border-border hover:bg-muted cursor-pointer flex items-center gap-1.5"
               >
-                {selectedIds.length === filteredFiles.length ? (
+                {selectedIds.length === filteredFiles.length && filteredFiles.length > 0 ? (
                   <>
                     <CheckSquare className="h-3.5 w-3.5 text-blue-600" />
                     <span>إلغاء التحديد</span>
@@ -826,7 +1018,7 @@ export function TabSubmissionPackage({
             </div>
 
             <div className="text-[11px] text-muted-foreground">
-              انقر على أي ملف لتحديده أو اضغط على زر <strong className="text-foreground">تحميل</strong> بجانب أي ملف لتنزيله مباشرة لجهازك
+              يمكنك معاينة أي ملف أو تحميله مباشرة، واستخدام أزرار التعديل والاستبدال والحذف لإدارة المستندات المرفوعة
             </div>
           </div>
 
@@ -836,6 +1028,9 @@ export function TabSubmissionPackage({
               {filteredFiles.map((item) => {
                 const isSelected = selectedIds.includes(item.id);
                 const isDownloadingThis = downloadingId === item.id;
+                const isRenamingThis = renamingDocId === item.docRef?.id;
+                const isReplacingThis = replacingLoading && replacingDocId === item.docRef?.id;
+                const isDeletingThis = deletingDocId === item.docRef?.id;
 
                 return (
                   <div
@@ -844,14 +1039,15 @@ export function TabSubmissionPackage({
                     className={`p-3.5 sm:p-4 flex items-center justify-between gap-3 text-xs transition-all cursor-pointer select-none ${
                       isSelected
                         ? "bg-blue-500/5 hover:bg-blue-500/10 border-r-4 border-r-blue-600"
-                        : "hover:bg-muted/40 opacity-75"
+                        : "hover:bg-muted/40 opacity-85"
                     }`}
                   >
-                    <div className="flex items-center gap-3 overflow-hidden min-w-0">
+                    <div className="flex items-center gap-3 overflow-hidden min-w-0 flex-1">
                       <input
                         type="checkbox"
                         checked={isSelected}
-                        onChange={() => {}}
+                        onChange={() => toggleSelectFile(item.id)}
+                        onClick={(e) => e.stopPropagation()}
                         className="h-4 w-4 rounded text-blue-600 focus:ring-blue-500 border-border cursor-pointer shrink-0"
                       />
 
@@ -863,44 +1059,107 @@ export function TabSubmissionPackage({
                             ? "bg-rose-500/15 text-rose-600 border border-rose-500/30 font-mono"
                             : item.fileType === "xlsx"
                             ? "bg-emerald-500/15 text-emerald-600 border border-emerald-500/30 font-mono"
+                            : item.fileType === "image"
+                            ? "bg-amber-500/15 text-amber-600 border border-amber-500/30"
                             : "bg-indigo-500/15 text-indigo-600 border border-indigo-500/30"
                         }`}
                       >
-                        {item.fileType === "docx" ? "DOC" : item.fileType === "pdf" ? "PDF" : item.fileType === "xlsx" ? "XLS" : <FileText className="h-4 w-4" />}
+                        {item.fileType === "docx" ? (
+                          "DOC"
+                        ) : item.fileType === "pdf" ? (
+                          "PDF"
+                        ) : item.fileType === "xlsx" ? (
+                          "XLS"
+                        ) : item.fileType === "image" ? (
+                          <ImageIcon className="h-4 w-4" />
+                        ) : (
+                          <FileText className="h-4 w-4" />
+                        )}
                       </div>
 
-                      <div className="min-w-0 truncate space-y-0.5">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <p className="font-extrabold text-foreground truncate text-xs sm:text-sm">
-                            {item.name}
-                          </p>
-                          <Badge
-                            className={`text-[9px] font-bold ${
-                              item.envelope === "المظروف الفني"
-                                ? "bg-indigo-500/15 text-indigo-700 dark:text-indigo-300 border border-indigo-500/30"
-                                : item.envelope === "المظروف المالي"
-                                ? "bg-teal-500/15 text-teal-700 dark:text-teal-300 border border-teal-500/30"
-                                : "bg-purple-500/15 text-purple-700 dark:text-purple-300 border border-purple-500/30"
-                            }`}
-                          >
-                            {item.envelope}
-                          </Badge>
-                          {item.cloudUrl && (
-                            <Badge className="bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30 text-[9px] font-bold">
-                              سحابي موثق ✓
+                      <div className="min-w-0 truncate space-y-1 flex-1">
+                        {isRenamingThis ? (
+                          <div className="flex items-center gap-2 py-0.5" onClick={(e) => e.stopPropagation()}>
+                            <Input
+                              value={renameValue}
+                              onChange={(e) => setRenameValue(e.target.value)}
+                              className="h-7 text-xs font-bold w-60 sm:w-80 bg-background"
+                              autoFocus
+                              placeholder="اسم المستند الجديد"
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter") handleSaveRename(item.docRef.id);
+                                if (e.key === "Escape") setRenamingDocId(null);
+                              }}
+                            />
+                            <Button
+                              size="sm"
+                              onClick={() => handleSaveRename(item.docRef.id)}
+                              disabled={savingRename}
+                              className="h-7 px-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs rounded-lg cursor-pointer"
+                              title="حفظ الاسم الجديد"
+                            >
+                              {savingRename ? <Loader2 className="h-3 w-3 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => setRenamingDocId(null)}
+                              className="h-7 px-2 text-xs rounded-lg cursor-pointer"
+                              title="إلغاء"
+                            >
+                              <X className="h-3.5 w-3.5" />
+                            </Button>
+                          </div>
+                        ) : (
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <p className="font-extrabold text-foreground truncate text-xs sm:text-sm">
+                              {item.name}
+                            </p>
+                            <Badge
+                              className={`text-[9px] font-bold ${
+                                item.envelope === "المظروف الفني"
+                                  ? "bg-indigo-500/15 text-indigo-700 dark:text-indigo-300 border border-indigo-500/30"
+                                  : item.envelope === "المظروف المالي"
+                                  ? "bg-teal-500/15 text-teal-700 dark:text-teal-300 border border-teal-500/30"
+                                  : "bg-purple-500/15 text-purple-700 dark:text-purple-300 border border-purple-500/30"
+                              }`}
+                            >
+                              {item.envelope}
                             </Badge>
-                          )}
-                        </div>
+                            <Badge variant="outline" className="text-[9px] font-medium text-muted-foreground border-border">
+                              {item.sourceTab}
+                            </Badge>
+                            {item.cloudUrl && (
+                              <Badge className="bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30 text-[9px] font-bold">
+                                سحابي موثق ✓
+                              </Badge>
+                            )}
+                          </div>
+                        )}
                         <span className="text-[11px] text-muted-foreground block truncate">
                           {item.description}
                           {item.size ? ` • ${formatDocFileSize(item.size)}` : ""}
                           {` • صيغة ${item.fileType.toUpperCase()}`}
+                          {item.uploadedAt ? ` • تم الرفع: ${new Date(item.uploadedAt).toLocaleDateString("ar-EG")}` : ""}
                         </span>
                       </div>
                     </div>
 
-                    {/* زر التحميل الفوري المباشر لجهاز المستخدم */}
+                    {/* أزرار الإجراءات والتحكم للمستند */}
                     <div className="flex items-center gap-1.5 shrink-0" onClick={(e) => e.stopPropagation()}>
+                      {/* زر المعاينة */}
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => handlePreviewItem(item)}
+                        className="h-8.5 px-2.5 text-xs font-bold rounded-xl border-border hover:bg-muted cursor-pointer flex items-center gap-1"
+                        title="معاينة المستند"
+                      >
+                        <Eye className="h-3.5 w-3.5 text-blue-600" />
+                        <span className="hidden sm:inline">معاينة</span>
+                      </Button>
+
+                      {/* زر التحميل الفوري */}
                       <Button
                         size="sm"
                         onClick={() => handleDownloadSingleItem(item)}
@@ -913,8 +1172,56 @@ export function TabSubmissionPackage({
                         ) : (
                           <ArrowDownToLine className="h-3.5 w-3.5" />
                         )}
-                        <span>تحميل مباشر</span>
+                        <span className="hidden sm:inline">تحميل مباشر</span>
                       </Button>
+
+                      {/* أدوات إضافية لمستندات العملية القابلة للتعديل */}
+                      {item.docRef && (
+                        <div className="flex items-center gap-0.5 border-r border-border pr-1 mr-1">
+                          {/* تعديل الاسم */}
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => startRename(item.docRef)}
+                            className="h-8 w-8 p-0 text-muted-foreground hover:text-foreground rounded-xl cursor-pointer"
+                            title="تعديل اسم المستند"
+                          >
+                            <Edit3 className="h-3.5 w-3.5 text-amber-600" />
+                          </Button>
+
+                          {/* استبدال الملف */}
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => triggerFileReplace(item.docRef.id)}
+                            disabled={isReplacingThis}
+                            className="h-8 w-8 p-0 text-muted-foreground hover:text-foreground rounded-xl cursor-pointer"
+                            title="استبدال وتحديث الملف بملف جديد"
+                          >
+                            {isReplacingThis ? (
+                              <Loader2 className="h-3.5 w-3.5 animate-spin text-blue-600" />
+                            ) : (
+                              <RefreshCw className="h-3.5 w-3.5 text-blue-600" />
+                            )}
+                          </Button>
+
+                          {/* حذف المستند */}
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => handleDeleteDoc(item.docRef.id)}
+                            disabled={isDeletingThis}
+                            className="h-8 w-8 p-0 text-rose-500 hover:text-rose-700 hover:bg-rose-500/10 rounded-xl cursor-pointer"
+                            title="حذف المستند من أرشيف العملية"
+                          >
+                            {isDeletingThis ? (
+                              <Loader2 className="h-3.5 w-3.5 animate-spin text-rose-600" />
+                            ) : (
+                              <Trash2 className="h-3.5 w-3.5" />
+                            )}
+                          </Button>
+                        </div>
+                      )}
                     </div>
                   </div>
                 );

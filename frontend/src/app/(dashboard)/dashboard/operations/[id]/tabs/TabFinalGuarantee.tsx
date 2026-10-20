@@ -30,6 +30,11 @@ import {
   FISCAL_YEAR_OPTIONS,
   LetterQrCloudCard,
   PdfExportLoadingModal,
+  getUnifiedOperationRegistrationNumber,
+  regenerateUnifiedRegistrationNumber,
+  getSharedOperationScope,
+  replaceDocxScope,
+  replaceDocxFiscalAndDate,
 } from "./letter-utils";
 import JSZip from "jszip";
 import QRCode from "qrcode";
@@ -104,14 +109,10 @@ export function TabFinalGuarantee({
 
   const currentCompany = currentCompanyLink?.company;
 
-  // Smart Outgoing Registration Number
+  // Smart Outgoing Registration Number (Unified across operation)
   const [registrationNumber, setRegistrationNumber] = useState(() => {
     if (savedSettings?.registrationNumber) return savedSettings.registrationNumber;
-    return generateSmartOutgoingRef({
-      companyCode: currentCompanyLink?.displayCode || "Ad",
-      tenderType: op.tenderType || "LIMITED_TENDER",
-      dateStr: new Date().toISOString(),
-    });
+    return getUnifiedOperationRegistrationNumber(op, currentCompanyLink?.displayCode);
   });
 
   // Header & Footer fields
@@ -131,17 +132,39 @@ export function TabFinalGuarantee({
     if (op.authority) return `مدير الادارة العامة للمشتريات والمخازن بـ ${op.authority}`;
     return "مدير الادارة العامة للمشتريات والمخازن";
   });
-  const [operationRegisteredName, setOperationRegisteredName] = useState(() => op.name || savedSettings?.operationRegisteredName || "");
-  const [operationNumber, setOperationNumber] = useState(() => op.externalNumber || (op.serialNumber ? String(op.serialNumber) : "") || savedSettings?.operationNumber || "");
+  const [operationRegisteredName, setOperationRegisteredName] = useState(() => savedSettings?.operationRegisteredName || op.name || "");
+  const [operationNumber, setOperationNumber] = useState(() => savedSettings?.operationNumber || op.externalNumber || (op.serialNumber ? String(op.serialNumber) : "") || "");
   const [tenderMethod, setTenderMethod] = useState(() => savedSettings?.tenderMethod || "المناقصة المحدودة");
-  const [operationScope, setOperationScope] = useState(() => op.name || savedSettings?.operationScope || "");
+  const [operationScope, setOperationScope] = useState(() => getSharedOperationScope(op, savedSettings?.operationScope));
   const [fiscalYear, setFiscalYear] = useState(() => savedSettings?.fiscalYear || "2024 / 2025");
   const [technicalOpeningDate, setTechnicalOpeningDate] = useState(() => {
+    if (savedSettings?.technicalOpeningDate) return savedSettings.technicalOpeningDate;
     const d = op.dates?.find((dt: any) => dt.type === "TECHNICAL_OPENING" || dt.title?.includes("فني"));
     if (d?.dateValue) return formatDate(d.dateValue);
-    if (savedSettings?.technicalOpeningDate) return savedSettings.technicalOpeningDate;
-    return "";
+    if (d?.date) return formatDate(d.date);
+    return "14/ 1 /2024";
   });
+
+  // مزامنة تلقائية للبيانات إذا تغيرت العملية دون وجود تعديل يدوي محفوظ
+  useEffect(() => {
+    if (!savedSettings?.operationRegisteredName && op.name) {
+      setOperationRegisteredName(op.name);
+    }
+    if (!savedSettings?.operationScope && (op.name || (op as any).description)) {
+      setOperationScope(getSharedOperationScope(op));
+    }
+    if (!savedSettings?.operationNumber && (op.externalNumber || op.serialNumber)) {
+      setOperationNumber(op.externalNumber || String(op.serialNumber));
+    }
+    if (!savedSettings?.recipientTitleAndAuthority && op.authority) {
+      setRecipientTitleAndAuthority(`مدير الادارة العامة للمشتريات والمخازن بـ ${op.authority}`);
+    }
+    if (!savedSettings?.technicalOpeningDate) {
+      const d = op.dates?.find((dt: any) => dt.type === "TECHNICAL_OPENING" || dt.title?.includes("فني"));
+      if (d?.dateValue) setTechnicalOpeningDate(formatDate(d.dateValue));
+      else if (d?.date) setTechnicalOpeningDate(formatDate(d.date));
+    }
+  }, [op.name, op.externalNumber, op.serialNumber, op.authority, op.dates, savedSettings]);
 
   // Guarantee Amounts
   const [amountPaid, setAmountPaid] = useState<string>(() => savedSettings?.amountPaid || String(calculated5Percent));
@@ -295,14 +318,15 @@ export function TabFinalGuarantee({
     }
   };
 
-  const handleRegenerateRef = () => {
-    const fresh = generateSmartOutgoingRef({
-      companyCode: currentCompanyLink?.displayCode || "Ad",
-      tenderType: op.tenderType || "LIMITED_TENDER",
-      dateStr: new Date().toISOString(),
+  const handleRegenerateRef = async () => {
+    await regenerateUnifiedRegistrationNumber({
+      op,
+      companyCode: currentCompanyLink?.displayCode || "AZ",
+      onSuccess: (fresh) => {
+        setRegistrationNumber(fresh);
+        onRefresh();
+      },
     });
-    setRegistrationNumber(fresh);
-    toast.success(`تم تحديث رقم القيد إلى: ${fresh}`);
   };
 
   // ━━━ Word Document Generation Engine ━━━
@@ -383,10 +407,8 @@ export function TabFinalGuarantee({
     docXml = docXml.replace(/اسم العملية المسجله[\s\.]*/g, escapeXml(operationRegisteredName) + " ");
     docXml = docXml.replace(/365/g, escapeXml(operationNumber));
     docXml = docXml.replace(/المناقصة المحدودة/g, escapeXml(tenderMethod));
-    docXml = docXml.replace(/المناقصة ال[\s\S]*?محدود[\s\S]*?ة/g, escapeXml(tenderMethod));
-    docXml = docXml.replace(/توريد كاوتش وبطاريات للسيارات للجامعه/g, escapeXml(operationScope));
-    docXml = docXml.replace(/2024\s*\/\s*2025/g, escapeXml(fiscalYear));
-    docXml = docXml.replace(/14\/\s*1\s*\/2024/g, escapeXml(technicalOpeningDate));
+    docXml = replaceDocxScope(docXml, operationScope);
+    docXml = replaceDocxFiscalAndDate(docXml, fiscalYear, technicalOpeningDate);
 
     // Shared Amounts & Tafqeet
     docXml = docXml.replace(/37547/g, String(numPaid));
@@ -578,6 +600,14 @@ export function TabFinalGuarantee({
           lastPrintedAt: new Date().toISOString(),
           printedBy: currentUser,
           registrationNumber: prev.registrationNumber || registrationNumber,
+          items: [
+            ...(prev.items || []),
+            {
+              printedAt: new Date().toISOString(),
+              printedBy: currentUser,
+              registrationNumber: registrationNumber,
+            },
+          ],
         },
       };
       setPrintHistory(updatedHistory);
@@ -719,6 +749,8 @@ export function TabFinalGuarantee({
       else if (op.notes) existingNotes = { textNotes: op.notes };
 
       existingNotes.finalGuaranteeLetter = JSON.parse(currentSnapshot);
+      existingNotes.operationScope = operationScope;
+      existingNotes.fiscalYear = fiscalYear;
 
       await api.patch(`/operations/${op.id}`, {
         notes: JSON.stringify(existingNotes),
@@ -1543,6 +1575,7 @@ export function TabFinalGuarantee({
         subtitle="عند مسح الباركود بكاميرا الموبايل يتم فتح النسخة الرقمية المعتمدة لخطاب التأمين النهائي فوراً بدون الحاجة لأي تسجيل دخول."
         badgeText="مدمج بموضع كلمة (الباركود) بالأعلى ورقم القيد بالتذييل"
         gradientClass="from-emerald-500/10 via-teal-500/10 to-transparent border-emerald-500/25"
+        isModifiedAfterUpload={isDirty}
       />
 
       {/* ━━━ BOTTOM ACTION BAR: التوليد والطباعة والمعاينة بأسفل مرحلة التأمين النهائي ━━━ */}

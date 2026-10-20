@@ -2,6 +2,7 @@ import {
   Controller,
   Get,
   Post,
+  Put,
   Patch,
   Delete,
   Param,
@@ -511,6 +512,27 @@ export class OperationsController {
     return this.operationsService.updateDocument(id, docId, fileName);
   }
 
+  @Put(':id/documents/:docId/file')
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.GENERAL_MANAGER, UserRole.EMPLOYEE)
+  @UseInterceptors(
+    FileInterceptor('file', {
+      storage: operationDocStorage,
+      limits: { fileSize: 50 * 1024 * 1024 },
+    }),
+  )
+  async replaceDocumentFile(
+    @Param('id') id: string,
+    @Param('docId') docId: string,
+    @UploadedFile() file: Express.Multer.File,
+    @Body('fileName') customName?: string,
+  ) {
+    if (!file) {
+      throw new BadRequestException('الملف الجديد مطلوب للاستبدال');
+    }
+    return this.operationsService.replaceDocumentFile(id, docId, file, customName);
+  }
+
   @Delete(':id/documents/:docId')
   @UseGuards(RolesGuard)
   @Roles(UserRole.GENERAL_MANAGER, UserRole.EMPLOYEE)
@@ -603,6 +625,21 @@ export class OperationsController {
     } catch (err: any) {
       throw new BadRequestException('فشل تنزيل الملف: ' + (err.message || 'خطأ اتصال'));
     }
+  }
+
+  @Get('public-doc/:fileName')
+  async getPublicDoc(@Param('fileName') fileName: string, @Res() res: Response) {
+    const safeName = fileName.replace(/[^a-zA-Z0-9_\-\.]/g, '');
+    const filePath = `./uploads/cloud_docs/${safeName}`;
+    if (!existsSync(filePath)) {
+      throw new NotFoundException('المستند غير موجود');
+    }
+    res.set({
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': `inline; filename="${safeName}"`,
+    });
+    const stream = createReadStream(filePath);
+    stream.pipe(res);
   }
 }
 

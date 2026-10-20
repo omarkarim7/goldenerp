@@ -30,6 +30,14 @@ import {
   FISCAL_YEAR_OPTIONS,
   LetterQrCloudCard,
   PdfExportLoadingModal,
+  getUnifiedOperationRegistrationNumber,
+  regenerateUnifiedRegistrationNumber,
+  FiscalYearSelect,
+  getSharedOperationScope,
+  replaceDocxScope,
+  replaceDocxFiscalAndDate,
+  replaceDocxChairman,
+  sanitizeChairmanTitle,
 } from "./letter-utils";
 import JSZip from "jszip";
 import QRCode from "qrcode";
@@ -89,14 +97,10 @@ export function TabDeclarations({
 
   const currentCompany = currentCompanyLink?.company;
 
-  // رقم القيد الصادر الذكي
+  // رقم القيد الصادر الذكي الموحد للعملية
   const [registrationNumber, setRegistrationNumber] = useState(() => {
     if (savedDec?.registrationNumber) return savedDec.registrationNumber;
-    return generateSmartOutgoingRef({
-      companyCode: currentCompanyLink?.displayCode || "Ad",
-      tenderType: op.tenderType || "LIMITED_TENDER",
-      dateStr: new Date().toISOString(),
-    });
+    return getUnifiedOperationRegistrationNumber(op, currentCompanyLink?.displayCode);
   });
 
   // كود العملية بالشركة
@@ -144,16 +148,16 @@ export function TabDeclarations({
   });
 
   const [operationRegisteredName, setOperationRegisteredName] = useState(() => {
-    return savedDec?.operationRegisteredName || op.name || "توريد كاوتش وبطاريات للسيارات";
+    return savedDec?.operationRegisteredName || op.name || "";
   });
   const [operationNumber, setOperationNumber] = useState(() => {
-    return savedDec?.operationNumber || op.externalNumber || String(op.serialNumber || "365");
+    return savedDec?.operationNumber || op.externalNumber || (op.serialNumber ? String(op.serialNumber) : "") || "";
   });
   const [tenderMethod, setTenderMethod] = useState(() => {
     return savedDec?.tenderMethod || "المناقصة المحدودة";
   });
   const [operationScope, setOperationScope] = useState(() => {
-    return savedDec?.operationScope || "توريد كاوتش وبطاريات للسيارات للجامعه";
+    return getSharedOperationScope(op, savedDec?.operationScope);
   });
   const [fiscalYear, setFiscalYear] = useState(() => {
     return savedDec?.fiscalYear || "2024 / 2025";
@@ -166,6 +170,27 @@ export function TabDeclarations({
     return "14/ 1 /2024";
   });
 
+  // مزامنة تلقائية للبيانات إذا تغيرت العملية دون وجود تعديل يدوي محفوظ
+  useEffect(() => {
+    if (!savedDec?.operationRegisteredName && op.name) {
+      setOperationRegisteredName(op.name);
+    }
+    if (!savedDec?.operationScope && (op.name || (op as any).description)) {
+      setOperationScope(getSharedOperationScope(op));
+    }
+    if (!savedDec?.operationNumber && (op.externalNumber || op.serialNumber)) {
+      setOperationNumber(op.externalNumber || String(op.serialNumber));
+    }
+    if (!savedDec?.recipientTitleAndAuthority && op.authority) {
+      setRecipientTitleAndAuthority(`مدير الادارة العامة للمشتريات والمخازن بـ ${op.authority}`);
+    }
+    if (!savedDec?.technicalOpeningDate) {
+      const d = op.dates?.find((dt: any) => dt.type === "TECHNICAL_OPENING" || dt.title?.includes("فني"));
+      if (d?.dateValue) setTechnicalOpeningDate(formatDate(d.dateValue));
+      else if (d?.date) setTechnicalOpeningDate(formatDate(d.date));
+    }
+  }, [op.name, op.externalNumber, op.serialNumber, op.authority, op.dates, savedDec]);
+
   // ━━━ 3. التوقيعات والاعتمادات والملاحظات ━━━
   const [specialistTitle, setSpecialistTitle] = useState(() => {
     return savedDec?.specialistTitle || "المختص :";
@@ -177,7 +202,7 @@ export function TabDeclarations({
     return savedDec?.financeManagerName || "محمود إبراهيم";
   });
   const [boardChairman, setBoardChairman] = useState(() => {
-    return savedDec?.boardChairman || "يعتمد ،،،،،، رئيس مجلس الإدارة";
+    return sanitizeChairmanTitle(savedDec?.boardChairman);
   });
   const [additionalNotes, setAdditionalNotes] = useState(() => {
     return savedDec?.additionalNotes || "";
@@ -289,7 +314,7 @@ export function TabDeclarations({
       setSpecialistTitle(snap.specialistTitle);
       setSpecialistName(snap.specialistName);
       setFinanceManagerName(snap.financeManagerName);
-      setBoardChairman(snap.boardChairman);
+      setBoardChairman(sanitizeChairmanTitle(snap.boardChairman));
       setAdditionalNotes(snap.additionalNotes);
       setCloudPdfUrlSpecs(snap.cloudPdfUrlSpecs);
       setCloudPdfUrlInsurance(snap.cloudPdfUrlInsurance);
@@ -319,14 +344,15 @@ export function TabDeclarations({
       : cloudPdfUrlGeneral;
 
   // إعادة توليد رقم القيد
-  const handleRegenerateRef = () => {
-    const fresh = generateSmartOutgoingRef({
-      companyCode: currentCompanyLink?.displayCode || "Ad",
-      tenderType: op.tenderType || "LIMITED_TENDER",
-      dateStr: new Date().toISOString(),
+  const handleRegenerateRef = async () => {
+    await regenerateUnifiedRegistrationNumber({
+      op,
+      companyCode: currentCompanyLink?.displayCode || "AZ",
+      onSuccess: (fresh) => {
+        setRegistrationNumber(fresh);
+        onRefresh();
+      },
     });
-    setRegistrationNumber(fresh);
-    toast.success(`تم تحديث رقم القيد إلى: ${fresh}`);
   };
 
   // ━━━ محرك استبدال المتغيرات في قوالب الإقرارات الرسمية ━━━
@@ -399,7 +425,7 @@ export function TabDeclarations({
       // استبدال متن الخطاب العام بالكامل
       const bodyPattern = /<w:p\b[^>]*>(?:(?!<\/w:p>)[\s\S])*?الرجاء من سيادتكم(?:(?!<\/w:p>)[\s\S])*?<\/w:p>/;
       if (bodyPattern.test(docXml)) {
-        const newBodyXml = `<w:p><w:pPr><w:spacing w:after="0" w:line="240" w:lineRule="auto"/><w:ind w:left="-567" w:hanging="283"/><w:jc w:val="highKashida"/><w:rPr><w:rFonts w:ascii="Arabic Typesetting" w:hAnsi="Arabic Typesetting" w:cs="Arabic Typesetting"/><w:b/><w:bCs/><w:sz w:val="36"/><w:szCs w:val="36"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr></w:pPr><w:r><w:rPr><w:rFonts w:ascii="Arabic Typesetting" w:hAnsi="Arabic Typesetting" w:cs="Arabic Typesetting" w:hint="cs"/><w:b/><w:bCs/><w:sz w:val="36"/><w:szCs w:val="36"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t xml:space="preserve">${escapeXml(generalLetterBody)}</w:t></w:r></w:p>`;
+        const newBodyXml = `<w:p><w:pPr><w:spacing w:after="0" w:line="240" w:lineRule="auto"/><w:ind w:left="-567" w:hanging="283"/><w:jc w:val="both"/><w:rPr><w:rFonts w:ascii="Arabic Typesetting" w:hAnsi="Arabic Typesetting" w:cs="Arabic Typesetting"/><w:b/><w:bCs/><w:sz w:val="36"/><w:szCs w:val="36"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr></w:pPr><w:r><w:rPr><w:rFonts w:ascii="Arabic Typesetting" w:hAnsi="Arabic Typesetting" w:cs="Arabic Typesetting" w:hint="cs"/><w:b/><w:bCs/><w:sz w:val="36"/><w:szCs w:val="36"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t xml:space="preserve">${escapeXml(generalLetterBody)}</w:t></w:r></w:p>`;
         docXml = docXml.replace(bodyPattern, newBodyXml);
       } else {
         docXml = docXml.replace(/الرجاء من سيادتكم[\s\S]*?المكاتبات الرسميه\s*\./g, escapeXml(generalLetterBody));
@@ -414,16 +440,17 @@ export function TabDeclarations({
       docXml = docXml.replace(/اسم العملية المسجله[\s\.]*/g, escapeXml(operationRegisteredName) + " ");
       docXml = docXml.replace(/365/g, escapeXml(operationNumber));
       docXml = docXml.replace(/المناقصة المحدودة/g, escapeXml(tenderMethod));
-      docXml = docXml.replace(/المناقصة ال[\s\S]*?محدود[\s\S]*?ة/g, escapeXml(tenderMethod));
-      docXml = docXml.replace(/توريد كاوتش وبطاريات للسيارات للجامعه/g, escapeXml(operationScope));
-      docXml = docXml.replace(/2024\s*\/\s*2025/g, escapeXml(fiscalYear));
-      docXml = docXml.replace(/14\/\s*1\s*\/2024/g, escapeXml(technicalOpeningDate));
+      docXml = replaceDocxScope(docXml, operationScope);
+      docXml = replaceDocxFiscalAndDate(docXml, fiscalYear, technicalOpeningDate);
 
       // التوقيعات والاعتمادات
       docXml = docXml.replace(/المختص\s*:/g, escapeXml(specialistTitle));
       docXml = docXml.replace(/أحمد محمد/g, escapeXml(specialistName));
       docXml = docXml.replace(/توقيع صورة/g, escapeXml(financeManagerName || " "));
     }
+
+    // اعتماد رئيس مجلس الإدارة مع الحفاظ التام على "يعتمد ،،،،،،" في سطرها المستقل
+    docXml = replaceDocxChairman(docXml, boardChairman);
 
     // خانة الملاحظات
     if (additionalNotes.trim()) {
@@ -637,6 +664,14 @@ export function TabDeclarations({
           lastPrintedAt: new Date().toISOString(),
           printedBy: currentUser,
           registrationNumber: prev.registrationNumber || registrationNumber,
+          items: [
+            ...(prev.items || []),
+            {
+              printedAt: new Date().toISOString(),
+              printedBy: currentUser,
+              registrationNumber: registrationNumber,
+            },
+          ],
         },
       };
       setPrintHistory(updatedHistory);
@@ -860,6 +895,9 @@ export function TabDeclarations({
         generalSubject,
         generalLetterBody,
       };
+
+      existingNotesObj.operationScope = operationScope;
+      existingNotesObj.fiscalYear = fiscalYear;
 
       await api.patch(`/operations/${op.id}`, {
         notes: JSON.stringify(existingNotesObj),
@@ -1214,45 +1252,11 @@ export function TabDeclarations({
                   />
                 </div>
 
-                <div className="space-y-1.5">
-                  <div className="flex items-center justify-between">
-                    <Label className="text-xs font-bold text-foreground">العام المالي للعملية *</Label>
-                    <span className="text-[10px] text-muted-foreground font-mono">اختر من القائمة</span>
-                  </div>
-                  <Select
-                    value={FISCAL_YEAR_OPTIONS.includes(fiscalYear) ? fiscalYear : "other"}
-                    onValueChange={(val) => {
-                      if (!val || val === "other") {
-                        setFiscalYear("");
-                      } else {
-                        setFiscalYear(val || "");
-                      }
-                    }}
-                  >
-                    <SelectTrigger className="h-9.5 text-xs font-mono bg-background rounded-xl">
-                      <SelectValue placeholder="اختر العام المالي" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {FISCAL_YEAR_OPTIONS.map((y) => (
-                        <SelectItem key={y} value={y} className="text-xs font-mono">
-                          {y}
-                        </SelectItem>
-                      ))}
-                      <SelectItem value="other" className="text-xs font-bold text-amber-600">
-                        أخرى (كتابة يدوي)
-                      </SelectItem>
-                    </SelectContent>
-                  </Select>
-                  {(!FISCAL_YEAR_OPTIONS.includes(fiscalYear) || fiscalYear === "other") && (
-                    <Input
-                      placeholder="اكتب العام المالي مثلاً: 2026 / 2027"
-                      value={fiscalYear === "other" ? "" : fiscalYear}
-                      onChange={(e) => setFiscalYear(e.target.value)}
-                      className="h-9 text-xs font-mono bg-amber-500/10 border-amber-500/40 rounded-xl mt-1 text-center"
-                      autoFocus
-                    />
-                  )}
-                </div>
+                <FiscalYearSelect
+                  value={fiscalYear}
+                  onChange={setFiscalYear}
+                  label="العام المالي للعملية *"
+                />
 
                 <div className="space-y-1.5">
                   <Label className="text-xs font-bold text-foreground">موعد جلسة فتح المظروف الفني *</Label>
@@ -1304,11 +1308,12 @@ export function TabDeclarations({
             </div>
 
             <div className="space-y-1.5">
-              <Label className="text-xs font-bold text-foreground">الاعتماد النهائي</Label>
+              <Label className="text-xs font-bold text-foreground">اعتماد رئيس مجلس الإدارة (الاعتماد النهائي) *</Label>
               <Input
                 value={boardChairman}
-                disabled
-                className="h-9.5 text-xs font-bold rounded-xl bg-muted/50 cursor-not-allowed"
+                onChange={(e) => setBoardChairman(e.target.value)}
+                placeholder="رئيس مجلس الإدارة"
+                className="h-9.5 text-xs font-bold rounded-xl"
               />
             </div>
           </div>
@@ -1418,6 +1423,7 @@ export function TabDeclarations({
         subtitle="عند مسح الباركود بكاميرا الموبايل يتم فتح النسخة الرقمية المعتمدة للإقرار فوراً بدون الحاجة لأي تسجيل دخول."
         badgeText="مدمج بموضع كلمة (الباركود) بالأعلى ورقم القيد بالتذييل"
         gradientClass="from-emerald-500/10 via-teal-500/10 to-transparent border-emerald-500/25"
+        isModifiedAfterUpload={isDirty}
       />
 
       {/* ━━━ BOTTOM ACTION BAR: التوليد والطباعة والمعاينة بأسفل مرحلة الإقرارات ━━━ */}

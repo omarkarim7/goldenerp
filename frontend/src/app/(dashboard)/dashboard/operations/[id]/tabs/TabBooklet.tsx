@@ -7,7 +7,7 @@ import {
   UserCheck, Shield, HelpCircle, CheckCircle2, Sparkles,
   RefreshCw, Cloud, Save, RotateCcw, Landmark, CreditCard,
   ChevronRight, CheckCircle, FileCheck, Lock, QrCode, Copy,
-  ExternalLink, Paperclip, ArrowRight
+  ExternalLink, Paperclip, ArrowRight, Trash2
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -26,7 +26,11 @@ import { StepFooterNav } from "./StepFooterNav";
 import {
   generateSmartOutgoingRef, cleanAllDocxXml, buildQrAnchorXml, injectSingleQrIntoDocXml,
   LetterBottomActionWidget, ReprintConfirmModal, getCurrentUserName, FISCAL_YEAR_OPTIONS,
-  LetterQrCloudCard, PdfExportLoadingModal
+  LetterQrCloudCard, PdfExportLoadingModal, PrintHistoryEntry,
+  getUnifiedOperationRegistrationNumber, regenerateUnifiedRegistrationNumber,
+  FiscalYearSelect, OperationDocArchiveCard,
+  getSharedOperationScope, replaceDocxScope, replaceDocxFiscalAndDate,
+  replaceDocxChairman, sanitizeChairmanTitle
 } from "./letter-utils";
 import JSZip from "jszip";
 import QRCode from "qrcode";
@@ -156,15 +160,10 @@ export function TabBooklet({
 
   const currentCompany = currentCompanyLink?.company;
 
-  // رقم القيد الصادر الذكي
+  // رقم القيد الصادر الذكي الموحد للعملية
   const [registrationNumber, setRegistrationNumber] = useState<string>(() => {
     if (savedData?.registrationNumber) return savedData.registrationNumber;
-    return generateSmartOutgoingRef({
-      companyCode: currentCompanyLink?.displayCode || "AZ",
-      tenderType: op.tenderType || "LIMITED_TENDER",
-      dateStr: new Date().toISOString(),
-      sequenceNumber: op.serialNumber || 1,
-    });
+    return getUnifiedOperationRegistrationNumber(op, currentCompanyLink?.displayCode);
   });
 
   // كود العملية بالشركة
@@ -212,7 +211,7 @@ export function TabBooklet({
   }, [op.tenderType]);
 
   // سجل طباعة الخطابات وتتبع النسخ (استجابة للتسجيلين 4 و 5)
-  const [printHistory, setPrintHistory] = useState<Record<string, { printCount: number; firstPrintedAt?: string; lastPrintedAt?: string; printedBy?: string; registrationNumber?: string }>>(() => {
+  const [printHistory, setPrintHistory] = useState<Record<string, PrintHistoryEntry>>(() => {
     return savedData?.printHistory || {};
   });
   const [reprintWarningOpen, setReprintWarningOpen] = useState(false);
@@ -228,18 +227,19 @@ export function TabBooklet({
   });
 
   const [operationRegisteredName, setOperationRegisteredName] = useState<string>(() => {
-    return op.name || savedData?.operationRegisteredName || "";
+    return savedData?.operationRegisteredName || op.name || "";
   });
   const [operationNumber, setOperationNumber] = useState<string>(() => {
-    return op.externalNumber || (op.serialNumber ? String(op.serialNumber) : "") || savedData?.operationNumber || "";
+    return savedData?.operationNumber || op.externalNumber || (op.serialNumber ? String(op.serialNumber) : "") || "";
   });
   const [tenderMethod, setTenderMethod] = useState<string>(() => {
     return savedData?.tenderMethod || defaultTenderMethod;
   });
   const [operationScope, setOperationScope] = useState<string>(() => {
-    return op.name || savedData?.operationScope || "";
+    return getSharedOperationScope(op, savedData?.operationScope);
   });
   const [fiscalYear, setFiscalYear] = useState<string>(() => {
+    if (savedData?.fiscalYear) return savedData.fiscalYear;
     try {
       if (op.notes && op.notes.includes("fiscalYear")) {
         const parsed = JSON.parse(op.notes);
@@ -247,14 +247,36 @@ export function TabBooklet({
         if (parsed.radarItem?.fiscalYear) return parsed.radarItem.fiscalYear;
       }
     } catch {}
-    return savedData?.fiscalYear || "2024 / 2025";
+    return "2024 / 2025";
   });
   const [technicalOpeningDate, setTechnicalOpeningDate] = useState<string>(() => {
+    if (savedData?.technicalOpeningDate) return savedData.technicalOpeningDate;
     const d = op.dates?.find((dt: any) => dt.type === "TECHNICAL_OPENING" || dt.title?.includes("فني"));
     if (d?.dateValue) return formatDate(d.dateValue);
-    if (savedData?.technicalOpeningDate) return savedData.technicalOpeningDate;
-    return "";
+    if (d?.date) return formatDate(d.date);
+    return "14/ 1 /2024";
   });
+
+  // مزامنة تلقائية للبيانات إذا تغيرت العملية الأصلية دون وجود تعديل يدوي مخصص محفوظ
+  useEffect(() => {
+    if (!savedData?.operationRegisteredName && op.name) {
+      setOperationRegisteredName(op.name);
+    }
+    if (!savedData?.operationScope && (op.name || (op as any).description)) {
+      setOperationScope(getSharedOperationScope(op));
+    }
+    if (!savedData?.operationNumber && (op.externalNumber || op.serialNumber)) {
+      setOperationNumber(op.externalNumber || String(op.serialNumber));
+    }
+    if (!savedData?.recipientTitleAndAuthority && op.authority) {
+      setRecipientTitleAndAuthority(`مدير الادارة العامة للمشتريات والمخازن بـ ${op.authority}`);
+    }
+    if (!savedData?.technicalOpeningDate) {
+      const d = op.dates?.find((dt: any) => dt.type === "TECHNICAL_OPENING" || dt.title?.includes("فني"));
+      if (d?.dateValue) setTechnicalOpeningDate(formatDate(d.dateValue));
+      else if (d?.date) setTechnicalOpeningDate(formatDate(d.date));
+    }
+  }, [op.name, op.externalNumber, op.serialNumber, op.authority, op.dates, savedData]);
 
   // ━━━ 3. بيانات تفويض المندوب القانوني ━━━
   const [delegateName, setDelegateName] = useState<string>(() => {
@@ -311,6 +333,9 @@ export function TabBooklet({
   });
   const [bankBranch, setBankBranch] = useState<string>(() => {
     return savedData?.bankBranch || "دمنهور";
+  });
+  const [bankManagerTitle, setBankManagerTitle] = useState<string>(() => {
+    return savedData?.bankManagerTitle || `مدير بنك ${savedData?.bankName || "مصر"} فرع ${savedData?.bankBranch || "دمنهور"}`;
   });
   const [bankGuaranteeType, setBankGuaranteeType] = useState<string>(() => {
     return savedData?.bankGuaranteeType || "ابتدائي";
@@ -373,7 +398,7 @@ export function TabBooklet({
     return savedData?.financeManagerName || "محمود إبراهيم";
   });
   const [boardChairman, setBoardChairman] = useState<string>(() => {
-    return savedData?.boardChairman || "يعتمد ،،،،،، رئيس مجلس الادارة";
+    return sanitizeChairmanTitle(savedData?.boardChairman);
   });
   const [additionalNotes, setAdditionalNotes] = useState<string>(() => {
     return savedData?.additionalNotes || "";
@@ -384,7 +409,7 @@ export function TabBooklet({
     const raw = savedData?.cloudUrls || {};
     const cleaned: { [key in BookletLetterType]?: string } = {};
     for (const [k, v] of Object.entries(raw)) {
-      if (typeof v === "string" && !v.includes("tmpfiles.org")) {
+      if (typeof v === "string" && !v.includes("tmpfiles.org") && !v.includes("gofile.io")) {
         cleaned[k as BookletLetterType] = v;
       }
     }
@@ -423,6 +448,7 @@ export function TabBooklet({
       insuranceTafqeet,
       bankName,
       bankBranch,
+      bankManagerTitle,
       bankGuaranteeType,
       authorityName,
       authorityAddress,
@@ -454,7 +480,7 @@ export function TabBooklet({
     recipientTitleAndAuthority, operationRegisteredName, operationNumber,
     tenderMethod, operationScope, fiscalYear, technicalOpeningDate,
     delegateName, delegateTitle, delegateNationalId, delegatePowers,
-    insuranceAmount, insuranceTafqeet, bankName, bankBranch, bankGuaranteeType,
+    insuranceAmount, insuranceTafqeet, bankName, bankBranch, bankManagerTitle, bankGuaranteeType,
     authorityName, authorityAddress, bankGuaranteeAmount, bankGuaranteeTafqeet,
     guaranteePercentage, operationTotalAmount, operationTotalTafqeet,
     guaranteeDurationText, guaranteeStartDate, guaranteeEndDate,
@@ -478,6 +504,8 @@ export function TabBooklet({
       } catch {}
 
       notesObj.bookletLettersDocx = JSON.parse(currentSnapshot);
+      notesObj.operationScope = operationScope;
+      notesObj.fiscalYear = fiscalYear;
 
       await api.patch(`/operations/${op.id}`, {
         notes: JSON.stringify(notesObj),
@@ -523,6 +551,7 @@ export function TabBooklet({
       setInsuranceTafqeet(snap.insuranceTafqeet);
       setBankName(snap.bankName);
       setBankBranch(snap.bankBranch);
+      if (snap.bankManagerTitle) setBankManagerTitle(snap.bankManagerTitle);
       setBankGuaranteeType(snap.bankGuaranteeType);
       setAuthorityName(snap.authorityName);
       setAuthorityAddress(snap.authorityAddress);
@@ -542,7 +571,7 @@ export function TabBooklet({
       setSpecialistTitle(snap.specialistTitle);
       setSpecialistName(snap.specialistName);
       setFinanceManagerName(snap.financeManagerName);
-      setBoardChairman(snap.boardChairman);
+      setBoardChairman(sanitizeChairmanTitle(snap.boardChairman));
       setAdditionalNotes(snap.additionalNotes);
       setCloudUrls(snap.cloudUrls || {});
       toast.info("تم التراجع عن التعديلات وإعادة الخطابات للحالة السابقة ↺");
@@ -551,15 +580,15 @@ export function TabBooklet({
     }
   };
 
-  const handleRegenerateRef = () => {
-    const fresh = generateSmartOutgoingRef({
+  const handleRegenerateRef = async () => {
+    await regenerateUnifiedRegistrationNumber({
+      op,
       companyCode: currentCompanyLink?.displayCode || "AZ",
-      tenderType: op.tenderType || "LIMITED_TENDER",
-      dateStr: new Date().toISOString(),
-      sequenceNumber: op.serialNumber || 1,
+      onSuccess: (fresh) => {
+        setRegistrationNumber(fresh);
+        onRefresh();
+      },
     });
-    setRegistrationNumber(fresh);
-    toast.success(`تم تحديث رقم القيد الصادر إلى: ${fresh}`);
   };
 
   // ━━━ محرك استبدال المتغيرات وتوليد ملف Word (.docx) ━━━
@@ -574,7 +603,8 @@ export function TabBooklet({
     let qrDrawingXml = "";
     try {
       const activeCloud = cloudUrls[type];
-      const targetVerifyUrl = activeCloud || registrationNumber;
+      const isDirectPdf = activeCloud && !activeCloud.includes("gofile.io") && !activeCloud.includes("tmpfiles.org");
+      const targetVerifyUrl = isDirectPdf ? activeCloud : registrationNumber;
       const qrDataUrl = await QRCode.toDataURL(targetVerifyUrl, { width: 160, margin: 1 });
       const qrBase64 = qrDataUrl.split(",")[1];
       const qrBinary = Uint8Array.from(atob(qrBase64), (c) => c.charCodeAt(0));
@@ -628,6 +658,7 @@ export function TabBooklet({
 
     if (type === "bank_guarantee_letter") {
       docXml = docXml.replace(/الأستاذ/g, escapeXml(recipientPrefix));
+      docXml = docXml.replace(/مدير بنك[\s\S]*?(?:دمنهو[\s\S]*?ر|دمنهور)/g, escapeXml(bankManagerTitle));
       docXml = docXml.replace(/مصر /g, escapeXml(bankName) + " ");
       docXml = docXml.replace(/ دمنهو[\s\S]*?ر|دمنهور/g, `  ${escapeXml(bankBranch)}`);
 
@@ -650,10 +681,11 @@ export function TabBooklet({
         return hasB ? escapeXml(methodWithBa) : escapeXml(cleanMethod || "المناقصة العامة");
       });
 
-      docXml = docXml.replace(/توريد كاوتش وبطاريات للسيارات للجامعه/g, escapeXml(operationScope));
+      // نطاق وموضوع التوريد لزوم العملية ("لزوم كذا")
+      docXml = replaceDocxScope(docXml, operationScope);
 
-      docXml = docXml.replace(/2024\s*\/\s*2025/g, escapeXml(fiscalYear));
-      docXml = docXml.replace(/14\/\s*1\s*\/2024/g, escapeXml(technicalOpeningDate));
+      // السنة المالية وموعد جلسة فتح المظروف
+      docXml = replaceDocxFiscalAndDate(docXml, fiscalYear, technicalOpeningDate);
 
       docXml = docXml.replace(/5 %/g, escapeXml(guaranteePercentage));
       docXml = docXml.replace(/47547/g, escapeXml(operationTotalAmount));
@@ -682,10 +714,11 @@ export function TabBooklet({
         return hasB ? escapeXml(methodWithBa) : escapeXml(cleanMethod || "المناقصة العامة");
       });
 
-      docXml = docXml.replace(/توريد كاوتش وبطاريات للسيارات للجامعه/g, escapeXml(operationScope));
+      // نطاق وموضوع التوريد لزوم العملية ("لزوم كذا")
+      docXml = replaceDocxScope(docXml, operationScope);
 
-      docXml = docXml.replace(/2024\s*\/\s*2025/g, escapeXml(fiscalYear));
-      docXml = docXml.replace(/14\/\s*1\s*\/2024/g, escapeXml(technicalOpeningDate));
+      // السنة المالية وموعد جلسة فتح المظروف
+      docXml = replaceDocxFiscalAndDate(docXml, fiscalYear, technicalOpeningDate);
 
       docXml = docXml.replace(/أحمد محمد أحمد/g, escapeXml(delegateName));
       docXml = docXml.replace(/مندوب التعاقدات المفوض/g, escapeXml(delegateTitle));
@@ -700,6 +733,9 @@ export function TabBooklet({
       docXml = docXml.replace(/أحمد محمد/g, escapeXml(specialistName));
       docXml = docXml.replace(/توقيع صورة/g, escapeXml(financeManagerName || " "));
       docXml = docXml.replace(/أو اسم/g, escapeXml(financeManagerName || " "));
+
+      // اعتماد رئيس مجلس الإدارة (الاعتماد النهائي) مع الحفاظ التام على "يعتمد ،،،،،،" في سطرها المستقل
+      docXml = replaceDocxChairman(docXml, boardChairman);
 
       if (additionalNotes.trim()) {
         docXml = docXml.replace(/خان[ةه] (?:خالي[ةه] للملاحظات|معلومات وملاحظات|ملاحظات)/g, escapeXml(additionalNotes));
@@ -954,6 +990,11 @@ export function TabBooklet({
       // تحديث سجل الطباعة وحفظه تلقائياً
       const currentUser = getCurrentUserName();
       const prev = printHistory[activeLetterType] || { printCount: 0 };
+      const newHistoryItem = {
+        printedAt: new Date().toISOString(),
+        printedBy: currentUser,
+        registrationNumber: registrationNumber,
+      };
       const updatedHistory = {
         ...printHistory,
         [activeLetterType]: {
@@ -962,6 +1003,7 @@ export function TabBooklet({
           lastPrintedAt: new Date().toISOString(),
           printedBy: currentUser,
           registrationNumber: prev.registrationNumber || registrationNumber,
+          items: [...(prev.items || []), newHistoryItem],
         },
       };
       setPrintHistory(updatedHistory);
@@ -1085,6 +1127,7 @@ export function TabBooklet({
   const [uploadingSingleBooklet, setUploadingSingleBooklet] = useState(false);
 
   const allBookletDocs = (op.documents || []).filter((d: any) => d.type === "BOOKLET");
+  const receiptDocs = (op.documents || []).filter((d: any) => d.type === "RECEIPT");
 
   const handleUploadBookletReceipt = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -1238,6 +1281,59 @@ export function TabBooklet({
       toast.error("فشل رفع كراسة الشروط");
     } finally {
       setUploadingSingleBooklet(false);
+    }
+  };
+
+  // ━━━ حذف مستند من الأرشيف الرسمي ━━━
+  const [deletingDocId, setDeletingDocId] = useState<string | null>(null);
+  const handleDeleteDoc = async (docId: string) => {
+    if (!confirm("هل أنت متأكد من رغبتك في حذف هذا المستند من أرشيف العملية؟")) return;
+    setDeletingDocId(docId);
+    try {
+      await api.delete(`/operations/${op.id}/documents/${docId}`);
+      toast.success("تم حذف المستند بنجاح من أرشيف العملية 🗑️");
+      onRefresh();
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message || "فشل حذف المستند");
+    } finally {
+      setDeletingDocId(null);
+    }
+  };
+
+  // ━━━ حفظ كراسة الشروط المرصودة من الرادار في الأرشيف ━━━
+  const [savingRadarBooklet, setSavingRadarBooklet] = useState(false);
+  const handleSaveRadarBookletToArchive = async () => {
+    setSavingRadarBooklet(true);
+    try {
+      await api.post(`/operations/${op.id}/booklet`, {
+        fileName: `كراسة_شروط_${op.externalNumber || op.serialNumber}_(الرادار).pdf`,
+        companyId: selectedCompanyId,
+      });
+      toast.success("تم تحميل وتخزين كراسة الشروط الرسمية من بوابة المناقصات بنجاح في أرشيف العملية! 📥🔒");
+      onRefresh();
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message || "فشل حفظ كراسة الشروط من الرادار");
+    } finally {
+      setSavingRadarBooklet(false);
+    }
+  };
+
+  // ━━━ عرض نسخة الـ PDF الرسمية فقط (بدون وورد) ━━━
+  const [directPdfModalOpen, setDirectPdfModalOpen] = useState(false);
+  const [directPdfUrl, setDirectPdfUrl] = useState<string | null>(null);
+
+  const handleOpenDirectPdfPreview = async () => {
+    try {
+      toast.info("جاري تجهيز نسخة الـ PDF الرسمية للعرض المباشر...");
+      let blob = previewPdfBlob;
+      if (!blob || lastGeneratedSnapshot !== currentSnapshot) {
+        blob = await generateBookletPdfBlob(activeLetterType);
+      }
+      const url = URL.createObjectURL(blob);
+      setDirectPdfUrl(url);
+      setDirectPdfModalOpen(true);
+    } catch (err: any) {
+      toast.error(err?.message || "فشل فتح ملف PDF");
     }
   };
 
@@ -1570,15 +1666,21 @@ export function TabBooklet({
                   <Input
                     value={
                       activeLetterType === "bank_guarantee_letter"
-                        ? `مدير بنك ${bankName} فرع ${bankBranch}`
+                        ? bankManagerTitle
                         : recipientTitleAndAuthority
                     }
                     onChange={(e) => {
-                      if (activeLetterType !== "bank_guarantee_letter") {
+                      if (activeLetterType === "bank_guarantee_letter") {
+                        setBankManagerTitle(e.target.value);
+                      } else {
                         setRecipientTitleAndAuthority(e.target.value);
                       }
                     }}
-                    disabled={activeLetterType === "bank_guarantee_letter"}
+                    placeholder={
+                      activeLetterType === "bank_guarantee_letter"
+                        ? "مدير بنك مصر فرع دمنهور"
+                        : "صفة وجهة الإسناد"
+                    }
                     className="h-9.5 text-xs font-bold bg-background rounded-xl"
                   />
                 </div>
@@ -1638,45 +1740,11 @@ export function TabBooklet({
                   </div>
                 </div>
 
-                <div className="space-y-1.5">
-                  <div className="flex items-center justify-between">
-                    <Label className="text-xs font-bold text-foreground">السنة المالية *</Label>
-                    <span className="text-[10px] text-muted-foreground font-mono">اختر من القائمة أو حدد أخرى</span>
-                  </div>
-                  <Select
-                    value={FISCAL_YEAR_OPTIONS.includes(fiscalYear) ? fiscalYear : "other"}
-                    onValueChange={(val) => {
-                      if (!val || val === "other") {
-                        setFiscalYear("");
-                      } else {
-                        setFiscalYear(val || "");
-                      }
-                    }}
-                  >
-                    <SelectTrigger className="h-9.5 text-xs font-mono bg-background rounded-xl">
-                      <SelectValue placeholder="اختر السنة المالية" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {FISCAL_YEAR_OPTIONS.map((y) => (
-                        <SelectItem key={y} value={y} className="text-xs font-mono">
-                          {y}
-                        </SelectItem>
-                      ))}
-                      <SelectItem value="other" className="text-xs font-bold text-amber-600">
-                        أخرى (كتابة يدوي)
-                      </SelectItem>
-                    </SelectContent>
-                  </Select>
-                  {(!FISCAL_YEAR_OPTIONS.includes(fiscalYear) || fiscalYear === "other") && (
-                    <Input
-                      placeholder="اكتب السنة المالية مثلاً: 2026 / 2027"
-                      value={fiscalYear === "other" ? "" : fiscalYear}
-                      onChange={(e) => setFiscalYear(e.target.value)}
-                      className="h-9 text-xs font-mono bg-amber-500/10 border-amber-500/40 rounded-xl mt-1 text-center"
-                      autoFocus
-                    />
-                  )}
-                </div>
+                <FiscalYearSelect
+                  value={fiscalYear}
+                  onChange={setFiscalYear}
+                  label="السنة المالية *"
+                />
 
                 <div className="space-y-1.5">
                   <Label className="text-xs font-bold text-foreground">موعد جلسة فتح المظروف الفني *</Label>
@@ -1994,6 +2062,7 @@ export function TabBooklet({
                 <Input
                   value={boardChairman}
                   onChange={(e) => setBoardChairman(e.target.value)}
+                  placeholder="رئيس مجلس الإدارة"
                   className="h-9.5 text-xs font-bold bg-background rounded-xl"
                 />
               </div>
@@ -2023,6 +2092,7 @@ export function TabBooklet({
             subtitle={`عند مسح الباركود بكاميرا الموبايل يتم فتح النسخة الرسمية المعتمدة لخطاب (${currentTpl.shortName}) فوراً بدون الحاجة لأي تسجيل دخول.`}
             badgeText="مدمج بموضع كلمة (الباركود) بالأعلى ورقم القيد بالتذييل"
             gradientClass="from-amber-500/10 via-orange-500/10 to-transparent border-amber-500/25"
+            isModifiedAfterUpload={isDirty}
           />
 
           {/* ━━━ BOTTOM ACTION BAR: التوليد والطباعة والمعاينة بأسفل الخطوة الأولى ━━━ */}
@@ -2032,18 +2102,39 @@ export function TabBooklet({
             isDirty={isDirty}
             printInfo={printHistory[activeLetterType]}
             onPreview={() => setPreviewModalOpen(true)}
+            onPreviewPdfDirect={handleOpenDirectPdfPreview}
             onSave={handleSaveAll}
             onCancelEdits={handleCancelEdits}
             saving={savingChanges}
             onViewArchive={handleViewArchive}
             customSubtitle="مطابق 100% لقالب الوورد المعتمد للشركة. اضغط على زر المعاينة للاطلاع على المستند وتنزيله أو طباعته."
           />
+
+          {/* ━━━ شريط الانتقال للخطوة التالية بأسفل الخطوة الأولى ━━━ */}
+          <div className="p-4 rounded-2xl bg-gradient-to-r from-blue-600/10 via-indigo-600/10 to-transparent border border-blue-500/25 flex flex-col sm:flex-row items-center justify-between gap-3 shadow-xs">
+            <div className="space-y-0.5 text-center sm:text-right">
+              <h4 className="text-xs font-black text-foreground">
+                الخطوة التالية (2): رفع إيصالات السداد والتأمين وقفل الكود
+              </h4>
+              <p className="text-[11px] text-muted-foreground">
+                بعد مراجعة وطباعة الخطاب المعتمد، انتقل لرفع إيصال سداد ثمن الكراسة وإيصال أو خطاب الضمان للتأمين الابتدائي.
+              </p>
+            </div>
+            <Button
+              type="button"
+              onClick={() => setActiveStep(2)}
+              className="bg-blue-600 hover:bg-blue-700 text-white text-xs font-black h-10 px-5 rounded-xl cursor-pointer shadow-md flex items-center gap-2 shrink-0"
+            >
+              <span>الانتقال للخطوة (2): رفع إيصالات السداد والتأمين ⬅️</span>
+            </Button>
+          </div>
         </div>
       )}
 
       {/* ━━━ الخطوة 2: رفع إيصالات السداد والخزينة وقفل الكود ━━━ */}
       {activeStep === 2 && (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+        <div className="space-y-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
           <SectionCard
             title="إيصال سداد ثمن كراسة الشروط بالخزينة"
             icon={FileText}
@@ -2334,101 +2425,299 @@ export function TabBooklet({
             </form>
           </SectionCard>
         </div>
-      )}
+
+        {/* ━━━ أرشيف إيصالات ومستندات السداد المعتمدة للمرحلة الحالية ━━━ */}
+        <OperationDocArchiveCard
+          title="أرشيف إيصالات ومستندات السداد المعتمدة"
+          description="عرض ومطالعة وتعديل واستبدال إيصالات سداد الكراسة وخطابات التأمين الابتدائي المرفوعة"
+          docs={receiptDocs}
+          opId={op.id}
+          onRefresh={onRefresh}
+          onPreviewDoc={onPreviewDoc}
+          onDownloadDoc={onDownloadDoc}
+        />
+
+        {/* ━━━ شريط التنقل السفلي للخطوة 2 ━━━ */}
+        <div className="p-4 rounded-2xl bg-gradient-to-r from-emerald-600/10 via-teal-600/10 to-transparent border border-emerald-500/25 flex flex-col sm:flex-row items-center justify-between gap-3 shadow-xs">
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => setActiveStep(1)}
+            className="border-border text-foreground hover:bg-muted text-xs font-bold h-10 px-4 rounded-xl cursor-pointer flex items-center gap-1.5"
+          >
+            <span>➡️ العودة للخطوة (1): الخطابات الرسمية</span>
+          </Button>
+
+          <div className="text-center sm:text-right hidden sm:block">
+            <h4 className="text-xs font-black text-foreground">
+              الخطوة التالية (3): كراسة الشروط الرسمية وأرشيف المستندات
+            </h4>
+            <p className="text-[11px] text-muted-foreground">
+              استعراض كراسة الشروط المرصودة من الرادار الحكومي وتخزينها بالأرشيف أو رفع نسخة بديلة.
+            </p>
+          </div>
+
+          <Button
+            type="button"
+            onClick={() => setActiveStep(3)}
+            className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black h-10 px-5 rounded-xl cursor-pointer shadow-md flex items-center gap-2"
+          >
+            <span>الانتقال للخطوة (3): كراسة الشروط ⬅️</span>
+          </Button>
+        </div>
+      </div>
+    )}
 
       {/* ━━━ الخطوة 3: كراسة الشروط الرسمية وأرشيف المستندات ━━━ */}
       {activeStep === 3 && (
-        <SectionCard
-          title="كراسة الشروط الرسمية وأرشيف المستندات"
-          icon={BookOpen}
-          iconColor="text-purple-600"
-          badge={<Badge className="bg-purple-100 text-purple-900 border border-purple-300 dark:bg-purple-950/60 dark:text-purple-200 text-[10px] font-bold">{allBookletDocs.length} مستند وصورة</Badge>}
-        >
-          <div className="space-y-4">
-            <form onSubmit={handleUploadSingleBooklet} className="p-4 rounded-2xl bg-muted/30 border border-border space-y-3">
-              <h5 className="text-xs font-black text-foreground">رفع ملف كراسة الشروط الرسمي (Word أو PDF)</h5>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 items-center">
-                <input
-                  type="file"
-                  ref={singleBookletInputRef}
-                  accept=".pdf,.docx,.doc"
-                  onChange={(e) => setSingleBookletFile(e.target.files?.[0] || null)}
-                  className="hidden"
-                />
-                <div
-                  onClick={() => singleBookletInputRef.current?.click()}
-                  className={`sm:col-span-2 p-3 rounded-2xl border-2 border-dashed transition-all cursor-pointer flex items-center justify-between gap-3 ${
-                    singleBookletFile
-                      ? "bg-purple-500/10 border-purple-500 text-purple-900 dark:text-purple-200"
-                      : "bg-background border-purple-400/50 hover:bg-purple-500/5 hover:border-purple-500"
-                  }`}
-                >
-                  <div className="flex items-center gap-2.5 overflow-hidden">
-                    <div className="w-8 h-8 rounded-xl bg-purple-600 text-white flex items-center justify-center shrink-0 shadow-xs">
-                      {singleBookletFile ? <FileCheck className="h-4 w-4" /> : <Paperclip className="h-4 w-4" />}
-                    </div>
-                    <div className="overflow-hidden">
-                      {singleBookletFile ? (
-                        <>
-                          <p className="text-xs font-bold truncate text-foreground">{singleBookletFile.name}</p>
-                          <p className="text-[10px] text-muted-foreground font-mono">{formatDocFileSize(singleBookletFile.size)}</p>
-                        </>
-                      ) : (
-                        <>
-                          <p className="text-xs font-bold text-foreground">اضغط لتحديد ملف كراسة الشروط الرسمي</p>
-                          <p className="text-[10.5px] text-muted-foreground">ملف PDF أو مستند Word (.docx)</p>
-                        </>
-                      )}
-                    </div>
+        <div className="space-y-6">
+          {/* تنبيه ذكي: رصد وإيجاد كراسة الشروط الأصلية من بوابة المناقصات والرادار */}
+          <div className="p-4 sm:p-5 rounded-2xl bg-gradient-to-r from-purple-500/10 via-indigo-500/10 to-blue-500/10 border-2 border-purple-500/30 space-y-3.5 shadow-sm">
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <div className="w-11 h-11 rounded-2xl bg-purple-600/15 border border-purple-500/30 flex items-center justify-center text-purple-600 dark:text-purple-400 shrink-0">
+                  <Sparkles className="h-6 w-6 animate-pulse" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <h4 className="text-xs sm:text-sm font-black text-foreground">
+                      تنبيه ذكي: تم رصد كراسة الشروط الأصلية من بوابة التعاقدات الحكومية (الرادار)
+                    </h4>
+                    <Badge className="bg-purple-500/20 text-purple-700 dark:text-purple-300 border-purple-500/30 text-[10px] font-bold">
+                      مسحوبة تلقائياً مع العملية ✓
+                    </Badge>
                   </div>
+                  <p className="text-[11.5px] text-muted-foreground mt-0.5">
+                    كراسة الشروط والمواصفات الرسمية للعملية رقم ({op.externalNumber || op.serialNumber}) متوفرة بالبوابة الحكومية، ويمكنك تخزينها مباشرة داخل أرشيف الصفحة أو رفع نسخة بديلة.
+                  </p>
+                </div>
+              </div>
 
+              <div className="flex items-center gap-2 flex-wrap self-end sm:self-center">
+                {allBookletDocs.length > 0 ? (
+                  <Badge className="bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-500/30 text-xs font-bold px-3 py-1.5 flex items-center gap-1.5">
+                    <CheckCircle2 className="h-4 w-4" />
+                    <span>الكراسة محفوظة بالأرشيف أدناه ✓</span>
+                  </Badge>
+                ) : (
                   <Button
                     type="button"
                     size="sm"
-                    className="bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold h-8 px-3.5 rounded-xl shrink-0 cursor-pointer shadow-xs"
+                    onClick={handleSaveRadarBookletToArchive}
+                    disabled={savingRadarBooklet}
+                    className="bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs h-9.5 px-4 rounded-xl shadow-md cursor-pointer flex items-center gap-1.5"
                   >
-                    <Upload className="h-3.5 w-3.5 ml-1" />
-                    <span>{singleBookletFile ? "تغيير الملف" : "استعراض ملف الكراسة 📁"}</span>
+                    {savingRadarBooklet ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+                    <span>تحميل وتخزين الكراسة في الأرشيف 📥</span>
                   </Button>
-                </div>
+                )}
 
                 <Button
-                  type="submit"
-                  disabled={uploadingSingleBooklet || !singleBookletFile}
-                  className="bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold h-11 rounded-2xl cursor-pointer shadow-sm w-full"
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={() => singleBookletInputRef.current?.click()}
+                  className="border-purple-500/40 text-purple-700 dark:text-purple-300 hover:bg-purple-500/10 font-bold text-xs h-9.5 px-3.5 rounded-xl cursor-pointer flex items-center gap-1.5"
                 >
-                  {uploadingSingleBooklet ? <Loader2 className="h-4 w-4 animate-spin ml-1" /> : <Upload className="h-4 w-4 ml-1" />}
-                  <span>رفع وتأكيد الكراسة</span>
+                  <Upload className="h-4 w-4" />
+                  <span>رفع كراسة بديلة أو ملحق 📤</span>
                 </Button>
               </div>
-            </form>
-
-            {allBookletDocs.length > 0 ? (
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                {allBookletDocs.map((doc: any) => (
-                  <div key={doc.id} className="p-3.5 rounded-xl border border-border bg-card flex items-center justify-between gap-2 shadow-xs">
-                    <div className="min-w-0">
-                      <p className="text-xs font-bold text-foreground truncate">{doc.fileName}</p>
-                      <p className="text-[10px] text-muted-foreground font-mono">{formatDocFileSize(doc.fileSize)}</p>
-                    </div>
-                    <div className="flex items-center gap-1 shrink-0">
-                      <Button size="sm" variant="ghost" onClick={() => onPreviewDoc?.(doc)} className="h-7 w-7 p-0">
-                        <Eye className="h-3.5 w-3.5" />
-                      </Button>
-                      <Button size="sm" variant="ghost" onClick={() => onDownloadDoc?.(doc)} className="h-7 w-7 p-0">
-                        <Download className="h-3.5 w-3.5" />
-                      </Button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <p className="text-xs text-muted-foreground text-center py-6">
-                لم يتم رفع كراسة الشروط بعد. يمكنك رفعها الآن كملف PDF أو Word.
-              </p>
-            )}
+            </div>
           </div>
-        </SectionCard>
+
+          <SectionCard
+            title="كراسة الشروط الرسمية وأرشيف المستندات"
+            icon={BookOpen}
+            iconColor="text-purple-600"
+            badge={<Badge className="bg-purple-100 text-purple-900 border border-purple-300 dark:bg-purple-950/60 dark:text-purple-200 text-[10px] font-bold">{allBookletDocs.length} مستند وصورة</Badge>}
+          >
+            <div className="space-y-4">
+              <form onSubmit={handleUploadSingleBooklet} className="p-4 rounded-2xl bg-muted/30 border border-border space-y-3">
+                <h5 className="text-xs font-black text-foreground">رفع ملف كراسة الشروط الرسمي (Word أو PDF)</h5>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 items-center">
+                  <input
+                    type="file"
+                    ref={singleBookletInputRef}
+                    accept=".pdf,.docx,.doc"
+                    onChange={(e) => setSingleBookletFile(e.target.files?.[0] || null)}
+                    className="hidden"
+                  />
+                  <div
+                    onClick={() => singleBookletInputRef.current?.click()}
+                    className={`sm:col-span-2 p-3 rounded-2xl border-2 border-dashed transition-all cursor-pointer flex items-center justify-between gap-3 ${
+                      singleBookletFile
+                        ? "bg-purple-500/10 border-purple-500 text-purple-900 dark:text-purple-200"
+                        : "bg-background border-purple-400/50 hover:bg-purple-500/5 hover:border-purple-500"
+                    }`}
+                  >
+                    <div className="flex items-center gap-2.5 overflow-hidden">
+                      <div className="w-8 h-8 rounded-xl bg-purple-600 text-white flex items-center justify-center shrink-0 shadow-xs">
+                        {singleBookletFile ? <FileCheck className="h-4 w-4" /> : <Paperclip className="h-4 w-4" />}
+                      </div>
+                      <div className="overflow-hidden">
+                        {singleBookletFile ? (
+                          <>
+                            <p className="text-xs font-bold truncate text-foreground">{singleBookletFile.name}</p>
+                            <p className="text-[10px] text-muted-foreground font-mono">{formatDocFileSize(singleBookletFile.size)}</p>
+                          </>
+                        ) : (
+                          <>
+                            <p className="text-xs font-bold text-foreground">اضغط لتحديد ملف كراسة الشروط الرسمي</p>
+                            <p className="text-[10.5px] text-muted-foreground">ملف PDF أو مستند Word (.docx)</p>
+                          </>
+                        )}
+                      </div>
+                    </div>
+
+                    <Button
+                      type="button"
+                      size="sm"
+                      className="bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold h-8 px-3.5 rounded-xl shrink-0 cursor-pointer shadow-xs"
+                    >
+                      <Upload className="h-3.5 w-3.5 ml-1" />
+                      <span>{singleBookletFile ? "تغيير الملف" : "استعراض ملف الكراسة 📁"}</span>
+                    </Button>
+                  </div>
+
+                  <Button
+                    type="submit"
+                    disabled={uploadingSingleBooklet || !singleBookletFile}
+                    className="bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold h-11 rounded-2xl cursor-pointer shadow-sm w-full"
+                  >
+                    {uploadingSingleBooklet ? <Loader2 className="h-4 w-4 animate-spin ml-1" /> : <Upload className="h-4 w-4 ml-1" />}
+                    <span>رفع وتأكيد الكراسة</span>
+                  </Button>
+                </div>
+              </form>
+
+              {allBookletDocs.length > 0 ? (
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                  {allBookletDocs.map((doc: any) => (
+                    <div key={doc.id} className="p-3.5 rounded-xl border border-border bg-card flex items-center justify-between gap-2 shadow-xs">
+                      <div className="min-w-0">
+                        <p className="text-xs font-bold text-foreground truncate">{doc.fileName}</p>
+                        <p className="text-[10px] text-muted-foreground font-mono">{formatDocFileSize(doc.fileSize)}</p>
+                      </div>
+                      <div className="flex items-center gap-1 shrink-0">
+                        <Button size="sm" variant="ghost" onClick={() => onPreviewDoc?.(doc)} className="h-7 w-7 p-0 hover:bg-muted" title="معاينة المستند">
+                          <Eye className="h-3.5 w-3.5" />
+                        </Button>
+                        <Button size="sm" variant="ghost" onClick={() => onDownloadDoc?.(doc)} className="h-7 w-7 p-0 hover:bg-muted" title="تنزيل المستند">
+                          <Download className="h-3.5 w-3.5" />
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => handleDeleteDoc(doc.id)}
+                          disabled={deletingDocId === doc.id}
+                          className="h-7 w-7 p-0 hover:bg-red-500/10 text-muted-foreground hover:text-red-600 cursor-pointer"
+                          title="حذف كراسة الشروط"
+                        >
+                          {deletingDocId === doc.id ? (
+                            <Loader2 className="h-3.5 w-3.5 animate-spin text-red-500" />
+                          ) : (
+                            <Trash2 className="h-3.5 w-3.5" />
+                          )}
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-xs text-muted-foreground text-center py-6">
+                  لم يتم رفع كراسة الشروط بعد. يمكنك رفعها الآن كملف PDF أو Word.
+                </p>
+              )}
+            </div>
+          </SectionCard>
+
+          {/* ━━━ شريط التنقل السفلي للخطوة 3 ━━━ */}
+          <div className="p-4 rounded-2xl bg-gradient-to-r from-purple-600/10 via-indigo-600/10 to-transparent border border-purple-500/25 flex flex-col sm:flex-row items-center justify-between gap-3 shadow-xs">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setActiveStep(2)}
+              className="border-border text-foreground hover:bg-muted text-xs font-bold h-10 px-4 rounded-xl cursor-pointer flex items-center gap-1.5"
+            >
+              <span>➡️ العودة للخطوة (2): إيصالات السداد والتأمين</span>
+            </Button>
+
+            <div className="text-center sm:text-right">
+              <div className="flex items-center gap-2 justify-center sm:justify-start">
+                <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+                <h4 className="text-xs font-black text-foreground">
+                  اكتملت متطلبات مرحلة سحب الكراسة والتأمين الابتدائي بنجاح ✓
+                </h4>
+              </div>
+              <p className="text-[11px] text-muted-foreground">
+                تم اعتماد الخطابات، إيصالات السداد، وتوثيق كراسة الشروط الرسمية في الأرشيف.
+              </p>
+            </div>
+
+            <Button
+              type="button"
+              onClick={() => onNavigate("technical")}
+              className="bg-purple-600 hover:bg-purple-700 text-white text-xs font-black h-10 px-5 rounded-xl cursor-pointer shadow-md flex items-center gap-2"
+            >
+              <span>الانتقال للمرحلة التالية: المظروف الفني ⬅️</span>
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {/* ━━━ MODAL: عرض نسخة الـ PDF الرسمية فقط المطبوعة (بدون وورد) ━━━ */}
+      {directPdfModalOpen && directPdfUrl && (
+        <Portal>
+          <div className="fixed inset-0 z-[999999] bg-black/85 backdrop-blur-md flex items-center justify-center p-2 sm:p-4 animate-fade-in">
+            <div className="bg-card border border-border rounded-3xl max-w-5xl w-full h-[92vh] flex flex-col overflow-hidden shadow-2xl text-foreground">
+              <div className="flex items-center justify-between p-4 border-b border-border bg-card">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-9 h-9 rounded-xl bg-red-500/15 text-red-600 flex items-center justify-center font-black">
+                    PDF
+                  </div>
+                  <div>
+                    <h3 className="font-extrabold text-sm text-foreground">
+                      عرض مستند PDF الرسمي المعتمد: {CURRENT_FILE_ARABIC_NAME[activeLetterType]}
+                    </h3>
+                    <p className="text-[11px] text-muted-foreground font-mono">
+                      رقم القيد: {registrationNumber} • نسخة رسمية للقراءة والطباعة
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <a
+                    href={directPdfUrl}
+                    download={`${CURRENT_FILE_ARABIC_NAME[activeLetterType]}_${op.externalNumber || op.serialNumber}_${registrationNumber}.pdf`}
+                    className="inline-flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-xl bg-red-600 hover:bg-red-700 text-white shadow-xs cursor-pointer"
+                  >
+                    <Download className="h-3.5 w-3.5" />
+                    <span>تنزيل PDF</span>
+                  </a>
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    onClick={() => {
+                      setDirectPdfModalOpen(false);
+                      if (directPdfUrl) URL.revokeObjectURL(directPdfUrl);
+                      setDirectPdfUrl(null);
+                    }}
+                    className="h-8 w-8 rounded-full hover:bg-muted cursor-pointer"
+                  >
+                    <X className="h-4 w-4" />
+                  </Button>
+                </div>
+              </div>
+              <div className="flex-1 w-full h-full bg-slate-900">
+                <iframe
+                  src={`${directPdfUrl}#toolbar=1`}
+                  className="w-full h-full border-0"
+                  title="عرض مستند PDF الرسمي"
+                />
+              </div>
+            </div>
+          </div>
+        </Portal>
       )}
 
       {/* ━━━ MODAL: معاينة قالب الوورد المعتمد (مطابق لخطاب التوضيح تماماً) ━━━ */}
