@@ -592,16 +592,14 @@ export function TabBooklet({
 
     let docXml = await zip.file("word/document.xml")!.async("text");
 
-    if (qrDrawingXml) {
-      if (docXml.includes("الباركود")) {
-        docXml = docXml.replace(/الباركود/g, `</w:t></w:r>${qrDrawingXml}<w:r><w:t>`);
-      } else if (docXml.includes("البركود")) {
-        docXml = docXml.replace(/البركود/g, `</w:t></w:r>${qrDrawingXml}<w:r><w:t>`);
+    let qrDone = false;
+    docXml = docXml.replace(/الباركود|البركود/g, () => {
+      if (!qrDone && qrDrawingXml) {
+        qrDone = true;
+        return `</w:t></w:r>${qrDrawingXml}<w:r><w:t>`;
       }
-    } else {
-      docXml = docXml.replace(/الباركود/g, "");
-      docXml = docXml.replace(/البركود/g, "");
-    }
+      return "";
+    });
 
     // إعداد صيغة أسلوب الطرح بحرف الباء وبدون حرف الباء لضمان عدم حدوث أي تكرار
     const cleanMethod = (tenderMethod || "").trim();
@@ -1222,97 +1220,7 @@ export function TabBooklet({
         </div>
       )}
 
-      {/* ━━━ TOP BAR ACTIONS & CONTEXT (الـ Widget العلوي الفخم المطابق لخطاب التوضيح) ━━━ */}
-      <div className="p-4 sm:p-5 rounded-3xl bg-[#fdfaf5] dark:bg-card border-2 border-[#f5dfc6] dark:border-amber-500/30 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 shadow-sm">
-        <div className="flex items-center gap-3">
-          <div className="w-12 h-12 rounded-full bg-amber-500/15 border-2 border-amber-500/30 text-amber-700 dark:text-amber-300 flex items-center justify-center shrink-0 shadow-xs">
-            <HelpCircle className="h-6 w-6 text-amber-700 dark:text-amber-400" />
-          </div>
-          <div>
-            <div className="flex items-center gap-2 flex-wrap">
-              <h2 className="text-base sm:text-lg font-black text-foreground">
-                {currentTpl.title}
-              </h2>
-              <Badge className="bg-[#d97706] hover:bg-[#d97706] text-white font-mono text-[11px] font-bold px-2.5 py-0.5 rounded-lg shadow-xs">
-                رقم القيد: {registrationNumber}
-              </Badge>
-              <Badge className="bg-[#dcfce7] text-[#15803d] border border-[#86efac] text-[11px] font-bold px-2.5 py-0.5 rounded-full">
-                محفوظ ومعتمد ✓
-              </Badge>
-              <div className="inline-flex items-center gap-1.5 px-3 py-0.5 rounded-xl bg-emerald-500/20 text-emerald-800 dark:text-emerald-300 border border-emerald-500/40 text-[11px] font-black">
-                <FileCheck className="h-3.5 w-3.5" />
-                <span>{isDirty ? "تعديلات جاهزة للمعاينة والحفظ ✍️" : "التعديلات محفوظة ✓"}</span>
-              </div>
-            </div>
-            <p className="text-xs text-muted-foreground mt-0.5">
-              مطابق 100% لقالب الوورد المعتمد للشركة وفق قانون التعاقدات رقم 182 لسنة 2018. المتغيرات الملونة بالأحمر جاهزة للإدخال والتعديل.
-            </p>
-          </div>
-        </div>
 
-        <div className="flex items-center gap-2 flex-wrap self-end md:self-auto">
-          {/* زر المعاينة - متاح دائماً وبدون قفل */}
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => setPreviewModalOpen(true)}
-            title="معاينة مستند الوورد المعتمد"
-            className="h-9.5 px-4 text-xs font-bold rounded-xl border-2 border-[#d97706] text-[#b45309] dark:text-amber-300 hover:bg-amber-500/10 cursor-pointer bg-white dark:bg-card shadow-xs flex items-center gap-1.5"
-          >
-            <Eye className="h-4 w-4 ml-1.5 text-[#d97706]" />
-            <span>معاينة مستند الوورد</span>
-          </Button>
-
-          {/* زر الطباعة - متاح دائماً وبدون قفل */}
-          <Button
-            size="sm"
-            onClick={handlePrintWordDocument}
-            disabled={printingDocx}
-            title="طباعة مستند الوورد المعتمد"
-            className="h-9.5 px-4 bg-[#d97706] hover:bg-[#b45309] text-white text-xs font-bold rounded-xl shadow-md cursor-pointer flex items-center gap-1.5"
-          >
-            <Printer className={`h-4 w-4 ${printingDocx ? "animate-spin" : ""}`} />
-            <span>{printingDocx ? "جاري التجهيز..." : "طباعة المستند"}</span>
-          </Button>
-
-          {/* تحميل PDF */}
-          <Button
-            size="sm"
-            onClick={() => handleDownloadPdf(activeLetterType)}
-            disabled={downloadingPdf}
-            title="تحميل بصيغة PDF"
-            className="h-9.5 px-3.5 bg-[#e11d48] hover:bg-[#be123c] text-white text-xs font-bold rounded-xl shadow-md cursor-pointer flex items-center gap-1.5"
-          >
-            <FileText className={`h-4 w-4 ${downloadingPdf ? "animate-spin" : ""}`} />
-            <span>{downloadingPdf ? "جاري التحويل..." : "PDF (.pdf)"}</span>
-          </Button>
-
-          {/* تحميل Word */}
-          <Button
-            size="sm"
-            onClick={() => handleDownloadDocx(activeLetterType)}
-            disabled={downloadingDocx}
-            title="تحميل بصيغة Word"
-            className="h-9.5 px-3.5 bg-[#2563eb] hover:bg-[#1d4ed8] text-white text-xs font-bold rounded-xl shadow-md cursor-pointer flex items-center gap-1.5"
-          >
-            <Download className="h-4 w-4" />
-            <span>{downloadingDocx ? "جاري التوليد..." : "Word (.docx)"}</span>
-          </Button>
-
-          {/* زر حفظ التعديلات */}
-          {isDirty && (
-            <Button
-              size="sm"
-              onClick={handleSaveAll}
-              disabled={savingChanges}
-              className="h-9.5 px-4 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black rounded-xl shadow-md cursor-pointer flex items-center gap-1.5 animate-pulse"
-            >
-              <Save className="h-4 w-4" />
-              <span>{savingChanges ? "جاري الحفظ..." : "حفظ التعديلات 💾"}</span>
-            </Button>
-          )}
-        </div>
-      </div>
 
       {/* ━━━ شريط الخطوات الثلاثة الرئيسي ━━━ */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
@@ -2189,27 +2097,38 @@ export function TabBooklet({
             </div>
           </SectionCard>
 
-          {/* ━━━ BOTTOM ACTION BAR: التوليد والطباعة والمعاينة بأسفل الخطوة الأولى (استجابة للتسجيلين 4 و 6) ━━━ */}
-          <div className="p-4 sm:p-5 rounded-3xl bg-amber-500/10 border-2 border-amber-500/30 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 shadow-sm">
-            <div>
-              <div className="flex items-center gap-2 flex-wrap">
-                <h4 className="text-sm font-extrabold text-foreground flex items-center gap-2">
-                  <Sparkles className="h-4 w-4 text-amber-600" />
-                  <span>جاهزية طباعة وتصدير: {currentTpl.title}</span>
-                </h4>
-                {printHistory[activeLetterType]?.printCount ? (
-                  <Badge className="bg-amber-100 text-amber-900 border border-amber-300 dark:bg-amber-950/60 dark:text-amber-200 text-[10px] font-bold">
-                    ⚠️ انطبع سابقاً ({printHistory[activeLetterType].printCount} مرات)
-                  </Badge>
-                ) : (
-                  <Badge className="bg-emerald-100 text-emerald-900 border border-emerald-300 dark:bg-emerald-950/60 dark:text-emerald-200 text-[10px] font-bold">
-                    جاهز للطباعة الأولى ✓
-                  </Badge>
-                )}
+          {/* ━━━ BOTTOM ACTION BAR: التوليد والطباعة والمعاينة بأسفل الخطوة الأولى (استجابة لملاحظات المستخدم) ━━━ */}
+          <div className="p-4 sm:p-5 rounded-3xl bg-[#fdfaf5] dark:bg-card border-2 border-[#f5dfc6] dark:border-amber-500/30 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 shadow-sm">
+            <div className="flex items-center gap-3">
+              <div className="w-12 h-12 rounded-full bg-amber-500/15 border-2 border-amber-500/30 text-amber-700 dark:text-amber-300 flex items-center justify-center shrink-0 shadow-xs">
+                <HelpCircle className="h-6 w-6 text-amber-700 dark:text-amber-400" />
               </div>
-              <p className="text-xs text-muted-foreground mt-1">
-                بعد الانتهاء من مراجعة وتعديل بيانات الخطاب، يمكنك مباشرة المعاينة الحية للـ PDF أو إرساله للطباعة الفورية.
-              </p>
+              <div>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <h4 className="text-sm sm:text-base font-black text-foreground">
+                    {currentTpl.title}
+                  </h4>
+                  <Badge className="bg-[#d97706] hover:bg-[#d97706] text-white font-mono text-[11px] font-bold px-2.5 py-0.5 rounded-lg shadow-xs">
+                    رقم القيد: {registrationNumber}
+                  </Badge>
+                  {printHistory[activeLetterType]?.printCount ? (
+                    <Badge className="bg-amber-100 text-amber-900 border border-amber-300 dark:bg-amber-950/60 dark:text-amber-200 text-[10px] font-bold">
+                      ⚠️ انطبع سابقاً ({printHistory[activeLetterType].printCount} مرات)
+                    </Badge>
+                  ) : (
+                    <Badge className="bg-[#dcfce7] text-[#15803d] border border-[#86efac] text-[11px] font-bold px-2.5 py-0.5 rounded-full">
+                      محفوظ ومعتمد ✓
+                    </Badge>
+                  )}
+                  <div className="inline-flex items-center gap-1.5 px-3 py-0.5 rounded-xl bg-emerald-500/20 text-emerald-800 dark:text-emerald-300 border border-emerald-500/40 text-[11px] font-black">
+                    <FileCheck className="h-3.5 w-3.5" />
+                    <span>{isDirty ? "تعديلات جاهزة للمعاينة والحفظ ✍️" : "التعديلات محفوظة ✓"}</span>
+                  </div>
+                </div>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  مطابق 100% لقالب الوورد المعتمد للشركة وفق قانون التعاقدات رقم 182 لسنة 2018. يمكنك المعاينة أو الطباعة مباشرة من هنا.
+                </p>
+              </div>
             </div>
 
             <div className="flex items-center gap-2 flex-wrap self-end md:self-auto">
@@ -2217,17 +2136,17 @@ export function TabBooklet({
                 size="sm"
                 variant="outline"
                 onClick={() => setPreviewModalOpen(true)}
-                className="h-10 px-4 text-xs font-bold rounded-xl border-2 border-amber-600 text-amber-700 dark:text-amber-300 hover:bg-amber-500/10 cursor-pointer bg-card shadow-xs flex items-center gap-1.5"
+                className="h-9.5 px-4 text-xs font-bold rounded-xl border-2 border-[#d97706] text-[#b45309] dark:text-amber-300 hover:bg-amber-500/10 cursor-pointer bg-white dark:bg-card shadow-xs flex items-center gap-1.5"
               >
-                <Eye className="h-4 w-4 ml-1 text-amber-600" />
-                <span>معاينة المستند</span>
+                <Eye className="h-4 w-4 ml-1.5 text-[#d97706]" />
+                <span>معاينة مستند الوورد</span>
               </Button>
 
               <Button
                 size="sm"
                 onClick={handlePrintWordDocument}
                 disabled={printingDocx}
-                className="h-10 px-4 bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold rounded-xl shadow-md cursor-pointer flex items-center gap-1.5"
+                className="h-9.5 px-4 bg-[#d97706] hover:bg-[#b45309] text-white text-xs font-bold rounded-xl shadow-md cursor-pointer flex items-center gap-1.5"
               >
                 <Printer className={`h-4 w-4 ${printingDocx ? "animate-spin" : ""}`} />
                 <span>{printingDocx ? "جاري التجهيز..." : "طباعة المستند"}</span>
@@ -2237,7 +2156,7 @@ export function TabBooklet({
                 size="sm"
                 onClick={() => handleDownloadPdf(activeLetterType)}
                 disabled={downloadingPdf}
-                className="h-10 px-3.5 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold rounded-xl shadow-md cursor-pointer flex items-center gap-1.5"
+                className="h-9.5 px-3.5 bg-[#e11d48] hover:bg-[#be123c] text-white text-xs font-bold rounded-xl shadow-md cursor-pointer flex items-center gap-1.5"
               >
                 <FileText className={`h-4 w-4 ${downloadingPdf ? "animate-spin" : ""}`} />
                 <span>{downloadingPdf ? "جاري التحويل..." : "PDF (.pdf)"}</span>
@@ -2247,7 +2166,7 @@ export function TabBooklet({
                 size="sm"
                 onClick={() => handleDownloadDocx(activeLetterType)}
                 disabled={downloadingDocx}
-                className="h-10 px-3.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl shadow-md cursor-pointer flex items-center gap-1.5"
+                className="h-9.5 px-3.5 bg-[#2563eb] hover:bg-[#1d4ed8] text-white text-xs font-bold rounded-xl shadow-md cursor-pointer flex items-center gap-1.5"
               >
                 <Download className="h-4 w-4" />
                 <span>Word (.docx)</span>
@@ -2258,7 +2177,7 @@ export function TabBooklet({
                   size="sm"
                   onClick={handleSaveAll}
                   disabled={savingChanges}
-                  className="h-10 px-4 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black rounded-xl shadow-md cursor-pointer flex items-center gap-1.5 animate-pulse"
+                  className="h-9.5 px-4 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black rounded-xl shadow-md cursor-pointer flex items-center gap-1.5 animate-pulse"
                 >
                   <Save className="h-4 w-4" />
                   <span>{savingChanges ? "جاري الحفظ..." : "حفظ التعديلات 💾"}</span>

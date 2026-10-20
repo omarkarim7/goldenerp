@@ -331,11 +331,20 @@ export function TabFinalGuarantee({
 
     let docXml = await zip.file("word/document.xml")!.async("text");
 
-    // Replace Barcode
-    if (qrDrawingXml) {
-      docXml = docXml.replace(/الباركود|البركود/g, `</w:t></w:r>${qrDrawingXml}<w:r><w:t>`);
+    // Replace Barcode (الصفحة الأولى فقط)
+    let qrDone = false;
+    docXml = docXml.replace(/الباركود|البركود/g, () => {
+      if (!qrDone && qrDrawingXml) {
+        qrDone = true;
+        return `</w:t></w:r>${qrDrawingXml}<w:r><w:t>`;
+      }
+      return "";
+    });
+    if (!qrDone && qrDrawingXml && docXml.includes("Ad26111000001")) {
+      qrDone = true;
+      docXml = docXml.replace("Ad26111000001", `${escapeXml(registrationNumber)}</w:t></w:r>${qrDrawingXml}<w:r><w:t>`);
     } else {
-      docXml = docXml.replace(/الباركود|البركود/g, "");
+      docXml = docXml.replace(/Ad26111000001/g, escapeXml(registrationNumber));
     }
 
     const numPaid = Number(amountPaid) || calculated5Percent;
@@ -721,72 +730,7 @@ export function TabFinalGuarantee({
         </div>
       )}
 
-      {/* ━━━ Hero Action Banner ━━━ */}
-      <div className="p-4 sm:p-6 rounded-3xl bg-gradient-to-r from-emerald-600 via-teal-600 to-indigo-700 text-white shadow-xl flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-        <div className="space-y-1">
-          <div className="flex items-center gap-2 flex-wrap">
-            <Badge className="bg-white/20 text-white border-white/30 text-xs font-bold px-2.5 py-0.5 backdrop-blur-md">
-              المرحلة #14: التأمين النهائي القانوني (5%)
-            </Badge>
-            <span className="text-xs text-white/80 font-mono">
-              رقم القيد: {registrationNumber}
-            </span>
-            {finalGuarantees.length > 0 ? (
-              <Badge className="bg-emerald-400 text-emerald-950 font-black text-xs px-2 py-0.5">
-                مسدد ومعتمد في النظام ✓
-              </Badge>
-            ) : (
-              <Badge className="bg-amber-400 text-amber-950 font-bold text-xs px-2 py-0.5 animate-pulse">
-                مطلوب السداد (مهلة 10 أيام) ⏳
-              </Badge>
-            )}
-          </div>
-          <h2 className="text-lg sm:text-xl font-black tracking-tight">
-            إجراءات وخطابات سداد التأمين النهائي (5% من قيمة العقد)
-          </h2>
-          <p className="text-xs text-white/90 max-w-2xl leading-relaxed">
-            وفقاً للمادة (37) من القانون 182 لسنة 2018: طباعة خطابات السداد الرسمية، الخصم من المستحقات، تحويل الابتدائي، إصدار خطاب الضمان البنكي، وتوثيق إيصالات السداد.
-          </p>
-        </div>
 
-        <div className="flex items-center gap-2 flex-wrap w-full md:w-auto justify-end">
-          <Button
-            size="sm"
-            onClick={() => setPreviewModalOpen(true)}
-            disabled={isDirty}
-            className={`font-bold text-xs h-9 px-4 rounded-xl shadow-md flex items-center gap-1.5 ${
-              isDirty ? "bg-white/40 text-white/70 cursor-not-allowed" : "bg-white hover:bg-white/90 text-emerald-900 cursor-pointer"
-            }`}
-          >
-            {isDirty ? <Lock className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-            <span>معاينة مستند الوورد</span>
-          </Button>
-
-          <Button
-            size="sm"
-            onClick={handlePrintWordDocument}
-            disabled={isDirty}
-            className={`font-bold text-xs h-9 px-3.5 rounded-xl shadow-md flex items-center gap-1.5 ${
-              isDirty ? "bg-white/30 text-white/70 cursor-not-allowed" : "bg-slate-900 hover:bg-black text-white cursor-pointer"
-            }`}
-          >
-            {isDirty ? <Lock className="h-4 w-4" /> : <Printer className="h-4 w-4" />}
-            <span>طباعة</span>
-          </Button>
-
-          <Button
-            size="sm"
-            onClick={handleSaveToSystem}
-            disabled={savingState || !isDirty}
-            className={`font-bold text-xs h-9 px-3.5 rounded-xl shadow-md flex items-center gap-1.5 ${
-              isDirty ? "bg-amber-400 hover:bg-amber-300 text-amber-950 font-black animate-pulse" : "bg-emerald-500 hover:bg-emerald-600 text-white"
-            }`}
-          >
-            <Save className="h-4 w-4" />
-            <span>{savingState ? "جاري الحفظ..." : isDirty ? "حفظ التعديلات 💾" : "محفوظ ✓"}</span>
-          </Button>
-        </div>
-      </div>
 
       {/* ━━━ Summary Cards Strip ━━━ */}
       <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
@@ -1612,6 +1556,108 @@ export function TabFinalGuarantee({
           </div>
         </Portal>
       )}
+
+      {/* ━━━ BOTTOM ACTION BAR: التوليد والطباعة والمعاينة بأسفل مرحلة التأمين النهائي ━━━ */}
+      <div className="p-4 sm:p-5 rounded-3xl bg-[#fdfaf5] dark:bg-card border-2 border-[#f5dfc6] dark:border-amber-500/30 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 shadow-sm">
+        <div className="flex items-center gap-3">
+          <div className="w-12 h-12 rounded-full bg-emerald-500/15 border-2 border-emerald-500/30 text-emerald-700 dark:text-emerald-300 flex items-center justify-center shrink-0 shadow-xs">
+            <ShieldCheck className="h-6 w-6 text-emerald-700 dark:text-emerald-400" />
+          </div>
+          <div>
+            <div className="flex items-center gap-2 flex-wrap">
+              <h4 className="text-sm sm:text-base font-black text-foreground">
+                إجراءات وخطابات سداد التأمين النهائي (5% من قيمة العقد)
+              </h4>
+              <Badge className="bg-[#d97706] hover:bg-[#d97706] text-white font-mono text-[11px] font-bold px-2.5 py-0.5 rounded-lg shadow-xs">
+                رقم القيد: {registrationNumber}
+              </Badge>
+              {isDirty ? (
+                <Badge className="bg-amber-100 text-amber-900 border border-amber-300 dark:bg-amber-950/60 dark:text-amber-200 text-[10px] font-bold animate-pulse">
+                  تعديلات غير محفوظة ⚠️
+                </Badge>
+              ) : (
+                <Badge className="bg-[#dcfce7] text-[#15803d] border border-[#86efac] text-[11px] font-bold px-2.5 py-0.5 rounded-full">
+                  محفوظ ومعتمد ✓
+                </Badge>
+              )}
+              <div className="inline-flex items-center gap-1.5 px-3 py-0.5 rounded-xl bg-emerald-500/20 text-emerald-800 dark:text-emerald-300 border border-emerald-500/40 text-[11px] font-black">
+                <FileCheck className="h-3.5 w-3.5" />
+                <span>{isDirty ? "تعديلات جاهزة للمعاينة والحفظ ✍️" : "التعديلات محفوظة ✓"}</span>
+              </div>
+            </div>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              وفقاً للمادة (37) من القانون 182 لسنة 2018 وقوالب الوورد الرسمية. يمكنك المعاينة أو الطباعة مباشرة من هنا.
+            </p>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2 flex-wrap self-end md:self-auto">
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => setPreviewModalOpen(true)}
+            disabled={isDirty}
+            title={isDirty ? "يجب حفظ التعديلات أولاً لتفعيل المعاينة" : "معاينة مستند الوورد"}
+            className={`h-9.5 px-4 text-xs font-bold rounded-xl border-2 border-[#d97706] text-[#b45309] dark:text-amber-300 hover:bg-amber-500/10 cursor-pointer bg-white dark:bg-card shadow-xs flex items-center gap-1.5 ${
+              isDirty ? "opacity-50 cursor-not-allowed bg-muted/40" : ""
+            }`}
+          >
+            {isDirty ? <Lock className="h-4 w-4" /> : <Eye className="h-4 w-4 ml-1.5 text-[#d97706]" />}
+            <span>معاينة مستند الوورد</span>
+          </Button>
+
+          <Button
+            size="sm"
+            onClick={handlePrintWordDocument}
+            disabled={printingDocx || isDirty}
+            title={isDirty ? "يجب حفظ التعديلات أولاً للطباعة" : "طباعة المستند"}
+            className={`h-9.5 px-4 bg-[#d97706] hover:bg-[#b45309] text-white text-xs font-bold rounded-xl shadow-md cursor-pointer flex items-center gap-1.5 ${
+              isDirty ? "opacity-50 cursor-not-allowed bg-muted text-muted-foreground" : ""
+            }`}
+          >
+            {isDirty ? <Lock className="h-4 w-4" /> : <Printer className={`h-4 w-4 ${printingDocx ? "animate-spin" : ""}`} />}
+            <span>{printingDocx ? "جاري التجهيز..." : "طباعة المستند"}</span>
+          </Button>
+
+          <Button
+            size="sm"
+            onClick={() => handleDownloadPdf(activeLetterType)}
+            disabled={downloadingPdf || isDirty}
+            title={isDirty ? "يجب حفظ التعديلات أولاً للتحميل" : "تحميل بصيغة PDF"}
+            className={`h-9.5 px-3.5 bg-[#e11d48] hover:bg-[#be123c] text-white text-xs font-bold rounded-xl shadow-md cursor-pointer flex items-center gap-1.5 ${
+              isDirty ? "opacity-50 cursor-not-allowed bg-muted text-muted-foreground" : ""
+            }`}
+          >
+            <FileText className={`h-4 w-4 ${downloadingPdf ? "animate-spin" : ""}`} />
+            <span>{downloadingPdf ? "جاري التحويل..." : "PDF (.pdf)"}</span>
+          </Button>
+
+          <Button
+            size="sm"
+            onClick={() => handleDownloadDocx(activeLetterType)}
+            disabled={downloadingDocx || isDirty}
+            title={isDirty ? "يجب حفظ التعديلات أولاً للتحميل" : "تحميل بصيغة Word"}
+            className={`h-9.5 px-3.5 bg-[#2563eb] hover:bg-[#1d4ed8] text-white text-xs font-bold rounded-xl shadow-md cursor-pointer flex items-center gap-1.5 ${
+              isDirty ? "opacity-50 cursor-not-allowed bg-muted text-muted-foreground" : ""
+            }`}
+          >
+            <Download className="h-4 w-4" />
+            <span>{downloadingDocx ? "جاري التوليد..." : "Word (.docx)"}</span>
+          </Button>
+
+          {isDirty && (
+            <Button
+              size="sm"
+              onClick={handleSaveToSystem}
+              disabled={savingState}
+              className="h-9.5 px-4 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black rounded-xl shadow-md cursor-pointer flex items-center gap-1.5 animate-pulse"
+            >
+              <Save className="h-4 w-4" />
+              <span>{savingState ? "جاري الحفظ..." : "حفظ التعديلات 💾"}</span>
+            </Button>
+          )}
+        </div>
+      </div>
 
       {/* ━━━ Footer Navigation ━━━ */}
       <StepFooterNav
