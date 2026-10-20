@@ -18,11 +18,11 @@ import { toast } from "sonner";
 import api from "@/lib/api";
 import { Operation, SectionCard, formatDate } from "./types";
 import { StepFooterNav } from "./StepFooterNav";
-import { generateSmartOutgoingRef, cleanAllDocxXml, buildQrAnchorXml, injectSingleQrIntoDocXml, LetterBottomActionWidget, ReprintConfirmModal, getCurrentUserName, PrintHistoryEntry, FISCAL_YEAR_OPTIONS, FreeConvertersQuickLinks } from "./letter-utils";
+import { generateSmartOutgoingRef, cleanAllDocxXml, buildQrAnchorXml, injectSingleQrIntoDocXml, LetterBottomActionWidget, ReprintConfirmModal, getCurrentUserName, PrintHistoryEntry, FISCAL_YEAR_OPTIONS, LetterQrCloudCard, PdfExportLoadingModal } from "./letter-utils";
 import { GOLDEN_STAMP_BASE64, GOLDEN_LOGO_BASE64 } from "./stamp-assets";
 import JSZip from "jszip";
 import QRCode from "qrcode";
-import { getPdfBlobFromDocx } from "./client-pdf";
+import { getPdfBlobFromDocx, uploadPdfToFreeCloud } from "./client-pdf";
 import { OnlyOfficeDocViewer } from "@/components/OnlyOfficeDocViewer";
 
 export interface ClarificationInquiryItem {
@@ -169,9 +169,13 @@ export function TabClarification({
     savedLetter?.companyAddress || currentCompany?.address || "بجوار مستشفى ليدى كير - بدمنهور - البحيره"
   );
 
-  // الرابط السحابي المعتمد للنسخة الرقمية
-  const [cloudPdfUrl, setCloudPdfUrl] = useState<string>(() => savedLetter?.cloudPdfUrl || "");
+  // الرابط السحابي المعتمد للنسخة الرقمية (Catbox.moe / Gofile.io)
+  const [cloudPdfUrl, setCloudPdfUrl] = useState<string>(() => {
+    const url = savedLetter?.cloudPdfUrl || "";
+    return url.includes("tmpfiles.org") ? "" : url;
+  });
   const [uploadingCloud, setUploadingCloud] = useState(false);
+  const [lastGeneratedSnapshot, setLastGeneratedSnapshot] = useState<string | null>(null);
 
   // اختيار الشركة المشاركة وتحديث بيانات الترويسة والتذييل وكود العملية تلقائياً
   const handleSelectCompany = (companyId: string | null) => {
@@ -474,9 +478,7 @@ export function TabClarification({
     // توليد رمز التحقق الرقمي والباركود للنسخة الرقمية
     let qrDrawingXml = "";
     try {
-      const targetVerifyUrl =
-        cloudPdfUrl ||
-        `${typeof window !== "undefined" ? window.location.origin : ""}/verify-doc?ref=${encodeURIComponent(registrationNumber)}&opId=${op.id}&type=clarification`;
+      const targetVerifyUrl = cloudPdfUrl || registrationNumber;
       const qrDataUrl = await QRCode.toDataURL(targetVerifyUrl, { width: 160, margin: 1 });
       const qrBase64 = qrDataUrl.split(",")[1];
       const qrBinary = Uint8Array.from(atob(qrBase64), (c) => c.charCodeAt(0));
@@ -641,31 +643,35 @@ export function TabClarification({
     return await getPdfBlobFromDocx(docxBlob, `clarification_${registrationNumber}.docx`);
   };
 
-  // ━━━ رفع وتوثيق النسخة الرقمية المعتمدة سحابياً (مرة واحدة لمنع التكرار) ━━━
-  const handleUploadToCloud = async (forceReupload = false) => {
-    if (cloudPdfUrl && !forceReupload) {
+  // ━━━ رفع وتوثيق النسخة الرقمية المعتمدة سحابياً (Catbox.moe / Gofile.io) ━━━
+  const handleUploadToCloud = async (forceReupload = false, existingBlob?: Blob) => {
+    if (cloudPdfUrl && !cloudPdfUrl.includes("tmpfiles.org") && !forceReupload) {
       toast.info("تم رفع وتوثيق النسخة الرقمية سحابياً مسبقاً وهي نشطة بالفعل ✓");
       return;
     }
 
     setUploadingCloud(true);
     try {
-      toast.info("جاري تحويل المستند الأصلي ورفعه سحابياً...");
-      const pdfBlob = await generateClarificationPdfBlob();
-      const formData = new FormData();
-      formData.append(
-        "file",
+      let pdfBlob = existingBlob;
+      if (!pdfBlob) {
+        if (previewPdfBlob && currentSnapshot === lastGeneratedSnapshot) {
+          pdfBlob = previewPdfBlob;
+        } else {
+          pdfBlob = await generateClarificationPdfBlob();
+          setPreviewPdfBlob(pdfBlob);
+          setLastGeneratedSnapshot(currentSnapshot);
+        }
+      }
+
+      toast.info("جاري توثيق ورفع المستند سحابياً (Catbox/Gofile)...");
+      const res = await uploadPdfToFreeCloud(
         pdfBlob,
         `clarification_${registrationNumber || op.serialNumber || "doc"}.pdf`
       );
 
-      const res = await api.post("/operations/upload-cloud-pdf", formData, {
-        headers: { "Content-Type": "multipart/form-data" },
-      });
-
-      if (res.data?.url) {
-        setCloudPdfUrl(res.data.url);
-        toast.success("تم رفع وتوثيق خطاب التوضيح سحابياً بنجاح! الرابط جاهز ومتاح عالمياً لأي هاتف محمول مع خيار التحميل 🚀");
+      if (res?.url) {
+        setCloudPdfUrl(res.url);
+        toast.success("تم رفع وتوثيق خطاب التوضيح سحابياً بنجاح! الرابط جاهز ومتاح عالمياً لأي هاتف محمول 🚀");
 
         // حفظ الرابط السحابي في notes العملية تلقائياً
         try {
@@ -673,7 +679,7 @@ export function TabClarification({
           if (op.notes && op.notes.startsWith("{")) existingNotesObj = JSON.parse(op.notes);
           else if (op.notes) existingNotesObj = { textNotes: op.notes };
           if (!existingNotesObj.clarificationLetterDocx) existingNotesObj.clarificationLetterDocx = {};
-          existingNotesObj.clarificationLetterDocx.cloudPdfUrl = res.data.url;
+          existingNotesObj.clarificationLetterDocx.cloudPdfUrl = res.url;
           existingNotesObj.clarificationLetterDocx.uploadedAt = new Date().toISOString();
           await api.patch(`/operations/${op.id}`, { notes: JSON.stringify(existingNotesObj) });
         } catch (e) {
@@ -681,7 +687,9 @@ export function TabClarification({
         }
       }
     } catch (err: any) {
-      toast.error("فشل الرفع السحابي: " + (err?.response?.data?.message || err?.message || ""));
+      if (forceReupload) {
+        toast.error("فشل الرفع السحابي: " + (err?.response?.data?.message || err?.message || ""));
+      }
     } finally {
       setUploadingCloud(false);
     }
@@ -689,9 +697,24 @@ export function TabClarification({
 
   // ━━━ تنزيل مستند الوورد الأصلي المحدث ━━━
   const handleDownloadDocx = async () => {
+    // إذا كان مستند الوورد جاهزاً ومخزناً ولم يتغير أي حقل -> تنزيل فوري
+    if (previewDocxBlob && currentSnapshot === lastGeneratedSnapshot) {
+      const downloadUrl = URL.createObjectURL(previewDocxBlob);
+      const a = document.createElement("a");
+      a.href = downloadUrl;
+      a.download = `خطاب_توضيح_${op.externalNumber || op.serialNumber}_${registrationNumber}.docx`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(downloadUrl);
+      toast.success("تم تنزيل ملف الوورد فوراً! 📄✨");
+      return;
+    }
+
     setDownloadingDocx(true);
     try {
       const blob = await generateClarificationDocxBlob();
+      setPreviewDocxBlob(blob);
       const downloadUrl = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = downloadUrl;
@@ -712,10 +735,34 @@ export function TabClarification({
 
   // ━━━ تنزيل مستند PDF رسمي عالي الدقة مطابق للوورد 100% ━━━
   const handleDownloadPdf = async () => {
+    // إذا كان ملف الـ PDF قد تم توليده سابقاً بالمعاينة ولم تتغير أي خانة، يتم التحميل فورا 0ms!
+    if (previewPdfBlob && currentSnapshot === lastGeneratedSnapshot) {
+      const downloadUrl = URL.createObjectURL(previewPdfBlob);
+      const a = document.createElement("a");
+      a.href = downloadUrl;
+      a.download = `خطاب_توضيح_${op.externalNumber || op.serialNumber}_${registrationNumber}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(downloadUrl);
+      toast.success("تم تنزيل ملف الـ PDF الرسمي فوراً! 📑✨");
+
+      // التأكد من رفع النسخة السحابية لرمز QR إذا لم تكن مرفوعة
+      if (!cloudPdfUrl || cloudPdfUrl.includes("tmpfiles.org")) {
+        handleUploadToCloud(false, previewPdfBlob);
+      }
+      return;
+    }
+
     setDownloadingPdf(true);
     try {
-      toast.info("جاري تحويل وتجهيز مستند التوضيح بصيغة PDF الرسمية...");
-      const pdfBlob = await generateClarificationPdfBlob();
+      toast.info("جاري تحويل وتجهيز مستند التوضيح بصيغة PDF الرسمية عبر محرك Word...");
+      const docx = await generateClarificationDocxBlob();
+      const pdfBlob = await getPdfBlobFromDocx(docx, `clarification_${registrationNumber}.docx`);
+      setPreviewDocxBlob(docx);
+      setPreviewPdfBlob(pdfBlob);
+      setLastGeneratedSnapshot(currentSnapshot);
+
       const downloadUrl = URL.createObjectURL(pdfBlob);
       const a = document.createElement("a");
       a.href = downloadUrl;
@@ -726,6 +773,11 @@ export function TabClarification({
       URL.revokeObjectURL(downloadUrl);
 
       toast.success("تم تنزيل ملف الـ PDF الرسمي بنجاح! 📑✨");
+
+      // رفع المستند سحابياً لرمز QR فوراً (Catbox/Gofile)
+      if (!cloudPdfUrl || cloudPdfUrl.includes("tmpfiles.org")) {
+        handleUploadToCloud(false, pdfBlob);
+      }
     } catch (err: any) {
       console.error("PDF generation failed:", err);
       toast.error("فشل تحويل وتنزيل ملف PDF: " + (err?.message || ""));
@@ -734,19 +786,30 @@ export function TabClarification({
     }
   };
 
-  // ━━━ دالة تحميل المعاينة الرسمية الحية من محرك Word وعارض ONLYOFFICE Docs ━━━
+  // ━━━ دالة تحميل المعاينة الرسمية الحية من محرك Word الأصيل ━━━
   const loadOfficialPreview = async () => {
+    // إذا كان المستند مولداً ومطابقاً لآخر تعديل بدون أي تغيير في الخانات -> فتح فوري
+    if (previewPdfBlob && currentSnapshot === lastGeneratedSnapshot) {
+      return;
+    }
+
     setRenderingDocx(true);
     try {
       const docx = await generateClarificationDocxBlob();
       setPreviewDocxBlob(docx);
       const pdf = await getPdfBlobFromDocx(docx, `clarification_${registrationNumber}.docx`);
       setPreviewPdfBlob(pdf);
+      setLastGeneratedSnapshot(currentSnapshot);
       if (previewPdfUrl) {
         URL.revokeObjectURL(previewPdfUrl);
       }
       const url = URL.createObjectURL(pdf);
       setPreviewPdfUrl(url);
+
+      // رفع سحابي هادئ إذا لم يكن مرفوعاً
+      if (!cloudPdfUrl || cloudPdfUrl.includes("tmpfiles.org")) {
+        handleUploadToCloud(false, pdf);
+      }
     } catch (err: any) {
       console.error(err);
       toast.error("فشل تجهيز معاينة الوورد: " + (err?.response?.data?.message || err?.message || ""));
@@ -841,6 +904,33 @@ export function TabClarification({
   const handleConfirmReprint = async () => {
     setReprintWarningOpen(false);
     await executePrintDoc();
+  };
+
+  // ━━━ دالة عرض الملف المؤرشف فوراً (0ms) بدون إعادة تحويل ━━━
+  const handleViewArchive = () => {
+    // 1. إذا كان رابط السحابة متاحاً، افتح النسخة السحابية المعتمدة فوراً
+    if (cloudPdfUrl) {
+      window.open(cloudPdfUrl, "_blank");
+      return;
+    }
+    // 2. إذا كان ملف الـ PDF متوفراً في الذاكرة مسبقاً، افتح نافذة المعاينة فوراً
+    if (previewPdfBlob) {
+      setPreviewModalOpen(true);
+      return;
+    }
+    // 3. التحقق من وجود مستند مؤرشف في أرشيف العملية
+    const archivedDoc = op.documents?.find(
+      (d: any) =>
+        d.type?.toLowerCase().includes("clarification") ||
+        d.name?.toLowerCase().includes("clarification") ||
+        d.name?.includes("توضيح")
+    );
+    if (archivedDoc?.fileUrl) {
+      window.open(archivedDoc.fileUrl, "_blank");
+      return;
+    }
+    // 4. فتح المعاينة
+    setPreviewModalOpen(true);
   };
 
   // تحميل المعاينة الرسمية بمجرد فتح نافذة المعاينة
@@ -1115,120 +1205,6 @@ export function TabClarification({
                 placeholder="goldengolden8818@gmail.com"
                 className="h-9.5 text-xs font-mono rounded-xl"
               />
-            </div>
-          </div>
-
-          {/* الباركود الذكي ورمز QR المدمج والرفع السحابي المجاني للنسخة الرقمية */}
-          <div className="p-4 rounded-2xl bg-gradient-to-r from-amber-500/10 via-orange-500/10 to-transparent border border-amber-500/25 space-y-3">
-            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-center text-amber-600 dark:text-amber-400 shrink-0">
-                  <QrCode className="h-5 w-5" />
-                </div>
-                <div className="space-y-0.5">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="text-xs font-black text-foreground">
-                      الباركود الذكي ورمز QR الرقمي المعتمد (PDF)
-                    </span>
-                    <Badge className="bg-emerald-500/15 text-emerald-600 border-emerald-500/30 text-[10px] font-bold">
-                      مدمج بموضع كلمة (الباركود) بالأعلى ورقم القيد بالتذييل
-                    </Badge>
-                    {cloudPdfUrl && (
-                      <Badge className="bg-blue-500/15 text-blue-700 dark:text-blue-300 border-blue-500/30 text-[10px] font-bold flex items-center gap-1">
-                        <Cloud className="h-3 w-3" />
-                        <span>رابط سحابي دائم متاح لأي هاتف ✓</span>
-                      </Badge>
-                    )}
-                  </div>
-                  <p className="text-[11px] text-muted-foreground">
-                    عند مسح الباركود بكاميرا الموبايل يتم فتح النسخة الرقمية المعتمدة لخطاب التوضيح فوراً بدون الحاجة لأي تسجيل دخول.
-                  </p>
-                </div>
-              </div>
-
-              <div className="flex items-center gap-2 self-end sm:self-center flex-wrap justify-end">
-                {cloudPdfUrl ? (
-                  <>
-                    <Badge className="bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30 text-xs font-bold px-3 py-1.5 flex items-center gap-1.5">
-                      <CheckCircle2 className="h-4 w-4" />
-                      <span>تم الرفع والتوثيق السحابي مسبقاً ✓</span>
-                    </Badge>
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      onClick={() => handleUploadToCloud(true)}
-                      disabled={uploadingCloud}
-                      className="border-border text-foreground hover:bg-muted text-xs font-bold h-9 px-3 rounded-xl cursor-pointer flex items-center gap-1"
-                      title="تحديث وإعادة رفع النسخة السحابية لخطاب التوضيح"
-                    >
-                      <RefreshCw className={`h-3.5 w-3.5 ${uploadingCloud ? "animate-spin" : ""}`} />
-                      <span>إعادة الرفع والتحديث ↻</span>
-                    </Button>
-                  </>
-                ) : (
-                  <Button
-                    type="button"
-                    size="sm"
-                    onClick={() => handleUploadToCloud(false)}
-                    disabled={uploadingCloud}
-                    className="bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-700 hover:to-orange-700 text-white font-bold text-xs h-9 px-3.5 rounded-xl shadow-md cursor-pointer flex items-center gap-1.5"
-                  >
-                    <Cloud className={`h-4 w-4 ${uploadingCloud ? "animate-spin" : ""}`} />
-                    <span>{uploadingCloud ? "جاري الرفع السحابي..." : "رفع وتوثيق النسخة الرقمية سحابياً لرمز QR ☁️"}</span>
-                  </Button>
-                )}
-              </div>
-            </div>
-
-            {/* تفاصيل الرابط السحابي والمعاينة المباشرة */}
-            <div className="pt-2 border-t border-amber-500/20 flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3 text-xs">
-              <div className="flex items-center gap-2 flex-1 overflow-hidden">
-                <span className="text-muted-foreground shrink-0 font-medium text-[11px]">الرابط المشفر في الرمز:</span>
-                {cloudPdfUrl ? (
-                  <div className="flex items-center gap-2 overflow-hidden flex-1">
-                    <span className="font-mono text-xs text-blue-600 dark:text-blue-400 truncate bg-white/60 dark:bg-slate-900/60 px-2 py-1 rounded-lg border border-border">
-                      {cloudPdfUrl}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        navigator.clipboard.writeText(cloudPdfUrl);
-                        toast.success("تم نسخ الرابط السحابي المباشر بنجاح! 📋");
-                      }}
-                      className="text-muted-foreground hover:text-foreground text-xs p-1 cursor-pointer"
-                      title="نسخ الرابط"
-                    >
-                      <Copy className="h-3.5 w-3.5" />
-                    </button>
-                    <a
-                      href={cloudPdfUrl}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="text-blue-600 hover:underline flex items-center gap-1 font-bold text-[11px] shrink-0"
-                    >
-                      <ExternalLink className="h-3 w-3" />
-                      <span>فتح النسخة السحابية المباشرة</span>
-                    </a>
-                  </div>
-                ) : (
-                  <span className="text-[11px] text-amber-700 dark:text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded-md">
-                    الرمز الحالي مرتبط بمنظومة التحقق المحلية. اضغط على زر الرفع السحابي أعلاه للحصول على رابط مباشر دائم لأي هاتف محمول مجاناً.
-                  </span>
-                )}
-              </div>
-
-              <div className="flex items-center gap-2 justify-end">
-                <a
-                  href={`/verify-doc?ref=${encodeURIComponent(registrationNumber)}&opId=${op.id}&type=clarification${cloudPdfUrl ? `&pdfUrl=${encodeURIComponent(cloudPdfUrl)}` : ""}`}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="text-[11px] font-bold text-amber-700 dark:text-amber-300 hover:underline flex items-center gap-1 bg-amber-50 dark:bg-amber-950/40 px-2.5 py-1.5 rounded-lg border border-amber-200 dark:border-amber-800"
-                >
-                  <span>تجربة الفحص الرقمي</span>
-                  <ArrowRight className="h-3 w-3 rtl:rotate-180" />
-                </a>
-              </div>
             </div>
           </div>
         </div>
@@ -1703,17 +1679,16 @@ export function TabClarification({
                         معاينة قالب الوورد المعتمد: خطاب توضيح.docx
                       </h3>
                       <Badge className="bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/30 text-[10px] font-bold">
-                        Word COM + ONLYOFFICE Docs ✓
+                        معاينة Word COM الرسمية 100% ✓
                       </Badge>
                     </div>
                     <p className="text-xs text-muted-foreground">
-                      معاينة حية ومطابقة 100% لقالب الوورد الأصلي مع دعم فتح المستند مباشرة في Word أو عارض ONLYOFFICE
+                      معاينة حية ومطابقة 100% لقالب الوورد الأصلي مع دعم التحميل بصيغة Word أو PDF والطباعة المباشرة
                     </p>
                   </div>
                 </div>
 
                 <div className="flex items-center gap-2 flex-wrap">
-                  <FreeConvertersQuickLinks />
                   <Button
                     size="icon"
                     variant="ghost"
@@ -1753,6 +1728,20 @@ export function TabClarification({
         </Portal>
       )}
 
+      {/* ━━━ الباركود الذكي ورمز QR والرفع السحابي المجاني للنسخة الرقمية بأسفل الصفحة ━━━ */}
+      <LetterQrCloudCard
+        cloudPdfUrl={cloudPdfUrl}
+        registrationNumber={registrationNumber}
+        opId={op.id}
+        docType="clarification"
+        uploadingCloud={uploadingCloud}
+        onUploadToCloud={handleUploadToCloud}
+        title="الباركود الذكي ورمز QR الرقمي المعتمد (PDF)"
+        subtitle="عند مسح الباركود بكاميرا الموبايل يتم فتح النسخة الرقمية المعتمدة لخطاب التوضيح فوراً بدون الحاجة لأي تسجيل دخول."
+        badgeText="مدمج بموضع كلمة (الباركود) بالأعلى ورقم القيد بالتذييل"
+        gradientClass="from-amber-500/10 via-orange-500/10 to-transparent border-amber-500/25"
+      />
+
       {/* ━━━ BOTTOM ACTION BAR: التوليد والطباعة والمعاينة بأسفل مرحلة خطاب التوضيح ━━━ */}
       <LetterBottomActionWidget
         title="خطاب التوضيح والاستفسارات الفنية والقانونية الرسمية"
@@ -1763,7 +1752,7 @@ export function TabClarification({
         onSave={handleSaveToSystem}
         onCancelEdits={handleCancelEdits}
         saving={savingLetter}
-        onViewArchive={() => setPreviewModalOpen(true)}
+        onViewArchive={handleViewArchive}
         customSubtitle="مطابق 100% لقالب الوورد المعتمد للشركة. اضغط على زر المعاينة للاطلاع على المستند وتنزيله أو طباعته."
       />
 
@@ -1775,9 +1764,12 @@ export function TabClarification({
         onConfirmReprint={handleConfirmReprint}
         onViewArchive={() => {
           setReprintWarningOpen(false);
-          setPreviewModalOpen(true);
+          handleViewArchive();
         }}
       />
+
+      {/* ━━━ نافذة التحميل العائمة المبتكرة عند تنزيل PDF ━━━ */}
+      <PdfExportLoadingModal open={downloadingPdf} />
 
       {/* ━━━ STEP FOOTER NAVIGATION ━━━ */}
       <StepFooterNav

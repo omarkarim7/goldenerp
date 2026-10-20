@@ -1,6 +1,6 @@
 "use client";
 
-import React, { Suspense } from "react";
+import React, { Suspense, useEffect } from "react";
 import { useSearchParams } from "next/navigation";
 import { ShieldCheck, CheckCircle2, FileText, Download, Building2, Calendar, Hash, ArrowLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -12,6 +12,15 @@ function VerifyDocContent() {
   const opId = searchParams.get("opId") || "";
   const pdfUrl = searchParams.get("pdfUrl") || "";
   const docType = searchParams.get("type") === "technical" ? "العرض الفني والمواصفات" : "خطاب التوضيح والاستفسار";
+
+  // تحويل فوري ومباشر إلى الرابط السحابي المعتمد لملف الـ PDF بدون أي شاشات وسيطة
+  useEffect(() => {
+    if (pdfUrl) {
+      window.location.replace(pdfUrl);
+    } else if (opId) {
+      window.location.replace(`/dashboard/operations/${opId}`);
+    }
+  }, [pdfUrl, opId]);
 
   const currentDate = new Date().toLocaleDateString("ar-EG", {
     year: "numeric",

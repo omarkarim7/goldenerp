@@ -203,40 +203,222 @@ export async function cleanAllDocxXml(zip: any): Promise<void> {
   }
 }
 
-import { Eye, Printer, Download, FileText, Check, AlertCircle, Save, RotateCcw, Lock, Archive, Clock, User, HelpCircle, FileCheck, X, AlertTriangle, ExternalLink } from "lucide-react";
+import {
+  Eye,
+  Printer,
+  Download,
+  FileText,
+  Check,
+  AlertCircle,
+  Save,
+  RotateCcw,
+  Lock,
+  Archive,
+  Clock,
+  User,
+  HelpCircle,
+  FileCheck,
+  X,
+  AlertTriangle,
+  ExternalLink,
+  QrCode,
+  Cloud,
+  CheckCircle2,
+  RefreshCw,
+  Copy,
+  ArrowRight,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Portal } from "@/components/ui/portal";
+import { toast } from "sonner";
 
 export function FreeConvertersQuickLinks({ className = "" }: { className?: string }) {
+  return null;
+}
+
+export interface LetterQrCloudCardProps {
+  cloudPdfUrl: string;
+  registrationNumber: string;
+  opId: string;
+  docType: string;
+  uploadingCloud: boolean;
+  onUploadToCloud: (force?: boolean) => void;
+  title?: string;
+  subtitle?: string;
+  badgeText?: string;
+  gradientClass?: string;
+}
+
+/**
+ * بطاقة الباركود الذكي ورمز QR والرفع السحابي المجاني (Catbox.moe / Gofile.io)
+ * موضوعة دائماً بأسفل الصفحة بجوار شريط الإجراءات والانتقال لعدم إعاقة ملء الخانات
+ */
+export function LetterQrCloudCard({
+  cloudPdfUrl,
+  registrationNumber,
+  opId,
+  docType,
+  uploadingCloud,
+  onUploadToCloud,
+  title = "الباركود الذكي ورمز QR الرقمي المعتمد (PDF)",
+  subtitle = "عند مسح الباركود بكاميرا الموبايل يتم فتح النسخة الرقمية المعتمدة فوراً بدون الحاجة لأي تسجيل دخول.",
+  badgeText = "مدمج بموضع كلمة (الباركود) بالأعلى ورقم القيد بالتذييل",
+  gradientClass = "from-amber-500/10 via-orange-500/10 to-transparent border-amber-500/25",
+}: LetterQrCloudCardProps) {
+  // تصفية وحجب أي روابط سابقة لموقع tmpfiles لأن المستخدم طلب الاعتماد حصرياً على Catbox و Gofile
+  const isTmpFiles = cloudPdfUrl && cloudPdfUrl.includes("tmpfiles.org");
+  const effectiveCloudUrl = isTmpFiles ? "" : cloudPdfUrl;
+
   return (
-    <div className={`flex items-center gap-2 flex-wrap ${className}`}>
-      <span className="text-[11px] font-bold text-muted-foreground hidden sm:inline">
-        محولات مجانية:
-      </span>
-      <a
-        href="https://www.adobe.com/acrobat/online/word-to-pdf.html"
-        target="_blank"
-        rel="noopener noreferrer"
-        className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-700 dark:text-rose-300 border border-rose-500/25 text-[11px] font-bold transition-all shadow-2xs"
-        title="تحويل وورد إلى PDF مجاناً عبر Adobe Acrobat Online"
-      >
-        <ExternalLink className="h-3 w-3" />
-        <span>Adobe Acrobat</span>
-      </a>
-      <a
-        href="https://www.ilovepdf.com/word_to_pdf"
-        target="_blank"
-        rel="noopener noreferrer"
-        className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-red-500/10 hover:bg-red-500/20 text-red-700 dark:text-red-300 border border-red-500/25 text-[11px] font-bold transition-all shadow-2xs"
-        title="تحويل وورد إلى PDF مجاناً عبر iLovePDF"
-      >
-        <ExternalLink className="h-3 w-3" />
-        <span>iLovePDF</span>
-      </a>
+    <div className={`p-4 rounded-2xl bg-gradient-to-r ${gradientClass} border space-y-3 my-4 shadow-sm transition-all`}>
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-center text-amber-600 dark:text-amber-400 shrink-0">
+            <QrCode className="h-5 w-5" />
+          </div>
+          <div className="space-y-0.5">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-xs font-black text-foreground">
+                {title}
+              </span>
+              <Badge className="bg-emerald-500/15 text-emerald-600 border-emerald-500/30 text-[10px] font-bold">
+                {badgeText}
+              </Badge>
+              {effectiveCloudUrl && (
+                <Badge className="bg-blue-500/15 text-blue-700 dark:text-blue-300 border-blue-500/30 text-[10px] font-bold flex items-center gap-1">
+                  <Cloud className="h-3 w-3" />
+                  <span>رابط سحابي دائم متاح لأي هاتف ✓ (Catbox/Gofile)</span>
+                </Badge>
+              )}
+            </div>
+            <p className="text-[11px] text-muted-foreground">
+              {subtitle}
+            </p>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2 self-end sm:self-center flex-wrap justify-end">
+          {effectiveCloudUrl ? (
+            <>
+              <Badge className="bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30 text-xs font-bold px-3 py-1.5 flex items-center gap-1.5">
+                <CheckCircle2 className="h-4 w-4" />
+                <span>تم الرفع والتوثيق السحابي مسبقاً ✓</span>
+              </Badge>
+              <a
+                href={effectiveCloudUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center gap-1.5 text-xs font-bold text-blue-600 dark:text-blue-400 hover:underline px-3 py-1.5 rounded-xl bg-card border border-border"
+              >
+                <ExternalLink className="h-3.5 w-3.5" />
+                <span>فتح ملف PDF السحابي</span>
+              </a>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={() => {
+                  navigator.clipboard.writeText(effectiveCloudUrl);
+                  toast.success("تم نسخ الرابط السحابي المباشر بنجاح! 📋");
+                }}
+                className="border-border text-foreground hover:bg-muted text-xs font-bold h-9 px-3 rounded-xl cursor-pointer flex items-center gap-1"
+                title="نسخ الرابط"
+              >
+                <Copy className="h-3.5 w-3.5" />
+                <span>نسخ الرابط</span>
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={() => onUploadToCloud(true)}
+                disabled={uploadingCloud}
+                className="border-border text-foreground hover:bg-muted text-xs font-bold h-9 px-3 rounded-xl cursor-pointer flex items-center gap-1"
+                title="تحديث وإعادة رفع النسخة السحابية على Catbox / Gofile"
+              >
+                <RefreshCw className={`h-3.5 w-3.5 ${uploadingCloud ? "animate-spin" : ""}`} />
+                <span>إعادة الرفع والتحديث ↻</span>
+              </Button>
+            </>
+          ) : (
+            <Button
+              type="button"
+              size="sm"
+              onClick={() => onUploadToCloud(false)}
+              disabled={uploadingCloud}
+              className="bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-700 hover:to-orange-700 text-white font-bold text-xs h-9 px-3.5 rounded-xl shadow-md cursor-pointer flex items-center gap-1.5"
+            >
+              <Cloud className={`h-4 w-4 ${uploadingCloud ? "animate-spin" : ""}`} />
+              <span>{uploadingCloud ? "جاري الرفع السحابي (Catbox/Gofile)..." : "رفع وتوثيق النسخة الرقمية سحابياً لرمز QR ☁️"}</span>
+            </Button>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
+
+/**
+ * نافذة التحميل العائمة المبتكرة عند تصدير / تحميل ملف PDF
+ */
+export function PdfExportLoadingModal({
+  open,
+  title = "جاري تصدير وتحميل مستند PDF الرسمي...",
+  subtitle = "يتم تطبيق محرك Word COM والباركود الرقمي والتنسيقات المعتمدة بدقة 100%",
+}: {
+  open: boolean;
+  title?: string;
+  subtitle?: string;
+}) {
+  if (!open) return null;
+
+  return (
+    <Portal>
+      <div className="fixed inset-0 z-[999999] bg-black/80 backdrop-blur-md flex items-center justify-center p-4 animate-fade-in select-none">
+        <div className="relative max-w-md w-full bg-slate-950/95 border border-amber-500/40 rounded-3xl p-6 sm:p-8 shadow-2xl flex flex-col items-center text-center space-y-5 overflow-hidden">
+          {/* Animated decorative glow */}
+          <div className="absolute -top-24 -left-24 w-48 h-48 bg-amber-500/20 rounded-full blur-3xl pointer-events-none" />
+          <div className="absolute -bottom-24 -right-24 w-48 h-48 bg-rose-500/20 rounded-full blur-3xl pointer-events-none" />
+
+          {/* Icon with glowing pulsing ring */}
+          <div className="relative">
+            <div className="w-20 h-20 rounded-3xl bg-gradient-to-tr from-amber-500/25 to-rose-500/25 border-2 border-amber-500/50 flex items-center justify-center shadow-lg animate-pulse">
+              <FileText className="w-10 h-10 text-amber-400" />
+            </div>
+            <div className="absolute -bottom-1 -right-1 w-7 h-7 rounded-full bg-rose-600 text-white flex items-center justify-center shadow-md">
+              <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+            </div>
+          </div>
+
+          {/* Texts */}
+          <div className="space-y-1.5">
+            <h3 className="text-base sm:text-lg font-black text-white leading-tight">
+              {title}
+            </h3>
+            <p className="text-xs text-slate-300 leading-relaxed max-w-xs">
+              {subtitle}
+            </p>
+          </div>
+
+          {/* Progress Indication */}
+          <div className="w-full space-y-2">
+            <div className="w-full h-2 bg-slate-800 rounded-full overflow-hidden p-0.5 border border-slate-700/60">
+              <div className="h-full bg-gradient-to-r from-amber-500 via-rose-500 to-amber-400 rounded-full animate-pulse" style={{ width: "85%" }} />
+            </div>
+            <div className="flex items-center justify-between text-[11px] font-mono text-slate-400 px-1">
+              <span className="flex items-center gap-1 text-emerald-400">
+                <Check className="w-3 h-3" /> جاري التجهيز الفوري
+              </span>
+              <span>100% Word COM Fidelity</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </Portal>
+  );
+}
+
 
 
 export interface PrintHistoryEntry {

@@ -28,11 +28,12 @@ import {
   getCurrentUserName,
   PrintHistoryEntry,
   FISCAL_YEAR_OPTIONS,
-  FreeConvertersQuickLinks,
+  LetterQrCloudCard,
+  PdfExportLoadingModal,
 } from "./letter-utils";
 import JSZip from "jszip";
 import QRCode from "qrcode";
-import { getPdfBlobFromDocx } from "./client-pdf";
+import { getPdfBlobFromDocx, uploadPdfToFreeCloud } from "./client-pdf";
 import { OnlyOfficeDocViewer } from "@/components/OnlyOfficeDocViewer";
 
 export type DeclarationType = "specs" | "insurance" | "general_letter";
@@ -182,11 +183,21 @@ export function TabDeclarations({
     return savedDec?.additionalNotes || "";
   });
 
-  // ━━━ 4. الروابط السحابية لرمز QR ━━━
-  const [cloudPdfUrlSpecs, setCloudPdfUrlSpecs] = useState<string>(() => savedDec?.cloudPdfUrlSpecs || "");
-  const [cloudPdfUrlInsurance, setCloudPdfUrlInsurance] = useState<string>(() => savedDec?.cloudPdfUrlInsurance || "");
-  const [cloudPdfUrlGeneral, setCloudPdfUrlGeneral] = useState<string>(() => savedDec?.cloudPdfUrlGeneral || "");
+  // ━━━ 4. الروابط السحابية لرمز QR (Catbox.moe / Gofile.io) ━━━
+  const [cloudPdfUrlSpecs, setCloudPdfUrlSpecs] = useState<string>(() => {
+    const u = savedDec?.cloudPdfUrlSpecs || "";
+    return u.includes("tmpfiles.org") ? "" : u;
+  });
+  const [cloudPdfUrlInsurance, setCloudPdfUrlInsurance] = useState<string>(() => {
+    const u = savedDec?.cloudPdfUrlInsurance || "";
+    return u.includes("tmpfiles.org") ? "" : u;
+  });
+  const [cloudPdfUrlGeneral, setCloudPdfUrlGeneral] = useState<string>(() => {
+    const u = savedDec?.cloudPdfUrlGeneral || "";
+    return u.includes("tmpfiles.org") ? "" : u;
+  });
   const [uploadingCloud, setUploadingCloud] = useState(false);
+  const [lastGeneratedSnapshot, setLastGeneratedSnapshot] = useState<string | null>(null);
 
   // ━━━ 5. بيانات الخطاب العام ━━━
   const [generalSubject, setGeneralSubject] = useState(() => {
@@ -342,9 +353,7 @@ export function TabDeclarations({
           : type === "insurance"
           ? cloudPdfUrlInsurance
           : cloudPdfUrlGeneral;
-      const targetVerifyUrl =
-        activeCloud ||
-        `${typeof window !== "undefined" ? window.location.origin : ""}/verify-doc?ref=${encodeURIComponent(registrationNumber)}&opId=${op.id}&type=declaration_${type}`;
+      const targetVerifyUrl = activeCloud || registrationNumber;
       const qrDataUrl = await QRCode.toDataURL(targetVerifyUrl, { width: 160, margin: 1 });
       const qrBase64 = qrDataUrl.split(",")[1];
       const qrBinary = Uint8Array.from(atob(qrBase64), (c) => c.charCodeAt(0));
@@ -478,41 +487,45 @@ export function TabDeclarations({
     return pdf;
   };
 
-  // ━━━ رفع وتوثيق النسخة الرقمية المعتمدة سحابياً (مرة واحدة لمنع التكرار) ━━━
-  const handleUploadToCloud = async (type: DeclarationType = activeDeclType, forceReupload = false) => {
+  // ━━━ رفع وتوثيق النسخة الرقمية المعتمدة سحابياً (Catbox.moe / Gofile.io) ━━━
+  const handleUploadToCloud = async (type: DeclarationType = activeDeclType, forceReupload = false, existingBlob?: Blob) => {
     const existingUrl =
       type === "specs"
         ? cloudPdfUrlSpecs
         : type === "insurance"
         ? cloudPdfUrlInsurance
         : cloudPdfUrlGeneral;
-    if (existingUrl && !forceReupload) {
+    if (existingUrl && !existingUrl.includes("tmpfiles.org") && !forceReupload) {
       toast.info("تم رفع وتوثيق هذا المستند سحابياً مسبقاً وهو نشط بالفعل ✓");
       return;
     }
 
     setUploadingCloud(true);
     try {
-      toast.info("جاري تحويل المستند ورفعه سحابياً...");
-      const pdfBlob = await generateDeclarationPdfBlob(type);
-      const formData = new FormData();
-      formData.append(
-        "file",
+      let pdfBlob = existingBlob;
+      if (!pdfBlob) {
+        if (previewPdfBlob && currentSnapshot === lastGeneratedSnapshot) {
+          pdfBlob = previewPdfBlob;
+        } else {
+          pdfBlob = await generateDeclarationPdfBlob(type);
+          setPreviewPdfBlob(pdfBlob);
+          setLastGeneratedSnapshot(currentSnapshot);
+        }
+      }
+
+      toast.info("جاري توثيق ورفع المستند سحابياً (Catbox/Gofile)...");
+      const res = await uploadPdfToFreeCloud(
         pdfBlob,
         `declaration_${type}_${registrationNumber || op.serialNumber}.pdf`
       );
 
-      const res = await api.post("/operations/upload-cloud-pdf", formData, {
-        headers: { "Content-Type": "multipart/form-data" },
-      });
-
-      if (res.data?.url) {
+      if (res?.url) {
         if (type === "specs") {
-          setCloudPdfUrlSpecs(res.data.url);
+          setCloudPdfUrlSpecs(res.url);
         } else if (type === "insurance") {
-          setCloudPdfUrlInsurance(res.data.url);
+          setCloudPdfUrlInsurance(res.url);
         } else {
-          setCloudPdfUrlGeneral(res.data.url);
+          setCloudPdfUrlGeneral(res.url);
         }
         toast.success("تم رفع النسخة الرقمية للسحابة بنجاح! الرابط جاهز ومتاح عالمياً لأي هاتف محمول 🚀");
 
@@ -523,11 +536,11 @@ export function TabDeclarations({
           else if (op.notes) existingNotesObj = { textNotes: op.notes };
           if (!existingNotesObj.declarationsDocx) existingNotesObj.declarationsDocx = {};
           if (type === "specs") {
-            existingNotesObj.declarationsDocx.cloudPdfUrlSpecs = res.data.url;
+            existingNotesObj.declarationsDocx.cloudPdfUrlSpecs = res.url;
           } else if (type === "insurance") {
-            existingNotesObj.declarationsDocx.cloudPdfUrlInsurance = res.data.url;
+            existingNotesObj.declarationsDocx.cloudPdfUrlInsurance = res.url;
           } else {
-            existingNotesObj.declarationsDocx.cloudPdfUrlGeneral = res.data.url;
+            existingNotesObj.declarationsDocx.cloudPdfUrlGeneral = res.url;
           }
           await api.patch(`/operations/${op.id}`, { notes: JSON.stringify(existingNotesObj) });
         } catch (e) {
@@ -535,27 +548,36 @@ export function TabDeclarations({
         }
       }
     } catch (err: any) {
-      toast.error("فشل الرفع السحابي: " + (err?.response?.data?.message || err?.message || ""));
+      if (forceReupload) {
+        toast.error("فشل الرفع السحابي: " + (err?.response?.data?.message || err?.message || ""));
+      }
     } finally {
       setUploadingCloud(false);
     }
   };
 
-  // تحميل المعاينة الرسمية من محرك Word
+  // تحميل المعاينة الرسمية من محرك Word الأصيل
   const loadOfficialPreview = async () => {
+    if (previewPdfBlob && currentSnapshot === lastGeneratedSnapshot) {
+      return;
+    }
+
     setRenderingDocx(true);
     try {
       if (previewPdfUrl) {
         URL.revokeObjectURL(previewPdfUrl);
         setPreviewPdfUrl(null);
       }
-      const pdfBlob = await generateDeclarationPdfBlob(activeDeclType);
+      const docx = await generateDeclarationDocxBlob(activeDeclType);
+      setPreviewDocxBlob(docx);
+      const pdfBlob = await getPdfBlobFromDocx(docx, `declaration_${activeDeclType}_${registrationNumber}.docx`);
+      setPreviewPdfBlob(pdfBlob);
+      setLastGeneratedSnapshot(currentSnapshot);
       const url = URL.createObjectURL(pdfBlob);
       setPreviewPdfUrl(url);
 
-      // رفع تلقائي هادئ للسحابة إذا لم يكن مرفوعاً بعد
-      if (!currentCloudUrl) {
-        uploadPdfToCloudSilently(pdfBlob, activeDeclType);
+      if (!currentCloudUrl || currentCloudUrl.includes("tmpfiles.org")) {
+        handleUploadToCloud(activeDeclType, false, pdfBlob);
       }
     } catch (err: any) {
       console.error("فشل تجهيز المعاينة:", err);
@@ -563,21 +585,6 @@ export function TabDeclarations({
     } finally {
       setRenderingDocx(false);
     }
-  };
-
-  const uploadPdfToCloudSilently = async (pdfBlob: Blob, type: DeclarationType) => {
-    try {
-      const formData = new FormData();
-      formData.append("file", pdfBlob, `declaration_${type}_${registrationNumber || op.serialNumber}.pdf`);
-      const res = await api.post("/operations/upload-cloud-pdf", formData, {
-        headers: { "Content-Type": "multipart/form-data" },
-      });
-      if (res.data?.url) {
-        if (type === "specs") setCloudPdfUrlSpecs(res.data.url);
-        else if (type === "insurance") setCloudPdfUrlInsurance(res.data.url);
-        else setCloudPdfUrlGeneral(res.data.url);
-      }
-    } catch {}
   };
 
   // ━━━ سجل الطباعة وتنبيه إعادة الطباعة ━━━
@@ -674,20 +681,62 @@ export function TabDeclarations({
     await executePrintDoc();
   };
 
+  // ━━━ دالة عرض الملف المؤرشف فوراً (0ms) بدون إعادة تحويل ━━━
+  const handleViewArchive = () => {
+    // 1. إذا كان رابط السحابة متاحاً، افتح النسخة السحابية المعتمدة فوراً
+    if (currentCloudUrl) {
+      window.open(currentCloudUrl, "_blank");
+      return;
+    }
+    // 2. إذا كان ملف الـ PDF متوفراً في الذاكرة مسبقاً، افتح نافذة المعاينة فوراً
+    if (previewPdfBlob) {
+      setPreviewModalOpen(true);
+      return;
+    }
+    // 3. التحقق من وجود مستند مؤرشف في أرشيف العملية
+    const archivedDoc = op.documents?.find(
+      (d: any) =>
+        d.type?.toLowerCase().includes("declaration") ||
+        d.name?.toLowerCase().includes("declaration") ||
+        d.name?.includes("إقرار")
+    );
+    if (archivedDoc?.fileUrl) {
+      window.open(archivedDoc.fileUrl, "_blank");
+      return;
+    }
+    // 4. فتح المعاينة
+    setPreviewModalOpen(true);
+  };
+
   // تنزيل ملف Word (.docx)
   const handleDownloadDocx = async (type: DeclarationType = activeDeclType) => {
+    const declName =
+      type === "specs"
+        ? "إقرار_الالتزام_بكراسة_الشروط"
+        : type === "insurance"
+        ? "إقرار_التأمينات_والعمالة"
+        : "خطاب_عام_رسمي";
+
+    if (previewDocxBlob && currentSnapshot === lastGeneratedSnapshot && type === activeDeclType) {
+      const url = URL.createObjectURL(previewDocxBlob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${declName}_${op.serialNumber || "365"}_${registrationNumber}.docx`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      toast.success("تم تنزيل ملف الوورد فوراً! 📄✨");
+      return;
+    }
+
     setDownloadingDocx(true);
     try {
       const blob = await generateDeclarationDocxBlob(type);
+      setPreviewDocxBlob(blob);
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      const declName =
-        type === "specs"
-          ? "إقرار_الالتزام_بكراسة_الشروط"
-          : type === "insurance"
-          ? "إقرار_التأمينات_والعمالة"
-          : "خطاب_عام_رسمي";
       a.download = `${declName}_${op.serialNumber || "365"}_${registrationNumber}.docx`;
       document.body.appendChild(a);
       a.click();
@@ -703,25 +752,52 @@ export function TabDeclarations({
 
   // تنزيل ملف PDF
   const handleDownloadPdf = async (type: DeclarationType = activeDeclType) => {
-    setDownloadingPdf(true);
-    try {
-      toast.info("جاري تصدير المستند بصيغة PDF...");
-      const pdfBlob = await generateDeclarationPdfBlob(type);
-      const url = URL.createObjectURL(pdfBlob);
+    const declName =
+      type === "specs"
+        ? "إقرار_الالتزام_بكراسة_الشروط"
+        : type === "insurance"
+        ? "إقرار_التأمينات_والعمالة"
+        : "خطاب_عام_رسمي";
+
+    if (previewPdfBlob && currentSnapshot === lastGeneratedSnapshot && type === activeDeclType) {
+      const url = URL.createObjectURL(previewPdfBlob);
       const a = document.createElement("a");
       a.href = url;
-      const declName =
-        type === "specs"
-          ? "إقرار_الالتزام_بكراسة_الشروط"
-          : type === "insurance"
-          ? "إقرار_التأمينات_والعمالة"
-          : "خطاب_عام_رسمي";
       a.download = `${declName}_${op.serialNumber || "365"}_${registrationNumber}.pdf`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
-      toast.success("تم تحميل مستند PDF بنجاح!");
+      toast.success("تم تحميل مستند PDF فوراً! 📑✨");
+
+      if (!currentCloudUrl || currentCloudUrl.includes("tmpfiles.org")) {
+        handleUploadToCloud(type, false, previewPdfBlob);
+      }
+      return;
+    }
+
+    setDownloadingPdf(true);
+    try {
+      toast.info("جاري تصدير المستند بصيغة PDF الرسمية عبر محرك Word...");
+      const docx = await generateDeclarationDocxBlob(type);
+      const pdfBlob = await getPdfBlobFromDocx(docx, `declaration_${type}_${registrationNumber}.docx`);
+      setPreviewDocxBlob(docx);
+      setPreviewPdfBlob(pdfBlob);
+      setLastGeneratedSnapshot(currentSnapshot);
+
+      const url = URL.createObjectURL(pdfBlob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${declName}_${op.serialNumber || "365"}_${registrationNumber}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      toast.success("تم تحميل مستند PDF بنجاح! 📑✨");
+
+      if (!currentCloudUrl || currentCloudUrl.includes("tmpfiles.org")) {
+        handleUploadToCloud(type, false, pdfBlob);
+      }
     } catch (err: any) {
       toast.error("فشل تصدير ملف PDF: " + (err?.message || ""));
     } finally {
@@ -949,120 +1025,6 @@ export function TabDeclarations({
                 onChange={(e) => setRegistrationNumber(e.target.value)}
                 className="h-9.5 text-xs font-mono font-bold rounded-xl"
               />
-            </div>
-          </div>
-
-          {/* الباركود الذكي ورمز QR المدمج والرفع السحابي المجاني للنسخة الرقمية */}
-          <div className="p-4 rounded-2xl bg-gradient-to-r from-emerald-500/10 via-teal-500/10 to-transparent border border-emerald-500/25 space-y-3">
-            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center text-emerald-600 dark:text-emerald-400 shrink-0">
-                  <QrCode className="h-5 w-5" />
-                </div>
-                <div className="space-y-0.5">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="text-xs font-black text-foreground">
-                      الباركود الذكي ورمز QR الرقمي المعتمد (PDF)
-                    </span>
-                    <Badge className="bg-emerald-500/15 text-emerald-600 border-emerald-500/30 text-[10px] font-bold">
-                      مدمج بموضع كلمة (الباركود) بالأعلى ورقم القيد بالتذييل
-                    </Badge>
-                    {currentCloudUrl && (
-                      <Badge className="bg-blue-500/15 text-blue-700 dark:text-blue-300 border-blue-500/30 text-[10px] font-bold flex items-center gap-1">
-                        <Cloud className="h-3 w-3" />
-                        <span>رابط سحابي دائم متاح لأي هاتف ✓</span>
-                      </Badge>
-                    )}
-                  </div>
-                  <p className="text-[11px] text-muted-foreground">
-                    عند مسح الباركود بكاميرا الموبايل يتم فتح النسخة الرقمية المعتمدة للإقرار فوراً بدون الحاجة لأي تسجيل دخول.
-                  </p>
-                </div>
-              </div>
-
-              <div className="flex items-center gap-2 self-end sm:self-center flex-wrap justify-end">
-                {currentCloudUrl ? (
-                  <>
-                    <Badge className="bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30 text-xs font-bold px-3 py-1.5 flex items-center gap-1.5">
-                      <CheckCircle2 className="h-4 w-4" />
-                      <span>تم الرفع والتوثيق السحابي مسبقاً ✓</span>
-                    </Badge>
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      onClick={() => handleUploadToCloud(activeDeclType, true)}
-                      disabled={uploadingCloud}
-                      className="border-border text-foreground hover:bg-muted text-xs font-bold h-9 px-3 rounded-xl cursor-pointer flex items-center gap-1"
-                      title="تحديث وإعادة رفع النسخة السحابية لهذا الإقرار"
-                    >
-                      <RefreshCw className={`h-3.5 w-3.5 ${uploadingCloud ? "animate-spin" : ""}`} />
-                      <span>إعادة الرفع والتحديث ↻</span>
-                    </Button>
-                  </>
-                ) : (
-                  <Button
-                    type="button"
-                    size="sm"
-                    onClick={() => handleUploadToCloud(activeDeclType, false)}
-                    disabled={uploadingCloud}
-                    className="bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-bold text-xs h-9 px-3.5 rounded-xl shadow-md cursor-pointer flex items-center gap-1.5"
-                  >
-                    <Cloud className={`h-4 w-4 ${uploadingCloud ? "animate-spin" : ""}`} />
-                    <span>{uploadingCloud ? "جاري الرفع السحابي..." : "رفع وتوثيق النسخة الرقمية سحابياً لرمز QR ☁️"}</span>
-                  </Button>
-                )}
-              </div>
-            </div>
-
-            {/* تفاصيل الرابط السحابي والمعاينة المباشرة */}
-            <div className="pt-2 border-t border-emerald-500/20 flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3 text-xs">
-              <div className="flex items-center gap-2 flex-1 overflow-hidden">
-                <span className="text-muted-foreground shrink-0 font-medium text-[11px]">الرابط المشفر في الرمز:</span>
-                {currentCloudUrl ? (
-                  <div className="flex items-center gap-2 overflow-hidden flex-1">
-                    <span className="font-mono text-xs text-blue-600 dark:text-blue-400 truncate bg-white/60 dark:bg-slate-900/60 px-2 py-1 rounded-lg border border-border">
-                      {currentCloudUrl}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        navigator.clipboard.writeText(currentCloudUrl);
-                        toast.success("تم نسخ الرابط السحابي المباشر بنجاح! 📋");
-                      }}
-                      className="text-muted-foreground hover:text-foreground text-xs p-1 cursor-pointer"
-                      title="نسخ الرابط"
-                    >
-                      <Copy className="h-3.5 w-3.5" />
-                    </button>
-                    <a
-                      href={currentCloudUrl}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="text-blue-600 hover:underline flex items-center gap-1 font-bold text-[11px] shrink-0"
-                    >
-                      <ExternalLink className="h-3 w-3" />
-                      <span>فتح النسخة السحابية المباشرة</span>
-                    </a>
-                  </div>
-                ) : (
-                  <span className="text-[11px] text-emerald-800 dark:text-emerald-300 bg-emerald-500/10 px-2 py-0.5 rounded-md">
-                    الرمز الحالي مرتبط بمنظومة التحقق المحلية. اضغط على زر الرفع السحابي أعلاه للحصول على رابط مباشر دائم لأي هاتف محمول مجاناً.
-                  </span>
-                )}
-              </div>
-
-              <div className="flex items-center gap-2 justify-end">
-                <a
-                  href={`/verify-doc?ref=${encodeURIComponent(registrationNumber)}&opId=${op.id}&type=declaration_${activeDeclType}${currentCloudUrl ? `&pdfUrl=${encodeURIComponent(currentCloudUrl)}` : ""}`}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="text-[11px] font-bold text-emerald-700 dark:text-emerald-300 hover:underline flex items-center gap-1 bg-emerald-50 dark:bg-emerald-950/40 px-2.5 py-1.5 rounded-lg border border-emerald-200 dark:border-emerald-800"
-                >
-                  <span>تجربة الفحص الرقمي</span>
-                  <ArrowRight className="h-3 w-3 rtl:rotate-180" />
-                </a>
-              </div>
             </div>
           </div>
 
@@ -1394,39 +1356,6 @@ export function TabDeclarations({
                 </div>
 
                 <div className="flex items-center gap-2 flex-wrap">
-                  <FreeConvertersQuickLinks />
-
-                  <Button
-                    size="sm"
-                    onClick={handlePrintWordDocument}
-                    disabled={printingDocx}
-                    className="bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold h-9 px-4 rounded-xl shadow-md cursor-pointer flex items-center gap-1.5"
-                  >
-                    <Printer className={`h-4 w-4 ${printingDocx ? "animate-spin" : ""}`} />
-                    <span>{printingDocx ? "جاري التجهيز..." : "طباعة مستند الوورد"}</span>
-                  </Button>
-
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => handleDownloadDocx(activeDeclType)}
-                    disabled={downloadingDocx}
-                    className="text-xs font-bold h-9 rounded-xl border-border hover:bg-muted cursor-pointer flex items-center gap-1.5"
-                  >
-                    <Download className="h-4 w-4 text-emerald-600" />
-                    <span>{downloadingDocx ? "جاري التوليد..." : "تنزيل ملف Word (.docx)"}</span>
-                  </Button>
-
-                  <Button
-                    size="sm"
-                    onClick={() => handleDownloadPdf(activeDeclType)}
-                    disabled={downloadingPdf}
-                    className="bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold h-9 px-3.5 rounded-xl shadow-md cursor-pointer flex items-center gap-1.5"
-                  >
-                    <FileText className={`h-4 w-4 ${downloadingPdf ? "animate-spin" : ""}`} />
-                    <span>{downloadingPdf ? "جاري التحويل..." : "تحميل PDF"}</span>
-                  </Button>
-
                   <Button
                     size="sm"
                     variant="ghost"
@@ -1477,6 +1406,20 @@ export function TabDeclarations({
         </Portal>
       )}
 
+      {/* ━━━ الباركود الذكي ورمز QR والرفع السحابي المجاني للنسخة الرقمية بأسفل الصفحة ━━━ */}
+      <LetterQrCloudCard
+        cloudPdfUrl={currentCloudUrl}
+        registrationNumber={registrationNumber}
+        opId={op.id}
+        docType={`declaration_${activeDeclType}`}
+        uploadingCloud={uploadingCloud}
+        onUploadToCloud={(force) => handleUploadToCloud(activeDeclType, force)}
+        title="الباركود الذكي ورمز QR الرقمي المعتمد (PDF)"
+        subtitle="عند مسح الباركود بكاميرا الموبايل يتم فتح النسخة الرقمية المعتمدة للإقرار فوراً بدون الحاجة لأي تسجيل دخول."
+        badgeText="مدمج بموضع كلمة (الباركود) بالأعلى ورقم القيد بالتذييل"
+        gradientClass="from-emerald-500/10 via-teal-500/10 to-transparent border-emerald-500/25"
+      />
+
       {/* ━━━ BOTTOM ACTION BAR: التوليد والطباعة والمعاينة بأسفل مرحلة الإقرارات ━━━ */}
       <LetterBottomActionWidget
         title={
@@ -1493,7 +1436,7 @@ export function TabDeclarations({
         onSave={handleSaveToSystem}
         onCancelEdits={handleCancelEdits}
         saving={savingState}
-        onViewArchive={() => setPreviewModalOpen(true)}
+        onViewArchive={handleViewArchive}
         icon={ShieldCheck}
         iconColor="text-emerald-700 dark:text-emerald-400"
         iconBg="bg-emerald-500/15 border-emerald-500/30"
@@ -1508,9 +1451,12 @@ export function TabDeclarations({
         onConfirmReprint={handleConfirmReprint}
         onViewArchive={() => {
           setReprintWarningOpen(false);
-          setPreviewModalOpen(true);
+          handleViewArchive();
         }}
       />
+
+      {/* ━━━ نافذة التحميل العائمة المبتكرة عند تنزيل PDF ━━━ */}
+      <PdfExportLoadingModal open={downloadingPdf} />
 
       {/* ━━━ STEP FOOTER NAVIGATION ━━━ */}
       <StepFooterNav

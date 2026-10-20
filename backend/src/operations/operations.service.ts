@@ -1849,51 +1849,36 @@ try {
       console.warn('Catbox upload failed, trying fallback:', catboxErr?.message);
     }
 
-    // 2. Fallback: tmpfiles.org direct download
+    // 2. Secondary Fallback: Gofile.io (Fast, free cloud storage)
     try {
-      const form = new FormData();
-      form.append('file', new Blob([new Uint8Array(pdfBuffer)], { type: 'application/pdf' }), finalName);
-
-      const res = await fetch('https://tmpfiles.org/api/v1/upload', {
-        method: 'POST',
-        body: form,
-        signal: AbortSignal.timeout(15000),
+      const serverRes = await fetch('https://api.gofile.io/servers', {
+        signal: AbortSignal.timeout(10000),
       });
-
-      if (res.ok) {
-        const json: any = await res.json();
-        if (json?.data?.url) {
-          const directUrl = json.data.url.replace('tmpfiles.org/', 'tmpfiles.org/dl/');
-          return { success: true, url: directUrl, provider: 'tmpfiles' };
+      if (serverRes.ok) {
+        const serverJson: any = await serverRes.json();
+        const server = serverJson?.data?.servers?.[0]?.name;
+        if (server) {
+          const form = new FormData();
+          form.append('file', new Blob([new Uint8Array(pdfBuffer)], { type: 'application/pdf' }), finalName);
+          const uploadRes = await fetch(`https://${server}.gofile.io/contents/uploadfile`, {
+            method: 'POST',
+            body: form,
+            signal: AbortSignal.timeout(25000),
+          });
+          if (uploadRes.ok) {
+            const uploadJson: any = await uploadRes.json();
+            const downloadPage = uploadJson?.data?.downloadPage;
+            if (downloadPage) {
+              return { success: true, url: downloadPage, provider: 'gofile' };
+            }
+          }
         }
       }
-    } catch (tmpErr: any) {
-      console.warn('tmpfiles upload failed:', tmpErr?.message);
+    } catch (gofileErr: any) {
+      console.warn('Gofile upload failed:', gofileErr?.message);
     }
 
-    // 2. Fallback: tmpfiles.org
-    try {
-      const form = new FormData();
-      form.append('file', new Blob([new Uint8Array(pdfBuffer)], { type: 'application/pdf' }), finalName);
-
-      const res = await fetch('https://tmpfiles.org/api/v1/upload', {
-        method: 'POST',
-        body: form,
-        signal: AbortSignal.timeout(15000),
-      });
-
-      if (res.ok) {
-        const json: any = await res.json();
-        if (json?.data?.url) {
-          const directUrl = json.data.url.replace('tmpfiles.org/', 'tmpfiles.org/dl/');
-          return { success: true, url: directUrl, provider: 'tmpfiles' };
-        }
-      }
-    } catch (tmpErr: any) {
-      console.warn('tmpfiles upload failed:', tmpErr?.message);
-    }
-
-    throw new BadRequestException('تعذر رفع الملف إلى خدمة التخزين السحابي المجانية حالياً، يرجى المحاولة لاحقاً');
+    throw new BadRequestException('تعذر رفع الملف إلى خدمة التخزين السحابي المجانية حالياً (Catbox/Gofile)، يرجى المحاولة لاحقاً');
   }
 }
 

@@ -23,10 +23,14 @@ import {
   formatDocFileSize, tafqeetArabic
 } from "./types";
 import { StepFooterNav } from "./StepFooterNav";
-import { generateSmartOutgoingRef, cleanAllDocxXml, buildQrAnchorXml, injectSingleQrIntoDocXml, LetterBottomActionWidget, ReprintConfirmModal, getCurrentUserName, FISCAL_YEAR_OPTIONS, FreeConvertersQuickLinks } from "./letter-utils";
+import {
+  generateSmartOutgoingRef, cleanAllDocxXml, buildQrAnchorXml, injectSingleQrIntoDocXml,
+  LetterBottomActionWidget, ReprintConfirmModal, getCurrentUserName, FISCAL_YEAR_OPTIONS,
+  LetterQrCloudCard, PdfExportLoadingModal
+} from "./letter-utils";
 import JSZip from "jszip";
 import QRCode from "qrcode";
-import { getPdfBlobFromDocx } from "./client-pdf";
+import { getPdfBlobFromDocx, uploadPdfToFreeCloud } from "./client-pdf";
 import { OnlyOfficeDocViewer } from "@/components/OnlyOfficeDocViewer";
 
 export type BookletLetterType =
@@ -375,11 +379,19 @@ export function TabBooklet({
     return savedData?.additionalNotes || "";
   });
 
-  // ━━━ 7. الروابط السحابية للنسخ الرقمية المعتمدة ━━━
+  // ━━━ 7. الروابط السحابية للنسخ الرقمية المعتمدة (Catbox.moe / Gofile.io) ━━━
   const [cloudUrls, setCloudUrls] = useState<{ [key in BookletLetterType]?: string }>(() => {
-    return savedData?.cloudUrls || {};
+    const raw = savedData?.cloudUrls || {};
+    const cleaned: { [key in BookletLetterType]?: string } = {};
+    for (const [k, v] of Object.entries(raw)) {
+      if (typeof v === "string" && !v.includes("tmpfiles.org")) {
+        cleaned[k as BookletLetterType] = v;
+      }
+    }
+    return cleaned;
   });
   const [uploadingCloud, setUploadingCloud] = useState<boolean>(false);
+  const [lastGeneratedSnapshot, setLastGeneratedSnapshot] = useState<string | null>(null);
 
   // ━━━ 8. تتبع حالة التعديل والحفظ (isDirty control) ━━━
   const currentSnapshot = useMemo(() => {
@@ -562,9 +574,7 @@ export function TabBooklet({
     let qrDrawingXml = "";
     try {
       const activeCloud = cloudUrls[type];
-      const targetVerifyUrl =
-        activeCloud ||
-        `${typeof window !== "undefined" ? window.location.origin : ""}/verify-doc?ref=${encodeURIComponent(registrationNumber)}&opId=${op.id}&type=booklet_${type}`;
+      const targetVerifyUrl = activeCloud || registrationNumber;
       const qrDataUrl = await QRCode.toDataURL(targetVerifyUrl, { width: 160, margin: 1 });
       const qrBase64 = qrDataUrl.split(",")[1];
       const qrBinary = Uint8Array.from(atob(qrBase64), (c) => c.charCodeAt(0));
@@ -745,10 +755,11 @@ export function TabBooklet({
     setPreviewDocxBlob(docxBlob);
     const pdf = await getPdfBlobFromDocx(docxBlob, `booklet_letter_${type}_${registrationNumber}.docx`);
     setPreviewPdfBlob(pdf);
+    setLastGeneratedSnapshot(currentSnapshot);
     return pdf;
   };
 
-  // ━━━ رفع وتوثيق النسخة الرقمية سحابياً ━━━
+  // ━━━ رفع وتوثيق النسخة الرقمية سحابياً (Catbox.moe / Gofile.io) ━━━
   const handleUploadToCloud = async (type: BookletLetterType = activeLetterType, forceReupload = false) => {
     const existingUrl = cloudUrls[type];
     if (existingUrl && !forceReupload) {
@@ -759,15 +770,17 @@ export function TabBooklet({
     setUploadingCloud(true);
     try {
       toast.info("جاري تحويل الخطاب لـ PDF ورفعه سحابياً...");
-      const pdfBlob = await generateBookletPdfBlob(type);
-      const formData = new FormData();
-      formData.append("file", pdfBlob, `official_letter_${type}_${registrationNumber}.pdf`);
+      let pdfBlob: Blob;
+      if (previewPdfBlob && lastGeneratedSnapshot === currentSnapshot) {
+        pdfBlob = previewPdfBlob;
+      } else {
+        pdfBlob = await generateBookletPdfBlob(type);
+      }
 
-      const res = await api.post("/operations/upload-cloud-pdf", formData, {
-        headers: { "Content-Type": "multipart/form-data" },
-      });
+      const fileName = `official_letter_${type}_${registrationNumber}.pdf`;
+      const cloudRes = await uploadPdfToFreeCloud(pdfBlob, fileName);
 
-      const publicUrl = res.data?.url || res.data?.cloudUrl;
+      const publicUrl = cloudRes.url;
       if (!publicUrl) throw new Error("لم يتم استلام رابط التحميل السحابي");
 
       const newUrls = { ...cloudUrls, [type]: publicUrl };
@@ -788,7 +801,7 @@ export function TabBooklet({
         notes: JSON.stringify(notesObj),
       });
 
-      toast.success("تم رفع وتوثيق الخطاب سحابياً ودمج رمز التحقق الرقمي QR بنجاح! 🚀");
+      toast.success(`تم رفع وتوثيق الخطاب سحابياً عبر (${cloudRes.provider}) بنجاح! 🚀`);
       onRefresh();
     } catch (err: any) {
       console.error(err);
@@ -803,8 +816,11 @@ export function TabBooklet({
   const handleDownloadDocx = async (type: BookletLetterType = activeLetterType) => {
     setDownloadingDocx(true);
     try {
-      toast.info("جاري تجهيز وتنزيل مستند الوورد المعتمد...");
-      const blob = await generateBookletDocxBlob(type);
+      let blob = previewDocxBlob;
+      if (!blob || lastGeneratedSnapshot !== currentSnapshot) {
+        blob = await generateBookletDocxBlob(type);
+        setPreviewDocxBlob(blob);
+      }
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
@@ -826,6 +842,21 @@ export function TabBooklet({
   // ━━━ تحميل وتصدير PDF عبر محرك Word الرسمي ━━━
   const [downloadingPdf, setDownloadingPdf] = useState(false);
   const handleDownloadPdf = async (type: BookletLetterType = activeLetterType) => {
+    // 0ms instant download if already generated in preview and no inputs changed
+    if (previewPdfBlob && lastGeneratedSnapshot === currentSnapshot) {
+      const url = URL.createObjectURL(previewPdfBlob);
+      const a = document.createElement("a");
+      a.href = url;
+      const tplDef = BOOKLET_LETTER_TEMPLATES.find((t) => t.id === type);
+      a.download = `${tplDef?.shortName || "خطاب"}_${op.externalNumber || op.serialNumber}_${registrationNumber}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      toast.success("تم تنزيل ملف الـ PDF الرسمي فوراً! 📑✨");
+      return;
+    }
+
     setDownloadingPdf(true);
     try {
       toast.info("جاري تحويل مستند الوورد الأصلي إلى PDF بأعلى دقة رسمية...");
@@ -857,6 +888,9 @@ export function TabBooklet({
   const [printingDocx, setPrintingDocx] = useState(false);
 
   const loadOfficialPreview = async () => {
+    if (previewPdfUrl && previewPdfBlob && lastGeneratedSnapshot === currentSnapshot) {
+      return;
+    }
     setRenderingDocx(true);
     try {
       const pdfBlob = await generateBookletPdfBlob(activeLetterType);
@@ -969,6 +1003,35 @@ export function TabBooklet({
   const handleConfirmReprint = async () => {
     setReprintWarningOpen(false);
     await executePrintDoc();
+  };
+
+  // ━━━ دالة عرض الملف المؤرشف فوراً (0ms) بدون إعادة تحويل ━━━
+  const handleViewArchive = () => {
+    // 1. إذا كان رابط السحابة متاحاً، افتح النسخة السحابية المعتمدة فوراً
+    const activeCloud = cloudUrls[activeLetterType];
+    if (activeCloud) {
+      window.open(activeCloud, "_blank");
+      return;
+    }
+    // 2. إذا كان ملف الـ PDF متوفراً في الذاكرة مسبقاً، افتح نافذة المعاينة فوراً
+    if (previewPdfBlob) {
+      setPreviewModalOpen(true);
+      return;
+    }
+    // 3. التحقق من وجود مستند مؤرشف في أرشيف العملية
+    const archivedDoc = op.documents?.find(
+      (d: any) =>
+        d.type?.toLowerCase().includes("booklet") ||
+        d.name?.toLowerCase().includes("booklet") ||
+        d.name?.includes("كراسة") ||
+        d.name?.includes("ابتدائي")
+    );
+    if (archivedDoc?.fileUrl) {
+      window.open(archivedDoc.fileUrl, "_blank");
+      return;
+    }
+    // 4. فتح المعاينة
+    setPreviewModalOpen(true);
   };
 
   // طباعة مباشرة من داخل نافذة المعاينة
@@ -1477,119 +1540,6 @@ export function TabBooklet({
                 </div>
               </div>
 
-              {/* الباركود الذكي ورمز QR المدمج والرفع السحابي المجاني للنسخة الرقمية (مطابق لخطاب التوضيح) */}
-              <div className="p-4 rounded-2xl bg-gradient-to-r from-amber-500/10 via-orange-500/10 to-transparent border border-amber-500/25 space-y-3">
-                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-center text-amber-600 dark:text-amber-400 shrink-0">
-                      <QrCode className="h-5 w-5" />
-                    </div>
-                    <div className="space-y-0.5">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className="text-xs font-black text-foreground">
-                          الباركود الذكي ورمز QR الرقمي المعتمد (PDF)
-                        </span>
-                        <Badge className="bg-emerald-500/15 text-emerald-600 border-emerald-500/30 text-[10px] font-bold">
-                          مدمج بموضع كلمة (الباركود) بالأعلى ورقم القيد بالتذييل
-                        </Badge>
-                        {cloudUrls[activeLetterType] && (
-                          <Badge className="bg-blue-500/15 text-blue-700 dark:text-blue-300 border-blue-500/30 text-[10px] font-bold flex items-center gap-1">
-                            <Cloud className="h-3 w-3" />
-                            <span>رابط سحابي دائم متاح لأي هاتف ✓</span>
-                          </Badge>
-                        )}
-                      </div>
-                      <p className="text-[11px] text-muted-foreground">
-                        عند مسح الباركود بكاميرا الموبايل يتم فتح النسخة الرسمية المعتمدة لخطاب ({currentTpl.shortName}) فوراً بدون الحاجة لأي تسجيل دخول.
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-2 self-end sm:self-center flex-wrap justify-end">
-                    {cloudUrls[activeLetterType] ? (
-                      <>
-                        <Badge className="bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30 text-xs font-bold px-3 py-1.5 flex items-center gap-1.5">
-                          <CheckCircle2 className="h-4 w-4" />
-                          <span>تم الرفع والتوثيق السحابي مسبقاً ✓</span>
-                        </Badge>
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="outline"
-                          onClick={() => handleUploadToCloud(activeLetterType, true)}
-                          disabled={uploadingCloud}
-                          className="border-border text-foreground hover:bg-muted text-xs font-bold h-9 px-3 rounded-xl cursor-pointer flex items-center gap-1"
-                          title="تحديث وإعادة رفع النسخة السحابية لخطاب الكراسة والتأمين"
-                        >
-                          <RefreshCw className={`h-3.5 w-3.5 ${uploadingCloud ? "animate-spin" : ""}`} />
-                          <span>إعادة الرفع والتحديث ↻</span>
-                        </Button>
-                      </>
-                    ) : (
-                      <Button
-                        type="button"
-                        size="sm"
-                        onClick={() => handleUploadToCloud(activeLetterType, false)}
-                        disabled={uploadingCloud}
-                        className="bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-700 hover:to-orange-700 text-white font-bold text-xs h-9 px-3.5 rounded-xl shadow-md cursor-pointer flex items-center gap-1.5"
-                      >
-                        <Cloud className={`h-4 w-4 ${uploadingCloud ? "animate-spin" : ""}`} />
-                        <span>{uploadingCloud ? "جاري الرفع السحابي..." : "رفع وتوثيق النسخة الرقمية سحابياً لرمز QR ☁️"}</span>
-                      </Button>
-                    )}
-                  </div>
-                </div>
-
-                {/* تفاصيل الرابط السحابي والمعاينة المباشرة */}
-                <div className="pt-2 border-t border-amber-500/20 flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3 text-xs">
-                  <div className="flex items-center gap-2 flex-1 overflow-hidden">
-                    <span className="text-muted-foreground shrink-0 font-medium text-[11px]">الرابط المشفر في الرمز:</span>
-                    {cloudUrls[activeLetterType] ? (
-                      <div className="flex items-center gap-2 overflow-hidden flex-1">
-                        <span className="font-mono text-xs text-blue-600 dark:text-blue-400 truncate bg-white/60 dark:bg-slate-900/60 px-2 py-1 rounded-lg border border-border">
-                          {cloudUrls[activeLetterType]}
-                        </span>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            navigator.clipboard.writeText(cloudUrls[activeLetterType] || "");
-                            toast.success("تم نسخ الرابط السحابي المباشر بنجاح! 📋");
-                          }}
-                          className="text-muted-foreground hover:text-foreground text-xs p-1 cursor-pointer"
-                          title="نسخ الرابط"
-                        >
-                          <Copy className="h-3.5 w-3.5" />
-                        </button>
-                        <a
-                          href={cloudUrls[activeLetterType]}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="text-blue-600 hover:underline flex items-center gap-1 font-bold text-[11px] shrink-0"
-                        >
-                          <ExternalLink className="h-3 w-3" />
-                          <span>فتح النسخة السحابية المباشرة</span>
-                        </a>
-                      </div>
-                    ) : (
-                      <span className="text-[11px] text-amber-700 dark:text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded-md">
-                        الرمز الحالي مرتبط بمنظومة التحقق المحلية. اضغط على زر الرفع السحابي أعلاه للحصول على رابط مباشر دائم لأي هاتف محمول مجاناً.
-                      </span>
-                    )}
-                  </div>
-
-                  <div className="flex items-center gap-2 justify-end">
-                    <a
-                      href={`/verify-doc?ref=${encodeURIComponent(registrationNumber)}&opId=${op.id}&type=booklet_${activeLetterType}${cloudUrls[activeLetterType] ? `&pdfUrl=${encodeURIComponent(cloudUrls[activeLetterType] || "")}` : ""}`}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="text-[11px] font-bold text-amber-700 dark:text-amber-300 hover:underline flex items-center gap-1 bg-amber-50 dark:bg-amber-950/40 px-2.5 py-1.5 rounded-lg border border-amber-200 dark:border-amber-800"
-                    >
-                      <span>تجربة الفحص الرقمي</span>
-                      <ArrowRight className="h-3 w-3 rtl:rotate-180" />
-                    </a>
-                  </div>
-                </div>
-              </div>
             </div>
           </SectionCard>
 
@@ -2061,6 +2011,20 @@ export function TabBooklet({
             </div>
           </SectionCard>
 
+          {/* ━━━ الباركود الذكي ورمز QR والرفع السحابي المجاني للنسخة الرقمية بأسفل الصفحة ━━━ */}
+          <LetterQrCloudCard
+            cloudPdfUrl={cloudUrls[activeLetterType] || ""}
+            registrationNumber={registrationNumber}
+            opId={op.id}
+            docType={`booklet_${activeLetterType}`}
+            uploadingCloud={uploadingCloud}
+            onUploadToCloud={(force) => handleUploadToCloud(activeLetterType, force)}
+            title="الباركود الذكي ورمز QR الرقمي المعتمد (PDF)"
+            subtitle={`عند مسح الباركود بكاميرا الموبايل يتم فتح النسخة الرسمية المعتمدة لخطاب (${currentTpl.shortName}) فوراً بدون الحاجة لأي تسجيل دخول.`}
+            badgeText="مدمج بموضع كلمة (الباركود) بالأعلى ورقم القيد بالتذييل"
+            gradientClass="from-amber-500/10 via-orange-500/10 to-transparent border-amber-500/25"
+          />
+
           {/* ━━━ BOTTOM ACTION BAR: التوليد والطباعة والمعاينة بأسفل الخطوة الأولى ━━━ */}
           <LetterBottomActionWidget
             title={currentTpl.title}
@@ -2071,7 +2035,7 @@ export function TabBooklet({
             onSave={handleSaveAll}
             onCancelEdits={handleCancelEdits}
             saving={savingChanges}
-            onViewArchive={() => setPreviewModalOpen(true)}
+            onViewArchive={handleViewArchive}
             customSubtitle="مطابق 100% لقالب الوورد المعتمد للشركة. اضغط على زر المعاينة للاطلاع على المستند وتنزيله أو طباعته."
           />
         </div>
@@ -2494,50 +2458,6 @@ export function TabBooklet({
                 </div>
 
                 <div className="flex items-center gap-2 flex-wrap">
-                  <FreeConvertersQuickLinks />
-
-                  <Button
-                    size="sm"
-                    onClick={handlePrintFromModal}
-                    disabled={printingDocx}
-                    className="bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold h-9 px-4 rounded-xl shadow-md cursor-pointer flex items-center gap-1.5"
-                  >
-                    <Printer className={`h-4 w-4 ${printingDocx ? "animate-spin" : ""}`} />
-                    <span>{printingDocx ? "جاري التجهيز..." : "طباعة المستند المعتمد"}</span>
-                  </Button>
-
-                  <Button
-                    size="sm"
-                    onClick={() => handleDownloadPdf(activeLetterType)}
-                    disabled={downloadingPdf}
-                    className="bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold h-9 px-3.5 rounded-xl shadow-md cursor-pointer flex items-center gap-1.5"
-                  >
-                    <FileText className={`h-4 w-4 ${downloadingPdf ? "animate-spin" : ""}`} />
-                    <span>{downloadingPdf ? "جاري التحويل..." : "تحميل PDF"}</span>
-                  </Button>
-
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => handleDownloadDocx(activeLetterType)}
-                    disabled={downloadingDocx}
-                    className="text-xs font-bold h-9 rounded-xl border-border hover:bg-muted cursor-pointer flex items-center gap-1.5"
-                  >
-                    <Download className="h-4 w-4 text-blue-600" />
-                    <span>{downloadingDocx ? "جاري التوليد..." : "تنزيل Word (.docx)"}</span>
-                  </Button>
-
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    onClick={loadOfficialPreview}
-                    disabled={renderingDocx}
-                    className="text-xs font-bold h-9 rounded-xl border border-border hover:bg-muted cursor-pointer flex items-center gap-1.5"
-                  >
-                    <RefreshCw className={`h-3.5 w-3.5 ${renderingDocx ? "animate-spin text-amber-600" : ""}`} />
-                    <span>تحديث</span>
-                  </Button>
-
                   <Button
                     size="icon"
                     variant="ghost"
@@ -2590,9 +2510,12 @@ export function TabBooklet({
         onConfirmReprint={handleConfirmReprint}
         onViewArchive={() => {
           setReprintWarningOpen(false);
-          setPreviewModalOpen(true);
+          handleViewArchive();
         }}
       />
+
+      {/* ━━━ نافذة التحميل العائمة المبتكرة عند تنزيل PDF ━━━ */}
+      <PdfExportLoadingModal open={downloadingPdf} />
 
       {/* شريط التنقل السفلي بين التبويبات */}
       <StepFooterNav

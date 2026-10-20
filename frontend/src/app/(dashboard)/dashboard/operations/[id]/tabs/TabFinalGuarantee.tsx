@@ -28,11 +28,12 @@ import {
   getCurrentUserName,
   PrintHistoryEntry,
   FISCAL_YEAR_OPTIONS,
-  FreeConvertersQuickLinks,
+  LetterQrCloudCard,
+  PdfExportLoadingModal,
 } from "./letter-utils";
 import JSZip from "jszip";
 import QRCode from "qrcode";
-import { getPdfBlobFromDocx } from "./client-pdf";
+import { getPdfBlobFromDocx, uploadPdfToFreeCloud } from "./client-pdf";
 import { OnlyOfficeDocViewer } from "@/components/OnlyOfficeDocViewer";
 
 export type FinalGuaranteeLetterType =
@@ -175,9 +176,19 @@ export function TabFinalGuarantee({
   const [financeManagerName, setFinanceManagerName] = useState(() => savedSettings?.financeManagerName || "محمود إبراهيم");
   const [additionalNotes, setAdditionalNotes] = useState(() => savedSettings?.additionalNotes || "");
 
-  // Cloud URLs per letter type
-  const [cloudUrls, setCloudUrls] = useState<Record<string, string>>(() => savedSettings?.cloudUrls || {});
+  // Cloud URLs per letter type (Catbox.moe / Gofile.io)
+  const [cloudUrls, setCloudUrls] = useState<Record<string, string>>(() => {
+    const initial = savedSettings?.cloudUrls || {};
+    const cleaned: Record<string, string> = {};
+    for (const [k, v] of Object.entries(initial)) {
+      if (typeof v === "string" && !v.includes("tmpfiles.org")) {
+        cleaned[k] = v;
+      }
+    }
+    return cleaned;
+  });
   const [uploadingCloud, setUploadingCloud] = useState(false);
+  const [lastGeneratedSnapshot, setLastGeneratedSnapshot] = useState<string | null>(null);
 
   // Modals & Action States
   const [previewModalOpen, setPreviewModalOpen] = useState(false);
@@ -312,9 +323,7 @@ export function TabFinalGuarantee({
     let qrDrawingXml = "";
     try {
       const activeCloud = cloudUrls[type];
-      const targetVerifyUrl =
-        activeCloud ||
-        `${typeof window !== "undefined" ? window.location.origin : ""}/verify-doc?ref=${encodeURIComponent(registrationNumber)}&opId=${op.id}&type=final_guarantee_${type}`;
+      const targetVerifyUrl = activeCloud || registrationNumber;
       const qrDataUrl = await QRCode.toDataURL(targetVerifyUrl, { width: 160, margin: 1 });
       const qrBase64 = qrDataUrl.split(",")[1];
       const qrBinary = Uint8Array.from(atob(qrBase64), (c) => c.charCodeAt(0));
@@ -450,6 +459,7 @@ export function TabFinalGuarantee({
     setPreviewDocxBlob(docxBlob);
     const pdf = await getPdfBlobFromDocx(docxBlob, `final_guarantee_${type}_${registrationNumber}.docx`);
     setPreviewPdfBlob(pdf);
+    setLastGeneratedSnapshot(currentSnapshot);
     return pdf;
   };
 
@@ -461,18 +471,20 @@ export function TabFinalGuarantee({
     setUploadingCloud(true);
     try {
       toast.info("جاري تحويل الخطاب ورفعه سحابياً...");
-      const pdfBlob = await generateGuaranteePdfBlob(type);
-      const formData = new FormData();
-      formData.append("file", pdfBlob, `final_guarantee_${type}_${registrationNumber}.pdf`);
+      let pdfBlob: Blob;
+      if (previewPdfBlob && lastGeneratedSnapshot === currentSnapshot) {
+        pdfBlob = previewPdfBlob;
+      } else {
+        pdfBlob = await generateGuaranteePdfBlob(type);
+      }
 
-      const res = await api.post("/operations/upload-cloud-pdf", formData, {
-        headers: { "Content-Type": "multipart/form-data" },
-      });
+      const fileName = `final_guarantee_${type}_${registrationNumber}.pdf`;
+      const cloudRes = await uploadPdfToFreeCloud(pdfBlob, fileName);
 
-      if (res.data?.url) {
-        const updatedUrls = { ...cloudUrls, [type]: res.data.url };
+      if (cloudRes?.url) {
+        const updatedUrls = { ...cloudUrls, [type]: cloudRes.url };
         setCloudUrls(updatedUrls);
-        toast.success("تم رفع الخطاب للسحابة بنجاح! الرابط جاهز ومتاح عالمياً 🚀");
+        toast.success(`تم رفع الخطاب للسحابة بنجاح عبر (${cloudRes.provider})! الرابط جاهز ومتاح عالمياً 🚀`);
 
         try {
           let existingNotes: any = {};
@@ -490,7 +502,12 @@ export function TabFinalGuarantee({
   };
 
   const loadOfficialPreview = async () => {
+    if (previewPdfUrl && previewPdfBlob && lastGeneratedSnapshot === currentSnapshot) {
+      setPreviewModalOpen(true);
+      return;
+    }
     setRenderingDocx(true);
+    setPreviewModalOpen(true);
     try {
       if (previewPdfUrl) {
         URL.revokeObjectURL(previewPdfUrl);
@@ -605,10 +622,43 @@ export function TabFinalGuarantee({
     await executePrintDoc();
   };
 
+  // ━━━ دالة عرض الملف المؤرشف فوراً (0ms) بدون إعادة تحويل ━━━
+  const handleViewArchive = () => {
+    // 1. إذا كان رابط السحابة متاحاً، افتح النسخة السحابية المعتمدة فوراً
+    const activeCloud = cloudUrls[activeLetterType];
+    if (activeCloud) {
+      window.open(activeCloud, "_blank");
+      return;
+    }
+    // 2. إذا كان ملف الـ PDF متوفراً في الذاكرة مسبقاً، افتح نافذة المعاينة فوراً
+    if (previewPdfBlob) {
+      setPreviewModalOpen(true);
+      return;
+    }
+    // 3. التحقق من وجود مستند مؤرشف في أرشيف العملية
+    const archivedDoc = op.documents?.find(
+      (d: any) =>
+        d.type?.toLowerCase().includes("guarantee") ||
+        d.name?.toLowerCase().includes("guarantee") ||
+        d.name?.includes("ضمان") ||
+        d.name?.includes("تأمين")
+    );
+    if (archivedDoc?.fileUrl) {
+      window.open(archivedDoc.fileUrl, "_blank");
+      return;
+    }
+    // 4. فتح المعاينة
+    setPreviewModalOpen(true);
+  };
+
   const handleDownloadDocx = async (type: FinalGuaranteeLetterType = activeLetterType) => {
     setDownloadingDocx(true);
     try {
-      const blob = await generateGuaranteeDocxBlob(type);
+      let blob = previewDocxBlob;
+      if (!blob || lastGeneratedSnapshot !== currentSnapshot) {
+        blob = await generateGuaranteeDocxBlob(type);
+        setPreviewDocxBlob(blob);
+      }
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
@@ -626,6 +676,20 @@ export function TabFinalGuarantee({
   };
 
   const handleDownloadPdf = async (type: FinalGuaranteeLetterType = activeLetterType) => {
+    // 0ms instant download if already generated in preview and no inputs changed
+    if (previewPdfBlob && lastGeneratedSnapshot === currentSnapshot) {
+      const url = URL.createObjectURL(previewPdfBlob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `خطاب_سداد_التأمين_النهائي_${type}_${op.serialNumber || "365"}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      toast.success("تم تنزيل ملف الـ PDF الرسمي فوراً! 📑✨");
+      return;
+    }
+
     setDownloadingPdf(true);
     try {
       toast.info("جاري تصدير مستند التأمين بصيغة PDF...");
@@ -867,68 +931,6 @@ export function TabFinalGuarantee({
                 </button>
               );
             })}
-          </div>
-
-          {/* Barcode & Cloud Widget */}
-          <div className="p-4 rounded-2xl bg-gradient-to-r from-emerald-500/10 via-teal-500/10 to-transparent border border-emerald-500/25 space-y-3">
-            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center text-emerald-600 shrink-0">
-                  <QrCode className="h-5 w-5" />
-                </div>
-                <div className="space-y-0.5">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="text-xs font-black text-foreground">الباركود الذكي ورمز QR للرفع السحابي (النسخة الرقمية)</span>
-                    {currentCloudUrl && (
-                      <Badge className="bg-blue-500/15 text-blue-700 dark:text-blue-300 border border-blue-500/30 text-[10px] font-bold flex items-center gap-1">
-                        <Cloud className="h-3 w-3" />
-                        <span>رابط سحابي دائم متاح لأي هاتف ✓</span>
-                      </Badge>
-                    )}
-                  </div>
-                  <p className="text-[11px] text-muted-foreground">
-                    عند مسح الباركود بكاميرا الموبايل يتم فتح النسخة المعتمدة لخطاب التأمين النهائي فورياً.
-                  </p>
-                </div>
-              </div>
-
-              <div className="flex items-center gap-2 self-end sm:self-center flex-wrap">
-                {currentCloudUrl ? (
-                  <>
-                    <a
-                      href={currentCloudUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex items-center gap-1 text-xs font-bold text-blue-600 dark:text-blue-400 hover:underline px-2.5 py-1.5 rounded-xl bg-card border border-border"
-                    >
-                      <ExternalLink className="h-3.5 w-3.5" />
-                      <span>فتح الرابط السحابي</span>
-                    </a>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => handleUploadToCloud(activeLetterType, true)}
-                      disabled={uploadingCloud}
-                      className="h-8.5 px-3 text-xs font-bold rounded-xl"
-                    >
-                      {uploadingCloud ? <Loader2 className="h-3 w-3 animate-spin ml-1" /> : <RefreshCw className="h-3 w-3 ml-1" />}
-                      <span>تحديث الرفع</span>
-                    </Button>
-                  </>
-                ) : (
-                  <Button
-                    size="sm"
-                    onClick={() => handleUploadToCloud(activeLetterType)}
-                    disabled={uploadingCloud}
-                    className="h-8.5 px-3.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl shadow-xs"
-                  >
-                    {uploadingCloud ? <Loader2 className="h-3 w-3 animate-spin ml-1" /> : <Cloud className="h-3.5 w-3.5 ml-1" />}
-                    <span>رفع سحابي وإنشاء QR</span>
-                  </Button>
-                )}
-              </div>
-            </div>
-
           </div>
 
           {/* Conditional Template Fields */}
@@ -1490,50 +1492,6 @@ export function TabFinalGuarantee({
                 </div>
 
                 <div className="flex items-center gap-2 flex-wrap">
-                  <FreeConvertersQuickLinks />
-
-                  <Button
-                    size="sm"
-                    onClick={handlePrintWordDocument}
-                    disabled={printingDocx}
-                    className="bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold h-9 px-4 rounded-xl shadow-md cursor-pointer flex items-center gap-1.5"
-                  >
-                    <Printer className={`h-4 w-4 ${printingDocx ? "animate-spin" : ""}`} />
-                    <span>{printingDocx ? "جاري التجهيز..." : "طباعة مستند الوورد"}</span>
-                  </Button>
-
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => handleDownloadDocx(activeLetterType)}
-                    disabled={downloadingDocx}
-                    className="text-xs font-bold h-9 rounded-xl border-border hover:bg-muted cursor-pointer flex items-center gap-1.5"
-                  >
-                    <Download className="h-4 w-4 text-emerald-600" />
-                    <span>{downloadingDocx ? "جاري التوليد..." : "تنزيل Word (.docx)"}</span>
-                  </Button>
-
-                  <Button
-                    size="sm"
-                    onClick={() => handleDownloadPdf(activeLetterType)}
-                    disabled={downloadingPdf}
-                    className="bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold h-9 px-3.5 rounded-xl shadow-md cursor-pointer flex items-center gap-1.5"
-                  >
-                    <FileText className={`h-4 w-4 ${downloadingPdf ? "animate-spin" : ""}`} />
-                    <span>{downloadingPdf ? "جاري التحويل..." : "تحميل PDF"}</span>
-                  </Button>
-
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    onClick={loadOfficialPreview}
-                    disabled={renderingDocx}
-                    className="text-xs font-bold h-9 rounded-xl border border-border hover:bg-muted cursor-pointer flex items-center gap-1.5"
-                  >
-                    <RefreshCw className={`h-3.5 w-3.5 ${renderingDocx ? "animate-spin text-emerald-600" : ""}`} />
-                    <span>تحديث</span>
-                  </Button>
-
                   <Button
                     size="icon"
                     variant="ghost"
@@ -1573,6 +1531,20 @@ export function TabFinalGuarantee({
         </Portal>
       )}
 
+      {/* ━━━ الباركود الذكي ورمز QR والرفع السحابي المجاني للنسخة الرقمية بأسفل الصفحة ━━━ */}
+      <LetterQrCloudCard
+        cloudPdfUrl={currentCloudUrl}
+        registrationNumber={registrationNumber}
+        opId={op.id}
+        docType={`final_guarantee_${activeLetterType}`}
+        uploadingCloud={uploadingCloud}
+        onUploadToCloud={(force) => handleUploadToCloud(activeLetterType, force)}
+        title="الباركود الذكي ورمز QR الرقمي المعتمد (PDF)"
+        subtitle="عند مسح الباركود بكاميرا الموبايل يتم فتح النسخة الرقمية المعتمدة لخطاب التأمين النهائي فوراً بدون الحاجة لأي تسجيل دخول."
+        badgeText="مدمج بموضع كلمة (الباركود) بالأعلى ورقم القيد بالتذييل"
+        gradientClass="from-emerald-500/10 via-teal-500/10 to-transparent border-emerald-500/25"
+      />
+
       {/* ━━━ BOTTOM ACTION BAR: التوليد والطباعة والمعاينة بأسفل مرحلة التأمين النهائي ━━━ */}
       <LetterBottomActionWidget
         title={
@@ -1593,7 +1565,7 @@ export function TabFinalGuarantee({
         onSave={handleSaveToSystem}
         onCancelEdits={handleCancelEdits}
         saving={savingState}
-        onViewArchive={() => setPreviewModalOpen(true)}
+        onViewArchive={handleViewArchive}
         icon={ShieldCheck}
         iconColor="text-emerald-700 dark:text-emerald-400"
         iconBg="bg-emerald-500/15 border-emerald-500/30"
@@ -1608,9 +1580,12 @@ export function TabFinalGuarantee({
         onConfirmReprint={handleConfirmReprint}
         onViewArchive={() => {
           setReprintWarningOpen(false);
-          setPreviewModalOpen(true);
+          handleViewArchive();
         }}
       />
+
+      {/* ━━━ نافذة التحميل العائمة المبتكرة عند تنزيل PDF ━━━ */}
+      <PdfExportLoadingModal open={downloadingPdf} />
 
       {/* ━━━ Footer Navigation ━━━ */}
       <StepFooterNav

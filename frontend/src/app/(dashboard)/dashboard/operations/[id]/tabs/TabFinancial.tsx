@@ -28,11 +28,12 @@ import {
   getCurrentUserName,
   PrintHistoryEntry,
   FISCAL_YEAR_OPTIONS,
-  FreeConvertersQuickLinks,
+  LetterQrCloudCard,
+  PdfExportLoadingModal,
 } from "./letter-utils";
 import JSZip from "jszip";
 import QRCode from "qrcode";
-import { getPdfBlobFromDocx } from "./client-pdf";
+import { getPdfBlobFromDocx, uploadPdfToFreeCloud } from "./client-pdf";
 import { OnlyOfficeDocViewer } from "@/components/OnlyOfficeDocViewer";
 
 // ━━━ تعريف بيانات بنود وبدائل العرض المالي ━━━
@@ -295,9 +296,13 @@ export function TabFinancial({
     return savedFin?.barcodeRef || `GS-FIN-${op.serialNumber || "365"}`;
   });
 
-  // الرابط السحابي المعتمد للنسخة الرقمية
-  const [cloudPdfUrl, setCloudPdfUrl] = useState<string>(() => savedFin?.cloudPdfUrl || "");
+  // الرابط السحابي المعتمد للنسخة الرقمية (Catbox.moe / Gofile.io)
+  const [cloudPdfUrl, setCloudPdfUrl] = useState<string>(() => {
+    const url = savedFin?.cloudPdfUrl || "";
+    return url.includes("tmpfiles.org") ? "" : url;
+  });
   const [uploadingCloud, setUploadingCloud] = useState(false);
+  const [lastGeneratedSnapshot, setLastGeneratedSnapshot] = useState<string | null>(null);
 
   // ━━━ 2. جهة الإسناد وبيانات العملية في الموضوع ━━━
   const [recipientPrefix, setRecipientPrefix] = useState(() => {
@@ -703,9 +708,7 @@ export function TabFinancial({
     // توليد رمز التحقق الرقمي المباشر
     let qrDrawingXml = "";
     try {
-      const targetVerifyUrl =
-        cloudPdfUrl ||
-        `${typeof window !== "undefined" ? window.location.origin : ""}/verify-doc?ref=${encodeURIComponent(registrationNumber)}&opId=${op.id}&type=financial`;
+      const targetVerifyUrl = cloudPdfUrl || registrationNumber;
       const qrDataUrl = await QRCode.toDataURL(targetVerifyUrl, { width: 160, margin: 1 });
       const qrBase64 = qrDataUrl.split(",")[1];
       const qrBinary = Uint8Array.from(atob(qrBase64), (c) => c.charCodeAt(0));
@@ -1019,17 +1022,84 @@ export function TabFinancial({
     return pdf;
   };
 
-  // ━━━ تحميل المعاينة الرسمية من محرك Word ━━━
+  // ━━━ رفع وتوثيق النسخة الرقمية المعتمدة سحابياً (Catbox.moe / Gofile.io) ━━━
+  const handleUploadToCloud = async (forceReupload = false, existingBlob?: Blob) => {
+    if (cloudPdfUrl && !cloudPdfUrl.includes("tmpfiles.org") && !forceReupload) {
+      toast.info("تم رفع وتوثيق النسخة الرقمية سحابياً مسبقاً وهي نشطة بالفعل ✓");
+      return;
+    }
+
+    setUploadingCloud(true);
+    try {
+      let pdfBlob = existingBlob;
+      if (!pdfBlob) {
+        if (previewPdfBlob && currentSnapshot === lastGeneratedSnapshot) {
+          pdfBlob = previewPdfBlob;
+        } else {
+          pdfBlob = await generateFinancialPdfBlob();
+          setPreviewPdfBlob(pdfBlob);
+          setLastGeneratedSnapshot(currentSnapshot);
+        }
+      }
+
+      toast.info("جاري توثيق ورفع العرض المالي سحابياً (Catbox/Gofile)...");
+      const res = await uploadPdfToFreeCloud(
+        pdfBlob,
+        `financial_offer_${registrationNumber || op.serialNumber || "doc"}.pdf`
+      );
+
+      if (res?.url) {
+        setCloudPdfUrl(res.url);
+        toast.success("تم توثيق ورفع العرض المالي للسحابة بنجاح! الرابط جاهز ومتاح عالمياً لأي هاتف محمول 🚀");
+
+        try {
+          let existingNotesObj: any = {};
+          if (op.notes && op.notes.startsWith("{")) existingNotesObj = JSON.parse(op.notes);
+          else if (op.notes) existingNotesObj = { textNotes: op.notes };
+          if (!existingNotesObj.financialOfferDocx) existingNotesObj.financialOfferDocx = {};
+          existingNotesObj.financialOfferDocx.cloudPdfUrl = res.url;
+          existingNotesObj.financialOfferDocx.uploadedAt = new Date().toISOString();
+          await api.patch(`/operations/${op.id}`, { notes: JSON.stringify(existingNotesObj) });
+        } catch (e) {
+          console.warn("Failed to auto-save cloud url:", e);
+        }
+      }
+    } catch (err: any) {
+      if (forceReupload) {
+        toast.error("فشل الرفع السحابي: " + (err?.response?.data?.message || err?.message || ""));
+      }
+    } finally {
+      setUploadingCloud(false);
+    }
+  };
+
+  // ━━━ تحميل المعاينة الرسمية من محرك Word الأصيل ━━━
   const loadOfficialPreview = async () => {
+    if (previewPdfBlob && currentSnapshot === lastGeneratedSnapshot) {
+      return;
+    }
+
     setRenderingDocx(true);
     try {
       if (previewPdfUrl) {
         URL.revokeObjectURL(previewPdfUrl);
         setPreviewPdfUrl(null);
       }
-      const pdfBlob = await generateFinancialPdfBlob();
+      const docx = await generateFinancialDocxBlob();
+      setPreviewDocxBlob(docx);
+      const pdfBlob = await getPdfBlobFromDocx(
+        docx,
+        `financial_offer_${registrationNumber || op.serialNumber}.docx`
+      );
+      setPreviewPdfBlob(pdfBlob);
+      setLastGeneratedSnapshot(currentSnapshot);
       const url = URL.createObjectURL(pdfBlob);
       setPreviewPdfUrl(url);
+
+      // رفع سحابي هادئ إذا لم يكن مرفوعاً
+      if (!cloudPdfUrl || cloudPdfUrl.includes("tmpfiles.org")) {
+        handleUploadToCloud(false, pdfBlob);
+      }
     } catch (err: any) {
       console.error("فشل تجهيز معاينة العرض المالي:", err);
       toast.error("تعذر تجهيز المعاينة: " + (err?.message || ""));
@@ -1132,15 +1202,52 @@ export function TabFinancial({
     await executePrintDoc();
   };
 
-  // ━━━ تحميل ملف Word الأصلي (.docx) ━━━
-  const handleDownloadDocx = async () => {
-    if (isDirty) {
-      toast.warning("يرجى حفظ التعديلات أولاً لضمان تحديث مستند الوورد!");
+  // ━━━ دالة عرض الملف المؤرشف فوراً (0ms) بدون إعادة تحويل ━━━
+  const handleViewArchive = () => {
+    // 1. إذا كان رابط السحابة متاحاً، افتح النسخة السحابية المعتمدة فوراً
+    if (cloudPdfUrl) {
+      window.open(cloudPdfUrl, "_blank");
       return;
     }
+    // 2. إذا كان ملف الـ PDF متوفراً في الذاكرة مسبقاً، افتح نافذة المعاينة فوراً
+    if (previewPdfBlob) {
+      setPreviewModalOpen(true);
+      return;
+    }
+    // 3. التحقق من وجود مستند مؤرشف في أرشيف العملية
+    const archivedDoc = op.documents?.find(
+      (d: any) =>
+        d.type?.toLowerCase().includes("financial") ||
+        d.name?.toLowerCase().includes("financial") ||
+        d.name?.includes("مالي")
+    );
+    if (archivedDoc?.fileUrl) {
+      window.open(archivedDoc.fileUrl, "_blank");
+      return;
+    }
+    // 4. فتح المعاينة
+    setPreviewModalOpen(true);
+  };
+
+  // ━━━ تحميل ملف Word الأصلي (.docx) ━━━
+  const handleDownloadDocx = async () => {
+    if (previewDocxBlob && currentSnapshot === lastGeneratedSnapshot) {
+      const url = URL.createObjectURL(previewDocxBlob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `عرض_مالي_${op.serialNumber || "365"}_${registrationNumber}.docx`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      toast.success("تم تنزيل ملف الوورد فوراً! 📄✨");
+      return;
+    }
+
     setDownloadingDocx(true);
     try {
       const blob = await generateFinancialDocxBlob();
+      setPreviewDocxBlob(blob);
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
@@ -1160,14 +1267,35 @@ export function TabFinancial({
 
   // ━━━ تحميل بصيغة PDF عالية الدقة ━━━
   const handleDownloadPdf = async () => {
-    if (isDirty) {
-      toast.warning("يرجى حفظ التعديلات أولاً لضمان احتواء الـ PDF على أحدث البيانات!");
+    if (previewPdfBlob && currentSnapshot === lastGeneratedSnapshot) {
+      const url = URL.createObjectURL(previewPdfBlob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `عرض_مالي_${op.serialNumber || "365"}_${registrationNumber}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      toast.success("تم تصدير وتحميل مستند PDF فوراً! 📑✨");
+
+      if (!cloudPdfUrl || cloudPdfUrl.includes("tmpfiles.org")) {
+        handleUploadToCloud(false, previewPdfBlob);
+      }
       return;
     }
+
     setDownloadingPdf(true);
     try {
-      toast.info("جاري تصدير العرض المالي بصيغة PDF الرسمية...");
-      const pdfBlob = await generateFinancialPdfBlob();
+      toast.info("جاري تصدير العرض المالي بصيغة PDF الرسمية عبر محرك Word...");
+      const docx = await generateFinancialDocxBlob();
+      const pdfBlob = await getPdfBlobFromDocx(
+        docx,
+        `financial_offer_${registrationNumber || op.serialNumber}.docx`
+      );
+      setPreviewDocxBlob(docx);
+      setPreviewPdfBlob(pdfBlob);
+      setLastGeneratedSnapshot(currentSnapshot);
+
       const url = URL.createObjectURL(pdfBlob);
       const a = document.createElement("a");
       a.href = url;
@@ -1177,6 +1305,10 @@ export function TabFinancial({
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
       toast.success("تم تصدير وتحميل مستند PDF بنجاح! 📑");
+
+      if (!cloudPdfUrl || cloudPdfUrl.includes("tmpfiles.org")) {
+        handleUploadToCloud(false, pdfBlob);
+      }
     } catch (err: any) {
       console.error(err);
       toast.error("فشل تصدير مستند PDF: " + (err?.response?.data?.message || err?.message || ""));
@@ -1986,39 +2118,6 @@ export function TabFinancial({
                 </div>
 
                 <div className="flex items-center gap-2 flex-wrap">
-                  <FreeConvertersQuickLinks />
-
-                  <Button
-                    size="sm"
-                    onClick={handlePrintWordDocument}
-                    disabled={printingDocx}
-                    className="bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold h-9 px-4 rounded-xl shadow-md cursor-pointer flex items-center gap-1.5"
-                  >
-                    <Printer className={`h-4 w-4 ${printingDocx ? "animate-spin" : ""}`} />
-                    <span>{printingDocx ? "جاري التجهيز..." : "طباعة مستند الوورد"}</span>
-                  </Button>
-
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={handleDownloadDocx}
-                    disabled={downloadingDocx}
-                    className="text-xs font-bold h-9 rounded-xl border-border hover:bg-muted cursor-pointer flex items-center gap-1.5"
-                  >
-                    <Download className="h-4 w-4 text-blue-600" />
-                    <span>{downloadingDocx ? "جاري التوليد..." : "تنزيل ملف Word (.docx)"}</span>
-                  </Button>
-
-                  <Button
-                    size="sm"
-                    onClick={handleDownloadPdf}
-                    disabled={downloadingPdf}
-                    className="bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold h-9 px-3.5 rounded-xl shadow-md cursor-pointer flex items-center gap-1.5"
-                  >
-                    <FileText className={`h-4 w-4 ${downloadingPdf ? "animate-spin" : ""}`} />
-                    <span>{downloadingPdf ? "جاري التحويل..." : "تحميل PDF"}</span>
-                  </Button>
-
                   <Button
                     size="sm"
                     variant="ghost"
@@ -2069,6 +2168,20 @@ export function TabFinancial({
         </Portal>
       )}
 
+      {/* ━━━ الباركود الذكي ورمز QR والرفع السحابي المجاني للنسخة الرقمية بأسفل الصفحة ━━━ */}
+      <LetterQrCloudCard
+        cloudPdfUrl={cloudPdfUrl}
+        registrationNumber={registrationNumber}
+        opId={op.id}
+        docType="financial"
+        uploadingCloud={uploadingCloud}
+        onUploadToCloud={handleUploadToCloud}
+        title="الباركود الذكي ورمز QR الرقمي المعتمد (PDF)"
+        subtitle="عند مسح الباركود بكاميرا الموبايل يتم فتح صفحة النسخة الرقمية المعتمدة للعرض المالي فوراً بدون الحاجة لأي تسجيل دخول."
+        badgeText="مدمج بموضع كلمة (الباركود) بالأعلى ورقم القيد بالتذييل"
+        gradientClass="from-teal-500/10 via-emerald-500/10 to-transparent border-teal-500/25"
+      />
+
       {/* ━━━ BOTTOM ACTION BAR: التوليد والطباعة والمعاينة بأسفل مرحلة العرض المالي ━━━ */}
       <LetterBottomActionWidget
         title="العرض المالي وجدول الأسعار والكميات"
@@ -2079,7 +2192,7 @@ export function TabFinancial({
         onSave={handleSaveOffer}
         onCancelEdits={handleCancelEdits}
         saving={savingOffer}
-        onViewArchive={() => setPreviewModalOpen(true)}
+        onViewArchive={handleViewArchive}
         icon={Coins}
         iconColor="text-teal-700 dark:text-teal-400"
         iconBg="bg-teal-500/15 border-teal-500/30"
@@ -2094,9 +2207,12 @@ export function TabFinancial({
         onConfirmReprint={handleConfirmReprint}
         onViewArchive={() => {
           setReprintWarningOpen(false);
-          setPreviewModalOpen(true);
+          handleViewArchive();
         }}
       />
+
+      {/* ━━━ نافذة التحميل العائمة المبتكرة عند تنزيل PDF ━━━ */}
+      <PdfExportLoadingModal open={downloadingPdf} />
 
       {/* شريط التنقل السفلي */}
       <StepFooterNav

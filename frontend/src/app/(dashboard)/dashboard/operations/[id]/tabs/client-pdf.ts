@@ -137,19 +137,21 @@ export async function openDocxInDesktopWord(
 }
 
 /**
- * روابط أدوات التحويل المجانية السحابية الموثوقة:
- * - Adobe Acrobat Online Word to PDF: https://www.adobe.com/acrobat/online/word-to-pdf.html
- * - iLovePDF Word to PDF: https://www.ilovepdf.com/word_to_pdf
+ * رفع وتوثيق ملف الـ PDF على السحابة المجانية (Catbox.moe / Gofile.io)
+ * يتيح مسح الباركود وفتح النسخة الرقمية المعتمدة فوراً على أي هاتف محمول
  */
-export const FREE_ONLINE_PDF_CONVERTERS = [
-  {
-    name: "Adobe Acrobat Online (Word to PDF)",
-    url: "https://www.adobe.com/acrobat/online/word-to-pdf.html",
-  },
-  {
-    name: "iLovePDF (Word to PDF)",
-    url: "https://www.ilovepdf.com/word_to_pdf",
-  },
-];
+export async function uploadPdfToFreeCloud(
+  pdfBlob: Blob,
+  fileName: string = "document.pdf"
+): Promise<{ success: boolean; url: string; provider: string }> {
+  const formData = new FormData();
+  formData.append("file", pdfBlob, fileName);
+  const res = await api.post("/operations/upload-cloud-pdf", formData, {
+    headers: { "Content-Type": "multipart/form-data" },
+    timeout: 35000,
+  });
+  return res.data;
+}
+
 
 
