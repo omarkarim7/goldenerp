@@ -1616,52 +1616,82 @@ export class OperationsService {
    * - المحرك الثاني (تلقائي): سكربت تحويل سحابي ذكي ومجاني 100% عبر iLovePDF (يعمل آلياً بدون أي مفاتيح API أو تكلفة).
    */
   async convertDocxBufferToPdf(docxBuffer: Buffer): Promise<Buffer> {
-    // 1. محاولة التحويل عبر محرك Microsoft Word Desktop المحلي أولاً
+    // 1. محاولة التحويل عبر محرك Microsoft Word Desktop المحلي أولاً (بدقة 100% وبكامل الخطوط)
     if (process.platform === 'win32') {
       try {
         return await this.convertDocxViaWordCom(docxBuffer);
       } catch (comErr: any) {
-        this.logger.warn(`فشل التحويل عبر Word COM المحلي، جاري الانتقال للتحويل الآلي المجاني: ${comErr?.message}`);
+        this.logger.warn(`المحاولة الأولى عبر Word COM فشلت (${comErr?.message})، جاري إعادة المحاولة الفورية...`);
+        try {
+          await new Promise((r) => setTimeout(r, 1200));
+          return await this.convertDocxViaWordCom(docxBuffer);
+        } catch (retryErr: any) {
+          this.logger.warn(`فشلت إعادة محاولة Word COM المحلي: ${retryErr?.message}`);
+        }
       }
     }
 
-    // 2. التحويل الآلي المجاني الفوري عبر iLovePDF كبديل سحابي ذكي ومجاني 100%
+    // 2. التحويل البديل لبيئات الخوادم التي لا تدعم Word Desktop
     try {
       return await this.convertDocxViaFreeILovePdf(docxBuffer);
     } catch (webErr: any) {
-      this.logger.error(`فشل التحويل الآلي المجاني عبر iLovePDF أيضاً: ${webErr?.message}`);
-      throw new Error('تعذر تحويل المستند إلى PDF عبر محركات التحويل المجانية المتاحة');
+      this.logger.error(`فشل التحويل البديل أيضاً: ${webErr?.message}`);
+      throw new Error('تعذر تحويل المستند إلى PDF عبر محركات التحويل المتاحة');
     }
   }
 
   /**
-   * تحويل المستند عبر محرك Microsoft Word Desktop على بيئة Windows
-   * يتم التنفيذ عبر ملف PowerShell مستقل وموثوق لتجنب قيود cmd.exe وضمان خلوه من أي أخطاء
+   * تحويل المستند عبر محرك Microsoft Word Desktop الأصلي على بيئة Windows
+   * - يتم الحفظ في مجلد uploads المحلي الموثوق لتفادي تنبيهات Protected View
+   * - تصدير رسمي عالي الدقة عبر ExportAsFixedFormat مع تضمين كامل الخطوط (PDF/A)
    */
   private async convertDocxViaWordCom(docxBuffer: Buffer): Promise<Buffer> {
+    const uploadDir = path.resolve(process.cwd(), 'uploads');
+    if (!fs.existsSync(uploadDir)) {
+      fs.mkdirSync(uploadDir, { recursive: true });
+    }
+
     const randomId = Date.now() + '_' + Math.random().toString(36).substring(7);
-    const tempDocx = path.resolve(os.tmpdir(), `goldenerp_doc_${randomId}.docx`);
-    const tempPdf = path.resolve(os.tmpdir(), `goldenerp_doc_${randomId}.pdf`);
-    const tempPs1 = path.resolve(os.tmpdir(), `goldenerp_conv_${randomId}.ps1`);
+    const tempDocx = path.resolve(uploadDir, `goldenerp_doc_${randomId}.docx`);
+    const tempPdf = path.resolve(uploadDir, `goldenerp_doc_${randomId}.pdf`);
+    const tempPs1 = path.resolve(uploadDir, `goldenerp_conv_${randomId}.ps1`);
 
     await fs.promises.writeFile(tempDocx, docxBuffer);
 
+    const tempDocxEscaped = tempDocx.replace(/'/g, "''");
+    const tempPdfEscaped = tempPdf.replace(/'/g, "''");
+
     const psScript = `
-$word = New-Object -ComObject Word.Application
-$word.Visible = $false
-$word.DisplayAlerts = 0
+$word = $null
 $doc = $null
 try {
-  $doc = $word.Documents.Open('${tempDocx.replace(/'/g, "''")}')
-  $doc.SaveAs([ref]'${tempPdf.replace(/'/g, "''")}', [ref]17)
+  $word = New-Object -ComObject Word.Application
+  $word.Visible = $false
+  $word.DisplayAlerts = 0
+
+  $doc = $word.Documents.Open('${tempDocxEscaped}')
+
+  # تصدير عالي الدقة يضمن مطابقة كافة الخطوط والجداول 100%
+  try {
+    $doc.ExportAsFixedFormat('${tempPdfEscaped}', 17, $false, 0, 0, 1, 1, 0, $true, $true, 0, $true, $true, $true)
+  } catch {
+    $doc.ExportAsFixedFormat('${tempPdfEscaped}', 17)
+  }
+
   $doc.Close([ref]0)
+  $doc = $null
   Write-Output "SUCCESS_CONVERT"
 } catch {
   Write-Error $_.Exception.Message
 } finally {
-  $word.Quit([ref]0)
-  if ($doc -ne $null) { [System.Runtime.InteropServices.Marshal]::ReleaseComObject($doc) | Out-Null }
-  [System.Runtime.InteropServices.Marshal]::ReleaseComObject($word) | Out-Null
+  if ($doc -ne $null) {
+    try { $doc.Close([ref]0) } catch {}
+    try { [System.Runtime.InteropServices.Marshal]::ReleaseComObject($doc) | Out-Null } catch {}
+  }
+  if ($word -ne $null) {
+    try { $word.Quit([ref]0) } catch {}
+    try { [System.Runtime.InteropServices.Marshal]::ReleaseComObject($word) | Out-Null } catch {}
+  }
   [System.GC]::Collect()
 }
 `;
@@ -1676,19 +1706,21 @@ try {
           try { await fs.promises.unlink(tempPs1); } catch {}
           try { await fs.promises.unlink(tempDocx); } catch {}
 
-          if (err || !fs.existsSync(tempPdf)) {
-            try { await fs.promises.unlink(tempPdf); } catch {}
-            return reject(err || new Error(stderr || 'فشل تحويل المستند إلى PDF عبر محرك Word'));
+          if (fs.existsSync(tempPdf)) {
+            try {
+              const pdfBuf = await fs.promises.readFile(tempPdf);
+              await fs.promises.unlink(tempPdf);
+              if (pdfBuf.length > 1000) {
+                this.logger.log(`تم تحويل المستند بنجاح عبر Microsoft Word Desktop COM! الحجم: ${pdfBuf.length} بايت`);
+                return resolve(pdfBuf);
+              }
+            } catch (readErr) {
+              try { await fs.promises.unlink(tempPdf); } catch {}
+              return reject(readErr);
+            }
           }
 
-          try {
-            const pdfBuf = await fs.promises.readFile(tempPdf);
-            try { await fs.promises.unlink(tempPdf); } catch {}
-            this.logger.log(`تم تحويل المستند بنجاح عبر Microsoft Word Desktop COM! الحجم: ${pdfBuf.length} بايت`);
-            resolve(pdfBuf);
-          } catch (readErr) {
-            reject(readErr);
-          }
+          reject(err || new Error(stderr || 'فشل تحويل المستند إلى PDF عبر محرك Word'));
         },
       );
     });
