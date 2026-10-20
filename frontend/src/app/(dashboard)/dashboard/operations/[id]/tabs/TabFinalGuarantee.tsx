@@ -488,20 +488,8 @@ export function TabFinalGuarantee({
   const loadOfficialPreview = async () => {
     setRenderingDocx(true);
     try {
-      if (previewPdfUrl) {
-        URL.revokeObjectURL(previewPdfUrl);
-        setPreviewPdfUrl(null);
-      }
       const docxBlob = await generateGuaranteeDocxBlob(activeLetterType);
       setPreviewDocxBlob(docxBlob);
-
-      try {
-        const pdfBlob = await generateGuaranteePdfBlob(activeLetterType);
-        const url = URL.createObjectURL(pdfBlob);
-        setPreviewPdfUrl(url);
-      } catch (pdfErr) {
-        console.warn("PDF conversion unavailable on server, using in-browser DocxViewer fallback:", pdfErr);
-      }
     } catch (err: any) {
       toast.error("تعذر تجهيز المعاينة: " + (err?.message || ""));
     } finally {
@@ -1561,14 +1549,6 @@ export function TabFinalGuarantee({
                         يقوم محرك Microsoft Word بتطبيق المتغيرات وإزالة التمييزات الحمراء وإنتاج صفحات المستند بدقة متناهية
                       </p>
                     </div>
-                  </div>
-                ) : previewPdfUrl ? (
-                  <div className="w-full max-w-[850px] min-h-[650px] bg-white rounded-md shadow-2xl border border-slate-300 dark:border-slate-800 overflow-hidden flex flex-col my-auto">
-                    <iframe
-                      src={`${previewPdfUrl}#toolbar=0&navpanes=0&scrollbar=1`}
-                      className="w-full min-h-[650px] flex-1 border-0"
-                      title="معاينة صفحات مستند الوورد"
-                    />
                   </div>
                 ) : previewDocxBlob ? (
                   <div className="w-full max-w-[950px] bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-300 dark:border-slate-800 overflow-hidden flex flex-col my-auto p-4">

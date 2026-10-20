@@ -18,6 +18,7 @@ import { toast } from "sonner";
 import api from "@/lib/api";
 import { Operation, SectionCard, formatDate, tafqeetArabic, formatCurrency } from "./types";
 import { StepFooterNav } from "./StepFooterNav";
+import { DocxViewer } from "@/components/docx-viewer";
 import {
   generateSmartOutgoingRef,
   cleanAllDocxXml,
@@ -509,6 +510,7 @@ export function TabFinancial({
 
   // Modals & Action States
   const [previewModalOpen, setPreviewModalOpen] = useState(false);
+  const [previewDocxBlob, setPreviewDocxBlob] = useState<Blob | null>(null);
   const [previewPdfUrl, setPreviewPdfUrl] = useState<string | null>(null);
   const [renderingDocx, setRenderingDocx] = useState(false);
   const [downloadingDocx, setDownloadingDocx] = useState(false);
@@ -1013,17 +1015,12 @@ export function TabFinancial({
     );
   };
 
-  // ━━━ تحميل المعاينة الرسمية من محرك Word الأصلي ━━━
+  // ━━━ تحميل المعاينة الفورية لمستند Word ━━━
   const loadOfficialPreview = async () => {
     setRenderingDocx(true);
     try {
-      if (previewPdfUrl) {
-        URL.revokeObjectURL(previewPdfUrl);
-        setPreviewPdfUrl(null);
-      }
-      const pdfBlob = await generateFinancialPdfBlob();
-      const url = URL.createObjectURL(pdfBlob);
-      setPreviewPdfUrl(url);
+      const docxBlob = await generateFinancialDocxBlob();
+      setPreviewDocxBlob(docxBlob);
     } catch (err: any) {
       console.error("فشل تجهيز معاينة العرض المالي:", err);
       toast.error("تعذر تجهيز المعاينة: " + (err?.message || ""));
@@ -2056,13 +2053,9 @@ export function TabFinancial({
                       </p>
                     </div>
                   </div>
-                ) : previewPdfUrl ? (
-                  <div className="w-full max-w-[850px] min-h-[650px] bg-white rounded-md shadow-2xl border border-slate-300 dark:border-slate-800 overflow-hidden flex flex-col my-auto">
-                    <iframe
-                      src={`${previewPdfUrl}#toolbar=0&navpanes=0&scrollbar=1`}
-                      className="w-full min-h-[650px] flex-1 border-0"
-                      title="معاينة صفحات مستند الوورد"
-                    />
+                ) : previewDocxBlob ? (
+                  <div className="w-full max-w-[950px] bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-300 dark:border-slate-800 overflow-hidden flex flex-col my-auto p-4">
+                    <DocxViewer blob={previewDocxBlob} fileName={`عرض_مالي_${op.serialNumber || "365"}_${registrationNumber}.docx`} />
                   </div>
                 ) : (
                   <div className="my-auto py-20 text-center text-slate-400 space-y-3">

@@ -23,6 +23,7 @@ import {
   formatDocFileSize, tafqeetArabic
 } from "./types";
 import { StepFooterNav } from "./StepFooterNav";
+import { DocxViewer } from "@/components/docx-viewer";
 import { generateSmartOutgoingRef, cleanAllDocxXml, buildQrAnchorXml, injectSingleQrIntoDocXml, LetterBottomActionWidget, ReprintConfirmModal, getCurrentUserName, FISCAL_YEAR_OPTIONS, FreeConvertersQuickLinks } from "./letter-utils";
 import JSZip from "jszip";
 import QRCode from "qrcode";
@@ -844,24 +845,20 @@ export function TabBooklet({
     }
   };
 
-  // ━━━ المعاينة الحية المطابقة لمحرك Microsoft Word ━━━
+  // ━━━ المعاينة الحية الفورية لمستند Word ━━━
   const [previewModalOpen, setPreviewModalOpen] = useState(false);
   const [renderingDocx, setRenderingDocx] = useState(false);
-  const [previewPdfUrl, setPreviewPdfUrl] = useState<string | null>(null);
+  const [previewDocxBlob, setPreviewDocxBlob] = useState<Blob | null>(null);
   const [printingDocx, setPrintingDocx] = useState(false);
 
   const loadOfficialPreview = async () => {
     setRenderingDocx(true);
     try {
-      const pdfBlob = await generateBookletPdfBlob(activeLetterType);
-      if (previewPdfUrl) {
-        URL.revokeObjectURL(previewPdfUrl);
-      }
-      const url = URL.createObjectURL(pdfBlob);
-      setPreviewPdfUrl(url);
+      const docxBlob = await generateBookletDocxBlob(activeLetterType);
+      setPreviewDocxBlob(docxBlob);
     } catch (err: any) {
       console.error(err);
-      toast.error("فشل تجهيز معاينة الوورد: " + (err?.response?.data?.message || err?.message || ""));
+      toast.error("فشل تجهيز معاينة الوورد: " + (err?.message || ""));
     } finally {
       setRenderingDocx(false);
     }
@@ -871,11 +868,6 @@ export function TabBooklet({
     if (previewModalOpen) {
       loadOfficialPreview();
     }
-    return () => {
-      if (previewPdfUrl) {
-        URL.revokeObjectURL(previewPdfUrl);
-      }
-    };
   }, [previewModalOpen, activeLetterType]);
 
   // ━━━ تنفيذ الطباعة المباشرة وحفظ السجل الرسمي (استجابة للتسجيلين 4 و 5) ━━━
@@ -2559,19 +2551,18 @@ export function TabBooklet({
                     </div>
                     <div className="space-y-1">
                       <h4 className="text-base font-bold text-white">
-                        جاري فتح وتصيير مستند الوورد الأصلي عبر محرك Microsoft Word...
+                        جاري فتح وتجهيز مستند الوورد الأصلي للمعاينة الفورية...
                       </h4>
                       <p className="text-xs text-slate-400">
-                        يتم توليد معاينة رسمية مطابقة تماماً لقالب الوورد ({CURRENT_FILE_ARABIC_NAME[activeLetterType]}) بدقة 100% وبدون أي تشويه
+                        معاينة تفاعلية فورية لقالب الوورد ({CURRENT_FILE_ARABIC_NAME[activeLetterType]}) بدقة 100%
                       </p>
                     </div>
                   </div>
-                ) : previewPdfUrl ? (
-                  <div className="w-full h-full flex flex-col items-center">
-                    <iframe
-                      src={`${previewPdfUrl}#toolbar=0&navpanes=0`}
-                      className="w-full h-[78vh] min-h-[640px] rounded-xl border border-slate-700 shadow-2xl bg-white"
-                      title="معاينة مستند الوورد الأصلي المعتمد"
+                ) : previewDocxBlob ? (
+                  <div className="w-full max-w-[950px] bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-300 dark:border-slate-800 overflow-hidden flex flex-col my-auto p-4">
+                    <DocxViewer
+                      blob={previewDocxBlob}
+                      fileName={`${CURRENT_FILE_ARABIC_NAME[activeLetterType]}_${registrationNumber}.docx`}
                     />
                   </div>
                 ) : (

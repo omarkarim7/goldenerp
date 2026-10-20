@@ -248,58 +248,122 @@ export interface PrintHistoryEntry {
   archiveDocId?: string;
 }
 
+const ROLE_ARABIC_MAP: Record<string, string> = {
+  GENERAL_MANAGER: "المدير العام",
+  DEPUTY_MANAGER: "نائب المدير",
+  EMPLOYEE: "موظف",
+  ADMIN: "المدير العام",
+};
+
 /**
- * Returns the currently logged in user's display name from localStorage.
+ * Returns the currently logged in user's display name and role from localStorage.
  */
 export function getCurrentUserName(): string {
-  if (typeof window === "undefined") return "المستخدم الحالي";
+  if (typeof window === "undefined") return "المدير العام";
   try {
     const raw = localStorage.getItem("user");
     if (raw) {
       const u = JSON.parse(raw);
-      return u.name || u.fullName || u.username || u.email || "المستخدم الحالي";
+      const isCuid = (s?: string) => !s || /^c[a-z0-9]{20,30}$/i.test(String(s).trim());
+      
+      let displayName = "";
+      if (u.fullName && !isCuid(u.fullName)) {
+        displayName = u.fullName;
+      } else if (u.name && !isCuid(u.name)) {
+        displayName = u.name;
+      } else if (u.username && !isCuid(u.username)) {
+        displayName = u.username;
+      }
+      
+      const roleTitle = u.role ? (ROLE_ARABIC_MAP[u.role] || u.role) : "";
+      
+      if (displayName && roleTitle) {
+        return `${displayName} (${roleTitle})`;
+      } else if (displayName) {
+        return displayName;
+      } else if (roleTitle) {
+        return roleTitle;
+      }
     }
   } catch (e) {}
-  return "المستخدم الحالي";
+  return "المدير العام";
+}
+
+/**
+ * Formats printedBy ensuring no raw CUID IDs (e.g. cmuplul3p000u9jygaao3mb8e) are displayed.
+ */
+export function formatPrintedBy(printedBy?: string): string {
+  if (!printedBy) return "المدير العام";
+  const trimmed = printedBy.trim();
+  if (/^c[a-z0-9]{20,30}$/i.test(trimmed)) {
+    try {
+      const raw = typeof window !== "undefined" ? localStorage.getItem("user") : null;
+      if (raw) {
+        const u = JSON.parse(raw);
+        if (u.id === trimmed || u._id === trimmed) {
+          return getCurrentUserName();
+        }
+        if (u.role && ROLE_ARABIC_MAP[u.role]) {
+          return ROLE_ARABIC_MAP[u.role];
+        }
+      }
+    } catch {}
+    return "المدير العام (الإدارة)";
+  }
+  return printedBy;
 }
 
 /**
  * Generates Floating DrawingML XML for QR Code:
- * - Positioned at far-left (X: 450000 ~ 1.2cm from paper edge)
- * - Directly under the header line (Y: 1150000 ~ 3.1cm)
- * - Ultra-compact size: 400000 x 400000 (~1.1cm) so it NEVER interferes with or wraps text
+ * - Ultra-compact size: 320000 x 320000 (~0.88cm) so it NEVER interferes with or wraps text
+ * - Positioned at far-left (X: 360000 ~ 1.0cm from paper edge)
+ * - Directly under the header line (Y: 1050000 ~ 2.9cm)
  * - behindDoc="1" (Behind Text) & layoutInCell="0" & wrapNone & allowOverlap="1"
  */
 export function buildQrAnchorXml(): string {
-  return `<w:r><w:drawing><wp:anchor distT="0" distB="0" distL="0" distR="0" simplePos="0" relativeHeight="251658240" behindDoc="1" locked="0" layoutInCell="0" allowOverlap="1"><wp:simplePos x="0" y="0"/><wp:positionH relativeFrom="page"><wp:posOffset>450000</wp:posOffset></wp:positionH><wp:positionV relativeFrom="page"><wp:posOffset>1150000</wp:posOffset></wp:positionV><wp:extent cx="400000" cy="400000"/><wp:effectExtent l="0" t="0" r="0" b="0"/><wp:wrapNone/><wp:docPr id="777" name="DocQR"/><wp:cNvGraphicFramePr><a:graphicFrameLocks xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" noChangeAspect="1"/></wp:cNvGraphicFramePr><a:graphic xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:pic xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:nvPicPr><pic:cNvPr id="0" name="qr.png"/><pic:cNvPicPr/></pic:nvPicPr><pic:blipFill><a:blip r:embed="rIdQR"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill><pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="400000" cy="400000"/></a:xfrm><a:prstGeom prst="rect"/></pic:spPr></pic:pic></a:graphicData></a:graphic></wp:anchor></w:drawing></w:r>`;
+  return `<w:r><w:drawing><wp:anchor distT="0" distB="0" distL="0" distR="0" simplePos="0" relativeHeight="251658240" behindDoc="1" locked="1" layoutInCell="0" allowOverlap="1"><wp:simplePos x="0" y="0"/><wp:positionH relativeFrom="page"><wp:posOffset>360000</wp:posOffset></wp:positionH><wp:positionV relativeFrom="page"><wp:posOffset>1050000</wp:posOffset></wp:positionV><wp:extent cx="320000" cy="320000"/><wp:effectExtent l="0" t="0" r="0" b="0"/><wp:wrapNone/><wp:docPr id="777" name="DocQR"/><wp:cNvGraphicFramePr><a:graphicFrameLocks xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" noChangeAspect="1"/></wp:cNvGraphicFramePr><a:graphic xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:pic xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:nvPicPr><pic:cNvPr id="0" name="qr.png"/><pic:cNvPicPr/></pic:nvPicPr><pic:blipFill><a:blip r:embed="rIdQR"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill><pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="320000" cy="320000"/></a:xfrm><a:prstGeom prst="rect"/></pic:spPr></pic:pic></a:graphicData></a:graphic></wp:anchor></w:drawing></w:r>`;
 }
 
 /**
- * Injects QR Code strictly into the first page only and cleans any preceding spaces
- * that would otherwise push or wrap text in the title line.
+ * Injects QR Code strictly into the first page only and safely handles XML tags
+ * to avoid any unclosed <w:r> or tag mismatches.
  */
 export function injectSingleQrIntoDocXml(
   docXml: string,
   qrDrawingXml: string,
   registrationNumber: string
 ): string {
-  // 1. Remove space runs in the template immediately before the QR placeholder so lines never wrap
+  // 1. Remove entire whitespace runs immediately preceding the QR placeholder so it doesn't wrap or push text
   docXml = docXml.replace(
-    /<w:t xml:space="preserve">\s{2,}<\/w:t><\/w:r>(?=\s*<w:r[^>]*>(?:<w:rPr>[\s\S]*?<\/w:rPr>)?<w:t>(?:الباركود|البركود)<\/w:t>)/g,
+    /<w:r\b[^>]*>(?:<w:rPr>[\s\S]*?<\/w:rPr>)?<w:t\b[^>]*>\s{2,}<\/w:t><\/w:r>(?=\s*<w:r\b[^>]*>(?:<w:rPr>[\s\S]*?<\/w:rPr>)?<w:t\b[^>]*>(?:الباركود|البركود)<\/w:t><\/w:r>)/g,
     ""
   );
 
-  // 2. Replace the first occurrence of الباركود with the QR anchor; empty all others
+  // 2. Replace the first complete <w:r> containing only whitespace and الباركود/البركود with the QR drawing XML
   let qrDone = false;
-  docXml = docXml.replace(/\s*(?:الباركود|البركود)\s*/g, () => {
-    if (!qrDone && qrDrawingXml) {
-      qrDone = true;
-      return `</w:t></w:r>${qrDrawingXml}<w:r><w:t>`;
+  docXml = docXml.replace(
+    /<w:r\b[^>]*>(?:<w:rPr>[\s\S]*?<\/w:rPr>)?<w:t\b[^>]*>\s*(?:الباركود|البركود)\s*<\/w:t><\/w:r>/g,
+    () => {
+      if (!qrDone && qrDrawingXml) {
+        qrDone = true;
+        return qrDrawingXml;
+      }
+      return "";
     }
-    return "";
-  });
+  );
 
-  // 3. Fallback to registration number if placeholder missing
+  // 3. Fallback: if الباركود was embedded inside text, replace text safely without breaking XML
+  if (!qrDone) {
+    docXml = docXml.replace(/\s*(?:الباركود|البركود)\s*/g, () => {
+      if (!qrDone && qrDrawingXml) {
+        qrDone = true;
+        return `</w:t></w:r>${qrDrawingXml}<w:r><w:t>`;
+      }
+      return "";
+    });
+  }
+
+  // 4. Registration number fallback
   if (!qrDone && qrDrawingXml && docXml.includes("Ad26111000001")) {
     qrDone = true;
     docXml = docXml.replace("Ad26111000001", `${registrationNumber}</w:t></w:r>${qrDrawingXml}<w:r><w:t>`);
@@ -309,6 +373,7 @@ export function injectSingleQrIntoDocXml(
 
   return docXml;
 }
+
 
 /**
  * Unified Letter Bottom Action Widget:
@@ -429,7 +494,7 @@ export function LetterBottomActionWidget({
               <div className="flex items-center gap-3 flex-wrap text-xs text-muted-foreground mt-1.5">
                 <span className="flex items-center gap-1 font-semibold text-foreground/90">
                   <User className="h-3.5 w-3.5 text-amber-600" />
-                  طُبع بواسطة: <strong className="text-foreground">{printInfo.printedBy || "المستخدم"}</strong>
+                  طُبع بواسطة: <strong className="text-foreground">{formatPrintedBy(printInfo.printedBy)}</strong>
                 </span>
                 <span className="text-muted-foreground/60">•</span>
                 <span className="flex items-center gap-1 font-mono">
@@ -537,7 +602,7 @@ export function ReprintConfirmModal({
             <div className="flex justify-between items-center py-1 border-b border-amber-500/20">
               <span className="text-muted-foreground">طُبع بواسطة:</span>
               <span className="font-bold text-foreground">
-                {printInfo?.printedBy || "المستخدم الحالي"}
+                {formatPrintedBy(printInfo?.printedBy)}
               </span>
             </div>
             {printInfo?.lastPrintedAt && (

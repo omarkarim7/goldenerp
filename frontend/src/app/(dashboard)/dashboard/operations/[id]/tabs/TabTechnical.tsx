@@ -18,6 +18,7 @@ import { toast } from "sonner";
 import api from "@/lib/api";
 import { Operation, SectionCard, formatDate } from "./types";
 import { StepFooterNav } from "./StepFooterNav";
+import { DocxViewer } from "@/components/docx-viewer";
 import { generateSmartOutgoingRef, cleanAllDocxXml, buildQrAnchorXml, injectSingleQrIntoDocXml, LetterBottomActionWidget, ReprintConfirmModal, getCurrentUserName, PrintHistoryEntry, FISCAL_YEAR_OPTIONS, FreeConvertersQuickLinks } from "./letter-utils";
 import JSZip from "jszip";
 import QRCode from "qrcode";
@@ -357,6 +358,7 @@ export function TabTechnical({
 
   // Modals & Document state
   const [previewModalOpen, setPreviewModalOpen] = useState(false);
+  const [previewDocxBlob, setPreviewDocxBlob] = useState<Blob | null>(null);
   const [previewPdfUrl, setPreviewPdfUrl] = useState<string | null>(null);
   const [renderingDocx, setRenderingDocx] = useState(false);
   const [downloadingDocx, setDownloadingDocx] = useState(false);
@@ -797,20 +799,15 @@ export function TabTechnical({
     }
   };
 
-  // تحميل المعاينة الرسمية
+  // تحميل المعاينة الفورية لمستند Word
   const loadOfficialPreview = async () => {
     setRenderingDocx(true);
     try {
-      if (previewPdfUrl) {
-        URL.revokeObjectURL(previewPdfUrl);
-        setPreviewPdfUrl(null);
-      }
-      const pdfBlob = await generateTechnicalPdfBlob();
-      const url = URL.createObjectURL(pdfBlob);
-      setPreviewPdfUrl(url);
+      const docxBlob = await generateTechnicalDocxBlob();
+      setPreviewDocxBlob(docxBlob);
     } catch (err: any) {
       console.error("فشل تجهيز معاينة العرض الفني:", err);
-      toast.error("تعذر تجهيز المعاينة: " + (err?.response?.data?.message || err?.message || ""));
+      toast.error("تعذر تجهيز المعاينة: " + (err?.message || ""));
     } finally {
       setRenderingDocx(false);
     }
@@ -1883,19 +1880,15 @@ export function TabTechnical({
                       <RefreshCw className="h-8 w-8 animate-spin text-amber-500" />
                     </div>
                     <div className="space-y-1">
-                      <h4 className="text-base font-bold text-foreground">جاري فتح ومعالجة قالب الوورد الأصلي...</h4>
+                      <h4 className="text-base font-bold text-foreground">جاري فتح وتجهيز مستند الوورد الأصلي للمعاينة الفورية...</h4>
                       <p className="text-xs text-muted-foreground">
-                        يقوم محرك Microsoft Word بتطبيق المتغيرات وإنتاج صفحات المستند كما تطبع بدقة متناهية
+                        معاينة تفاعلية فورية لقالب العرض الفني المعتمد بدقة 100%
                       </p>
                     </div>
                   </div>
-                ) : previewPdfUrl ? (
-                  <div className="w-full max-w-[850px] min-h-[650px] bg-white rounded-md shadow-2xl border border-slate-300 dark:border-slate-800 overflow-hidden flex flex-col my-auto">
-                    <iframe
-                      src={`${previewPdfUrl}#toolbar=0&navpanes=0&scrollbar=1`}
-                      className="w-full min-h-[650px] flex-1 border-0"
-                      title="معاينة صفحات مستند الوورد"
-                    />
+                ) : previewDocxBlob ? (
+                  <div className="w-full max-w-[950px] bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-300 dark:border-slate-800 overflow-hidden flex flex-col my-auto p-4">
+                    <DocxViewer blob={previewDocxBlob} fileName={`عرض_فني_${op.serialNumber || "365"}_${registrationNumber}.docx`} />
                   </div>
                 ) : (
                   <div className="my-auto py-20 text-center text-slate-400 space-y-3">

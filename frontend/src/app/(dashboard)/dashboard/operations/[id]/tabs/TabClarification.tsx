@@ -733,25 +733,15 @@ export function TabClarification({
     }
   };
 
-  // ━━━ دالة تحميل المعاينة الرسمية الحية من محرك Word عبر PDF أصيل ━━━
+  // ━━━ دالة تحميل المعاينة الفورية لمستند Word ━━━
   const loadOfficialPreview = async () => {
     setRenderingDocx(true);
     try {
       const docxBlob = await generateClarificationDocxBlob();
       setPreviewDocxBlob(docxBlob);
-      try {
-        const pdfBlob = await generateClarificationPdfBlob();
-        if (previewPdfUrl) {
-          URL.revokeObjectURL(previewPdfUrl);
-        }
-        const url = URL.createObjectURL(pdfBlob);
-        setPreviewPdfUrl(url);
-      } catch (pdfErr) {
-        console.warn("PDF conversion unavailable on server, using in-browser DocxViewer fallback:", pdfErr);
-      }
     } catch (err: any) {
       console.error(err);
-      toast.error("فشل تجهيز معاينة الوورد: " + (err?.response?.data?.message || err?.message || ""));
+      toast.error("فشل تجهيز معاينة الوورد: " + (err?.message || ""));
     } finally {
       setRenderingDocx(false);
     }
@@ -1785,17 +1775,9 @@ export function TabClarification({
                       <RefreshCw className="h-8 w-8 animate-spin text-amber-500" />
                     </div>
                     <div className="space-y-1">
-                      <h4 className="text-base font-bold text-white">جاري فتح وتصيير مستند الوورد الأصلي عبر محرك Microsoft Word...</h4>
-                      <p className="text-xs text-slate-400">يتم توليد معاينة رسمية مطابقة تماماً لقالب الوورد (خطاب توضيح.docx) بدقة 100% وبدون أي تشويه</p>
+                      <h4 className="text-base font-bold text-white">جاري فتح وتجهيز مستند الوورد الأصلي للمعاينة الفورية...</h4>
+                      <p className="text-xs text-slate-400">معاينة تفاعلية فورية لقالب الوورد (خطاب توضيح.docx) بدقة 100%</p>
                     </div>
-                  </div>
-                ) : previewPdfUrl ? (
-                  <div className="w-full h-full flex flex-col items-center">
-                    <iframe
-                      src={`${previewPdfUrl}#toolbar=0&navpanes=0`}
-                      className="w-full h-[78vh] min-h-[640px] rounded-xl border border-slate-700 shadow-2xl bg-white"
-                      title="معاينة مستند الوورد الأصلي المعتمد"
-                    />
                   </div>
                 ) : previewDocxBlob ? (
                   <div className="w-full max-w-[950px] bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-300 dark:border-slate-800 overflow-hidden flex flex-col my-auto p-4">

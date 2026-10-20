@@ -18,6 +18,7 @@ import { toast } from "sonner";
 import api from "@/lib/api";
 import { Operation, SectionCard, formatDate } from "./types";
 import { StepFooterNav } from "./StepFooterNav";
+import { DocxViewer } from "@/components/docx-viewer";
 import {
   generateSmartOutgoingRef,
   cleanAllDocxXml,
@@ -200,6 +201,7 @@ export function TabDeclarations({
 
   // Modals & Document state
   const [previewModalOpen, setPreviewModalOpen] = useState(false);
+  const [previewDocxBlob, setPreviewDocxBlob] = useState<Blob | null>(null);
   const [previewPdfUrl, setPreviewPdfUrl] = useState<string | null>(null);
   const [renderingDocx, setRenderingDocx] = useState(false);
   const [downloadingDocx, setDownloadingDocx] = useState(false);
@@ -535,22 +537,12 @@ export function TabDeclarations({
     }
   };
 
-  // تحميل المعاينة الرسمية
+  // تحميل المعاينة الفورية لمستند Word
   const loadOfficialPreview = async () => {
     setRenderingDocx(true);
     try {
-      if (previewPdfUrl) {
-        URL.revokeObjectURL(previewPdfUrl);
-        setPreviewPdfUrl(null);
-      }
-      const pdfBlob = await generateDeclarationPdfBlob(activeDeclType);
-      const url = URL.createObjectURL(pdfBlob);
-      setPreviewPdfUrl(url);
-
-      // رفع تلقائي هادئ للسحابة إذا لم يكن مرفوعاً بعد
-      if (!currentCloudUrl) {
-        uploadPdfToCloudSilently(pdfBlob, activeDeclType);
-      }
+      const docxBlob = await generateDeclarationDocxBlob(activeDeclType);
+      setPreviewDocxBlob(docxBlob);
     } catch (err: any) {
       console.error("فشل تجهيز المعاينة:", err);
       toast.error("تعذر تجهيز المعاينة: " + (err?.message || ""));
@@ -1482,13 +1474,9 @@ export function TabDeclarations({
                       </p>
                     </div>
                   </div>
-                ) : previewPdfUrl ? (
-                  <div className="w-full max-w-[850px] min-h-[650px] bg-white rounded-md shadow-2xl border border-slate-300 dark:border-slate-800 overflow-hidden flex flex-col my-auto">
-                    <iframe
-                      src={`${previewPdfUrl}#toolbar=0&navpanes=0&scrollbar=1`}
-                      className="w-full min-h-[650px] flex-1 border-0"
-                      title="معاينة صفحات مستند الوورد"
-                    />
+                ) : previewDocxBlob ? (
+                  <div className="w-full max-w-[950px] bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-300 dark:border-slate-800 overflow-hidden flex flex-col my-auto p-4">
+                    <DocxViewer blob={previewDocxBlob} fileName={`إقرار_${activeDeclType}_${registrationNumber}.docx`} />
                   </div>
                 ) : (
                   <div className="my-auto py-20 text-center text-slate-400 space-y-3">
