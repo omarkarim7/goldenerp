@@ -9,6 +9,17 @@ import React from "react";
 
 export type LetterUrgency = "STANDARD" | "URGENT";
 
+export const FISCAL_YEAR_OPTIONS = [
+  "2024 / 2025",
+  "2025 / 2026",
+  "2026 / 2027",
+  "2027 / 2028",
+  "2028 / 2029",
+  "2029 / 2030",
+  "2030 / 2031",
+];
+
+
 export interface LetterOptions {
   letterUrgency: LetterUrgency;       // عادي vs طارئ
   outgoingRef: string;               // رقم الصادر (مثال: AZ261100001)
@@ -191,4 +202,15 @@ export async function cleanAllDocxXml(zip: any): Promise<void> {
     }
   }
 }
+
+/**
+ * Generates Floating DrawingML XML for QR Code:
+ * - Positioned at top-left corner of the page away from text (X: 720000 dxa ~ 20mm, Y: 540000 dxa ~ 15mm)
+ * - behindDoc="1" (Behind Text)
+ * - wrapNone (Never pushes text down or eats page margins, as requested in Audio 5 & User Prompt)
+ */
+export function buildQrAnchorXml(): string {
+  return `<w:r><w:drawing><wp:anchor distT="0" distB="0" distL="0" distR="0" simplePos="0" relativeHeight="251658240" behindDoc="1" locked="0" layoutInCell="1" allowOverlap="1"><wp:simplePos x="0" y="0"/><wp:positionH relativeFrom="page"><wp:posOffset>720000</wp:posOffset></wp:positionH><wp:positionV relativeFrom="page"><wp:posOffset>540000</wp:posOffset></wp:positionV><wp:extent cx="750000" cy="750000"/><wp:effectExtent l="0" t="0" r="0" b="0"/><wp:wrapNone/><wp:docPr id="777" name="DocQR"/><wp:cNvGraphicFramePr><a:graphicFrameLocks xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" noChangeAspect="1"/></wp:cNvGraphicFramePr><a:graphic xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:pic xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:nvPicPr><pic:cNvPr id="0" name="qr.png"/><pic:cNvPicPr/></pic:nvPicPr><pic:blipFill><a:blip r:embed="rIdQR"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill><pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="750000" cy="750000"/></a:xfrm><a:prstGeom prst="rect"/></pic:spPr></pic:pic></a:graphicData></a:graphic></wp:anchor></w:drawing></w:r>`;
+}
+
 

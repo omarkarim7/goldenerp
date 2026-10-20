@@ -23,7 +23,7 @@ import {
   formatDocFileSize, tafqeetArabic
 } from "./types";
 import { StepFooterNav } from "./StepFooterNav";
-import { generateSmartOutgoingRef, BarcodeVisual, cleanAllDocxXml } from "./letter-utils";
+import { generateSmartOutgoingRef, cleanAllDocxXml, buildQrAnchorXml, FISCAL_YEAR_OPTIONS } from "./letter-utils";
 import JSZip from "jszip";
 import QRCode from "qrcode";
 import { getPdfBlobFromDocx } from "./client-pdf";
@@ -193,39 +193,62 @@ export function TabBooklet({
     return savedData?.outgoingDate || new Date().toLocaleDateString("en-GB");
   });
 
+  // طريقة الطرح الافتراضية من العملية
+  const defaultTenderMethod = useMemo(() => {
+    const map: Record<string, string> = {
+      TENDER: "المناقصة العامة",
+      LIMITED_TENDER: "المناقصة المحدودة",
+      PRACTICE: "الممارسة العامة",
+      LIMITED_PRACTICE: "الممارسة المحدودة",
+      AUCTION: "المزايدة العلنية",
+      DIRECT_ORDER: "الاتفاق المباشر",
+    };
+    return map[op.tenderType] || "المناقصة المحدودة";
+  }, [op.tenderType]);
+
+  // سجل طباعة الخطابات وتتبع النسخ (استجابة للتسجيلين 4 و 5)
+  const [printHistory, setPrintHistory] = useState<Record<string, { printCount: number; firstPrintedAt?: string; lastPrintedAt?: string; printedBy?: string; registrationNumber?: string }>>(() => {
+    return savedData?.printHistory || {};
+  });
+  const [reprintWarningOpen, setReprintWarningOpen] = useState(false);
+
   // ━━━ 2. جهة الإسناد وبيانات العملية الرسمية ━━━
   const [recipientPrefix, setRecipientPrefix] = useState<string>(() => {
     return savedData?.recipientPrefix || "الأستاذ";
   });
   const [recipientTitleAndAuthority, setRecipientTitleAndAuthority] = useState<string>(() => {
-    return (
-      savedData?.recipientTitleAndAuthority ||
-      (op.authority
-        ? `مدير الادارة العامة للمشتريات والمخازن بـ ${op.authority}`
-        : "مدير الادارة العامة للمشتريات والمخازن بجامعة دمنهور")
-    );
+    if (savedData?.recipientTitleAndAuthority) return savedData.recipientTitleAndAuthority;
+    if (op.authority) return `مدير الادارة العامة للمشتريات والمخازن بـ ${op.authority}`;
+    return "مدير الادارة العامة للمشتريات والمخازن";
   });
 
   const [operationRegisteredName, setOperationRegisteredName] = useState<string>(() => {
-    return savedData?.operationRegisteredName || op.name || "توريد كاوتش وبطاريات للسيارات";
+    return op.name || savedData?.operationRegisteredName || "";
   });
   const [operationNumber, setOperationNumber] = useState<string>(() => {
-    return savedData?.operationNumber || op.externalNumber || String(op.serialNumber || "365");
+    return op.externalNumber || (op.serialNumber ? String(op.serialNumber) : "") || savedData?.operationNumber || "";
   });
   const [tenderMethod, setTenderMethod] = useState<string>(() => {
-    return savedData?.tenderMethod || "المناقصة المحدودة";
+    return savedData?.tenderMethod || defaultTenderMethod;
   });
   const [operationScope, setOperationScope] = useState<string>(() => {
-    return savedData?.operationScope || "توريد كاوتش وبطاريات للسيارات للجامعه";
+    return op.name || savedData?.operationScope || "";
   });
   const [fiscalYear, setFiscalYear] = useState<string>(() => {
+    try {
+      if (op.notes && op.notes.includes("fiscalYear")) {
+        const parsed = JSON.parse(op.notes);
+        if (parsed.portalDetails?.fiscalYear) return parsed.portalDetails.fiscalYear;
+        if (parsed.radarItem?.fiscalYear) return parsed.radarItem.fiscalYear;
+      }
+    } catch {}
     return savedData?.fiscalYear || "2024 / 2025";
   });
   const [technicalOpeningDate, setTechnicalOpeningDate] = useState<string>(() => {
-    if (savedData?.technicalOpeningDate) return savedData.technicalOpeningDate;
     const d = op.dates?.find((dt: any) => dt.type === "TECHNICAL_OPENING" || dt.title?.includes("فني"));
     if (d?.dateValue) return formatDate(d.dateValue);
-    return "14/ 1 /2024";
+    if (savedData?.technicalOpeningDate) return savedData.technicalOpeningDate;
+    return "";
   });
 
   // ━━━ 3. بيانات تفويض المندوب القانوني ━━━
@@ -248,11 +271,12 @@ export function TabBooklet({
   // ━━━ 4. بيانات التأمين الابتدائي (للخطابات الخاصة بالتأمين أو المجمعة) ━━━
   const defaultInitialAmount = useMemo(() => {
     const initG = op.guarantees?.find((g: any) => g.type === "INITIAL");
-    return initG?.amount ? String(initG.amount) : "10000";
-  }, [op.guarantees]);
+    if (initG?.amount) return String(initG.amount);
+    return savedData?.insuranceAmount || "10000";
+  }, [op.guarantees, savedData?.insuranceAmount]);
 
   const [insuranceAmount, setInsuranceAmount] = useState<string>(() => {
-    return savedData?.insuranceAmount || defaultInitialAmount;
+    return defaultInitialAmount;
   });
 
   const [insuranceTafqeet, setInsuranceTafqeet] = useState<string>(() => {
@@ -408,6 +432,7 @@ export function TabBooklet({
       boardChairman,
       additionalNotes,
       cloudUrls,
+      printHistory,
     });
   }, [
     activeLetterType, selectedCompanyId, registrationNumber, companyOpCode,
@@ -422,7 +447,7 @@ export function TabBooklet({
     guaranteeDurationText, guaranteeStartDate, guaranteeEndDate,
     bankAccountNumber, accountBankName, accountBankBranch, accountOwnerName,
     accountOwnerNationalId, specialistTitle, specialistName, financeManagerName,
-    boardChairman, additionalNotes, cloudUrls,
+    boardChairman, additionalNotes, cloudUrls, printHistory,
   ]);
 
   const [savedSnapshot, setSavedSnapshot] = useState<string>(() => currentSnapshot);
@@ -560,7 +585,7 @@ export function TabBooklet({
         zip.file("[Content_Types].xml", ctXml);
       }
 
-      qrDrawingXml = `<w:r><w:drawing><wp:inline xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture"><wp:extent cx="850000" cy="850000"/><wp:docPr id="777" name="DocQR"/><wp:cNvGraphicFramePr><a:graphicFrameLocks noChangeAspect="1"/></wp:cNvGraphicFramePr><a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:pic><pic:nvPicPr><pic:cNvPr id="0" name="qr.png"/><pic:cNvPicPr/></pic:nvPicPr><pic:blipFill><a:blip r:embed="rIdQR"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill><pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="850000" cy="850000"/></a:xfrm><a:prstGeom prst="rect"/></pic:spPr></pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r>`;
+      qrDrawingXml = buildQrAnchorXml();
     } catch (e) {
       console.warn("QR generation failed:", e);
     }
@@ -863,8 +888,8 @@ export function TabBooklet({
     };
   }, [previewModalOpen, activeLetterType]);
 
-  // ━━━ طباعة مستند الوورد الأصلي المعتمد عبر محرك Word / PDF ━━━
-  const handlePrintWordDocument = async () => {
+  // ━━━ تنفيذ الطباعة المباشرة وحفظ السجل الرسمي (استجابة للتسجيلين 4 و 5) ━━━
+  const executePrintDoc = async () => {
     setPrintingDocx(true);
     try {
       toast.info("جاري تجهيز مستند الوورد الأصلي للطباعة بأعلى دقة...");
@@ -895,12 +920,58 @@ export function TabBooklet({
 
       iframe.onload = () => setTimeout(triggerPrint, 350);
       setTimeout(triggerPrint, 1500);
+
+      // تحديث سجل الطباعة وحفظه تلقائياً
+      const prev = printHistory[activeLetterType] || { printCount: 0 };
+      const updatedHistory = {
+        ...printHistory,
+        [activeLetterType]: {
+          printCount: (prev.printCount || 0) + 1,
+          firstPrintedAt: prev.firstPrintedAt || new Date().toISOString(),
+          lastPrintedAt: new Date().toISOString(),
+          printedBy: prev.printedBy || op.createdBy || "المستخدم الحالي",
+          registrationNumber: prev.registrationNumber || registrationNumber,
+        },
+      };
+      setPrintHistory(updatedHistory);
+
+      try {
+        let notesObj: any = {};
+        if (op.notes && op.notes.startsWith("{")) {
+          notesObj = JSON.parse(op.notes);
+        }
+        const existingDocx = notesObj.bookletLettersDocx || {};
+        existingDocx.printHistory = updatedHistory;
+        existingDocx.registrationNumber = registrationNumber;
+        notesObj.bookletLettersDocx = existingDocx;
+        await api.patch(`/operations/${op.id}`, {
+          notes: JSON.stringify(notesObj),
+        });
+      } catch (saveErr) {
+        console.warn("Could not persist print history:", saveErr);
+      }
+      toast.success("تم إرسال المستند للطباعة وتحديث سجل الطباعة الرسمي بنجاح ✓");
     } catch (err: any) {
       console.warn("فشل تجهيز الطباعة:", err);
       toast.error("فشل تجهيز الطباعة: " + (err?.message || ""));
     } finally {
       setPrintingDocx(false);
     }
+  };
+
+  // التحقق من تكرار الطباعة وعرض تنبيه عند إعادة الطباعة
+  const handlePrintWordDocument = async () => {
+    const currentInfo = printHistory[activeLetterType];
+    if (currentInfo && currentInfo.printCount > 0) {
+      setReprintWarningOpen(true);
+      return;
+    }
+    await executePrintDoc();
+  };
+
+  const handleConfirmReprint = async () => {
+    setReprintWarningOpen(false);
+    await executePrintDoc();
   };
 
   // طباعة مباشرة من داخل نافذة المعاينة
@@ -1635,7 +1706,6 @@ export function TabBooklet({
                   </div>
 
                   <div className="flex items-center gap-2 justify-end">
-                    <BarcodeVisual value={registrationNumber} />
                     <a
                       href={`/verify-doc?ref=${encodeURIComponent(registrationNumber)}&opId=${op.id}&type=booklet_${activeLetterType}${cloudUrls[activeLetterType] ? `&pdfUrl=${encodeURIComponent(cloudUrls[activeLetterType] || "")}` : ""}`}
                       target="_blank"
@@ -1747,12 +1817,43 @@ export function TabBooklet({
                 </div>
 
                 <div className="space-y-1.5">
-                  <Label className="text-xs font-bold text-foreground">السنة المالية *</Label>
-                  <Input
-                    value={fiscalYear}
-                    onChange={(e) => setFiscalYear(e.target.value)}
-                    className="h-9.5 text-xs font-mono bg-background rounded-xl text-center"
-                  />
+                  <div className="flex items-center justify-between">
+                    <Label className="text-xs font-bold text-foreground">السنة المالية *</Label>
+                    <span className="text-[10px] text-muted-foreground font-mono">اختر من القائمة أو حدد أخرى</span>
+                  </div>
+                  <Select
+                    value={FISCAL_YEAR_OPTIONS.includes(fiscalYear) ? fiscalYear : "other"}
+                    onValueChange={(val) => {
+                      if (!val || val === "other") {
+                        setFiscalYear("");
+                      } else {
+                        setFiscalYear(val || "");
+                      }
+                    }}
+                  >
+                    <SelectTrigger className="h-9.5 text-xs font-mono bg-background rounded-xl">
+                      <SelectValue placeholder="اختر السنة المالية" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {FISCAL_YEAR_OPTIONS.map((y) => (
+                        <SelectItem key={y} value={y} className="text-xs font-mono">
+                          {y}
+                        </SelectItem>
+                      ))}
+                      <SelectItem value="other" className="text-xs font-bold text-amber-600">
+                        أخرى (كتابة يدوي)
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
+                  {(!FISCAL_YEAR_OPTIONS.includes(fiscalYear) || fiscalYear === "other") && (
+                    <Input
+                      placeholder="اكتب السنة المالية مثلاً: 2026 / 2027"
+                      value={fiscalYear === "other" ? "" : fiscalYear}
+                      onChange={(e) => setFiscalYear(e.target.value)}
+                      className="h-9 text-xs font-mono bg-amber-500/10 border-amber-500/40 rounded-xl mt-1 text-center"
+                      autoFocus
+                    />
+                  )}
                 </div>
 
                 <div className="space-y-1.5">
@@ -2087,6 +2188,84 @@ export function TabBooklet({
               </div>
             </div>
           </SectionCard>
+
+          {/* ━━━ BOTTOM ACTION BAR: التوليد والطباعة والمعاينة بأسفل الخطوة الأولى (استجابة للتسجيلين 4 و 6) ━━━ */}
+          <div className="p-4 sm:p-5 rounded-3xl bg-amber-500/10 border-2 border-amber-500/30 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 shadow-sm">
+            <div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <h4 className="text-sm font-extrabold text-foreground flex items-center gap-2">
+                  <Sparkles className="h-4 w-4 text-amber-600" />
+                  <span>جاهزية طباعة وتصدير: {currentTpl.title}</span>
+                </h4>
+                {printHistory[activeLetterType]?.printCount ? (
+                  <Badge className="bg-amber-100 text-amber-900 border border-amber-300 dark:bg-amber-950/60 dark:text-amber-200 text-[10px] font-bold">
+                    ⚠️ انطبع سابقاً ({printHistory[activeLetterType].printCount} مرات)
+                  </Badge>
+                ) : (
+                  <Badge className="bg-emerald-100 text-emerald-900 border border-emerald-300 dark:bg-emerald-950/60 dark:text-emerald-200 text-[10px] font-bold">
+                    جاهز للطباعة الأولى ✓
+                  </Badge>
+                )}
+              </div>
+              <p className="text-xs text-muted-foreground mt-1">
+                بعد الانتهاء من مراجعة وتعديل بيانات الخطاب، يمكنك مباشرة المعاينة الحية للـ PDF أو إرساله للطباعة الفورية.
+              </p>
+            </div>
+
+            <div className="flex items-center gap-2 flex-wrap self-end md:self-auto">
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => setPreviewModalOpen(true)}
+                className="h-10 px-4 text-xs font-bold rounded-xl border-2 border-amber-600 text-amber-700 dark:text-amber-300 hover:bg-amber-500/10 cursor-pointer bg-card shadow-xs flex items-center gap-1.5"
+              >
+                <Eye className="h-4 w-4 ml-1 text-amber-600" />
+                <span>معاينة المستند</span>
+              </Button>
+
+              <Button
+                size="sm"
+                onClick={handlePrintWordDocument}
+                disabled={printingDocx}
+                className="h-10 px-4 bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold rounded-xl shadow-md cursor-pointer flex items-center gap-1.5"
+              >
+                <Printer className={`h-4 w-4 ${printingDocx ? "animate-spin" : ""}`} />
+                <span>{printingDocx ? "جاري التجهيز..." : "طباعة المستند"}</span>
+              </Button>
+
+              <Button
+                size="sm"
+                onClick={() => handleDownloadPdf(activeLetterType)}
+                disabled={downloadingPdf}
+                className="h-10 px-3.5 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold rounded-xl shadow-md cursor-pointer flex items-center gap-1.5"
+              >
+                <FileText className={`h-4 w-4 ${downloadingPdf ? "animate-spin" : ""}`} />
+                <span>{downloadingPdf ? "جاري التحويل..." : "PDF (.pdf)"}</span>
+              </Button>
+
+              <Button
+                size="sm"
+                onClick={() => handleDownloadDocx(activeLetterType)}
+                disabled={downloadingDocx}
+                className="h-10 px-3.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl shadow-md cursor-pointer flex items-center gap-1.5"
+              >
+                <Download className="h-4 w-4" />
+                <span>Word (.docx)</span>
+              </Button>
+
+              {isDirty && (
+                <Button
+                  size="sm"
+                  onClick={handleSaveAll}
+                  disabled={savingChanges}
+                  className="h-10 px-4 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black rounded-xl shadow-md cursor-pointer flex items-center gap-1.5 animate-pulse"
+                >
+                  <Save className="h-4 w-4" />
+                  <span>{savingChanges ? "جاري الحفظ..." : "حفظ التعديلات 💾"}</span>
+                </Button>
+              )}
+            </div>
+          </div>
         </div>
       )}
 
@@ -2599,6 +2778,82 @@ export function TabBooklet({
                     </Button>
                   </div>
                 )}
+              </div>
+            </div>
+          </div>
+        </Portal>
+      )}
+
+      {/* ━━━ MODAL: تنبيه إعادة طباعة الخطاب المعتمد (استجابة للتسجيلين 4 و 5) ━━━ */}
+      {reprintWarningOpen && (
+        <Portal>
+          <div className="fixed inset-0 z-[99999] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in">
+            <div className="bg-card border-2 border-amber-500/40 rounded-3xl max-w-lg w-full p-6 space-y-4 shadow-2xl text-foreground">
+              <div className="flex items-start gap-3">
+                <div className="w-12 h-12 rounded-2xl bg-amber-500/20 text-amber-600 flex items-center justify-center shrink-0">
+                  <AlertCircle className="h-6 w-6" />
+                </div>
+                <div>
+                  <h3 className="text-base font-black text-amber-700 dark:text-amber-400">
+                    تنبيه نظامي: الخطاب تم طباعته واعتماده مسبقاً!
+                  </h3>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    التحقق الأمني من طباعة النسخ الرسمية لخطابات الكراسة والتأمين
+                  </p>
+                </div>
+              </div>
+
+              <div className="p-4 rounded-2xl bg-amber-500/10 border border-amber-500/20 space-y-2 text-xs">
+                <div className="flex justify-between items-center py-1 border-b border-amber-500/20">
+                  <span className="text-muted-foreground">عدد مرات الطباعة السابقة:</span>
+                  <Badge className="bg-amber-600 text-white font-mono font-bold">
+                    {printHistory[activeLetterType]?.printCount || 1} مرات
+                  </Badge>
+                </div>
+                <div className="flex justify-between items-center py-1 border-b border-amber-500/20">
+                  <span className="text-muted-foreground">رقم القيد الصادر المسجل:</span>
+                  <span className="font-mono font-bold text-foreground">
+                    {printHistory[activeLetterType]?.registrationNumber || registrationNumber}
+                  </span>
+                </div>
+                {printHistory[activeLetterType]?.firstPrintedAt && (
+                  <div className="flex justify-between items-center py-1 border-b border-amber-500/20">
+                    <span className="text-muted-foreground">تاريخ أول طباعة:</span>
+                    <span className="font-mono font-bold text-foreground">
+                      {new Date(printHistory[activeLetterType].firstPrintedAt!).toLocaleString("ar-EG")}
+                    </span>
+                  </div>
+                )}
+                <div className="flex justify-between items-center py-1">
+                  <span className="text-muted-foreground">طُبع بواسطة:</span>
+                  <span className="font-bold text-foreground">
+                    {printHistory[activeLetterType]?.printedBy || "المستخدم الحالي"}
+                  </span>
+                </div>
+              </div>
+
+              <div className="p-3 rounded-xl bg-muted/60 text-xs text-muted-foreground leading-relaxed">
+                <p className="font-bold text-foreground mb-1">تعليمات إصدار النسخ الإضافية:</p>
+                <p>
+                  وفقاً للائحة، سيتم إصدار نسخة مطابقة مع الاحتفاظ بنفس رقم القيد الصادر وتاريخ التسجيل دون تغيير الأساسيات لضمان صحة التوثيق الرسمي.
+                </p>
+              </div>
+
+              <div className="flex items-center justify-end gap-3 pt-2">
+                <Button
+                  variant="outline"
+                  onClick={() => setReprintWarningOpen(false)}
+                  className="rounded-xl text-xs h-9.5 px-4 font-bold"
+                >
+                  إلغاء
+                </Button>
+                <Button
+                  onClick={handleConfirmReprint}
+                  className="bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-xs h-9.5 px-5 font-bold shadow-md flex items-center gap-2"
+                >
+                  <Printer className="h-4 w-4" />
+                  <span>تأكيد طباعة نسخة إضافية</span>
+                </Button>
               </div>
             </div>
           </div>

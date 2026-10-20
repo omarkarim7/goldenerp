@@ -111,24 +111,33 @@ export async function getPdfBlobFromDocx(
     const res = await api.post("/operations/convert-docx-to-pdf", formData, {
       headers: { "Content-Type": "multipart/form-data" },
       responseType: "blob",
-      timeout: 45000, // 45s for native Microsoft Word COM processing
+      timeout: 45000, // 45s for native Microsoft Word / CloudConvert processing
     });
     if (res.data && res.data.size > 1000) {
       return res.data;
     }
     throw new Error("استجابة محرك Microsoft Word غير صالحة");
   } catch (err: any) {
-    let errorDetail = err?.response?.data?.message || err?.message || "";
-    if (typeof errorDetail !== "string") {
-      errorDetail = "تعذر الاتصال بالسيرفر";
+    let errorDetail = "";
+    if (typeof window !== "undefined" && err?.response?.data instanceof Blob) {
+      try {
+        const text = await err.response.data.text();
+        const json = JSON.parse(text);
+        errorDetail = json.message || text;
+      } catch {
+        errorDetail = err?.message || "";
+      }
+    } else if (err?.response?.data?.message) {
+      errorDetail = err.response.data.message;
+    } else if (err?.message) {
+      errorDetail = err.message;
     }
-    console.error("فشل تحويل مستند الوورد عبر محرك Microsoft Word:", err);
+
+    console.error("فشل تحويل مستند الوورد عبر محرك Microsoft Word:", err, errorDetail);
     throw new Error(
-      "فشل تشغيل محرك Microsoft Word لتحويل المستند: " +
-      (errorDetail.includes("503") || errorDetail.includes("Windows")
-        ? "محرك Microsoft Word يتطلب تشغيل السيرفر على بيئة Windows مع تثبيت Office (مثل جهازك المحلي)."
-        : errorDetail)
+      "فشل تشغيل محرك تحويل المستند: " + (errorDetail || "تعذر الاتصال بخدمة التحويل على السيرفر.")
     );
   }
 }
+
 

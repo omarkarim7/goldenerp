@@ -18,7 +18,7 @@ import { toast } from "sonner";
 import api from "@/lib/api";
 import { Operation, SectionCard, formatDate } from "./types";
 import { StepFooterNav } from "./StepFooterNav";
-import { generateSmartOutgoingRef, BarcodeVisual, cleanAllDocxXml } from "./letter-utils";
+import { generateSmartOutgoingRef, cleanAllDocxXml, buildQrAnchorXml, FISCAL_YEAR_OPTIONS } from "./letter-utils";
 import { GOLDEN_STAMP_BASE64, GOLDEN_LOGO_BASE64 } from "./stamp-assets";
 import { DocxViewer } from "@/components/docx-viewer";
 import JSZip from "jszip";
@@ -487,7 +487,7 @@ export function TabClarification({
         zip.file("[Content_Types].xml", ctXml);
       }
 
-      qrDrawingXml = `<w:r><w:drawing><wp:inline xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture"><wp:extent cx="850000" cy="850000"/><wp:docPr id="777" name="DocQR"/><wp:cNvGraphicFramePr><a:graphicFrameLocks noChangeAspect="1"/></wp:cNvGraphicFramePr><a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:pic><pic:nvPicPr><pic:cNvPr id="0" name="qr.png"/><pic:cNvPicPr/></pic:nvPicPr><pic:blipFill><a:blip r:embed="rIdQR"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill><pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="850000" cy="850000"/></a:xfrm><a:prstGeom prst="rect"/></pic:spPr></pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r>`;
+      qrDrawingXml = buildQrAnchorXml();
     } catch (e) {
       console.warn("QR generation failed:", e);
     }
@@ -1325,7 +1325,6 @@ export function TabClarification({
               </div>
 
               <div className="flex items-center gap-2 justify-end">
-                <BarcodeVisual value={registrationNumber} />
                 <a
                   href={`/verify-doc?ref=${encodeURIComponent(registrationNumber)}&opId=${op.id}&type=clarification${cloudPdfUrl ? `&pdfUrl=${encodeURIComponent(cloudPdfUrl)}` : ""}`}
                   target="_blank"
@@ -1404,12 +1403,36 @@ export function TabClarification({
 
             <div className="space-y-1.5">
               <Label className="text-xs font-bold text-foreground">العام المالي *</Label>
-              <Input
-                value={fiscalYear}
-                onChange={(e) => setFiscalYear(e.target.value)}
-                placeholder="2024 / 2025"
-                className="h-9.5 text-xs font-mono rounded-xl text-center"
-              />
+              <div className="flex gap-2">
+                <Select
+                  value={FISCAL_YEAR_OPTIONS.includes(fiscalYear) ? fiscalYear : "other"}
+                  onValueChange={(val) => {
+                    if (val !== "other") setFiscalYear(val);
+                  }}
+                >
+                  <SelectTrigger className="h-9.5 text-xs font-mono rounded-xl">
+                    <SelectValue placeholder="اختر العام المالي" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {FISCAL_YEAR_OPTIONS.map((yr) => (
+                      <SelectItem key={yr} value={yr} className="text-xs font-mono">
+                        {yr}
+                      </SelectItem>
+                    ))}
+                    <SelectItem value="other" className="text-xs font-bold text-amber-600">
+                      أخرى (تحديد يدوي)
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
+                {(!FISCAL_YEAR_OPTIONS.includes(fiscalYear) || fiscalYear === "other") && (
+                  <Input
+                    value={fiscalYear === "other" ? "" : fiscalYear}
+                    onChange={(e) => setFiscalYear(e.target.value)}
+                    placeholder="2024 / 2025"
+                    className="h-9.5 text-xs font-mono rounded-xl text-center w-36"
+                  />
+                )}
+              </div>
             </div>
           </div>
 

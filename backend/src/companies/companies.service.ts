@@ -369,7 +369,7 @@ export class CompaniesService {
     const cleanCompany = (companyCode || 'A').toUpperCase();
     const typeLetter = this.getTenderTypeCode(tenderType);
     const nextSerial = await this.getNextOperationSerial(cleanCompany, tenderType);
-    const padded = String(nextSerial).padStart(2, '0');
+    const padded = String(nextSerial).padStart(4, '0');
     return `${cleanCompany}${typeLetter}${padded}`;
   }
 

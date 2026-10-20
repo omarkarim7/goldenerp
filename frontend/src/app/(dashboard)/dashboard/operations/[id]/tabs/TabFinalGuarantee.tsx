@@ -18,7 +18,7 @@ import { toast } from "sonner";
 import api from "@/lib/api";
 import { Operation, SectionCard, DataRow, EmptyState, formatDate, formatCurrency, tafqeetArabic, formatDocFileSize } from "./types";
 import { StepFooterNav } from "./StepFooterNav";
-import { generateSmartOutgoingRef, BarcodeVisual, cleanAllDocxXml } from "./letter-utils";
+import { generateSmartOutgoingRef, cleanAllDocxXml, buildQrAnchorXml, FISCAL_YEAR_OPTIONS } from "./letter-utils";
 import { DocxViewer } from "@/components/docx-viewer";
 import JSZip from "jszip";
 import QRCode from "qrcode";
@@ -115,15 +115,21 @@ export function TabFinalGuarantee({
   // Addressee & Operation Fields
   const [recipientPrefix, setRecipientPrefix] = useState(() => savedSettings?.recipientPrefix || "الأستاذ");
   const [recipientTitleAndAuthority, setRecipientTitleAndAuthority] = useState(() => {
-    return savedSettings?.recipientTitleAndAuthority ||
-      (op.authority ? `مدير الادارة العامة للمشتريات والمخازن بـ ${op.authority}` : "مدير الادارة العامة للمشتريات والمخازن بجامعة دمنهور");
+    if (savedSettings?.recipientTitleAndAuthority) return savedSettings.recipientTitleAndAuthority;
+    if (op.authority) return `مدير الادارة العامة للمشتريات والمخازن بـ ${op.authority}`;
+    return "مدير الادارة العامة للمشتريات والمخازن";
   });
-  const [operationRegisteredName, setOperationRegisteredName] = useState(() => savedSettings?.operationRegisteredName || op.name || "توريد كاوتش وبطاريات للسيارات");
-  const [operationNumber, setOperationNumber] = useState(() => savedSettings?.operationNumber || op.externalNumber || String(op.serialNumber || "365"));
+  const [operationRegisteredName, setOperationRegisteredName] = useState(() => op.name || savedSettings?.operationRegisteredName || "");
+  const [operationNumber, setOperationNumber] = useState(() => op.externalNumber || (op.serialNumber ? String(op.serialNumber) : "") || savedSettings?.operationNumber || "");
   const [tenderMethod, setTenderMethod] = useState(() => savedSettings?.tenderMethod || "المناقصة المحدودة");
-  const [operationScope, setOperationScope] = useState(() => savedSettings?.operationScope || "توريد كاوتش وبطاريات للسيارات للجامعه");
+  const [operationScope, setOperationScope] = useState(() => op.name || savedSettings?.operationScope || "");
   const [fiscalYear, setFiscalYear] = useState(() => savedSettings?.fiscalYear || "2024 / 2025");
-  const [technicalOpeningDate, setTechnicalOpeningDate] = useState(() => savedSettings?.technicalOpeningDate || "14/ 1 /2024");
+  const [technicalOpeningDate, setTechnicalOpeningDate] = useState(() => {
+    const d = op.dates?.find((dt: any) => dt.type === "TECHNICAL_OPENING" || dt.title?.includes("فني"));
+    if (d?.dateValue) return formatDate(d.dateValue);
+    if (savedSettings?.technicalOpeningDate) return savedSettings.technicalOpeningDate;
+    return "";
+  });
 
   // Guarantee Amounts
   const [amountPaid, setAmountPaid] = useState<string>(() => savedSettings?.amountPaid || String(calculated5Percent));
@@ -318,7 +324,7 @@ export function TabFinalGuarantee({
         zip.file("[Content_Types].xml", ctXml);
       }
 
-      qrDrawingXml = `<w:r><w:drawing><wp:inline xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture"><wp:extent cx="850000" cy="850000"/><wp:docPr id="777" name="DocQR"/><wp:cNvGraphicFramePr><a:graphicFrameLocks noChangeAspect="1"/></wp:cNvGraphicFramePr><a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:pic><pic:nvPicPr><pic:cNvPr id="0" name="qr.png"/><pic:cNvPicPr/></pic:nvPicPr><pic:blipFill><a:blip r:embed="rIdQR"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill><pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="850000" cy="850000"/></a:xfrm><a:prstGeom prst="rect"/></pic:spPr></pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r>`;
+      qrDrawingXml = buildQrAnchorXml();
     } catch (e) {
       console.warn("QR generation failed:", e);
     }
@@ -952,14 +958,6 @@ export function TabFinalGuarantee({
               </div>
             </div>
 
-            {/* Visual Barcode Bar */}
-            <div className="pt-2 border-t border-emerald-500/20">
-              <BarcodeVisual
-                value={registrationNumber}
-                showText={true}
-                className="w-full max-w-sm"
-              />
-            </div>
           </div>
 
           {/* Conditional Template Fields */}

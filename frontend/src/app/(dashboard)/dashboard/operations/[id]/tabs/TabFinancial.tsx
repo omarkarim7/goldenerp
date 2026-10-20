@@ -18,7 +18,7 @@ import { toast } from "sonner";
 import api from "@/lib/api";
 import { Operation, SectionCard, formatDate, tafqeetArabic, formatCurrency } from "./types";
 import { StepFooterNav } from "./StepFooterNav";
-import { generateSmartOutgoingRef, BarcodeVisual, cleanAllDocxXml } from "./letter-utils";
+import { generateSmartOutgoingRef, cleanAllDocxXml, buildQrAnchorXml, FISCAL_YEAR_OPTIONS } from "./letter-utils";
 import JSZip from "jszip";
 import QRCode from "qrcode";
 import { getPdfBlobFromDocx } from "./client-pdf";
@@ -713,7 +713,7 @@ export function TabFinancial({
         zip.file("[Content_Types].xml", ctXml);
       }
 
-      qrDrawingXml = `<w:r><w:drawing><wp:inline xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture"><wp:extent cx="850000" cy="850000"/><wp:docPr id="777" name="DocQR"/><wp:cNvGraphicFramePr><a:graphicFrameLocks noChangeAspect="1"/></wp:cNvGraphicFramePr><a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:pic><pic:nvPicPr><pic:cNvPr id="0" name="qr.png"/><pic:cNvPicPr/></pic:nvPicPr><pic:blipFill><a:blip r:embed="rIdQR"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill><pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="850000" cy="850000"/></a:xfrm><a:prstGeom prst="rect"/></pic:spPr></pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r>`;
+      qrDrawingXml = buildQrAnchorXml();
     } catch (e) {
       console.warn("QR generation failed:", e);
     }
@@ -1557,11 +1557,39 @@ export function TabFinancial({
             </div>
             <div className="space-y-1">
               <Label className="text-[11px] font-bold">العام المالي</Label>
-              <Input
-                value={fiscalYear}
-                onChange={(e) => setFiscalYear(e.target.value)}
-                className="h-9 text-xs font-mono text-center"
-              />
+              <Select
+                value={FISCAL_YEAR_OPTIONS.includes(fiscalYear) ? fiscalYear : "other"}
+                onValueChange={(val) => {
+                  if (!val || val === "other") {
+                    setFiscalYear("");
+                  } else {
+                    setFiscalYear(val || "");
+                  }
+                }}
+              >
+                <SelectTrigger className="h-9 text-xs font-mono">
+                  <SelectValue placeholder="اختر العام المالي" />
+                </SelectTrigger>
+                <SelectContent>
+                  {FISCAL_YEAR_OPTIONS.map((y) => (
+                    <SelectItem key={y} value={y} className="text-xs font-mono">
+                      {y}
+                    </SelectItem>
+                  ))}
+                  <SelectItem value="other" className="text-xs font-bold text-amber-600">
+                    أخرى (كتابة يدوي)
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+              {(!FISCAL_YEAR_OPTIONS.includes(fiscalYear) || fiscalYear === "other") && (
+                <Input
+                  placeholder="مثال: 2026 / 2027"
+                  value={fiscalYear === "other" ? "" : fiscalYear}
+                  onChange={(e) => setFiscalYear(e.target.value)}
+                  className="h-8.5 text-xs font-mono mt-1 text-center"
+                  autoFocus
+                />
+              )}
             </div>
             <div className="space-y-1">
               <Label className="text-[11px] font-bold">جلسة فتح المظروف</Label>

@@ -18,7 +18,7 @@ import { toast } from "sonner";
 import api from "@/lib/api";
 import { Operation, SectionCard, formatDate } from "./types";
 import { StepFooterNav } from "./StepFooterNav";
-import { generateSmartOutgoingRef, BarcodeVisual, cleanAllDocxXml } from "./letter-utils";
+import { generateSmartOutgoingRef, cleanAllDocxXml, buildQrAnchorXml, FISCAL_YEAR_OPTIONS } from "./letter-utils";
 import JSZip from "jszip";
 import QRCode from "qrcode";
 import { getPdfBlobFromDocx } from "./client-pdf";
@@ -352,7 +352,7 @@ export function TabDeclarations({
         zip.file("[Content_Types].xml", ctXml);
       }
 
-      qrDrawingXml = `<w:r><w:drawing><wp:inline xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture"><wp:extent cx="850000" cy="850000"/><wp:docPr id="777" name="DocQR"/><wp:cNvGraphicFramePr><a:graphicFrameLocks noChangeAspect="1"/></wp:cNvGraphicFramePr><a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:pic><pic:nvPicPr><pic:cNvPr id="0" name="qr.png"/><pic:cNvPicPr/></pic:nvPicPr><pic:blipFill><a:blip r:embed="rIdQR"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill><pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="850000" cy="850000"/></a:xfrm><a:prstGeom prst="rect"/></pic:spPr></pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r>`;
+      qrDrawingXml = buildQrAnchorXml();
     } catch (e) {
       console.warn("QR generation failed:", e);
     }
@@ -1099,7 +1099,6 @@ export function TabDeclarations({
               </div>
 
               <div className="flex items-center gap-2 justify-end">
-                <BarcodeVisual value={registrationNumber} />
                 <a
                   href={`/verify-doc?ref=${encodeURIComponent(registrationNumber)}&opId=${op.id}&type=declaration_${activeDeclType}${currentCloudUrl ? `&pdfUrl=${encodeURIComponent(currentCloudUrl)}` : ""}`}
                   target="_blank"
@@ -1300,12 +1299,43 @@ export function TabDeclarations({
                 </div>
 
                 <div className="space-y-1.5">
-                  <Label className="text-xs font-bold text-foreground">العام المالي للعملية *</Label>
-                  <Input
-                    value={fiscalYear}
-                    onChange={(e) => setFiscalYear(e.target.value)}
-                    className="h-9.5 text-xs font-mono rounded-xl text-center"
-                  />
+                  <div className="flex items-center justify-between">
+                    <Label className="text-xs font-bold text-foreground">العام المالي للعملية *</Label>
+                    <span className="text-[10px] text-muted-foreground font-mono">اختر من القائمة</span>
+                  </div>
+                  <Select
+                    value={FISCAL_YEAR_OPTIONS.includes(fiscalYear) ? fiscalYear : "other"}
+                    onValueChange={(val) => {
+                      if (!val || val === "other") {
+                        setFiscalYear("");
+                      } else {
+                        setFiscalYear(val || "");
+                      }
+                    }}
+                  >
+                    <SelectTrigger className="h-9.5 text-xs font-mono bg-background rounded-xl">
+                      <SelectValue placeholder="اختر العام المالي" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {FISCAL_YEAR_OPTIONS.map((y) => (
+                        <SelectItem key={y} value={y} className="text-xs font-mono">
+                          {y}
+                        </SelectItem>
+                      ))}
+                      <SelectItem value="other" className="text-xs font-bold text-amber-600">
+                        أخرى (كتابة يدوي)
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
+                  {(!FISCAL_YEAR_OPTIONS.includes(fiscalYear) || fiscalYear === "other") && (
+                    <Input
+                      placeholder="اكتب العام المالي مثلاً: 2026 / 2027"
+                      value={fiscalYear === "other" ? "" : fiscalYear}
+                      onChange={(e) => setFiscalYear(e.target.value)}
+                      className="h-9 text-xs font-mono bg-amber-500/10 border-amber-500/40 rounded-xl mt-1 text-center"
+                      autoFocus
+                    />
+                  )}
                 </div>
 
                 <div className="space-y-1.5">
