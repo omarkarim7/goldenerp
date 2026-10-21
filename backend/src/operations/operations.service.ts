@@ -2410,30 +2410,46 @@ try {
       this.logger.warn(`Catbox upload failed: ${catboxErr?.message}`);
     }
 
-    // 3. المحرك السحابي الثاني: Tmpfiles.org
+    // 3. المحرك السحابي الثاني: Gofile.io (المزود المطلوب بجانب Catbox)
     try {
-      const tmpForm = new FormData();
-      tmpForm.append(
+      let targetServer = 'store1';
+      try {
+        const srvRes = await fetch('https://api.gofile.io/servers', {
+          headers: { 'User-Agent': 'Mozilla/5.0' },
+          signal: AbortSignal.timeout(6000),
+        });
+        if (srvRes.ok) {
+          const srvData = (await srvRes.json()) as any;
+          if (srvData?.status === 'ok' && srvData?.data?.servers?.[0]?.name) {
+            targetServer = srvData.data.servers[0].name;
+          }
+        }
+      } catch (srvErr: any) {
+        this.logger.warn(`Gofile servers fetch notice: ${srvErr?.message}`);
+      }
+
+      const gofileForm = new FormData();
+      gofileForm.append(
         'file',
         new Blob([new Uint8Array(pdfBuffer)], { type: 'application/pdf' }),
         finalName
       );
-      const tmpRes = await fetch('https://tmpfiles.org/api/v1/upload', {
+
+      const gofileRes = await fetch(`https://${targetServer}.gofile.io/contents/uploadfile`, {
         method: 'POST',
-        body: tmpForm,
-        signal: AbortSignal.timeout(15000),
+        body: gofileForm,
+        signal: AbortSignal.timeout(18000),
       });
-      if (tmpRes.ok) {
-        const tmpJson = (await tmpRes.json()) as any;
-        const rawUrl = tmpJson?.data?.url;
-        if (rawUrl && typeof rawUrl === 'string') {
-          const directUrl = rawUrl.replace('tmpfiles.org/', 'tmpfiles.org/dl/');
-          this.logger.log(`تم رفع المستند سحابياً بنجاح عبر Tmpfiles: ${directUrl}`);
-          return { success: true, url: directUrl, provider: 'Tmpfiles Cloud' };
+
+      if (gofileRes.ok) {
+        const gJson = (await gofileRes.json()) as any;
+        if (gJson?.status === 'ok' && gJson?.data?.downloadPage) {
+          this.logger.log(`تم رفع المستند سحابياً بنجاح عبر Gofile: ${gJson.data.downloadPage}`);
+          return { success: true, url: gJson.data.downloadPage, provider: 'Gofile Cloud' };
         }
       }
-    } catch (tmpErr: any) {
-      this.logger.warn(`Tmpfiles upload failed: ${tmpErr?.message}`);
+    } catch (gofileErr: any) {
+      this.logger.warn(`Gofile upload failed: ${gofileErr?.message}`);
     }
 
     // 4. المحرك السحابي الثالث: File.io

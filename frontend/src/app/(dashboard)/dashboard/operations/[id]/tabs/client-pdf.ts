@@ -263,24 +263,33 @@ export async function uploadPdfToFreeCloud(
     console.warn("Direct browser Catbox failed:", directErr?.message);
   }
 
-  // 4. المحاولة الرابعة: رفع مباشر من المتصفح إلى Tmpfiles.org
+  // 4. المحاولة الرابعة: رفع مباشر من المتصفح إلى Gofile.io
   try {
-    const tmpForm = new FormData();
-    tmpForm.append("file", pdfBlob, fileName);
-    const tmpRes = await fetch("https://tmpfiles.org/api/v1/upload", {
+    let targetServer = "store1";
+    try {
+      const srvRes = await fetch("https://api.gofile.io/servers");
+      if (srvRes.ok) {
+        const srvData = await srvRes.json();
+        if (srvData?.status === "ok" && srvData?.data?.servers?.[0]?.name) {
+          targetServer = srvData.data.servers[0].name;
+        }
+      }
+    } catch {}
+
+    const gofileForm = new FormData();
+    gofileForm.append("file", pdfBlob, fileName);
+    const gofileRes = await fetch(`https://${targetServer}.gofile.io/contents/uploadfile`, {
       method: "POST",
-      body: tmpForm,
+      body: gofileForm,
     });
-    if (tmpRes.ok) {
-      const tmpJson = (await tmpRes.json()) as any;
-      const rawUrl = tmpJson?.data?.url;
-      if (rawUrl && typeof rawUrl === "string") {
-        const directUrl = rawUrl.replace("tmpfiles.org/", "tmpfiles.org/dl/");
-        return { success: true, url: directUrl, provider: "TmpFiles Cloud" };
+    if (gofileRes.ok) {
+      const gJson = await gofileRes.json();
+      if (gJson?.status === "ok" && gJson?.data?.downloadPage) {
+        return { success: true, url: gJson.data.downloadPage, provider: "Gofile Cloud" };
       }
     }
-  } catch (tmpErr: any) {
-    console.warn("Direct browser Tmpfiles failed:", tmpErr?.message);
+  } catch (gofileErr: any) {
+    console.warn("Direct browser Gofile failed:", gofileErr?.message);
   }
 
   throw new Error("تعذر توثيق المستند سحابياً حالياً، يرجى التحقق من اتصال الإنترنت والمحاولة مجدداً");

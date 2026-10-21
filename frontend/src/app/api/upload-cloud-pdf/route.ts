@@ -74,35 +74,51 @@ export async function POST(req: NextRequest) {
       console.warn("Catbox upload failed in Next.js route:", e?.message);
     }
 
-    // 2. المحاولة الثانية: Tmpfiles.org (الحقل الصحيح هو 'file')
+    // 2. المحاولة الثانية: Gofile.io (المزود المطلوب بجانب Catbox)
     try {
-      const tmpForm = new FormData();
-      tmpForm.append(
+      // أ- جلب أفضل سيرفر متاح من خوادم gofile
+      let targetServer = "store1";
+      try {
+        const srvRes = await fetch("https://api.gofile.io/servers", {
+          headers: { "User-Agent": "Mozilla/5.0" },
+          signal: AbortSignal.timeout(6000),
+        });
+        if (srvRes.ok) {
+          const srvData = (await srvRes.json()) as any;
+          if (srvData?.status === "ok" && srvData?.data?.servers?.[0]?.name) {
+            targetServer = srvData.data.servers[0].name;
+          }
+        }
+      } catch (srvErr) {
+        console.warn("Gofile servers fetch notice:", srvErr);
+      }
+
+      // ب- رفع الملف إلى سيرفر gofile المحدد
+      const gofileForm = new FormData();
+      gofileForm.append(
         "file",
         new Blob([uint8Data], { type: "application/pdf" }),
         finalFileName
       );
 
-      const tmpRes = await fetch("https://tmpfiles.org/api/v1/upload", {
+      const gofileRes = await fetch(`https://${targetServer}.gofile.io/contents/uploadfile`, {
         method: "POST",
-        body: tmpForm,
-        signal: AbortSignal.timeout(12000),
+        body: gofileForm,
+        signal: AbortSignal.timeout(15000),
       });
 
-      if (tmpRes.ok) {
-        const tmpJson = (await tmpRes.json()) as any;
-        const rawUrl = tmpJson?.data?.url;
-        if (rawUrl && typeof rawUrl === "string") {
-          const directUrl = rawUrl.replace("tmpfiles.org/", "tmpfiles.org/dl/");
+      if (gofileRes.ok) {
+        const gJson = (await gofileRes.json()) as any;
+        if (gJson?.status === "ok" && gJson?.data?.downloadPage) {
           return NextResponse.json({
             success: true,
-            url: directUrl,
-            provider: "TmpFiles Cloud",
+            url: gJson.data.downloadPage,
+            provider: "Gofile Cloud",
           });
         }
       }
     } catch (e: any) {
-      console.warn("Tmpfiles upload failed in Next.js route:", e?.message);
+      console.warn("Gofile upload failed in Next.js route:", e?.message);
     }
 
     // 3. المحاولة الثالثة: File.io

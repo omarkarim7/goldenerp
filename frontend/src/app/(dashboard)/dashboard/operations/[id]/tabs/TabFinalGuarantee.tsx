@@ -219,19 +219,18 @@ export function TabFinalGuarantee({
   const [uploadingCloud, setUploadingCloud] = useState(false);
   const [lastGeneratedSnapshot, setLastGeneratedSnapshot] = useState<string | null>(null);
 
-  // Modals & Action States
   const [previewModalOpen, setPreviewModalOpen] = useState(false);
   const [previewPdfUrl, setPreviewPdfUrl] = useState<string | null>(null);
   const [previewDocxBlob, setPreviewDocxBlob] = useState<Blob | null>(null);
   const [previewPdfBlob, setPreviewPdfBlob] = useState<Blob | null>(null);
-  const [directPdfModalOpen, setDirectPdfModalOpen] = useState(false);
-  const [directPdfUrl, setDirectPdfUrl] = useState<string | null>(null);
-  const [generatingDirectPdf, setGeneratingDirectPdf] = useState(false);
   const [renderingDocx, setRenderingDocx] = useState(false);
   const [downloadingDocx, setDownloadingDocx] = useState(false);
   const [downloadingPdf, setDownloadingPdf] = useState(false);
   const [printingDocx, setPrintingDocx] = useState(false);
   const [savingState, setSavingState] = useState(false);
+  const [directPdfModalOpen, setDirectPdfModalOpen] = useState(false);
+  const [directPdfUrl, setDirectPdfUrl] = useState<string | null>(null);
+  const [generatingDirectPdf, setGeneratingDirectPdf] = useState(false);
 
   // Step 2: Guarantee Receipt Submission State
   const [addingReceipt, setAddingReceipt] = useState(false);
@@ -303,7 +302,6 @@ export function TabFinalGuarantee({
       financeManagerName,
       boardChairman,
       additionalNotes,
-      cloudUrls,
     });
   }, [
     activeLetterType, selectedCompanyId, registrationNumber, companyOpCode, companyCommercialRegister,
@@ -313,7 +311,7 @@ export function TabFinalGuarantee({
     initialGuaranteeFieldAmount, deductionOperationName, deductionMonth, deductionYear,
     bankRecipientTitle, bankTargetAuthority, bankTargetAddress, bankAccountNumber, bankNameAndBranch,
     accountHolderName, accountNationalId, guaranteeDurationText, guaranteeStartDate, guaranteeEndDate,
-    specialistTitle, specialistName, financeManagerName, boardChairman, additionalNotes, cloudUrls,
+    specialistTitle, specialistName, financeManagerName, boardChairman, additionalNotes,
   ]);
 
   const [savedSnapshot, setSavedSnapshot] = useState<string>(() => currentSnapshot);
@@ -530,10 +528,45 @@ export function TabFinalGuarantee({
   const generateGuaranteePdfBlob = async (type: FinalGuaranteeLetterType = activeLetterType): Promise<Blob> => {
     const docxBlob = await generateGuaranteeDocxBlob(type);
     setPreviewDocxBlob(docxBlob);
-    const pdf = await getPdfBlobFromDocx(docxBlob, `final_guarantee_${type}_${registrationNumber}.docx`);
+    const pdf = await getPdfBlobFromDocx(docxBlob, `final_guarantee_${type}_${registrationNumber || op.serialNumber}.docx`);
     setPreviewPdfBlob(pdf);
     setLastGeneratedSnapshot(currentSnapshot);
     return pdf;
+  };
+
+  const loadOfficialPreview = async (type: FinalGuaranteeLetterType = activeLetterType) => {
+    if (previewPdfBlob && lastGeneratedSnapshot === currentSnapshot && previewDocxBlob) {
+      setPreviewModalOpen(true);
+      return;
+    }
+    setRenderingDocx(true);
+    setPreviewModalOpen(true);
+    try {
+      if (previewPdfUrl) {
+        URL.revokeObjectURL(previewPdfUrl);
+        setPreviewPdfUrl(null);
+      }
+      const docx = await generateGuaranteeDocxBlob(type);
+      setPreviewDocxBlob(docx);
+
+      const pdf = await getPdfBlobFromDocx(
+        docx,
+        `final_guarantee_${type}_${registrationNumber || op.serialNumber}.docx`
+      );
+      setPreviewPdfBlob(pdf);
+      const url = URL.createObjectURL(pdf);
+      setPreviewPdfUrl(url);
+      setLastGeneratedSnapshot(currentSnapshot);
+
+      if (!cloudUrls[type] || cloudUrls[type].includes("tmpfiles.org")) {
+        handleUploadToCloud(type, false, pdf);
+      }
+    } catch (err: any) {
+      console.error("Preview preparation failed:", err);
+      toast.error("تعذر تجهيز المعاينة: " + (err?.message || ""));
+    } finally {
+      setRenderingDocx(false);
+    }
   };
 
   const handleOpenDirectPdfPreview = async () => {
@@ -558,54 +591,31 @@ export function TabFinalGuarantee({
     }
   };
 
-  const loadOfficialPreview = async (type: FinalGuaranteeLetterType = activeLetterType) => {
-    setRenderingDocx(true);
-    setPreviewModalOpen(true);
-    try {
-      let docx = previewDocxBlob;
-      if (!docx || lastGeneratedSnapshot !== currentSnapshot) {
-        docx = await generateGuaranteeDocxBlob(type);
-        setPreviewDocxBlob(docx);
-      }
-      // إطلاق تحويل PDF في الخلفية لسرعة التحميل والطباعة
-      getPdfBlobFromDocx(docx, `final_guarantee_${type}_${registrationNumber}.docx`)
-        .then((pdf) => {
-          setPreviewPdfBlob(pdf);
-          setLastGeneratedSnapshot(currentSnapshot);
-          if (previewPdfUrl) URL.revokeObjectURL(previewPdfUrl);
-          const url = URL.createObjectURL(pdf);
-          setPreviewPdfUrl(url);
-        })
-        .catch((e) => console.warn("Background PDF preview notice:", e?.message));
-    } catch (err: any) {
-      toast.error("تعذر تجهيز المعاينة: " + (err?.message || ""));
-    } finally {
-      setRenderingDocx(false);
-    }
-  };
-
-  const handleUploadToCloud = async (type: FinalGuaranteeLetterType = activeLetterType, forceReupload = false) => {
+  const handleUploadToCloud = async (
+    type: FinalGuaranteeLetterType = activeLetterType,
+    forceReupload = false,
+    existingBlob?: Blob
+  ) => {
     if (cloudUrls[type] && !forceReupload) {
-      toast.info("تم رفع وتوثيق هذا الخطاب سحابياً مسبقاً وهو نشط بالفعل ✓");
       return;
     }
     setUploadingCloud(true);
     try {
-      toast.info("جاري تحويل الخطاب ورفعه سحابياً...");
       let pdfBlob: Blob;
-      if (previewPdfBlob && lastGeneratedSnapshot === currentSnapshot) {
+      if (existingBlob) {
+        pdfBlob = existingBlob;
+      } else if (previewPdfBlob && lastGeneratedSnapshot === currentSnapshot) {
         pdfBlob = previewPdfBlob;
       } else {
         pdfBlob = await generateGuaranteePdfBlob(type);
       }
 
-      const fileName = `final_guarantee_${type}_${registrationNumber}.pdf`;
+      const fileName = `final_guarantee_${type}_${registrationNumber || op.serialNumber}.pdf`;
       const cloudRes = await uploadPdfToFreeCloud(pdfBlob, fileName);
 
       if (cloudRes?.url) {
         const updatedUrls = { ...cloudUrls, [type]: cloudRes.url };
         setCloudUrls(updatedUrls);
-        toast.success(`تم رفع الخطاب للسحابة بنجاح عبر (${cloudRes.provider})! الرابط جاهز ومتاح عالمياً 🚀`);
 
         try {
           let existingNotes: any = {};
@@ -616,7 +626,7 @@ export function TabFinalGuarantee({
         } catch {}
       }
     } catch (err: any) {
-      toast.error("فشل الرفع السحابي: " + (err?.response?.data?.message || err?.message || ""));
+      console.warn("Cloud upload background note:", err?.message);
     } finally {
       setUploadingCloud(false);
     }
