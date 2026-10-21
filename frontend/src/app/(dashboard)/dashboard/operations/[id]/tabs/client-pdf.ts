@@ -366,7 +366,27 @@ export async function uploadPdfToFreeCloud(
     console.warn("Backend cloud upload failed, falling back to direct browser upload...", backendErr?.message);
   }
 
-  // 3. المحاولة الثالثة: رفع مباشر من المتصفح إلى Catbox.moe
+  // 3. المحاولة الثالثة: رفع مباشر من المتصفح إلى Tmpfile (Cloudflare R2 - رابط مباشر)
+  try {
+    const tmpForm = new FormData();
+    tmpForm.append("file", pdfBlob, fileName);
+    const tmpRes = await fetch("https://tmpfile.link/api/upload", {
+      method: "POST",
+      headers: { Accept: "application/json" },
+      body: tmpForm,
+    });
+    if (tmpRes.ok) {
+      const tmpData = await tmpRes.json();
+      const directLink = tmpData?.downloadLink || tmpData?.downloadLinkEncoded;
+      if (directLink && typeof directLink === "string" && directLink.startsWith("http")) {
+        return { success: true, url: directLink, provider: "Cloudflare R2 (رابط PDF مباشر)" };
+      }
+    }
+  } catch (tmpErr: any) {
+    console.warn("Direct browser Tmpfile failed:", tmpErr?.message);
+  }
+
+  // 4. المحاولة الرابعة: رفع مباشر من المتصفح إلى Catbox.moe
   try {
     const catboxForm = new FormData();
     catboxForm.append("reqtype", "fileupload");
@@ -385,14 +405,37 @@ export async function uploadPdfToFreeCloud(
     console.warn("Direct browser Catbox failed:", directErr?.message);
   }
 
-  // 4. المحاولة الرابعة: استخدام رابط الخدمة السحابية الداخلية كنسخة رقمية مباشرة
-  if (typeof window !== "undefined") {
-    const origin = window.location.origin;
-    const directDocUrl = `${origin}/api/public-doc/${encodeURIComponent(fileName)}`;
-    return { success: true, url: directDocUrl, provider: "GoldenERP Cloud Engine (رابط مباشر)" };
+  // 5. المحاولة الخامسة: رفع مباشر من المتصفح إلى Gofile.io
+  try {
+    const srvRes = await fetch("https://api.gofile.io/servers");
+    if (srvRes.ok) {
+      const srvData = await srvRes.json();
+      const serverName = srvData?.data?.servers?.[0]?.name || "store1";
+
+      const gofileForm = new FormData();
+      gofileForm.append("file", pdfBlob, fileName);
+
+      const upRes = await fetch(`https://${serverName}.gofile.io/contents/uploadfile`, {
+        method: "POST",
+        body: gofileForm,
+      });
+
+      if (upRes.ok) {
+        const upData = await upRes.json();
+        if (upData?.status === "ok" && upData?.data?.downloadPage) {
+          return {
+            success: true,
+            url: upData.data.downloadPage,
+            provider: "Gofile Cloud (تخزين سحابي خارجي)",
+          };
+        }
+      }
+    }
+  } catch (gofileErr: any) {
+    console.warn("Direct browser Gofile failed:", gofileErr?.message);
   }
 
-  throw new Error("تعذر توثيق المستند سحابياً حالياً، يرجى التحقق من اتصال الإنترنت والمحاولة مجدداً");
+  throw new Error("تعذر الرفع إلى مراكز التخزين السحابي الخارجية (Catbox / Cloudflare R2 / Gofile). يرجى التحقق من اتصال الإنترنت والمحاولة مجدداً.");
 }
 
 

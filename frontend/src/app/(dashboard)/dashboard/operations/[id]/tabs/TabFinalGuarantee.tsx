@@ -203,12 +203,17 @@ export function TabFinalGuarantee({
     const comp = currentCompanyLink?.company || op.companies?.[0]?.company;
     return sanitizeChairmanTitle(comp?.managerName || "سحر حسن محمد أحمد عبد السلام");
   });
-  // Cloud URLs per letter type (Catbox.moe / روابط PDF مباشرة)
+  // Cloud URLs per letter type (Catbox.moe / Tmpfile / Gofile)
   const [cloudUrls, setCloudUrls] = useState<Record<string, string>>(() => {
     const initial = savedSettings?.cloudUrls || {};
     const cleaned: Record<string, string> = {};
     for (const [k, v] of Object.entries(initial)) {
-      if (typeof v === "string" && !v.includes("tmpfiles.org") && !v.includes("gofile.io")) {
+      if (
+        typeof v === "string" &&
+        (v.startsWith("http://") || v.startsWith("https://")) &&
+        !v.includes("public-doc") &&
+        !v.includes("17a9mx.pdf")
+      ) {
         cleaned[k] = v;
       }
     }
@@ -360,11 +365,11 @@ export function TabFinalGuarantee({
     let qrDrawingXml = "";
     try {
       const activeCloud = cloudUrls[type];
-      const isDirectPdf = activeCloud && (activeCloud.startsWith("http://") || activeCloud.startsWith("https://")) && !activeCloud.includes("gofile.io") && !activeCloud.includes("tmpfiles.org");
       const origin = typeof window !== "undefined" ? window.location.origin : "https://goldenerp-tau.vercel.app";
-      const targetVerifyUrl = isDirectPdf
-        ? activeCloud
-        : `${origin}/verify-doc?ref=${encodeURIComponent(registrationNumber)}&opId=${op.id}&type=guarantee_final_${type}&printedBy=${encodeURIComponent(getCurrentUserName())}&printedAt=${Date.now()}`;
+      let targetVerifyUrl = `${origin}/verify-doc?ref=${encodeURIComponent(registrationNumber)}&opId=${op.id}&type=guarantee_final_${type}&printedBy=${encodeURIComponent(getCurrentUserName())}&printedAt=${Date.now()}`;
+      if (activeCloud && (activeCloud.startsWith("http://") || activeCloud.startsWith("https://")) && !activeCloud.includes("public-doc")) {
+        targetVerifyUrl = activeCloud;
+      }
 
       const qrDataUrl = await QRCode.toDataURL(targetVerifyUrl, { width: 160, margin: 1 });
       const qrBase64 = qrDataUrl.split(",")[1];
@@ -557,7 +562,7 @@ export function TabFinalGuarantee({
       setPreviewPdfUrl(url);
       setLastGeneratedSnapshot(currentSnapshot);
 
-      if (!cloudUrls[type] || cloudUrls[type].includes("tmpfiles.org") || cloudUrls[type].includes("gofile.io")) {
+      if (!cloudUrls[type]) {
         handleUploadToCloud(type, false, pdf);
       }
     } catch (err: any) {
@@ -578,7 +583,7 @@ export function TabFinalGuarantee({
     forceReupload = false,
     existingBlob?: Blob
   ) => {
-    if (cloudUrls[type] && !forceReupload && !cloudUrls[type].includes("gofile.io") && !cloudUrls[type].includes("tmpfiles.org")) {
+    if (cloudUrls[type] && !forceReupload) {
       return;
     }
     setUploadingCloud(true);

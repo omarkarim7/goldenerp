@@ -188,10 +188,18 @@ export function TabClarification({
     savedLetter?.companyAddress || currentCompany?.address || "بجوار مستشفى ليدى كير - بدمنهور - البحيره"
   );
 
-  // الرابط السحابي المعتمد للنسخة الرقمية (Catbox.moe / روابط PDF مباشرة)
+  // الرابط السحابي المعتمد للنسخة الرقمية (Catbox.moe / Tmpfile / Gofile)
   const [cloudPdfUrl, setCloudPdfUrl] = useState<string>(() => {
     const url = savedLetter?.cloudPdfUrl || "";
-    return (url.includes("tmpfiles.org") || url.includes("gofile.io")) ? "" : url;
+    if (
+      url &&
+      (url.startsWith("http://") || url.startsWith("https://")) &&
+      !url.includes("public-doc") &&
+      !url.includes("17a9mx.pdf")
+    ) {
+      return url;
+    }
+    return "";
   });
   const [uploadingCloud, setUploadingCloud] = useState(false);
   const [lastGeneratedSnapshot, setLastGeneratedSnapshot] = useState<string | null>(null);
@@ -513,11 +521,11 @@ export function TabClarification({
     // توليد رمز التحقق الرقمي والباركود للنسخة الرقمية
     let qrDrawingXml = "";
     try {
-      const isDirectPdf = cloudPdfUrl && (cloudPdfUrl.startsWith("http://") || cloudPdfUrl.startsWith("https://")) && !cloudPdfUrl.includes("gofile.io") && !cloudPdfUrl.includes("tmpfiles.org");
       const origin = typeof window !== "undefined" ? window.location.origin : "https://goldenerp-tau.vercel.app";
-      const targetVerifyUrl = isDirectPdf
-        ? cloudPdfUrl
-        : `${origin}/verify-doc?ref=${encodeURIComponent(registrationNumber)}&opId=${op.id}&type=clarification&printedBy=${encodeURIComponent(getCurrentUserName())}&printedAt=${Date.now()}`;
+      let targetVerifyUrl = `${origin}/verify-doc?ref=${encodeURIComponent(registrationNumber)}&opId=${op.id}&type=clarification&printedBy=${encodeURIComponent(getCurrentUserName())}&printedAt=${Date.now()}`;
+      if (cloudPdfUrl && (cloudPdfUrl.startsWith("http://") || cloudPdfUrl.startsWith("https://")) && !cloudPdfUrl.includes("public-doc")) {
+        targetVerifyUrl = cloudPdfUrl;
+      }
       const qrDataUrl = await QRCode.toDataURL(targetVerifyUrl, { width: 160, margin: 1 });
       const qrBase64 = qrDataUrl.split(",")[1];
       const qrBinary = Uint8Array.from(atob(qrBase64), (c) => c.charCodeAt(0));

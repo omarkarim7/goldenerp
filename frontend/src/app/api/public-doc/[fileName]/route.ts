@@ -17,20 +17,16 @@ export async function GET(
 
     const safeName = decodeURIComponent(fileName).replace(/[^a-zA-Z0-9_\-\.]/g, "");
     
-    // Look in possible cloud doc directories across frontend, backend and temp
+    // Look in possible cloud doc directories
     const searchDirs = [
-      path.resolve(process.cwd(), "public", "cloud_docs"),
-      path.resolve(process.cwd(), "..", "backend", "uploads", "cloud_docs"),
-      path.resolve(process.cwd(), "..", "uploads", "cloud_docs"),
-      path.resolve(process.cwd(), "uploads", "cloud_docs"),
-      path.resolve(os.tmpdir(), "cloud_docs"),
-      os.tmpdir(),
+      path.join(process.cwd(), "public", "cloud_docs"),
+      path.join(os.tmpdir(), "cloud_docs"),
     ];
 
     let foundBuffer: Buffer | null = null;
 
     for (const dir of searchDirs) {
-      const p = path.resolve(dir, safeName);
+      const p = path.join(dir, safeName);
       if (fs.existsSync(p)) {
         foundBuffer = await fs.promises.readFile(p);
         break;

@@ -34,6 +34,8 @@ Thumbs.db
 # Uploads (don't commit uploaded files)
 uploads/*
 !uploads/.gitkeep
+frontend/public/cloud_docs/
+public/cloud_docs/
 
 # Prisma
 backend/prisma/migrations/**/migration_lock.toml

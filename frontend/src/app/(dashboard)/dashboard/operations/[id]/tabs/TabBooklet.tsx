@@ -391,12 +391,17 @@ export function TabBooklet({
     return savedData?.additionalNotes || "";
   });
 
-  // ━━━ 7. الروابط السحابية للنسخ الرقمية المعتمدة (Catbox.moe / Gofile.io) ━━━
+  // ━━━ 7. الروابط السحابية للنسخ الرقمية المعتمدة (Catbox.moe / Tmpfile / Gofile.io) ━━━
   const [cloudUrls, setCloudUrls] = useState<{ [key in BookletLetterType]?: string }>(() => {
     const raw = savedData?.cloudUrls || {};
     const cleaned: { [key in BookletLetterType]?: string } = {};
     for (const [k, v] of Object.entries(raw)) {
-      if (typeof v === "string" && !v.includes("tmpfiles.org") && !v.includes("gofile.io")) {
+      if (
+        typeof v === "string" &&
+        (v.startsWith("http://") || v.startsWith("https://")) &&
+        !v.includes("public-doc") &&
+        !v.includes("17a9mx.pdf")
+      ) {
         cleaned[k as BookletLetterType] = v;
       }
     }
@@ -594,11 +599,11 @@ export function TabBooklet({
     let qrDrawingXml = "";
     try {
       const activeCloud = cloudUrls[type];
-      const isDirectPdf = activeCloud && (activeCloud.startsWith("http://") || activeCloud.startsWith("https://")) && !activeCloud.includes("gofile.io") && !activeCloud.includes("tmpfiles.org");
       const origin = typeof window !== "undefined" ? window.location.origin : "https://goldenerp-tau.vercel.app";
-      const targetVerifyUrl = isDirectPdf
-        ? activeCloud
-        : `${origin}/verify-doc?ref=${encodeURIComponent(registrationNumber)}&opId=${op.id}&type=booklet_${type}&printedBy=${encodeURIComponent(getCurrentUserName())}&printedAt=${Date.now()}`;
+      let targetVerifyUrl = `${origin}/verify-doc?ref=${encodeURIComponent(registrationNumber)}&opId=${op.id}&type=booklet_${type}&printedBy=${encodeURIComponent(getCurrentUserName())}&printedAt=${Date.now()}`;
+      if (activeCloud && (activeCloud.startsWith("http://") || activeCloud.startsWith("https://")) && !activeCloud.includes("public-doc")) {
+        targetVerifyUrl = activeCloud;
+      }
       const qrDataUrl = await QRCode.toDataURL(targetVerifyUrl, { width: 160, margin: 1 });
       const qrBase64 = qrDataUrl.split(",")[1];
       const qrBinary = Uint8Array.from(atob(qrBase64), (c) => c.charCodeAt(0));

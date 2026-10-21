@@ -26,21 +26,7 @@ export async function POST(req: NextRequest) {
     const protoHeader = req.headers.get("x-forwarded-proto") || "https";
     const appOrigin = hostHeader ? `${protoHeader}://${hostHeader}` : "";
 
-    // 0. حفظ محلي سريع في مجلد السحابة العام لضمان وجود رابط دائم 100%
-    try {
-      const isServerless = process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME;
-      const baseDir = isServerless ? os.tmpdir() : path.resolve(process.cwd(), "public");
-      const cloudDir = path.resolve(baseDir, "cloud_docs");
-      if (!fs.existsSync(cloudDir)) {
-        fs.mkdirSync(cloudDir, { recursive: true });
-      }
-      const safePath = path.resolve(cloudDir, finalFileName);
-      await fs.promises.writeFile(safePath, Buffer.from(uint8Data));
-    } catch (saveErr) {
-      console.warn("Local cloud doc write notice:", saveErr);
-    }
-
-    // 1. المحاولة الأولى: Catbox.moe (رابط مباشر دائم بصيغة PDF يفتح فورياً في المتصفح أو كاميرا الهاتف)
+    // 1. المحاولة الأولى: Catbox.moe (رابط مباشر دائم بصيغة PDF)
     try {
       const catboxForm = new FormData();
       catboxForm.append("reqtype", "fileupload");
@@ -54,7 +40,7 @@ export async function POST(req: NextRequest) {
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
         },
         body: catboxForm,
-        signal: AbortSignal.timeout(20000),
+        signal: AbortSignal.timeout(4000),
       });
 
       if (catboxRes.ok) {
@@ -68,24 +54,77 @@ export async function POST(req: NextRequest) {
         }
       }
     } catch (e: any) {
-      console.warn("Catbox upload failed in Next.js route:", e?.message);
+      console.warn("Catbox upload failed, switching to Tmpfile (Cloudflare R2):", e?.message);
     }
 
-    // 2. المحاولة الثانية: رابط العرض السحابي المباشر الداخلي للمنظومة (يفتح ملف الـ PDF كنسخة رقمية مباشرة)
-    if (appOrigin) {
-      const internalDocUrl = `${appOrigin}/api/public-doc/${encodeURIComponent(finalFileName)}`;
-      return NextResponse.json({
-        success: true,
-        url: internalDocUrl,
-        provider: "GoldenERP Cloud Engine (رابط PDF رقمي مباشر)",
+    // 2. المحاولة الثانية: Tmpfile.link (رابط PDF مباشر فائق السرعة عبر Cloudflare R2)
+    try {
+      const tmpForm = new FormData();
+      const pdfFile = new File([uint8Data], finalFileName, { type: "application/pdf" });
+      tmpForm.append("file", pdfFile);
+
+      const tmpRes = await fetch("https://tmpfile.link/api/upload", {
+        method: "POST",
+        headers: { Accept: "application/json" },
+        body: tmpForm,
+        signal: AbortSignal.timeout(10000),
       });
+
+      if (tmpRes.ok) {
+        const tmpData = await tmpRes.json();
+        const directLink = tmpData?.downloadLink || tmpData?.downloadLinkEncoded;
+        if (directLink && typeof directLink === "string" && directLink.startsWith("http")) {
+          return NextResponse.json({
+            success: true,
+            url: directLink,
+            provider: "Cloudflare R2 Cloud (رابط PDF مباشر)",
+          });
+        }
+      }
+    } catch (tmpErr: any) {
+      console.warn("Tmpfile upload failed, switching to Gofile:", tmpErr?.message);
     }
 
-    return NextResponse.json({
-      success: true,
-      url: `/api/public-doc/${encodeURIComponent(finalFileName)}`,
-      provider: "GoldenERP Vault",
-    });
+    // 3. المحاولة الثالثة: Gofile.io (تخزين سحابي خارجي مجاني وموثوق 100%)
+    try {
+      const srvRes = await fetch("https://api.gofile.io/servers", {
+        headers: { "User-Agent": "Mozilla/5.0" },
+        signal: AbortSignal.timeout(8000),
+      });
+      if (srvRes.ok) {
+        const srvData = await srvRes.json();
+        const serverName = srvData?.data?.servers?.[0]?.name || "store1";
+
+        const gofileForm = new FormData();
+        const pdfFile = new File([uint8Data], finalFileName, { type: "application/pdf" });
+        gofileForm.append("file", pdfFile);
+
+        const upRes = await fetch(`https://${serverName}.gofile.io/contents/uploadfile`, {
+          method: "POST",
+          body: gofileForm,
+          headers: { "User-Agent": "Mozilla/5.0" },
+          signal: AbortSignal.timeout(20000),
+        });
+
+        if (upRes.ok) {
+          const upData = await upRes.json();
+          if (upData?.status === "ok" && upData?.data?.downloadPage) {
+            return NextResponse.json({
+              success: true,
+              url: upData.data.downloadPage,
+              provider: "Gofile Cloud (تخزين سحابي خارجي)",
+            });
+          }
+        }
+      }
+    } catch (gofileErr: any) {
+      console.warn("Gofile upload failed in Next.js route:", gofileErr?.message);
+    }
+
+    return NextResponse.json(
+      { error: "تعذر الرفع إلى مراكز التخزين السحابي الخارجية (Catbox/Tmpfile/Gofile). يرجى التحقق من اتصال الإنترنت والمحاولة مجدداً." },
+      { status: 502 }
+    );
   } catch (err: any) {
     console.error("خطأ في راوت الرفع السحابي:", err);
     return NextResponse.json(

@@ -203,19 +203,16 @@ export function TabDeclarations({
     return savedDec?.additionalNotes || "";
   });
 
-  // ━━━ 4. الروابط السحابية لرمز QR (Catbox.moe / Direct PDF) ━━━
-  const [cloudPdfUrlSpecs, setCloudPdfUrlSpecs] = useState<string>(() => {
-    const u = savedDec?.cloudPdfUrlSpecs || "";
-    return u.includes("tmpfiles.org") || u.includes("gofile.io") ? "" : u;
-  });
-  const [cloudPdfUrlInsurance, setCloudPdfUrlInsurance] = useState<string>(() => {
-    const u = savedDec?.cloudPdfUrlInsurance || "";
-    return u.includes("tmpfiles.org") || u.includes("gofile.io") ? "" : u;
-  });
-  const [cloudPdfUrlGeneral, setCloudPdfUrlGeneral] = useState<string>(() => {
-    const u = savedDec?.cloudPdfUrlGeneral || "";
-    return u.includes("tmpfiles.org") || u.includes("gofile.io") ? "" : u;
-  });
+  // ━━━ 4. الروابط السحابية لرمز QR (Catbox.moe / Tmpfile / Gofile) ━━━
+  const cleanCloudUrl = (u?: string) => {
+    if (u && (u.startsWith("http://") || u.startsWith("https://")) && !u.includes("public-doc") && !u.includes("17a9mx.pdf")) {
+      return u;
+    }
+    return "";
+  };
+  const [cloudPdfUrlSpecs, setCloudPdfUrlSpecs] = useState<string>(() => cleanCloudUrl(savedDec?.cloudPdfUrlSpecs));
+  const [cloudPdfUrlInsurance, setCloudPdfUrlInsurance] = useState<string>(() => cleanCloudUrl(savedDec?.cloudPdfUrlInsurance));
+  const [cloudPdfUrlGeneral, setCloudPdfUrlGeneral] = useState<string>(() => cleanCloudUrl(savedDec?.cloudPdfUrlGeneral));
   const [uploadingCloud, setUploadingCloud] = useState(false);
   const [lastGeneratedSnapshot, setLastGeneratedSnapshot] = useState<string | null>(null);
 
@@ -378,11 +375,11 @@ export function TabDeclarations({
           : type === "insurance"
           ? cloudPdfUrlInsurance
           : cloudPdfUrlGeneral;
-      const isDirectPdf = activeCloud && (activeCloud.startsWith("http://") || activeCloud.startsWith("https://")) && !activeCloud.includes("gofile.io") && !activeCloud.includes("tmpfiles.org");
       const origin = typeof window !== "undefined" ? window.location.origin : "https://goldenerp-tau.vercel.app";
-      const targetVerifyUrl = isDirectPdf
-        ? activeCloud
-        : `${origin}/verify-doc?ref=${encodeURIComponent(registrationNumber)}&opId=${op.id}&type=declaration_${type}&printedBy=${encodeURIComponent(getCurrentUserName())}&printedAt=${Date.now()}`;
+      let targetVerifyUrl = `${origin}/verify-doc?ref=${encodeURIComponent(registrationNumber)}&opId=${op.id}&type=declaration_${type}&printedBy=${encodeURIComponent(getCurrentUserName())}&printedAt=${Date.now()}`;
+      if (activeCloud && (activeCloud.startsWith("http://") || activeCloud.startsWith("https://")) && !activeCloud.includes("public-doc")) {
+        targetVerifyUrl = activeCloud;
+      }
       const qrDataUrl = await QRCode.toDataURL(targetVerifyUrl, { width: 160, margin: 1 });
       const qrBase64 = qrDataUrl.split(",")[1];
       const qrBinary = Uint8Array.from(atob(qrBase64), (c) => c.charCodeAt(0));

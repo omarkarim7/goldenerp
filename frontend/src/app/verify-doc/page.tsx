@@ -43,9 +43,14 @@ function VerifyDocContent() {
   }
 
   // Determine final effective PDF URL
-  let effectivePdfUrl = rawPdfUrl;
-  if (!effectivePdfUrl && refNo) {
-    effectivePdfUrl = `/api/public-doc/${encodeURIComponent(refNo)}.pdf`;
+  let effectivePdfUrl = "";
+  if (
+    rawPdfUrl &&
+    (rawPdfUrl.startsWith("http://") || rawPdfUrl.startsWith("https://")) &&
+    !rawPdfUrl.includes("public-doc") &&
+    !rawPdfUrl.includes("17a9mx.pdf")
+  ) {
+    effectivePdfUrl = rawPdfUrl;
   }
 
   const [showEmbeddedPdf, setShowEmbeddedPdf] = useState<boolean>(false);
