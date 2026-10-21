@@ -924,21 +924,23 @@ export function TabBooklet({
   const [printingDocx, setPrintingDocx] = useState(false);
 
   const loadOfficialPreview = async () => {
-    if (previewPdfUrl && previewPdfBlob && lastGeneratedSnapshot === currentSnapshot) {
+    if (previewDocxBlob && lastGeneratedSnapshot === currentSnapshot) {
       return;
     }
     setRenderingDocx(true);
     try {
-      const pdfBlob = await generateBookletPdfBlob(activeLetterType);
-      if (previewPdfUrl) {
-        URL.revokeObjectURL(previewPdfUrl);
-      }
-      const url = URL.createObjectURL(pdfBlob);
-      setPreviewPdfUrl(url);
+      const docx = await generateBookletDocxBlob(activeLetterType);
+      setPreviewDocxBlob(docx);
+      setLastGeneratedSnapshot(currentSnapshot);
+      setRenderingDocx(false);
+
+      // خلف الكواليس: تجهيز ملف الـ PDF بهدوء
+      generateBookletPdfBlob(activeLetterType).catch((e) => {
+        console.warn("Deferred PDF generation error:", e);
+      });
     } catch (err: any) {
       console.error(err);
-      toast.error("فشل تجهيز معاينة الوورد: " + (err?.response?.data?.message || err?.message || ""));
-    } finally {
+      toast.error("فشل تجهيز معاينة الوورد: " + (err?.message || ""));
       setRenderingDocx(false);
     }
   };

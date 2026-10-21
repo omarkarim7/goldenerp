@@ -1111,23 +1111,27 @@ export function TabFinancial({
       }
       const docx = await generateFinancialDocxBlob();
       setPreviewDocxBlob(docx);
-      const pdfBlob = await getPdfBlobFromDocx(
+      setLastGeneratedSnapshot(currentSnapshot);
+      setRenderingDocx(false);
+
+      // في الخلفية: تجهيز الـ PDF بهدوء
+      getPdfBlobFromDocx(
         docx,
         `financial_offer_${registrationNumber || op.serialNumber}.docx`
-      );
-      setPreviewPdfBlob(pdfBlob);
-      setLastGeneratedSnapshot(currentSnapshot);
-      const url = URL.createObjectURL(pdfBlob);
-      setPreviewPdfUrl(url);
+      )
+        .then((pdfBlob) => {
+          setPreviewPdfBlob(pdfBlob);
+          const url = URL.createObjectURL(pdfBlob);
+          setPreviewPdfUrl(url);
 
-      // رفع سحابي هادئ إذا لم يكن مرفوعاً
-      if (!cloudPdfUrl || cloudPdfUrl.includes("tmpfiles.org")) {
-        handleUploadToCloud(false, pdfBlob);
-      }
+          if (!cloudPdfUrl || cloudPdfUrl.includes("tmpfiles.org")) {
+            handleUploadToCloud(false, pdfBlob);
+          }
+        })
+        .catch((e) => console.warn("Deferred PDF generation error:", e));
     } catch (err: any) {
       console.error("فشل تجهيز معاينة العرض المالي:", err);
       toast.error("تعذر تجهيز المعاينة: " + (err?.message || ""));
-    } finally {
       setRenderingDocx(false);
     }
   };

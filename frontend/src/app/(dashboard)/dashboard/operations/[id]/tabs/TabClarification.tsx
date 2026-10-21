@@ -825,7 +825,7 @@ export function TabClarification({
   // ━━━ دالة تحميل المعاينة الرسمية الحية من محرك Word الأصيل ━━━
   const loadOfficialPreview = async () => {
     // إذا كان المستند مولداً ومطابقاً لآخر تعديل بدون أي تغيير في الخانات -> فتح فوري
-    if (previewPdfBlob && currentSnapshot === lastGeneratedSnapshot) {
+    if (previewDocxBlob && currentSnapshot === lastGeneratedSnapshot) {
       return;
     }
 
@@ -833,23 +833,27 @@ export function TabClarification({
     try {
       const docx = await generateClarificationDocxBlob();
       setPreviewDocxBlob(docx);
-      const pdf = await getPdfBlobFromDocx(docx, `clarification_${registrationNumber}.docx`);
-      setPreviewPdfBlob(pdf);
       setLastGeneratedSnapshot(currentSnapshot);
-      if (previewPdfUrl) {
-        URL.revokeObjectURL(previewPdfUrl);
-      }
-      const url = URL.createObjectURL(pdf);
-      setPreviewPdfUrl(url);
+      setRenderingDocx(false);
 
-      // رفع سحابي هادئ إذا لم يكن مرفوعاً
-      if (!cloudPdfUrl || cloudPdfUrl.includes("tmpfiles.org")) {
-        handleUploadToCloud(false, pdf);
-      }
+      // في الخلفية: تجهيز الـ PDF بهدوء
+      getPdfBlobFromDocx(docx, `clarification_${registrationNumber}.docx`)
+        .then((pdf) => {
+          setPreviewPdfBlob(pdf);
+          if (previewPdfUrl) {
+            URL.revokeObjectURL(previewPdfUrl);
+          }
+          const url = URL.createObjectURL(pdf);
+          setPreviewPdfUrl(url);
+
+          if (!cloudPdfUrl || cloudPdfUrl.includes("tmpfiles.org")) {
+            handleUploadToCloud(false, pdf);
+          }
+        })
+        .catch((e) => console.warn("Deferred PDF generation error:", e));
     } catch (err: any) {
       console.error(err);
-      toast.error("فشل تجهيز معاينة الوورد: " + (err?.response?.data?.message || err?.message || ""));
-    } finally {
+      toast.error("فشل تجهيز مستند الوورد: " + (err?.message || ""));
       setRenderingDocx(false);
     }
   };

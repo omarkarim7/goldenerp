@@ -2,6 +2,7 @@ import {
   Injectable,
   NotFoundException,
   BadRequestException,
+  ServiceUnavailableException,
   Logger,
 } from '@nestjs/common';
 import * as crypto from 'crypto';
@@ -1717,13 +1718,10 @@ export class OperationsService {
       this.logger.warn(`محرك LibreOffice Headless غير متاح أو فشل (${loErr?.message})`);
     }
 
-    // 4. التحويل الاحتياطي السحابي العام الذكي (iLovePDF)
-    try {
-      return await this.convertDocxViaFreeILovePdf(docxBuffer);
-    } catch (webErr: any) {
-      this.logger.error(`فشلت جميع محركات التحويل: ${webErr?.message}`);
-      throw new Error('تعذر تحويل المستند إلى PDF عبر محركات التحويل المتاحة');
-    }
+    // إذا لم تتوفر محركات الخادم ذات الخطوط المعتمدة (مثل بيئة السيرفرلس Vercel)، نرمي استثناء ليقوم المتصفح بالتحويل الفوري بخطوط Arabic Typesetting الأصلية
+    throw new ServiceUnavailableException(
+      'محرك Microsoft Word غير متاح على خادم Linux الحالي - يتم التحويل المباشر في المتصفح بالخطوط المعتمدة بدقة 100%'
+    );
   }
 
   /**
