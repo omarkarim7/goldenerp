@@ -522,7 +522,7 @@ export function TabDeclarations({
         : type === "insurance"
         ? cloudPdfUrlInsurance
         : cloudPdfUrlGeneral;
-    if (existingUrl && !existingUrl.includes("tmpfiles.org") && !existingUrl.includes("gofile.io") && !forceReupload) {
+    if (existingUrl && !existingUrl.includes("tmpfiles") && !existingUrl.includes("tmpfile") && !existingUrl.includes("catbox") && !forceReupload) {
       toast.info("تم رفع وتوثيق هذا المستند سحابياً مسبقاً وهو نشط بالفعل ✓");
       return;
     }
@@ -540,7 +540,7 @@ export function TabDeclarations({
         }
       }
 
-      toast.info("جاري توثيق ورفع المستند سحابياً (Catbox)...");
+      toast.info("جاري توثيق ورفع المستند سحابياً (Cloudflare R2)...");
       const res = await uploadPdfToFreeCloud(
         pdfBlob,
         `declaration_${type}_${registrationNumber || op.serialNumber}.pdf`
@@ -603,7 +603,7 @@ export function TabDeclarations({
       const url = URL.createObjectURL(pdfBlob);
       setPreviewPdfUrl(url);
 
-      if (!currentCloudUrl || currentCloudUrl.includes("tmpfiles.org") || currentCloudUrl.includes("gofile.io")) {
+      if (!currentCloudUrl || currentCloudUrl.includes("tmpfiles") || currentCloudUrl.includes("tmpfile") || currentCloudUrl.includes("catbox")) {
         handleUploadToCloud(activeDeclType, false, pdfBlob);
       }
       setLastGeneratedSnapshot(currentSnapshot);
@@ -691,7 +691,7 @@ export function TabDeclarations({
         console.warn("Could not persist print history:", e);
       }
 
-      if (!currentCloudUrl) {
+      if (!currentCloudUrl || currentCloudUrl.includes("tmpfiles") || currentCloudUrl.includes("tmpfile") || currentCloudUrl.includes("catbox")) {
         handleUploadToCloud(activeDeclType, false, pdfBlob).catch(() => {});
       }
 
@@ -811,7 +811,7 @@ export function TabDeclarations({
       URL.revokeObjectURL(url);
       toast.success("تم تحميل مستند PDF فوراً! 📑✨");
 
-      if (!currentCloudUrl || currentCloudUrl.includes("tmpfiles.org") || currentCloudUrl.includes("gofile.io")) {
+      if (!currentCloudUrl || currentCloudUrl.includes("tmpfiles") || currentCloudUrl.includes("tmpfile") || currentCloudUrl.includes("catbox")) {
         handleUploadToCloud(type, false, previewPdfBlob);
       }
       return;
@@ -836,7 +836,7 @@ export function TabDeclarations({
       URL.revokeObjectURL(url);
       toast.success("تم تحميل مستند PDF بنجاح! 📑✨");
 
-      if (!currentCloudUrl || currentCloudUrl.includes("tmpfiles.org") || currentCloudUrl.includes("gofile.io")) {
+      if (!currentCloudUrl || currentCloudUrl.includes("tmpfiles") || currentCloudUrl.includes("tmpfile") || currentCloudUrl.includes("catbox")) {
         handleUploadToCloud(type, false, pdfBlob);
       }
     } catch (err: any) {

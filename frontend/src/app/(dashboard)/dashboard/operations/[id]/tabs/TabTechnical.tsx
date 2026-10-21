@@ -804,7 +804,7 @@ export function TabTechnical({
 
   // ━━━ رفع وتوثيق النسخة الرقمية المعتمدة سحابياً (رابط PDF مباشر) ━━━
   const handleUploadToCloud = async (forceReupload = false, existingBlob?: Blob) => {
-    if (cloudPdfUrl && !cloudPdfUrl.includes("tmpfiles.org") && !cloudPdfUrl.includes("gofile.io") && !forceReupload) {
+    if (cloudPdfUrl && !cloudPdfUrl.includes("tmpfiles") && !cloudPdfUrl.includes("tmpfile") && !cloudPdfUrl.includes("catbox") && !forceReupload) {
       toast.info("تم رفع وتوثيق النسخة الرقمية سحابياً مسبقاً وهي نشطة بالفعل ✓");
       return;
     }
@@ -877,7 +877,7 @@ export function TabTechnical({
       const url = URL.createObjectURL(pdfBlob);
       setPreviewPdfUrl(url);
 
-      if (!cloudPdfUrl || cloudPdfUrl.includes("tmpfiles.org") || cloudPdfUrl.includes("gofile.io")) {
+      if (!cloudPdfUrl || cloudPdfUrl.includes("tmpfiles") || cloudPdfUrl.includes("tmpfile") || cloudPdfUrl.includes("catbox")) {
         handleUploadToCloud(false, pdfBlob);
       }
       setLastGeneratedSnapshot(currentSnapshot);
@@ -1070,7 +1070,7 @@ export function TabTechnical({
       toast.success("تم تحميل مستند PDF فوراً! 📑✨");
 
       // التأكد من رفع النسخة السحابية لرمز QR إذا لم تكن مرفوعة
-      if (!cloudPdfUrl || cloudPdfUrl.includes("tmpfiles.org") || cloudPdfUrl.includes("gofile.io")) {
+      if (!cloudPdfUrl || cloudPdfUrl.includes("tmpfiles") || cloudPdfUrl.includes("tmpfile") || cloudPdfUrl.includes("catbox")) {
         handleUploadToCloud(false, previewPdfBlob);
       }
       return;
@@ -1099,7 +1099,7 @@ export function TabTechnical({
       toast.success("تم تحميل مستند PDF بنجاح! 📑✨");
 
       // رفع المستند سحابياً لرمز QR فوراً (رابط PDF مباشر)
-      if (!cloudPdfUrl || cloudPdfUrl.includes("tmpfiles.org") || cloudPdfUrl.includes("gofile.io")) {
+      if (!cloudPdfUrl || cloudPdfUrl.includes("tmpfiles") || cloudPdfUrl.includes("tmpfile") || cloudPdfUrl.includes("catbox")) {
         handleUploadToCloud(false, pdfBlob);
       }
     } catch (err: any) {

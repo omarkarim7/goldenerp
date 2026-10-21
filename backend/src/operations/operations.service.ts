@@ -24,6 +24,8 @@ import {
   GuaranteeStatus,
   OpDocType,
 } from '@prisma/client';
+import { S3Client, PutObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
+import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 
 @Injectable()
 export class OperationsService {
@@ -2355,93 +2357,58 @@ try {
     const rawName = fileName || `goldenerp_doc_${Date.now()}.pdf`;
     const finalName = rawName.endsWith('.pdf') ? rawName : `${rawName}.pdf`;
 
-    // 1. المحرك السحابي الأول: Catbox.moe (رابط PDF مباشر دائم)
+    // 1. المحرك الأساسي الأول المعتمد: Cloudflare R2 الخاص بالشركة (حساب الإنتاج GoldenERP)
     try {
-      const form = new FormData();
-      form.append('reqtype', 'fileupload');
-      form.append(
-        'fileToUpload',
-        new Blob([new Uint8Array(pdfBuffer)], { type: 'application/pdf' }),
-        finalName
-      );
+      const accountId = process.env.R2_ACCOUNT_ID || 'e955866121f5a31f17c8cd21f8c09d19';
+      const bucketName = process.env.R2_BUCKET_NAME || 'goldenerp-storage';
+      const accessKeyId = process.env.R2_ACCESS_KEY_ID || '87f6a410e812d016695a39cb23c6c4ce';
+      const secretAccessKey = process.env.R2_SECRET_ACCESS_KEY || '717642f36c3f9d7f8af1b0d57999b724ad504becd460b826ba7aa9a7dede42c3';
+      const endpoint = process.env.R2_ENDPOINT || `https://${accountId}.r2.cloudflarestorage.com`;
 
-      const res = await fetch('https://catbox.moe/user/api.php', {
-        method: 'POST',
-        headers: {
-          'User-Agent':
-            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-        },
-        body: form,
-        signal: AbortSignal.timeout(5000),
+      const s3 = new S3Client({
+        region: 'auto',
+        endpoint,
+        credentials: { accessKeyId, secretAccessKey },
       });
 
-      if (res.ok) {
-        const text = (await res.text()).trim();
-        if (text.startsWith('http') && (text.endsWith('.pdf') || text.includes('files.catbox.moe'))) {
-          this.logger.log(`تم رفع المستند سحابياً بنجاح عبر Catbox: ${text}`);
-          return { success: true, url: text, provider: 'Catbox Cloud' };
-        }
-      }
-    } catch (catboxErr: any) {
-      this.logger.warn(`Catbox upload failed, trying Tmpfile Cloud: ${catboxErr?.message}`);
-    }
+      const key = `official_docs/${finalName}`;
 
-    // 2. المحرك السحابي الثاني: Tmpfile.link (رابط PDF مباشر فائق السرعة عبر Cloudflare R2)
-    try {
-      const tmpForm = new FormData();
-      tmpForm.append(
-        'file',
-        new Blob([new Uint8Array(pdfBuffer)], { type: 'application/pdf' }),
-        finalName
+      await s3.send(
+        new PutObjectCommand({
+          Bucket: bucketName,
+          Key: key,
+          Body: pdfBuffer,
+          ContentType: 'application/pdf',
+          ContentDisposition: `inline; filename="${finalName}"`,
+        })
       );
 
-      const tmpRes = await fetch('https://tmpfile.link/api/upload', {
-        method: 'POST',
-        headers: { Accept: 'application/json' },
-        body: tmpForm,
-        signal: AbortSignal.timeout(10000),
-      });
-
-      if (tmpRes.ok) {
-        const tmpData = await tmpRes.json();
-        const directLink = tmpData?.downloadLink || tmpData?.downloadLinkEncoded;
-        if (directLink && typeof directLink === 'string' && directLink.startsWith('http')) {
-          this.logger.log(`تم رفع المستند سحابياً بنجاح عبر Cloudflare R2: ${directLink}`);
-          return { success: true, url: directLink, provider: 'Cloudflare R2 Direct Cloud' };
-        }
+      // إذا تم إعداد دومين عام مباشر للمستودع
+      const publicDomain = process.env.R2_PUBLIC_DOMAIN;
+      let finalUrl: string;
+      if (publicDomain && publicDomain.startsWith('http')) {
+        finalUrl = `${publicDomain.replace(/\/+$/, '')}/${key}`;
+      } else {
+        // توليد رابط رسمي فوري يفتح ملف الـ PDF مباشرة بدون أي شاشة وسيطة
+        finalUrl = await getSignedUrl(
+          s3,
+          new GetObjectCommand({
+            Bucket: bucketName,
+            Key: key,
+            ResponseContentType: 'application/pdf',
+            ResponseContentDisposition: `inline; filename="${finalName}"`,
+          }),
+          { expiresIn: 604800 }
+        );
       }
-    } catch (tmpErr: any) {
-      this.logger.warn(`Tmpfile upload failed, trying Tmpfiles.org: ${tmpErr?.message}`);
+
+      this.logger.log(`تم رفع المستند بنجاح إلى Cloudflare R2 الخاص بالشركة: ${finalUrl}`);
+      return { success: true, url: finalUrl, provider: 'Cloudflare R2 Storage (حساب الشركة المعتمد)' };
+    } catch (r2Err: any) {
+      this.logger.warn(`Cloudflare R2 upload failed, falling back to Gofile: ${r2Err?.message}`);
     }
 
-    // 3. المحرك السحابي الثالث: TmpFiles.org (رابط PDF فوري ومباشر 100%)
-    try {
-      const orgForm = new FormData();
-      orgForm.append(
-        'file',
-        new Blob([new Uint8Array(pdfBuffer)], { type: 'application/pdf' }),
-        finalName
-      );
-
-      const orgRes = await fetch('https://tmpfiles.org/api/v1/upload', {
-        method: 'POST',
-        body: orgForm,
-        signal: AbortSignal.timeout(10000),
-      });
-
-      if (orgRes.ok) {
-        const orgData = await orgRes.json();
-        if (orgData?.status === 'success' && orgData?.data?.url) {
-          const directDlUrl = orgData.data.url.replace('tmpfiles.org/', 'tmpfiles.org/dl/');
-          this.logger.log(`تم رفع المستند سحابياً بنجاح عبر TmpFiles: ${directDlUrl}`);
-          return { success: true, url: directDlUrl, provider: 'TmpFiles Direct Cloud' };
-        }
-      }
-    } catch (orgErr: any) {
-      this.logger.warn(`Tmpfiles.org upload failed, trying Gofile: ${orgErr?.message}`);
-    }
-
-    // 4. المحرك السحابي الرابع: Gofile.io (تخزين سحابي خارجي مجاني)
+    // 2. المحرك الاحتياطي الثاني: Gofile.io
     try {
       const srvRes = await fetch('https://api.gofile.io/servers', {
         headers: { 'User-Agent': 'Mozilla/5.0' },
@@ -2472,7 +2439,7 @@ try {
             return {
               success: true,
               url: upData.data.downloadPage,
-              provider: 'Gofile Cloud',
+              provider: 'Gofile Cloud (تخزين سحابي)',
             };
           }
         }
@@ -2482,7 +2449,7 @@ try {
     }
 
     throw new BadRequestException(
-      'تعذر الرفع إلى مراكز التخزين السحابي الخارجية (Catbox / Cloudflare R2 / Gofile). يرجى التحقق من اتصال الإنترنت والمحاولة مجدداً.'
+      'تعذر الرفع إلى مراكز التخزين السحابي (Cloudflare R2 / Gofile). يرجى التحقق من اتصال الإنترنت.'
     );
   }
 }

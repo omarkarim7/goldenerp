@@ -797,7 +797,7 @@ export function TabBooklet({
   // ━━━ رفع وتوثيق النسخة الرقمية سحابياً (Catbox.moe / Gofile.io) ━━━
   const handleUploadToCloud = async (type: BookletLetterType = activeLetterType, forceReupload = false) => {
     const existingUrl = cloudUrls[type];
-    if (existingUrl && !forceReupload) {
+    if (existingUrl && !existingUrl.includes("tmpfiles") && !existingUrl.includes("tmpfile") && !existingUrl.includes("catbox") && !forceReupload) {
       toast.info("تم رفع وتوثيق هذا الخطاب سحابياً مسبقاً وهو نشط بالفعل ✓");
       return;
     }
@@ -936,7 +936,7 @@ export function TabBooklet({
       setLastGeneratedSnapshot(currentSnapshot);
 
       // الرفع السحابي التلقائي في الخلفية بدون حجب واجهة المستخدم
-      if (!cloudUrls[activeLetterType]) {
+      if (!cloudUrls[activeLetterType] || cloudUrls[activeLetterType]?.includes("tmpfiles") || cloudUrls[activeLetterType]?.includes("tmpfile") || cloudUrls[activeLetterType]?.includes("catbox")) {
         handleUploadToCloud(activeLetterType, false).catch(() => {});
       }
     } catch (err: any) {
@@ -1030,7 +1030,7 @@ export function TabBooklet({
       }
 
       // رفع المستند سحابياً في الخلفية لضمان تفعيل رابط التحقق من الباركود فورياً
-      if (!cloudUrls[activeLetterType]) {
+      if (!cloudUrls[activeLetterType] || cloudUrls[activeLetterType]?.includes("tmpfiles") || cloudUrls[activeLetterType]?.includes("tmpfile") || cloudUrls[activeLetterType]?.includes("catbox")) {
         handleUploadToCloud(activeLetterType, false).catch(() => {});
       }
 

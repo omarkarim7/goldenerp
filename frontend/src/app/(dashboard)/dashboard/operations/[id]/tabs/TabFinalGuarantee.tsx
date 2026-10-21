@@ -562,7 +562,7 @@ export function TabFinalGuarantee({
       setPreviewPdfUrl(url);
       setLastGeneratedSnapshot(currentSnapshot);
 
-      if (!cloudUrls[type]) {
+      if (!cloudUrls[type] || cloudUrls[type]?.includes("tmpfiles") || cloudUrls[type]?.includes("tmpfile") || cloudUrls[type]?.includes("catbox")) {
         handleUploadToCloud(type, false, pdf);
       }
     } catch (err: any) {
@@ -583,7 +583,7 @@ export function TabFinalGuarantee({
     forceReupload = false,
     existingBlob?: Blob
   ) => {
-    if (cloudUrls[type] && !forceReupload) {
+    if (cloudUrls[type] && !cloudUrls[type].includes("tmpfiles") && !cloudUrls[type].includes("tmpfile") && !cloudUrls[type].includes("catbox") && !forceReupload) {
       return;
     }
     setUploadingCloud(true);
@@ -701,7 +701,7 @@ export function TabFinalGuarantee({
         console.warn("Could not persist print history:", e);
       }
 
-      if (!cloudUrls[activeLetterType]) {
+      if (!cloudUrls[activeLetterType] || cloudUrls[activeLetterType]?.includes("tmpfiles") || cloudUrls[activeLetterType]?.includes("tmpfile") || cloudUrls[activeLetterType]?.includes("catbox")) {
         handleUploadToCloud(activeLetterType, false).catch(() => {});
       }
 

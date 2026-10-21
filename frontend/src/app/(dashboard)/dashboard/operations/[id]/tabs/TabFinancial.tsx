@@ -1024,7 +1024,7 @@ export function TabFinancial({
 
   // ━━━ رفع وتوثيق النسخة الرقمية المعتمدة سحابياً (رابط PDF مباشر) ━━━
   const handleUploadToCloud = async (forceReupload = false, existingBlob?: Blob) => {
-    if (cloudPdfUrl && !cloudPdfUrl.includes("tmpfiles.org") && !cloudPdfUrl.includes("gofile.io") && !forceReupload) {
+    if (cloudPdfUrl && !cloudPdfUrl.includes("tmpfiles") && !cloudPdfUrl.includes("tmpfile") && !cloudPdfUrl.includes("catbox") && !forceReupload) {
       toast.info("تم رفع وتوثيق النسخة الرقمية سحابياً مسبقاً وهي نشطة بالفعل ✓");
       return;
     }
@@ -1096,7 +1096,7 @@ export function TabFinancial({
       const url = URL.createObjectURL(pdfBlob);
       setPreviewPdfUrl(url);
 
-      if (!cloudPdfUrl || cloudPdfUrl.includes("tmpfiles.org") || cloudPdfUrl.includes("gofile.io")) {
+      if (!cloudPdfUrl || cloudPdfUrl.includes("tmpfiles") || cloudPdfUrl.includes("tmpfile") || cloudPdfUrl.includes("catbox")) {
         handleUploadToCloud(false, pdfBlob);
       }
       setLastGeneratedSnapshot(currentSnapshot);
@@ -1291,7 +1291,7 @@ export function TabFinancial({
       URL.revokeObjectURL(url);
       toast.success("تم تصدير وتحميل مستند PDF فوراً! 📑✨");
 
-      if (!cloudPdfUrl || cloudPdfUrl.includes("tmpfiles.org") || cloudPdfUrl.includes("gofile.io")) {
+      if (!cloudPdfUrl || cloudPdfUrl.includes("tmpfiles") || cloudPdfUrl.includes("tmpfile") || cloudPdfUrl.includes("catbox")) {
         handleUploadToCloud(false, previewPdfBlob);
       }
       return;
@@ -1319,7 +1319,7 @@ export function TabFinancial({
       URL.revokeObjectURL(url);
       toast.success("تم تصدير وتحميل مستند PDF بنجاح! 📑");
 
-      if (!cloudPdfUrl || cloudPdfUrl.includes("tmpfiles.org") || cloudPdfUrl.includes("gofile.io")) {
+      if (!cloudPdfUrl || cloudPdfUrl.includes("tmpfiles") || cloudPdfUrl.includes("tmpfile") || cloudPdfUrl.includes("catbox")) {
         handleUploadToCloud(false, pdfBlob);
       }
     } catch (err: any) {

@@ -690,7 +690,7 @@ export function TabClarification({
 
   // ━━━ رفع وتوثيق النسخة الرقمية المعتمدة سحابياً (رابط PDF مباشر) ━━━
   const handleUploadToCloud = async (forceReupload = false, existingBlob?: Blob) => {
-    if (cloudPdfUrl && !cloudPdfUrl.includes("tmpfiles.org") && !cloudPdfUrl.includes("gofile.io") && !forceReupload) {
+    if (cloudPdfUrl && !cloudPdfUrl.includes("tmpfiles") && !cloudPdfUrl.includes("tmpfile") && !cloudPdfUrl.includes("catbox") && !forceReupload) {
       toast.info("تم رفع وتوثيق النسخة الرقمية سحابياً مسبقاً وهي نشطة بالفعل ✓");
       return;
     }
@@ -793,7 +793,7 @@ export function TabClarification({
       toast.success("تم تنزيل ملف الـ PDF الرسمي فوراً! 📑✨");
 
       // التأكد من رفع النسخة السحابية لرمز QR إذا لم تكن مرفوعة
-      if (!cloudPdfUrl || cloudPdfUrl.includes("tmpfiles.org") || cloudPdfUrl.includes("gofile.io")) {
+      if (!cloudPdfUrl || cloudPdfUrl.includes("tmpfiles") || cloudPdfUrl.includes("tmpfile") || cloudPdfUrl.includes("catbox")) {
         handleUploadToCloud(false, previewPdfBlob);
       }
       return;
@@ -820,7 +820,7 @@ export function TabClarification({
       toast.success("تم تنزيل ملف الـ PDF الرسمي بنجاح! 📑✨");
 
       // رفع المستند سحابياً لرمز QR فوراً (رابط PDF مباشر)
-      if (!cloudPdfUrl || cloudPdfUrl.includes("tmpfiles.org") || cloudPdfUrl.includes("gofile.io")) {
+      if (!cloudPdfUrl || cloudPdfUrl.includes("tmpfiles") || cloudPdfUrl.includes("tmpfile") || cloudPdfUrl.includes("catbox")) {
         handleUploadToCloud(false, pdfBlob);
       }
     } catch (err: any) {
@@ -851,7 +851,7 @@ export function TabClarification({
       const url = URL.createObjectURL(pdf);
       setPreviewPdfUrl(url);
 
-      if (!cloudPdfUrl || cloudPdfUrl.includes("tmpfiles.org") || cloudPdfUrl.includes("gofile.io")) {
+      if (!cloudPdfUrl || cloudPdfUrl.includes("tmpfiles") || cloudPdfUrl.includes("tmpfile") || cloudPdfUrl.includes("catbox")) {
         handleUploadToCloud(false, pdf);
       }
       setLastGeneratedSnapshot(currentSnapshot);
@@ -938,7 +938,7 @@ export function TabClarification({
         console.warn("Could not save print history:", e);
       }
 
-      if (!cloudPdfUrl) {
+      if (!cloudPdfUrl || cloudPdfUrl.includes("tmpfiles") || cloudPdfUrl.includes("tmpfile") || cloudPdfUrl.includes("catbox")) {
         handleUploadToCloud(false, pdfBlob).catch(() => {});
       }
 
