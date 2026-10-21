@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import {
   CheckCircle2,
   XCircle,
@@ -950,7 +950,7 @@ export function TabTechOpening({
 }) {
   const [adding, setAdding] = useState(false);
   const [companyId, setCompanyId] = useState(op.companies?.[0]?.companyId || "");
-  const [result, setResult] = useState<"ACCEPTED" | "REJECTED">("ACCEPTED");
+  const [result, setResult] = useState<"ACCEPTED" | "PARTIALLY_ACCEPTED" | "REJECTED">("ACCEPTED");
   const [reason, setReason] = useState("");
   const [openingDate, setOpeningDate] = useState(new Date().toISOString().split("T")[0]);
   const [notes, setNotes] = useState("");
@@ -977,7 +977,15 @@ export function TabTechOpening({
 
   // Locked State: If a technical opening is already recorded, it cannot be changed unless explicitly edited
   const isDecisionLocked = !!savedTo;
-  const effectiveResult: "ACCEPTED" | "REJECTED" = savedTo ? savedTo.result : result;
+  const effectiveResult: "ACCEPTED" | "PARTIALLY_ACCEPTED" | "REJECTED" = useMemo(() => {
+    if (savedTo) {
+      if (savedTo.notes?.includes("قبول جزئي") || savedTo.notes?.includes("PARTIALLY_ACCEPTED")) {
+        return "PARTIALLY_ACCEPTED";
+      }
+      return savedTo.result as any;
+    }
+    return result;
+  }, [savedTo, result]);
 
   // Scheduling Financial Opening upon acceptance
   const [finSessionDate, setFinSessionDate] = useState("");
@@ -995,7 +1003,7 @@ export function TabTechOpening({
   const grievanceOutcome = useMemo(() => {
     if (!savedGrievance) return null;
     if (savedGrievance.status === "ACCEPTED" || savedGrievance.status === "APPROVED" || savedGrievance.notes?.includes("كلياً")) return "ACCEPTED";
-    if (savedGrievance.status === "PARTIALLY_ACCEPTED" || savedGrievance.status === "RESOLVED" || savedGrievance.notes?.includes("جزئياً")) return "PARTIALLY_ACCEPTED";
+    if (savedGrievance.status === "PARTIALLY_ACCEPTED" || savedGrievance.status === "RESOLVED" || savedGrievance.notes?.includes("جزئياً") || savedGrievance.notes?.includes("قبول بعض")) return "PARTIALLY_ACCEPTED";
     if (savedGrievance.status === "REJECTED") return "REJECTED";
     return "PENDING";
   }, [savedGrievance]);
@@ -1015,12 +1023,16 @@ export function TabTechOpening({
 
   // Active status label
   const statusLabel = useMemo(() => {
-    if (effectiveResult === "ACCEPTED" || grievanceOutcome === "ACCEPTED" || grievanceOutcome === "PARTIALLY_ACCEPTED") {
-      if (savedFinDate) return "تم القبول وجدولة موعد الفتح المالي ✓";
+    if (effectiveResult === "ACCEPTED" || grievanceOutcome === "ACCEPTED") {
+      if (savedFinDate) return "تم القبول كلياً وجدولة موعد الفتح المالي ✓";
       return "مقبول فنياً — بانتظار تحديد موعد الفتح المالي 📅";
     }
+    if (effectiveResult === "PARTIALLY_ACCEPTED" || grievanceOutcome === "PARTIALLY_ACCEPTED") {
+      if (savedFinDate) return "تم القبول جزئياً لبعض الأصناف وجدولة موعد الفتح المالي 📅";
+      return "مقبول فنياً جزئياً (بعض الأصناف) — بانتظار تحديد موعد الفتح المالي 🟡";
+    }
     if (savedGrievance) {
-      if (grievanceOutcome === "REJECTED") return "تم رفض التظلم وتأكيد الاستبعاد — جاري استرداد التأمين 📄";
+      if (grievanceOutcome === "REJECTED") return "تم رفض التظلم وتأكيد الاستبعاد — جاري استرداد التأمين الابتدائي 📄";
       return "في انتظار نتيجة التظلم من الجهة الإدارية ⏳";
     }
     return "مستبعد فنياً — بانتظار قيد التظلم القانوني";
@@ -1034,16 +1046,21 @@ export function TabTechOpening({
   const handleSaveOpening = async () => {
     setSaving(true);
     try {
+      const isPartial = result === "PARTIALLY_ACCEPTED";
       await api.post(`/operations/${op.id}/technical-openings`, {
         companyId: companyId || op.companies?.[0]?.companyId,
-        result,
+        result: isPartial ? "ACCEPTED" : result,
         reason: result === "REJECTED" ? reason : undefined,
         openingDate,
-        notes,
+        notes: isPartial
+          ? (notes ? `[قبول جزئي لبعض الأصناف]: ${notes}` : "قبول فني جزئي لبعض الأصناف واستبعاد أصناف أخرى")
+          : notes,
       });
 
       if (result === "ACCEPTED") {
         toast.success("تم تسجيل قبول الشركة فنياً وتثبيت القرار رسمياً! 🟢");
+      } else if (result === "PARTIALLY_ACCEPTED") {
+        toast.success("تم تسجيل قبول الشركة جزئياً لبعض الأصناف 🟡 — سيتم تقييد الفتح المالي على البنود المقبولة فقط!");
       } else {
         toast.error("تم تسجيل استبعاد الشركة فنياً 🔴 — تم فتح مسار التظلم القانوني");
       }
@@ -1061,12 +1078,15 @@ export function TabTechOpening({
     if (!editingTo) return;
     setSavingEditTo(true);
     try {
+      const isPartial = editingTo.result === "PARTIALLY_ACCEPTED";
       await api.patch(`/operations/${op.id}/technical-openings/${editingTo.id}`, {
         companyId: editingTo.companyId,
-        result: editingTo.result,
+        result: isPartial ? "ACCEPTED" : editingTo.result,
         reason: editingTo.result === "REJECTED" ? editingTo.reason : undefined,
         openingDate: editingTo.openingDate,
-        notes: editingTo.notes,
+        notes: isPartial
+          ? (editingTo.notes?.includes("قبول جزئي") ? editingTo.notes : `[قبول جزئي لبعض الأصناف]: ${editingTo.notes || "استبعاد بعض الأصناف"}`)
+          : editingTo.notes?.replace(/\[قبول جزئي لبعض الأصناف\]:?\s*/g, ""),
       });
       toast.success("تم تعديل قرار الفتح الفني بنجاح! ✓");
       setEditingTo(null);
@@ -1301,8 +1321,20 @@ export function TabTechOpening({
         iconColor="text-blue-600 dark:text-blue-400"
         badge={
           isDecisionLocked ? (
-            <Badge className={effectiveResult === "ACCEPTED" ? "bg-emerald-600 text-white font-bold" : "bg-rose-600 text-white font-bold"}>
-              {effectiveResult === "ACCEPTED" ? "القرار: قبول فني ✓ 🔒" : "القرار: استبعاد فني ✗ 🔒"}
+            <Badge
+              className={
+                effectiveResult === "ACCEPTED"
+                  ? "bg-emerald-600 text-white font-bold"
+                  : effectiveResult === "PARTIALLY_ACCEPTED"
+                  ? "bg-amber-600 text-white font-bold"
+                  : "bg-rose-600 text-white font-bold"
+              }
+            >
+              {effectiveResult === "ACCEPTED"
+                ? "القرار: قبول فني كلي ✓ 🔒"
+                : effectiveResult === "PARTIALLY_ACCEPTED"
+                ? "القرار: قبول فني جزئي (بعض الأصناف) 🟡 🔒"
+                : "القرار: استبعاد فني كلي ✗ 🔒"}
             </Badge>
           ) : (
             <Badge className="bg-amber-500 text-white font-bold">بانتظار تسجيل القرار ✍️</Badge>
@@ -1314,7 +1346,15 @@ export function TabTechOpening({
               <Button
                 size="sm"
                 variant="outline"
-                onClick={() => setEditingTo(savedTo)}
+                onClick={() =>
+                  setEditingTo({
+                    ...savedTo,
+                    result:
+                      savedTo.notes?.includes("قبول جزئي") || savedTo.notes?.includes("PARTIALLY_ACCEPTED")
+                        ? "PARTIALLY_ACCEPTED"
+                        : savedTo.result,
+                  })
+                }
                 className="text-xs h-8 px-3 rounded-xl border-blue-300 dark:border-blue-700 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-950/40 flex items-center gap-1.5 cursor-pointer font-bold shadow-2xs"
               >
                 <Edit className="h-3.5 w-3.5" />
@@ -1347,6 +1387,8 @@ export function TabTechOpening({
             className={`p-5 rounded-2xl border-2 space-y-3 transition-all ${
               effectiveResult === "ACCEPTED"
                 ? "bg-emerald-500/10 border-emerald-500/40"
+                : effectiveResult === "PARTIALLY_ACCEPTED"
+                ? "bg-amber-500/10 border-amber-500/40"
                 : "bg-rose-500/10 border-rose-500/40"
             }`}
           >
@@ -1354,16 +1396,28 @@ export function TabTechOpening({
               <div className="flex items-center gap-3">
                 <div
                   className={`w-12 h-12 rounded-2xl flex items-center justify-center font-bold text-white shrink-0 shadow-md ${
-                    effectiveResult === "ACCEPTED" ? "bg-emerald-600" : "bg-rose-600"
+                    effectiveResult === "ACCEPTED"
+                      ? "bg-emerald-600"
+                      : effectiveResult === "PARTIALLY_ACCEPTED"
+                      ? "bg-amber-600"
+                      : "bg-rose-600"
                   }`}
                 >
-                  {effectiveResult === "ACCEPTED" ? <Check className="h-6 w-6" /> : <X className="h-6 w-6" />}
+                  {effectiveResult === "ACCEPTED" ? (
+                    <Check className="h-6 w-6" />
+                  ) : effectiveResult === "PARTIALLY_ACCEPTED" ? (
+                    <AlertCircle className="h-6 w-6" />
+                  ) : (
+                    <X className="h-6 w-6" />
+                  )}
                 </div>
                 <div>
                   <div className="flex items-center gap-2 flex-wrap">
                     <h4 className="font-black text-foreground text-base">
                       {effectiveResult === "ACCEPTED"
-                        ? "تم قبول العطاء الفني للشركة واجتياز التقييم ✓"
+                        ? "تم قبول العطاء الفني للشركة واجتياز التقييم كلياً ✓"
+                        : effectiveResult === "PARTIALLY_ACCEPTED"
+                        ? "تم قبول العطاء الفني جزئياً (قبول بعض الأصناف واستبعاد أخرى) 🟡"
                         : "تم استبعاد العطاء الفني للشركة ✗"}
                     </h4>
                     <span className="text-[11px] px-2.5 py-0.5 rounded-full font-bold bg-white dark:bg-slate-900 border shadow-2xs">
@@ -1384,19 +1438,31 @@ export function TabTechOpening({
               <div className="flex items-center gap-2 shrink-0">
                 <Button
                   size="sm"
-                  onClick={() => setEditingTo(savedTo)}
+                  onClick={() =>
+                    setEditingTo({
+                      ...savedTo,
+                      result:
+                        savedTo.notes?.includes("قبول جزئي") || savedTo.notes?.includes("PARTIALLY_ACCEPTED")
+                          ? "PARTIALLY_ACCEPTED"
+                          : savedTo.result,
+                    })
+                  }
                   className="bg-card text-foreground border border-border hover:bg-muted font-bold text-xs h-8.5 px-3 rounded-xl flex items-center gap-1.5 cursor-pointer shadow-xs"
                 >
                   <Edit className="h-3.5 w-3.5 text-blue-600" />
                   <span>تعديل القرار</span>
                 </Button>
-                {effectiveResult === "ACCEPTED" && onGoFinancial && (
+                {(effectiveResult === "ACCEPTED" || effectiveResult === "PARTIALLY_ACCEPTED") && onGoFinancial && (
                   <Button
                     size="sm"
                     onClick={onGoFinancial}
-                    className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs h-8.5 px-3.5 rounded-xl flex items-center gap-1.5 cursor-pointer shadow-xs"
+                    className={`text-white font-bold text-xs h-8.5 px-3.5 rounded-xl flex items-center gap-1.5 cursor-pointer shadow-xs ${
+                      effectiveResult === "PARTIALLY_ACCEPTED"
+                        ? "bg-amber-600 hover:bg-amber-700"
+                        : "bg-emerald-600 hover:bg-emerald-700"
+                    }`}
                   >
-                    <span>الانتقال للبت المالي</span>
+                    <span>{effectiveResult === "PARTIALLY_ACCEPTED" ? "الانتقال للبت المالي (للبنود المقبولة)" : "الانتقال للبت المالي"}</span>
                     <ArrowLeft className="h-3.5 w-3.5" />
                   </Button>
                 )}
@@ -1440,8 +1506,9 @@ export function TabTechOpening({
                   onChange={(e) => setResult(e.target.value as any)}
                   className="w-full bg-background border border-border rounded-xl px-3 py-2 text-xs font-bold text-foreground focus:ring-2 focus:ring-blue-500"
                 >
-                  <option value="ACCEPTED">قبول فني (مقبول ومطابق للمواصفات) ✓</option>
-                  <option value="REJECTED">استبعاد فني (غير مطابق أو ناقص مستندات) ✗</option>
+                  <option value="ACCEPTED">قبول فني كلي (مطابق لكافة البنود والمواصفات) ✓</option>
+                  <option value="PARTIALLY_ACCEPTED">قبول فني جزئي (قبول بعض الأصناف واستبعاد أخرى) 🟡</option>
+                  <option value="REJECTED">استبعاد فني كلي (غير مطابق أو ناقص مستندات) ✗</option>
                 </select>
               </div>
 
@@ -1455,6 +1522,21 @@ export function TabTechOpening({
                 />
               </div>
             </div>
+
+            {result === "PARTIALLY_ACCEPTED" && (
+              <div className="animate-fade-in">
+                <label className="text-xs font-semibold text-amber-600 dark:text-amber-400 block mb-1">
+                  بيان الأصناف المقبولة والأصناف المستبعدة بمحضر الجلسة 🟡
+                </label>
+                <input
+                  type="text"
+                  placeholder="مثال: تم قبول بنود الأدوات الكتابية والكراسات واستبعاد بنود الأجهزة الكهربائية لعدم مطابقة الكتالوج"
+                  value={notes}
+                  onChange={(e) => setNotes(e.target.value)}
+                  className="w-full bg-background border border-amber-500/40 rounded-xl px-3 py-2 text-xs text-foreground focus:ring-2 focus:ring-amber-500"
+                />
+              </div>
+            )}
 
             {result === "REJECTED" && (
               <div>
@@ -1534,8 +1616,9 @@ export function TabTechOpening({
                     onChange={(e) => setEditingTo({ ...editingTo, result: e.target.value })}
                     className="w-full bg-background border border-border rounded-xl px-3 py-2 text-xs font-bold text-foreground"
                   >
-                    <option value="ACCEPTED">قبول فني (مقبول ومطابق للمواصفات) ✓</option>
-                    <option value="REJECTED">استبعاد فني (غير مطابق أو ناقص مستندات) ✗</option>
+                    <option value="ACCEPTED">قبول فني كلي (مطابق لكافة البنود والمواصفات) ✓</option>
+                    <option value="PARTIALLY_ACCEPTED">قبول فني جزئي (قبول بعض الأصناف) 🟡</option>
+                    <option value="REJECTED">استبعاد فني كلي (غير مطابق أو ناقص مستندات) ✗</option>
                   </select>
                 </div>
 
@@ -1884,11 +1967,20 @@ export function TabTechOpening({
                         <div className="flex items-center gap-2 flex-wrap shrink-0">
                           <Button
                             size="sm"
-                            onClick={() => setShowFinalRefundSection(!showFinalRefundSection)}
+                            onClick={() => setRefundLetterModalOpen(true)}
                             className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs h-9 px-4 rounded-xl flex items-center gap-1.5 cursor-pointer shadow-md"
                           >
                             <Receipt className="h-3.5 w-3.5" />
-                            <span>{showFinalRefundSection ? "إخفاء خطاب استرداد التأمين النهائي" : "فتح خطاب استرداد التأمين النهائي"}</span>
+                            <span>فتح وطباعة خطاب استرداد التأمين الابتدائي 📄</span>
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => setShowFinalRefundSection(!showFinalRefundSection)}
+                            className="text-xs h-9 px-3 rounded-xl border-border text-foreground hover:bg-muted flex items-center gap-1.5 cursor-pointer"
+                          >
+                            <FileText className="h-3.5 w-3.5 text-blue-600" />
+                            <span>{showFinalRefundSection ? "إخفاء نموذج التأمين النهائي" : "نموذج استرداد التأمين النهائي (Word)"}</span>
                           </Button>
                         </div>
                       </div>
@@ -2058,6 +2150,40 @@ export function TabFinOpening({
   onPreviewDoc?: (doc: any) => void;
   onDownloadDoc?: (doc: any) => void;
 }) {
+  // ━━━ فحص نتيجة مرحلة البت الفني والتظلمات للربط المنطقي الإلزامي ━━━
+  const savedTo = (op.technicalOpenings || [])[op.technicalOpenings.length - 1];
+  const savedTechGrievance = (op.grievances || []).find(
+    (g: any) =>
+      g.notes?.includes("فني") ||
+      g.reason?.includes("فني") ||
+      g.grievanceType === "TECHNICAL" ||
+      (g.notes && !g.notes.includes("مالي") && (op.status === "TECHNICAL_REJECTED" || savedTo?.result === "REJECTED"))
+  );
+
+  const isTechPartiallyAccepted = useMemo(() => {
+    if (savedTo?.notes?.includes("قبول جزئي") || savedTo?.notes?.includes("PARTIALLY_ACCEPTED")) return true;
+    if (
+      savedTechGrievance?.status === "RESOLVED" ||
+      savedTechGrievance?.status === "PARTIALLY_ACCEPTED" ||
+      savedTechGrievance?.notes?.includes("جزئياً") ||
+      savedTechGrievance?.notes?.includes("قبول بعض") ||
+      savedTechGrievance?.notes?.includes("جزئي")
+    ) {
+      return true;
+    }
+    return false;
+  }, [savedTo, savedTechGrievance]);
+
+  const isTechRejected = useMemo(() => {
+    if (
+      savedTo?.result === "REJECTED" &&
+      (!savedTechGrievance || savedTechGrievance.status === "REJECTED")
+    ) {
+      return true;
+    }
+    return false;
+  }, [savedTo, savedTechGrievance]);
+
   const savedFo = (op.financialOpenings || [])[op.financialOpenings.length - 1];
   const isSessionLocked = !!savedFo;
 
@@ -2066,8 +2192,19 @@ export function TabFinOpening({
     const lastFo = (op.financialOpenings || [])[op.financialOpenings.length - 1];
     if (lastFo?.notes?.includes("REJECTED")) return "REJECTED";
     if (lastFo?.notes?.includes("ACCEPT_PARTIAL")) return "ACCEPT_PARTIAL";
+    if (isTechPartiallyAccepted) return "ACCEPT_PARTIAL";
+    if (isTechRejected) return "REJECTED";
     return "ACCEPT_ALL";
   });
+
+  // الربط التلقائي والإلزامي لمرحلة البت المالي بنتيجة البت الفني
+  useEffect(() => {
+    if (isTechPartiallyAccepted && evalOutcome === "ACCEPT_ALL") {
+      setEvalOutcome("ACCEPT_PARTIAL");
+    } else if (isTechRejected && evalOutcome !== "REJECTED") {
+      setEvalOutcome("REJECTED");
+    }
+  }, [isTechPartiallyAccepted, isTechRejected, evalOutcome]);
 
   const currentCompanyLink = op.companies?.[0];
   const currentCompany = currentCompanyLink?.company;
@@ -2484,15 +2621,62 @@ export function TabFinOpening({
         </div>
       </div>
 
+      {/* ━━━ التنبيه المنطقي الإلزامي المرتبط بمرحلة البت الفني ━━━ */}
+      {isTechPartiallyAccepted && (
+        <div className="p-4 rounded-2xl bg-gradient-to-r from-amber-500/15 via-amber-500/5 to-transparent border-2 border-amber-500/30 flex items-start sm:items-center gap-3 shadow-xs animate-fade-in">
+          <div className="w-10 h-10 rounded-xl bg-amber-500 text-white flex items-center justify-center font-bold shrink-0 shadow-sm">
+            <AlertCircle className="h-5 w-5" />
+          </div>
+          <div className="flex-1">
+            <div className="flex items-center gap-2 flex-wrap">
+              <h4 className="font-extrabold text-sm text-foreground">
+                ربط مسار منطقي تلقائي مع البت الفني: (قبول بعض الأصناف فقط)
+              </h4>
+              <Badge className="bg-amber-600 text-white text-[10px] font-bold">
+                🔒 مسار مقيد قانونياً
+              </Badge>
+            </div>
+            <p className="text-xs text-muted-foreground mt-0.5 leading-relaxed">
+              نظراً لانتهاء مرحلة البت الفني على <strong>(قبول بعض الأصناف واستبعاد أخرى)</strong>، تم ضبط مرحلة التقييم المالي تلقائياً وحصرياً على <strong>(قبول بعض الأصناف / ترسية جزئية)</strong> مع إغلاق خيار القبول الكامل، لضمان المنطقية وصحة الإجراءات قانونياً ومحاسبياً طبقاً لأحكام القانون 182 لسنة 2018.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {isTechRejected && (
+        <div className="p-4 rounded-2xl bg-gradient-to-r from-rose-500/15 via-rose-500/5 to-transparent border-2 border-rose-500/30 flex items-start sm:items-center gap-3 shadow-xs animate-fade-in">
+          <div className="w-10 h-10 rounded-xl bg-rose-600 text-white flex items-center justify-center font-bold shrink-0 shadow-sm">
+            <XCircle className="h-5 w-5" />
+          </div>
+          <div className="flex-1">
+            <div className="flex items-center gap-2 flex-wrap">
+              <h4 className="font-extrabold text-sm text-foreground">
+                العطاء مستبعد نهائياً في مرحلة البت الفني:
+              </h4>
+              <Badge className="bg-rose-600 text-white text-[10px] font-bold">
+                🔒 محظور الفتح المالي
+              </Badge>
+            </div>
+            <p className="text-xs text-muted-foreground mt-0.5 leading-relaxed">
+              تم استبعاد هذا العطاء فنياً ولم يُقبل عنه أي تظلم، لذلك لا يجوز فتح مظروفه المالي أو قبوله طبقاً للمادة (42) من قانون تنظيم التعاقدات رقم 182 لسنة 2018.
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* 2. Interactive Decision Mode Selector Cards */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         {/* Mode 1 */}
         <button
-          onClick={() => setEvalOutcome("ACCEPT_ALL")}
-          className={`p-4 sm:p-5 rounded-2xl border-2 transition-all text-right cursor-pointer flex flex-col justify-between ${
-            evalOutcome === "ACCEPT_ALL"
-              ? "bg-emerald-50 dark:bg-emerald-950/40 border-emerald-500 ring-4 ring-emerald-500/15 shadow-md shadow-emerald-500/10"
-              : "bg-card border-border hover:border-emerald-400 hover:shadow-xs"
+          type="button"
+          disabled={isTechPartiallyAccepted || isTechRejected}
+          onClick={() => !isTechPartiallyAccepted && !isTechRejected && setEvalOutcome("ACCEPT_ALL")}
+          className={`p-4 sm:p-5 rounded-2xl border-2 transition-all text-right flex flex-col justify-between ${
+            isTechPartiallyAccepted || isTechRejected
+              ? "opacity-50 cursor-not-allowed bg-muted/40 border-border"
+              : evalOutcome === "ACCEPT_ALL"
+              ? "bg-emerald-50 dark:bg-emerald-950/40 border-emerald-500 ring-4 ring-emerald-500/15 shadow-md shadow-emerald-500/10 cursor-pointer"
+              : "bg-card border-border hover:border-emerald-400 hover:shadow-xs cursor-pointer"
           }`}
         >
           <div>
@@ -2501,26 +2685,50 @@ export function TabFinOpening({
                 <CheckCircle2 className="h-4.5 w-4.5 text-emerald-600" />
                 قبول كل الأصناف
               </span>
-              <Badge className="bg-emerald-100 text-emerald-800 dark:bg-emerald-600/20 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-500/30 text-[9px] font-bold">
-                ترسية كاملة 100%
-              </Badge>
+              {isTechPartiallyAccepted ? (
+                <Badge variant="outline" className="border-rose-400 text-rose-700 dark:text-rose-400 bg-rose-500/10 text-[9px] font-bold">
+                  🔒 غير متاح: استُبعدت بنود فنياً
+                </Badge>
+              ) : isTechRejected ? (
+                <Badge variant="outline" className="border-rose-400 text-rose-700 dark:text-rose-400 bg-rose-500/10 text-[9px] font-bold">
+                  🔒 محظور: مستبعد فنياً
+                </Badge>
+              ) : (
+                <Badge className="bg-emerald-100 text-emerald-800 dark:bg-emerald-600/20 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-500/30 text-[9px] font-bold">
+                  ترسية كاملة 100%
+                </Badge>
+              )}
             </div>
             <p className="text-xs text-muted-foreground leading-relaxed font-medium">
-              ترسية كافة بنود العطاء على شركتنا كأقل سعر مطابق. يتم الانتقال لتحضير الشراء وتصفح ملفات دراسة السوق.
+              {isTechPartiallyAccepted
+                ? "لا يمكن اختيار الترسية الكاملة نظراً لاستبعاد بعض البنود في مرحلة البت الفني. الترسية محصورة في البنود المقبولة فقط."
+                : isTechRejected
+                ? "لا يمكن الترسية نظراً لقرار الاستبعاد الفني النهائي."
+                : "ترسية كافة بنود العطاء على شركتنا كأقل سعر مطابق. يتم الانتقال لتحضير الشراء وتصفح ملفات دراسة السوق."}
             </p>
           </div>
-          <div className="mt-3 pt-2.5 border-t border-emerald-200 dark:border-emerald-800/60 text-xs font-bold text-emerald-700 dark:text-emerald-400 flex items-center gap-1">
-            <span>تجهيز ملفات التوريد والشراء ➡️</span>
+          <div className="mt-3 pt-2.5 border-t border-border text-xs font-bold text-muted-foreground flex items-center gap-1">
+            {isTechPartiallyAccepted ? (
+              <span className="text-rose-600 dark:text-rose-400">🔒 محظور لاكتمال البت الفني جزئياً</span>
+            ) : isTechRejected ? (
+              <span className="text-rose-600 dark:text-rose-400">🔒 محظور للاستبعاد الفني</span>
+            ) : (
+              <span className="text-emerald-700 dark:text-emerald-400">تجهيز ملفات التوريد والشراء ➡️</span>
+            )}
           </div>
         </button>
 
         {/* Mode 2 */}
         <button
-          onClick={() => setEvalOutcome("ACCEPT_PARTIAL")}
-          className={`p-4 sm:p-5 rounded-2xl border-2 transition-all text-right cursor-pointer flex flex-col justify-between ${
-            evalOutcome === "ACCEPT_PARTIAL"
-              ? "bg-amber-50 dark:bg-amber-950/40 border-amber-500 ring-4 ring-amber-500/15 shadow-md shadow-amber-500/10"
-              : "bg-card border-border hover:border-amber-400 hover:shadow-xs"
+          type="button"
+          disabled={isTechRejected}
+          onClick={() => !isTechRejected && setEvalOutcome("ACCEPT_PARTIAL")}
+          className={`p-4 sm:p-5 rounded-2xl border-2 transition-all text-right flex flex-col justify-between ${
+            isTechRejected
+              ? "opacity-50 cursor-not-allowed bg-muted/40 border-border"
+              : evalOutcome === "ACCEPT_PARTIAL"
+              ? "bg-amber-50 dark:bg-amber-950/40 border-amber-500 ring-4 ring-amber-500/15 shadow-md shadow-amber-500/10 cursor-pointer"
+              : "bg-card border-border hover:border-amber-400 hover:shadow-xs cursor-pointer"
           }`}
         >
           <div>
@@ -2529,9 +2737,15 @@ export function TabFinOpening({
                 <FileSpreadsheet className="h-4.5 w-4.5 text-amber-600" />
                 قبول بعض الأصناف
               </span>
-              <Badge className="bg-amber-100 text-amber-800 dark:bg-amber-600/20 dark:text-amber-300 border border-amber-300 dark:border-amber-500/30 text-[9px] font-bold">
-                ترسية جزئية
-              </Badge>
+              {isTechPartiallyAccepted ? (
+                <Badge className="bg-amber-600 text-white border-amber-700 text-[9px] font-black animate-pulse">
+                  ⭐ الخيار الإلزامي المتسلسل 🔒
+                </Badge>
+              ) : (
+                <Badge className="bg-amber-100 text-amber-800 dark:bg-amber-600/20 dark:text-amber-300 border border-amber-300 dark:border-amber-500/30 text-[9px] font-bold">
+                  ترسية جزئية
+                </Badge>
+              )}
             </div>
             <p className="text-xs text-muted-foreground leading-relaxed font-medium">
               قبول بنود محددة واستبعاد بنود أخرى. يتم تعديل جدول الكميات BOQ واحتساب القيمة الفعلية وطباعة محضر الترسية.
@@ -3094,11 +3308,20 @@ export function TabFinOpening({
                         <div className="flex items-center gap-2 flex-wrap shrink-0">
                           <Button
                             size="sm"
-                            onClick={() => setShowFinalRefundSection(!showFinalRefundSection)}
+                            onClick={() => setRefundModalOpen(true)}
                             className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs h-9 px-4 rounded-xl flex items-center gap-1.5 cursor-pointer shadow-md"
                           >
                             <Receipt className="h-3.5 w-3.5" />
-                            <span>{showFinalRefundSection ? "إخفاء خطاب استرداد التأمين النهائي" : "فتح خطاب استرداد التأمين النهائي"}</span>
+                            <span>فتح وطباعة خطاب استرداد التأمين الابتدائي (المادة 42) 📄</span>
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => setShowFinalRefundSection(!showFinalRefundSection)}
+                            className="text-xs h-9 px-3 rounded-xl border-border text-foreground hover:bg-muted flex items-center gap-1.5 cursor-pointer"
+                          >
+                            <FileText className="h-3.5 w-3.5 text-blue-600" />
+                            <span>{showFinalRefundSection ? "إخفاء نموذج التأمين النهائي" : "نموذج استرداد التأمين النهائي (Word)"}</span>
                           </Button>
                         </div>
                       </div>

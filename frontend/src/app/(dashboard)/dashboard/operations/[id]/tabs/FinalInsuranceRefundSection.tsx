@@ -437,30 +437,17 @@ export function FinalInsuranceRefundSection({
       paymentText = `بايصال سداد نقدى رقم (${escapeXml(receiptNumber)}) بتاريخ (${escapeXml(receiptDate)})`;
     }
 
-    // استبدال الجزء بين القوسين لطريقة السداد بالكامل
-    const payStartToken = "والمسدد </w:t></w:r>";
-    const payEndToken = "<w:t>والخاص</w:t>";
-    const pStartIdx = docXml.indexOf(payStartToken);
-    const pEndIdx = docXml.indexOf(payEndToken);
+    // ━━━ استبدال طريقة السداد ونطاق العملية والعام المالي وموعد الجلسة بكتلة XML واحدة منضبطة ━━━
+    const startToken = "والمسدد </w:t></w:r>";
+    const endToken = "لفتح المظروف الفنى .</w:t></w:r>";
+    const sIdx = docXml.indexOf(startToken);
+    const eIdx = docXml.indexOf(endToken);
 
-    if (pStartIdx !== -1 && pEndIdx !== -1) {
-      const before = docXml.substring(0, pStartIdx + payStartToken.length);
-      const after = docXml.substring(pEndIdx);
-      const replacementRun = `<w:r><w:rPr><w:rFonts w:ascii="Arabic Typesetting" w:hAnsi="Arabic Typesetting" w:cs="Arabic Typesetting" w:hint="cs"/><w:b/><w:bCs/><w:sz w:val="36"/><w:szCs w:val="36"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t xml:space="preserve"> ( ${paymentText} ) </w:t></w:r><w:r><w:rPr><w:rFonts w:ascii="Arabic Typesetting" w:hAnsi="Arabic Typesetting" w:cs="Arabic Typesetting" w:hint="cs"/><w:b/><w:bCs/><w:sz w:val="36"/><w:szCs w:val="36"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr>`;
-      docXml = before + replacementRun + after;
-    }
-
-    // ━━━ استبدال نطاق العملية والمناقصة والعام المالي وموعد الجلسة بالكامل ━━━
-    const scopeStartToken = "<w:t>والخاص</w:t></w:r>";
-    const scopeEndToken = "<w:t>لفتح المظروف الفنى .</w:t>";
-    const sStartIdx = docXml.indexOf(scopeStartToken);
-    const sEndIdx = docXml.indexOf(scopeEndToken);
-
-    if (sStartIdx !== -1 && sEndIdx !== -1) {
-      const before = docXml.substring(0, sStartIdx);
-      const after = docXml.substring(sEndIdx + scopeEndToken.length);
-      const fullScopeText = `والخاص ${escapeXml(tenderMethod)} لزوم ${escapeXml(operationScope)} طرفكم للعام المالى ${escapeXml(fiscalYear)} والمحدد لها جلسة (${escapeXml(technicalOpeningDate)}) لفتح المظروف الفنى .`;
-      const replacementRun = `<w:r><w:rPr><w:rFonts w:ascii="Arabic Typesetting" w:hAnsi="Arabic Typesetting" w:cs="Arabic Typesetting" w:hint="cs"/><w:b/><w:bCs/><w:sz w:val="36"/><w:szCs w:val="36"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t xml:space="preserve">${fullScopeText} </w:t></w:r>`;
+    if (sIdx !== -1 && eIdx !== -1) {
+      const before = docXml.substring(0, sIdx + startToken.length);
+      const after = docXml.substring(eIdx + endToken.length);
+      const fullText = ` ( ${paymentText} ) والخاص ${escapeXml(tenderMethod)} لزوم ${escapeXml(operationScope)} طرفكم للعام المالى ${escapeXml(fiscalYear)} والمحدد لها جلسة (${escapeXml(technicalOpeningDate)}) لفتح المظروف الفنى .`;
+      const replacementRun = `<w:r><w:rPr><w:rFonts w:ascii="Arabic Typesetting" w:hAnsi="Arabic Typesetting" w:cs="Arabic Typesetting" w:hint="cs"/><w:b/><w:bCs/><w:sz w:val="36"/><w:szCs w:val="36"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t xml:space="preserve">${fullText}</w:t></w:r>`;
       docXml = before + replacementRun + after;
     }
 
@@ -552,7 +539,8 @@ export function FinalInsuranceRefundSection({
 
       const pdf = await getPdfBlobFromDocx(
         docx,
-        `final_insurance_refund_${registrationNumber || op.serialNumber}.docx`
+        `final_insurance_refund_${registrationNumber || op.serialNumber}.docx`,
+        forceRefresh
       );
       setPreviewPdfBlob(pdf);
       const url = URL.createObjectURL(pdf);

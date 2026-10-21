@@ -62,7 +62,12 @@ export async function convertDocxBlobToPdfBlob(docxBlob: Blob): Promise<Blob> {
       const arrayBuffer = await docxBlob.arrayBuffer();
       const result = await mammoth.convertToHtml({ arrayBuffer });
       container.innerHTML = `
-        <div style="padding: 40px; font-family: 'Arabic Typesetting', 'Segoe UI', Tahoma, Arial, sans-serif; direction: rtl; text-align: right; background: #fff; color: #000; line-height: 1.6;">
+        <style>
+          .mammoth-docx-content img { max-width: 130px !important; height: auto !important; display: inline-block !important; }
+          .mammoth-docx-content table { width: 100% !important; border-collapse: collapse !important; margin: 12px 0 !important; }
+          .mammoth-docx-content td, .mammoth-docx-content th { border: 1px solid #cbd5e1 !important; padding: 6px 10px !important; }
+        </style>
+        <div class="mammoth-docx-content" style="padding: 40px; font-family: 'Arabic Typesetting', 'Segoe UI', Tahoma, Arial, sans-serif; direction: rtl; text-align: right; background: #fff; color: #000; line-height: 1.6;">
           ${result.value}
         </div>
       `;
@@ -197,25 +202,28 @@ async function saveToPdfVault(key: string, blob: Blob): Promise<void> {
  */
 export async function getPdfBlobFromDocx(
   docxBlob: Blob,
-  fileName: string = "document.docx"
+  fileName: string = "document.docx",
+  forceFresh: boolean = false
 ): Promise<Blob> {
-  const cacheKey = `${fileName}_${docxBlob.size}_${docxBlob.type}`;
+  const cacheKey = `v3_${fileName}_${docxBlob.size}_${docxBlob.type}`;
 
-  // 1. فحص الكاش السريع في الذاكرة الحية (0ms)
-  if (pdfConversionCache.has(cacheKey)) {
-    const cached = pdfConversionCache.get(cacheKey)!;
-    if (cached && cached.size > 1000) {
-      lastPdfEngineUsed = "Instant Cache";
-      return cached;
+  if (!forceFresh) {
+    // 1. فحص الكاش السريع في الذاكرة الحية (0ms)
+    if (pdfConversionCache.has(cacheKey)) {
+      const cached = pdfConversionCache.get(cacheKey)!;
+      if (cached && cached.size > 1000) {
+        lastPdfEngineUsed = "Instant Cache";
+        return cached;
+      }
     }
-  }
 
-  // 2. فحص مخزن المتصفح الدائم IndexedDB (0ms - توفير كوتا Adobe API حتى بعد تحديث الصفحة)
-  const persisted = await getFromPdfVault(cacheKey);
-  if (persisted && persisted.size > 1000) {
-    pdfConversionCache.set(cacheKey, persisted);
-    lastPdfEngineUsed = "Instant Cache";
-    return persisted;
+    // 2. فحص مخزن المتصفح الدائم IndexedDB (0ms - توفير كوتا Adobe API حتى بعد تحديث الصفحة)
+    const persisted = await getFromPdfVault(cacheKey);
+    if (persisted && persisted.size > 1000) {
+      pdfConversionCache.set(cacheKey, persisted);
+      lastPdfEngineUsed = "Instant Cache";
+      return persisted;
+    }
   }
 
   const isLocalhost =
