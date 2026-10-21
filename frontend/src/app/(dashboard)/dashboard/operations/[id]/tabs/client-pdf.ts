@@ -266,7 +266,7 @@ export async function uploadPdfToFreeCloud(
   // 4. المحاولة الرابعة: رفع مباشر من المتصفح إلى Tmpfiles.org
   try {
     const tmpForm = new FormData();
-    tmpForm.append("input", pdfBlob, fileName);
+    tmpForm.append("file", pdfBlob, fileName);
     const tmpRes = await fetch("https://tmpfiles.org/api/v1/upload", {
       method: "POST",
       body: tmpForm,

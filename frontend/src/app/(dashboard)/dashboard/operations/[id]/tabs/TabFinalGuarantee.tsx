@@ -5,7 +5,7 @@ import {
   ShieldCheck, Printer, Download, Eye, FileText, Check, AlertCircle,
   Building2, Calendar, Hash, FileCheck, Copy, ArrowRight, ArrowLeft,
   Paperclip, QrCode, Cloud, Globe, ExternalLink, CheckCircle2, RotateCcw,
-  Save, Lock, Sparkles, Receipt, Landmark, RefreshCw, Trash2, Edit, X, Plus, Loader2, FolderOpen
+  Save, Lock, Sparkles, Receipt, Landmark, RefreshCw, Trash2, Edit, X, Plus, Loader2, FolderOpen, Clock
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -249,6 +249,14 @@ export function TabFinalGuarantee({
   const [receiptFile, setReceiptFile] = useState<File | null>(null);
   const [savingReceipt, setSavingReceipt] = useState(false);
 
+  // مزامنة طريقة السداد في الخطوة 2 تلقائياً مع نموذج الخطاب المختار في الخطوة 1
+  useEffect(() => {
+    if (activeLetterType === "CASH") setReceiptPaymentMethod("CASH");
+    else if (activeLetterType === "BANK_GUARANTEE") setReceiptPaymentMethod("BANK_GUARANTEE");
+    else if (activeLetterType === "DEDUCTION") setReceiptPaymentMethod("DEDUCTION");
+    else if (activeLetterType === "INITIAL_TRANSFER" || activeLetterType === "DEDUCTION_AND_INITIAL") setReceiptPaymentMethod("TRANSFER");
+  }, [activeLetterType]);
+
   // Current Cloud URL
   const currentCloudUrl = cloudUrls[activeLetterType] || "";
 
@@ -358,7 +366,11 @@ export function TabFinalGuarantee({
     let qrDrawingXml = "";
     try {
       const activeCloud = cloudUrls[type];
-      const targetVerifyUrl = activeCloud || registrationNumber;
+      const origin = typeof window !== "undefined" ? window.location.origin : "https://goldenerp-tau.vercel.app";
+      const targetVerifyUrl = activeCloud
+        ? `${origin}/verify-doc?ref=${encodeURIComponent(registrationNumber)}&opId=${op.id}&type=guarantee_final_${type}&pdfUrl=${encodeURIComponent(activeCloud)}`
+        : `${origin}/verify-doc?ref=${encodeURIComponent(registrationNumber)}&opId=${op.id}&type=guarantee_final_${type}`;
+
       const qrDataUrl = await QRCode.toDataURL(targetVerifyUrl, { width: 160, margin: 1 });
       const qrBase64 = qrDataUrl.split(",")[1];
       const qrBinary = Uint8Array.from(atob(qrBase64), (c) => c.charCodeAt(0));
@@ -467,9 +479,11 @@ export function TabFinalGuarantee({
     docXml = replaceDocxChairman(docXml, boardChairman);
 
     if (additionalNotes.trim()) {
-      docXml = docXml.replace(/خان[ةه] خالي[ةه] للملاحظات/g, escapeXml(additionalNotes));
+      docXml = docXml.replace(/خان[ةه]\s*خالي[ةه]\s*للملاحظات/g, escapeXml(additionalNotes));
     } else {
-      docXml = docXml.replace(/خان[ةه] خالي[ةه] للملاحظات/g, "");
+      // إزالة فقرة الملاحظات تماماً حتى لا تظهر كلمة (خانه خاليه للملاحظات) في الطباعة أو الملف
+      docXml = docXml.replace(/<w:p\b[^>]*>(?:(?!<\/w:p>)[\s\S])*?خان[ةه]\s*خالي[ةه]\s*للملاحظات[\s\S]*?<\/w:p>/g, "");
+      docXml = docXml.replace(/خان[ةه]\s*خالي[ةه]\s*للملاحظات/g, "");
     }
 
     // 10. إزالة كافة علامات التمييز والألوان الحمراء
@@ -958,62 +972,6 @@ export function TabFinalGuarantee({
           <Badge className="bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-500/30 text-xs font-bold">
             5 نماذج معتمدة رسمياً
           </Badge>
-        }
-        actions={
-          <div className="flex items-center gap-2 flex-wrap">
-            <Button
-              type="button"
-              size="sm"
-              onClick={() => loadOfficialPreview(activeLetterType)}
-              className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold h-8.5 px-3 rounded-xl cursor-pointer shadow-xs flex items-center gap-1.5"
-            >
-              <Eye className="h-4 w-4" />
-              <span>معاينة الخطاب الرسمي 👁️</span>
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              onClick={handleOpenDirectPdfPreview}
-              className="border-emerald-500/40 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-500/10 text-xs font-bold h-8.5 px-3 rounded-xl cursor-pointer flex items-center gap-1.5"
-            >
-              <FileCheck className="h-4 w-4" />
-              <span>معاينة PDF مباشرة 📑</span>
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              onClick={() => handleDownloadDocx(activeLetterType)}
-              disabled={downloadingDocx}
-              className="border-blue-500/40 text-blue-700 dark:text-blue-300 hover:bg-blue-500/10 text-xs font-bold h-8.5 px-3 rounded-xl cursor-pointer flex items-center gap-1.5"
-            >
-              {downloadingDocx ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
-              <span>تنزيل Word 📄</span>
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              onClick={() => handleDownloadPdf(activeLetterType)}
-              disabled={downloadingPdf}
-              className="border-amber-500/40 text-amber-700 dark:text-amber-300 hover:bg-amber-500/10 text-xs font-bold h-8.5 px-3 rounded-xl cursor-pointer flex items-center gap-1.5"
-            >
-              {downloadingPdf ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
-              <span>تنزيل PDF 📑</span>
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              onClick={handlePrintWordDocument}
-              disabled={printingDocx}
-              className="border-emerald-500/40 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-500/10 text-xs font-bold h-8.5 px-3 rounded-xl cursor-pointer flex items-center gap-1.5"
-            >
-              {printingDocx ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Printer className="h-3.5 w-3.5" />}
-              <span>طباعة فورية 🖨️</span>
-            </Button>
-          </div>
         }
       >
         <div className="space-y-5">
@@ -1520,30 +1478,76 @@ export function TabFinalGuarantee({
               <Badge variant="outline" className="text-[10px] font-mono">سجل رسمي</Badge>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-              <div className="space-y-1.5">
-                <Label className="text-xs font-bold text-foreground">طريقة السداد المعتمدة *</Label>
-                <Select value={receiptPaymentMethod} onValueChange={(val: any) => setReceiptPaymentMethod(val)}>
-                  <SelectTrigger className="h-10 text-xs font-bold rounded-xl">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent className="text-xs">
-                    <SelectItem value="CASH">إيصال توريد نقدي بخزينة الجهة</SelectItem>
-                    <SelectItem value="BANK_GUARANTEE">خطاب ضمان بنكي معتمد</SelectItem>
-                    <SelectItem value="DEDUCTION">خصم من مستحقات عملية أخرى</SelectItem>
-                    <SelectItem value="TRANSFER">تحويل التأمين الابتدائي وسداد الفارق</SelectItem>
-                  </SelectContent>
-                </Select>
+            {/* بطاقة طريقة السداد التلقائية المبنية على الخطوة 1 والمدد القانونية */}
+            <div className="p-4 rounded-2xl bg-gradient-to-r from-emerald-500/10 via-blue-500/10 to-indigo-500/10 border border-emerald-500/30 space-y-3">
+              <div className="flex items-center justify-between flex-wrap gap-2">
+                <div className="flex items-center gap-2">
+                  <Badge className="bg-emerald-600 text-white font-bold text-xs px-3 py-1 rounded-lg">
+                    مبنية على الخطوة 1 تلقائياً
+                  </Badge>
+                  <span className="text-xs font-bold text-foreground">
+                    طريقة السداد المعتمدة:
+                  </span>
+                  <span className="text-xs font-extrabold text-emerald-700 dark:text-emerald-300">
+                    {activeLetterType === "CASH" && "💵 سداد نقدي بخزينة الجهة الإدارية"}
+                    {activeLetterType === "BANK_GUARANTEE" && "🏦 خطاب ضمان بنكي نهائي معتمد (5%)"}
+                    {activeLetterType === "DEDUCTION" && "📋 خصم من مستحقات عملية أخرى مستحقة"}
+                    {activeLetterType === "INITIAL_TRANSFER" && "🔄 تحويل التأمين الابتدائي لنهائي وسداد الفارق"}
+                    {activeLetterType === "DEDUCTION_AND_INITIAL" && "📑 خصم من مستحقات + تحويل التأمين الابتدائي"}
+                  </span>
+                </div>
+                <span className="text-[11px] text-muted-foreground font-medium">
+                  لتغيير الطريقة، قم باختيار النموذج المطلوب من الخطوة 1 أعلاه ☝️
+                </span>
               </div>
 
+              {/* بطاقة المدد القانونية للتأمين النهائي (القانون 182 لسنة 2018) */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-emerald-500/20">
+                <div className="p-3 rounded-xl bg-background/80 border border-border space-y-1">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-bold text-foreground flex items-center gap-1.5">
+                      <Clock className="h-3.5 w-3.5 text-amber-500" />
+                      <span>مهلة سداد التأمين النهائي القانونية</span>
+                    </span>
+                    <Badge variant="outline" className="text-[10px] bg-amber-500/10 text-amber-700 dark:text-amber-300 border-amber-500/30">
+                      10 أيام عمل
+                    </Badge>
+                  </div>
+                  <p className="text-[11px] text-muted-foreground">
+                    طبقاً للمادة (37) من القانون 182 لسنة 2018: يتم السداد خلال 10 أيام عمل من اليوم التالي لإخطار الترسية.
+                  </p>
+                </div>
+
+                <div className="p-3 rounded-xl bg-background/80 border border-border space-y-1">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-bold text-foreground flex items-center gap-1.5">
+                      <ShieldCheck className="h-3.5 w-3.5 text-emerald-500" />
+                      <span>مدة سريان التأمين النهائي</span>
+                    </span>
+                    <Badge variant="outline" className="text-[10px] bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-500/30">
+                      حتى الاستلام النهائي
+                    </Badge>
+                  </div>
+                  <p className="text-[11px] text-muted-foreground">
+                    يظل ساري المفعول طوال مدة تنفيذ العملية وحتى انتهاء فترة الضمان وصدور محضر الاستلام النهائي المعتمد.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <div className="space-y-1.5">
                 <Label className="text-xs font-bold text-foreground">
-                  {receiptPaymentMethod === "BANK_GUARANTEE" ? "رقم خطاب الضمان البنكي *" : "رقم إيصال السداد / التوريد *"}
+                  {receiptPaymentMethod === "BANK_GUARANTEE"
+                    ? "رقم خطاب الضمان البنكي المعتمد *"
+                    : receiptPaymentMethod === "DEDUCTION"
+                    ? "رقم إفادة الخصم المعتمدة *"
+                    : "رقم إيصال السداد / التوريد بخزينة الجهة *"}
                 </Label>
                 <Input
                   value={receiptNumber}
                   onChange={(e) => setReceiptNumber(e.target.value)}
-                  placeholder="مثال: REC-54910 أو LG-2026-99"
+                  placeholder={receiptPaymentMethod === "BANK_GUARANTEE" ? "مثال: LG-2026-99" : "مثال: REC-54910"}
                   className="h-10 text-xs font-mono font-bold rounded-xl"
                 />
               </div>
@@ -1557,9 +1561,7 @@ export function TabFinalGuarantee({
                   className="h-10 text-xs font-mono font-bold rounded-xl"
                 />
               </div>
-            </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <div className="space-y-1.5">
                 <Label className="text-xs font-bold text-foreground">تاريخ السداد / الإصدار *</Label>
                 <Input
@@ -1569,31 +1571,53 @@ export function TabFinalGuarantee({
                   className="h-10 text-xs rounded-xl"
                 />
               </div>
-
-              {receiptPaymentMethod === "BANK_GUARANTEE" && (
-                <>
-                  <div className="space-y-1.5">
-                    <Label className="text-xs font-bold text-foreground">اسم البنك المصدر للضمان *</Label>
-                    <Input
-                      value={bankName}
-                      onChange={(e) => setBankName(e.target.value)}
-                      placeholder="مثال: بنك مصر"
-                      className="h-10 text-xs rounded-xl"
-                    />
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <Label className="text-xs font-bold text-foreground">تاريخ انتهاء سريان الضمان *</Label>
-                    <Input
-                      type="date"
-                      value={validUntilDate}
-                      onChange={(e) => setValidUntilDate(e.target.value)}
-                      className="h-10 text-xs rounded-xl"
-                    />
-                  </div>
-                </>
-              )}
             </div>
+
+            {receiptPaymentMethod === "BANK_GUARANTEE" && (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-3.5 rounded-xl bg-blue-500/5 border border-blue-500/20">
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-bold text-foreground">اسم البنك المصدر للضمان *</Label>
+                  <Input
+                    value={bankName}
+                    onChange={(e) => setBankName(e.target.value)}
+                    placeholder="مثال: بنك مصر - فرع دمنهور الإسلامي"
+                    className="h-10 text-xs rounded-xl"
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-bold text-foreground">تاريخ انتهاء سريان خطاب الضمان (الاستلام النهائي) *</Label>
+                  <Input
+                    type="date"
+                    value={validUntilDate}
+                    onChange={(e) => setValidUntilDate(e.target.value)}
+                    className="h-10 text-xs rounded-xl"
+                  />
+                </div>
+              </div>
+            )}
+
+            {(receiptPaymentMethod === "DEDUCTION" || activeLetterType === "DEDUCTION_AND_INITIAL") && (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-3.5 rounded-xl bg-amber-500/5 border border-amber-500/20">
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-bold text-foreground">اسم العملية المخصوم من مستحقاتها *</Label>
+                  <Input
+                    value={deductionOperationName}
+                    onChange={(e) => setDeductionOperationName(e.target.value)}
+                    placeholder="مثال: عملية توريد أجهزة مستشفى كفر الدوار"
+                    className="h-10 text-xs rounded-xl"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-bold text-foreground">المستحقات عن شهر / سنة *</Label>
+                  <Input
+                    value={`${deductionMonth} / ${deductionYear}`}
+                    readOnly
+                    className="h-10 text-xs rounded-xl bg-muted/40 font-bold"
+                  />
+                </div>
+              </div>
+            )}
 
             {/* Custom Styled Upload Zone */}
             <div className="space-y-1.5 pt-1">
