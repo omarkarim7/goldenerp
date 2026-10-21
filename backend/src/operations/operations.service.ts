@@ -1687,31 +1687,28 @@ export class OperationsService {
    * - المحرك الثاني (تلقائي): سكربت تحويل سحابي ذكي ومجاني 100% عبر iLovePDF (يعمل آلياً بدون أي مفاتيح API أو تكلفة).
    */
   async convertDocxBufferToPdf(docxBuffer: Buffer): Promise<Buffer> {
-    // 1. محاولة التحويل عبر Adobe PDF Services API الرسمي أولاً (يدعم مجمع حسابات متعدد مع التبديل التلقائي)
+    // 1. الأولوية الأولى: محرك Microsoft Word Desktop COM الأصلي عند العمل محلياً على Windows
+    // يضمن استخدام محرك مايكروسوفت وورد الأصلي على جهاز التطوير محلياً مجاناً وبلا حدود
+    if (process.platform === 'win32') {
+      try {
+        this.logger.log('بدء التحويل عبر محرك Microsoft Word Desktop COM المحلي...');
+        return await this.convertDocxViaWordCom(docxBuffer);
+      } catch (comErr: any) {
+        this.logger.warn(`تعذر التحويل عبر Word COM المحلي (${comErr?.message})، جاري التبديل التلقائي لمحرك Adobe PDF Services...`);
+      }
+    }
+
+    // 2. الأولوية الثانية: مجمع حسابات Adobe PDF Services API الرسمي (عند الرفع على السحابة/الإنتاج أو فشل Word COM)
     // يضمن دقة 100% متطابقة مع Microsoft Word بما يشمل الهيدر، اللوجو، الباركود، والخطوط الأصلية
     if (
       (process.env.ADOBE_CLIENT_ID && process.env.ADOBE_CLIENT_SECRET) ||
       (process.env.ADOBE_CLIENT_ID_2 && process.env.ADOBE_CLIENT_SECRET_2)
     ) {
       try {
+        this.logger.log('بدء التحويل السحابي عبر مجمع حسابات Adobe PDF Services API الرسمي...');
         return await this.convertDocxViaAdobePdfServices(docxBuffer);
       } catch (adobeErr: any) {
         this.logger.warn(`فشل التحويل عبر مجمع حسابات Adobe PDF Services: ${adobeErr?.message}`);
-      }
-    }
-
-    // 2. محاولة التحويل عبر محرك Microsoft Word Desktop المحلي (على Windows)
-    if (process.platform === 'win32') {
-      try {
-        return await this.convertDocxViaWordCom(docxBuffer);
-      } catch (comErr: any) {
-        this.logger.warn(`المحاولة الأولى عبر Word COM فشلت (${comErr?.message})، جاري إعادة المحاولة...`);
-        try {
-          await new Promise((r) => setTimeout(r, 1000));
-          return await this.convertDocxViaWordCom(docxBuffer);
-        } catch (retryErr: any) {
-          this.logger.warn(`فشلت إعادة محاولة Word COM المحلي: ${retryErr?.message}`);
-        }
       }
     }
 

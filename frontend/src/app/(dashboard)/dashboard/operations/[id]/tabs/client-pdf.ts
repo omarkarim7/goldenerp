@@ -132,12 +132,16 @@ export async function convertDocxBlobToPdfBlob(docxBlob: Blob): Promise<Blob> {
 }
 
 const pdfConversionCache = new Map<string, Blob>();
+let lastPdfEngineUsed: "Word COM" | "Adobe PDF" = "Word COM";
+
+export function getLastPdfEngineUsed(): "Word COM" | "Adobe PDF" {
+  return lastPdfEngineUsed;
+}
 
 /**
  * مولد مستندات PDF المعتمد:
- * 1. يحاول أولاً الاستفادة من مجمع حسابات Adobe PDF Services API الرسمي (دقة 100% متطابقة مع Word).
- * 2. محاولة خادم الباك إند (NestJS) الرسمي عبر Adobe أو Word COM أو LibreOffice.
- * 3. في حال تعذر ذلك أو العمل دون إنترنت، يتم التحويل بالمتصفح مباشرة بخطوط Arabic Typesetting الأصلية بدقة 100%.
+ * - محلياً (بيئة التطوير والتجربة على جهازك Windows): يستخدم محرك Microsoft Word Desktop COM الأصلي عبر السيرفر المحلي.
+ * - أونلاين (المشروع مرفوع على Vercel أو GitHub): يستخدم مجمع حسابات Adobe PDF Services API الرسمي.
  */
 export async function getPdfBlobFromDocx(
   docxBlob: Blob,
@@ -151,33 +155,16 @@ export async function getPdfBlobFromDocx(
     }
   }
 
+  const isLocalhost =
+    typeof window !== "undefined" &&
+    (window.location.hostname === "localhost" ||
+      window.location.hostname === "127.0.0.1" ||
+      window.location.hostname.startsWith("192.168."));
+
   let finalPdf: Blob | null = null;
 
-  // 1. محاولة التحويل عبر مسار Next.js الداخلي المباشر (يعمل فورياً على Vercel وأونلاين عبر Adobe PDF Services API)
-  try {
-    const formData = new FormData();
-    formData.append("file", docxBlob, fileName);
-
-    const directRes = await fetch("/api/convert-docx-to-pdf", {
-      method: "POST",
-      body: formData,
-      signal: AbortSignal.timeout(40000),
-    });
-
-    if (directRes.ok) {
-      const blob = await directRes.blob();
-      if (blob && blob.size > 1000) {
-        finalPdf = blob.type.includes("pdf")
-          ? blob
-          : new Blob([await blob.arrayBuffer()], { type: "application/pdf" });
-      }
-    }
-  } catch (directErr) {
-    console.warn("المسار الداخلي /api/convert-docx-to-pdf تعذر، جاري تجربة مسار الباك إند:", directErr);
-  }
-
-  // 2. محاولة خادم الباك إند (NestJS) الرسمي عبر Adobe أو LibreOffice
-  if (!finalPdf) {
+  // دالة مساعدة للتحويل عبر سيرفر الباك إند المحلي (Word COM على Windows)
+  const tryBackendConversion = async (): Promise<Blob | null> => {
     try {
       const formData = new FormData();
       formData.append("file", docxBlob, fileName);
@@ -185,25 +172,68 @@ export async function getPdfBlobFromDocx(
       const res = await api.post("/operations/convert-docx-to-pdf", formData, {
         headers: { "Content-Type": "multipart/form-data" },
         responseType: "blob",
-        timeout: 40000,
+        timeout: 45000,
       });
 
       if (res.data && res.data.size > 1000) {
         if (res.data.type === "application/json") {
-          const text = await res.data.text();
-          console.warn("استجابة غير متوقعة من السيرفر عند تحويل PDF:", text);
-        } else {
-          finalPdf = res.data.type?.includes("pdf")
-            ? res.data
-            : new Blob([await res.data.arrayBuffer()], { type: "application/pdf" });
+          return null;
+        }
+        lastPdfEngineUsed = "Word COM";
+        return res.data.type?.includes("pdf")
+          ? res.data
+          : new Blob([await res.data.arrayBuffer()], { type: "application/pdf" });
+      }
+    } catch (err: any) {
+      console.warn("تعذر التحويل عبر الباك إند (Word COM):", err?.message);
+    }
+    return null;
+  };
+
+  // دالة مساعدة للتحويل عبر Adobe PDF Services API (سحابياً)
+  const tryAdobeConversion = async (): Promise<Blob | null> => {
+    try {
+      const formData = new FormData();
+      formData.append("file", docxBlob, fileName);
+
+      const directRes = await fetch("/api/convert-docx-to-pdf", {
+        method: "POST",
+        body: formData,
+        signal: AbortSignal.timeout(45000),
+      });
+
+      if (directRes.ok) {
+        const blob = await directRes.blob();
+        if (blob && blob.size > 1000) {
+          lastPdfEngineUsed = "Adobe PDF";
+          return blob.type.includes("pdf")
+            ? blob
+            : new Blob([await blob.arrayBuffer()], { type: "application/pdf" });
         }
       }
-    } catch (err) {
-      console.warn("تعذر التحويل عبر سيرفر الباك إند، جاري التحويل الداخلي بالمتصفح:", err);
+    } catch (directErr: any) {
+      console.warn("تعذر التحويل السحابي عبر Adobe PDF Services:", directErr?.message);
+    }
+    return null;
+  };
+
+  // 1. إذا كان التطوير محلياً على جهاز المستخدم (Localhost) -> الأولوية لمحرك Microsoft Word COM المحلي
+  if (isLocalhost) {
+    finalPdf = await tryBackendConversion();
+    if (!finalPdf) {
+      console.log("التبديل إلى Adobe PDF Services API كخيار بديل...");
+      finalPdf = await tryAdobeConversion();
+    }
+  } else {
+    // 2. إذا كان المشروع مرفوعاً أونلاين على السحابة أو GitHub -> الأولوية لـ Adobe PDF Services API
+    finalPdf = await tryAdobeConversion();
+    if (!finalPdf) {
+      console.log("التبديل إلى مسار الباك إند كخيار بديل...");
+      finalPdf = await tryBackendConversion();
     }
   }
 
-  // 3. التحويل الذكي في المتصفح بالخطوط العربية الأصلية
+  // 3. التحويل بالمتصفح كخط دفاع أخير في حال انقطاع كل الاتصالات
   if (!finalPdf) {
     finalPdf = await convertDocxBlobToPdfBlob(docxBlob);
   }

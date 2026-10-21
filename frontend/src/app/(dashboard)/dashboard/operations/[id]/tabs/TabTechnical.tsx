@@ -1788,21 +1788,21 @@ export function TabTechnical({
             <div className="bg-card border border-border rounded-3xl max-w-5xl w-full p-4 sm:p-6 shadow-2xl h-[94vh] max-h-[94vh] flex flex-col overflow-hidden text-foreground">
               {/* Header */}
               <div className="flex items-center justify-between pb-3 border-b border-border flex-wrap gap-3 shrink-0">
-                <div className="flex items-center gap-2.5">
-                  <div className="w-10 h-10 rounded-2xl bg-indigo-500/15 text-indigo-600 flex items-center justify-center">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-2xl bg-amber-500/15 text-amber-600 flex items-center justify-center">
                     <FileText className="h-5 w-5" />
                   </div>
                   <div>
                     <div className="flex items-center gap-2">
                       <h3 className="font-extrabold text-foreground text-base">
-                        معاينة المستند الرسمي المعتمد (قالب الوورد الأصلي)
+                        معاينة قالب الوورد المعتمد: العرض الفني.docx
                       </h3>
                       <Badge className="bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/30 text-[10px] font-bold">
-                        توليد حي من قالب Word المعتمد ✓
+                        معاينة Word COM الرسمية 100% ✓
                       </Badge>
                     </div>
                     <p className="text-xs text-muted-foreground">
-                      عرض صفحات مستند الوورد كما تطبع وتعتمد تماماً مع الباركود الرقمي وجدول المواصفات والبدائل بدقة 100%
+                      معاينة حية ومطابقة 100% لقالب الوورد الأصلي مع دعم التحميل بصيغة Word أو PDF والطباعة المباشرة
                     </p>
                   </div>
                 </div>

@@ -2097,20 +2097,20 @@ export function TabFinancial({
               {/* Modal Header */}
               <div className="p-3 sm:p-4 border-b border-border flex items-center justify-between flex-wrap gap-3 bg-muted/40">
                 <div className="flex items-center gap-3">
-                  <div className="w-9 h-9 rounded-xl bg-teal-500/10 text-teal-600 flex items-center justify-center shadow-xs">
+                  <div className="w-10 h-10 rounded-2xl bg-amber-500/15 text-amber-600 flex items-center justify-center">
                     <FileText className="h-5 w-5" />
                   </div>
                   <div>
                     <div className="flex items-center gap-2">
-                      <h3 className="text-sm font-black text-foreground">
-                        معاينة المستند الرسمي المعتمد (قالب الوورد الأصلي)
+                      <h3 className="font-extrabold text-foreground text-base">
+                        معاينة قالب الوورد المعتمد: العرض المالي.docx
                       </h3>
                       <Badge className="bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/30 text-[10px] font-bold">
-                        توليد حي من قالب Word المعتمد ✓
+                        معاينة Word COM الرسمية 100% ✓
                       </Badge>
                     </div>
                     <p className="text-xs text-muted-foreground">
-                      عرض صفحات مستند الوورد كما تطبع وتعتمد تماماً مع الباركود الرقمي وجدول الأسعار والتفقيط بدقة 100%
+                      معاينة حية ومطابقة 100% لقالب الوورد الأصلي مع دعم التحميل بصيغة Word أو PDF والطباعة المباشرة
                     </p>
                   </div>
                 </div>

@@ -2724,11 +2724,11 @@ export function TabBooklet({
                         معاينة قالب الوورد المعتمد: {CURRENT_FILE_ARABIC_NAME[activeLetterType]}
                       </h3>
                       <Badge className="bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/30 text-[10px] font-bold">
-                        استبدال حي من ملف الوورد الأصلي ✓
+                        معاينة Word COM الرسمية 100% ✓
                       </Badge>
                     </div>
                     <p className="text-xs text-muted-foreground">
-                      يتم العمل مباشرة على ملف Word المرسل منك واستبدال المتغيرات الحمراء وبيانات الجدول والختم بدقة 100%
+                      معاينة حية ومطابقة 100% لقالب الوورد الأصلي مع دعم التحميل بصيغة Word أو PDF والطباعة المباشرة
                     </p>
                   </div>
                 </div>
