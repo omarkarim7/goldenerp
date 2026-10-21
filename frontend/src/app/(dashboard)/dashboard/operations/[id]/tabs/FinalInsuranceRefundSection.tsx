@@ -412,11 +412,15 @@ export function FinalInsuranceRefundSection({
     docXml = injectSingleQrIntoDocXml(docXml, qrDrawingXml, escapeXml(registrationNumber));
 
     // المرسل إليه
-    docXml = docXml.replace(/الأستاذ/g, escapeXml(recipientPrefix));
-    docXml = docXml.replace(
-      /مدير الادارة العامة للمشتريات والمخازن بجامعة دمنهور/g,
-      escapeXml(recipientTitleAndAuthority)
-    );
+    const p1Idx = docXml.indexOf("السيد");
+    if (p1Idx !== -1) {
+      const pStart = Math.max(docXml.lastIndexOf("<w:p ", p1Idx), docXml.lastIndexOf("<w:p>", p1Idx));
+      const pEnd = docXml.indexOf("</w:p>", p1Idx);
+      if (pStart !== -1 && pEnd !== -1 && pStart < p1Idx && p1Idx < pEnd) {
+        const newP1 = `<w:p><w:pPr><w:tabs><w:tab w:val="left" w:pos="5387"/></w:tabs><w:spacing w:after="0"/><w:ind w:left="-794"/><w:rPr><w:rFonts w:ascii="Arabic Typesetting" w:hAnsi="Arabic Typesetting" w:cs="Arabic Typesetting"/><w:b/><w:bCs/><w:sz w:val="52"/><w:szCs w:val="52"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr></w:pPr><w:r><w:rPr><w:rFonts w:ascii="Arabic Typesetting" w:hAnsi="Arabic Typesetting" w:cs="Arabic Typesetting" w:hint="cs"/><w:b/><w:bCs/><w:sz w:val="56"/><w:szCs w:val="56"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t xml:space="preserve">      السيد ${escapeXml(recipientPrefix)} / ${escapeXml(recipientTitleAndAuthority)}</w:t></w:r></w:p>`;
+        docXml = docXml.substring(0, pStart) + newP1 + docXml.substring(pEnd + 6);
+      }
+    }
 
     // الموضوع وبيانات العملية
     docXml = docXml.replace(/اسم العملية المسجله[\s\.]*/g, escapeXml(operationRegisteredName) + " ");
@@ -464,16 +468,30 @@ export function FinalInsuranceRefundSection({
     // التوقيعات
     docXml = docXml.replace(/أحمد محمد/g, escapeXml(specialistName));
     docXml = docXml.replace(/توقيع صورة/g, escapeXml(financeManagerName));
-    docXml = docXml.replace(/رئيس مجلس الإدارة/g, escapeXml(boardChairman));
+    const chairIdx = docXml.indexOf("رئيس مجلس");
+    if (chairIdx !== -1) {
+      const pStart = Math.max(docXml.lastIndexOf("<w:p ", chairIdx), docXml.lastIndexOf("<w:p>", chairIdx));
+      const pEnd = docXml.indexOf("</w:p>", chairIdx);
+      if (pStart !== -1 && pEnd !== -1 && pStart < chairIdx && chairIdx < pEnd) {
+        const newP13 = `<w:p><w:pPr><w:spacing w:after="0" w:line="240" w:lineRule="auto"/><w:rPr><w:b/><w:bCs/><w:sz w:val="32"/><w:szCs w:val="32"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr></w:pPr><w:r><w:rPr><w:rFonts w:ascii="Arabic Typesetting" w:hAnsi="Arabic Typesetting" w:cs="Arabic Typesetting" w:hint="cs"/><w:b/><w:bCs/><w:sz w:val="32"/><w:szCs w:val="32"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t xml:space="preserve">                                                                    ${escapeXml(boardChairman)}</w:t></w:r></w:p>`;
+        docXml = docXml.substring(0, pStart) + newP13 + docXml.substring(pEnd + 6);
+      }
+    }
 
     // ━━━ استبدال فقرة المرفقات (صورة أو أصل من إيصال السداد) بالكامل كفقرة XML منضبطة 100% ━━━
     const defaultAttText = attachmentType === "ORIGINAL" ? "مرفق أصل من إيصال السداد" : "مرفق صورة من إيصال السداد";
     const finalAttachmentText = attachmentNote || defaultAttText;
 
-    const attMatch = docXml.match(/<w:p\b[^>]*>[\s\S]*?مرفق[\s\S]*?من إيصال السداد[\s\S]*?<\/w:p>/);
-    if (attMatch) {
-      const newParagraph = `<w:p><w:pPr><w:pStyle w:val="ListParagraph"/><w:spacing w:after="0" w:line="240" w:lineRule="auto"/><w:ind w:left="-150"/><w:rPr><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr></w:pPr><w:r><w:rPr><w:rFonts w:ascii="Arabic Typesetting" w:hAnsi="Arabic Typesetting" w:cs="Arabic Typesetting" w:hint="cs"/><w:b/><w:bCs/><w:sz w:val="32"/><w:szCs w:val="32"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t xml:space="preserve">${escapeXml(finalAttachmentText)}</w:t></w:r></w:p>`;
-      docXml = docXml.replace(attMatch[0], newParagraph);
+    const attIdx = docXml.indexOf("مرفق");
+    if (attIdx !== -1) {
+      const pStart = Math.max(docXml.lastIndexOf("<w:p ", attIdx), docXml.lastIndexOf("<w:p>", attIdx));
+      const pEnd = docXml.indexOf("</w:p>", attIdx);
+      if (pStart !== -1 && pEnd !== -1 && pStart < attIdx && attIdx < pEnd) {
+        const before = docXml.substring(0, pStart);
+        const after = docXml.substring(pEnd + 6);
+        const newParagraph = `<w:p><w:pPr><w:pStyle w:val="ListParagraph"/><w:numPr><w:ilvl w:val="0"/><w:numId w:val="1"/></w:numPr><w:spacing w:after="0" w:line="240" w:lineRule="auto"/><w:ind w:left="-150"/><w:rPr><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr></w:pPr><w:r><w:rPr><w:rFonts w:ascii="Arabic Typesetting" w:hAnsi="Arabic Typesetting" w:cs="Arabic Typesetting" w:hint="cs"/><w:b/><w:bCs/><w:sz w:val="32"/><w:szCs w:val="32"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t xml:space="preserve">${escapeXml(finalAttachmentText)}</w:t></w:r></w:p>`;
+        docXml = before + newParagraph + after;
+      }
     }
 
     docXml = docXml.replace(/خانه خاليه للملاحظات/g, escapeXml(letterNotes));

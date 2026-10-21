@@ -1980,7 +1980,7 @@ export function TabTechOpening({
                             className="text-xs h-9 px-3 rounded-xl border-border text-foreground hover:bg-muted flex items-center gap-1.5 cursor-pointer"
                           >
                             <FileText className="h-3.5 w-3.5 text-blue-600" />
-                            <span>{showFinalRefundSection ? "إخفاء نموذج التأمين النهائي" : "نموذج استرداد التأمين النهائي (Word)"}</span>
+                            <span>{showFinalRefundSection ? "إخفاء نموذج التأمين النهائي" : "نموذج استرداد التأمين النهائي"}</span>
                           </Button>
                         </div>
                       </div>
@@ -3321,7 +3321,7 @@ export function TabFinOpening({
                             className="text-xs h-9 px-3 rounded-xl border-border text-foreground hover:bg-muted flex items-center gap-1.5 cursor-pointer"
                           >
                             <FileText className="h-3.5 w-3.5 text-blue-600" />
-                            <span>{showFinalRefundSection ? "إخفاء نموذج التأمين النهائي" : "نموذج استرداد التأمين النهائي (Word)"}</span>
+                            <span>{showFinalRefundSection ? "إخفاء نموذج التأمين النهائي" : "نموذج استرداد التأمين النهائي"}</span>
                           </Button>
                         </div>
                       </div>

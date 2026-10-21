@@ -205,7 +205,7 @@ export async function getPdfBlobFromDocx(
   fileName: string = "document.docx",
   forceFresh: boolean = false
 ): Promise<Blob> {
-  const cacheKey = `v3_${fileName}_${docxBlob.size}_${docxBlob.type}`;
+  const cacheKey = `v4_${fileName}_${docxBlob.size}_${docxBlob.type}`;
 
   if (!forceFresh) {
     // 1. فحص الكاش السريع في الذاكرة الحية (0ms)
