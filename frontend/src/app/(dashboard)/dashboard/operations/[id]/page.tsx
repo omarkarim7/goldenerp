@@ -71,6 +71,8 @@ import { TabSupplyOrder } from "./tabs/TabSupplyOrder";
 import { TabFinalGuarantee } from "./tabs/TabFinalGuarantee";
 import { TabGuarantees } from "./tabs/TabGuarantees";
 import { TabSupply } from "./tabs/TabSupply";
+import { TabInvoicing } from "./tabs/TabInvoicing";
+import { TabInsurancesLabor } from "./tabs/TabInsurancesLabor";
 import { TabCertificates } from "./tabs/TabCertificates";
 import { TabFinance } from "./tabs/TabFinance";
 import { TabClose } from "./tabs/TabClose";
@@ -748,6 +750,26 @@ export default function OperationDetailPage() {
         );
       case "supply":
         return <TabSupply op={op} onRefresh={fetchOp} onNavigate={setActiveTab} />;
+      case "invoicing":
+        return (
+          <TabInvoicing
+            op={op}
+            onRefresh={fetchOp}
+            onNavigate={setActiveTab}
+            onPreviewDoc={handlePreviewDocument}
+            onDownloadDoc={handleDownloadDocument}
+          />
+        );
+      case "insurances_labor":
+        return (
+          <TabInsurancesLabor
+            op={op}
+            onRefresh={fetchOp}
+            onNavigate={setActiveTab}
+            onPreviewDoc={handlePreviewDocument}
+            onDownloadDoc={handleDownloadDocument}
+          />
+        );
       case "certificates":
         return <TabCertificates op={op} onRefresh={fetchOp} onNavigate={setActiveTab} />;
       case "finance":

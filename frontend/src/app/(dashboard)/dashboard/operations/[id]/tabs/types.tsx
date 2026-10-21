@@ -74,10 +74,12 @@ export const LIFECYCLE_TABS: TabDef[] = [
   { id: "award", label: "قرار الترسية الرسمي", shortLabel: "الترسية", icon: Trophy, order: 12, color: "amber", description: "إخطار الترسية الرسمي، اسم الشركة الفائزة، وقيمة الترسية المعتمدة" },
   { id: "supply_order", label: "أمر التوريد والتعاقد الرسمي", shortLabel: "أمر التوريد", icon: Truck, order: 13, color: "blue", description: "تسجيل رقم وتاريخ أمر التوريد الصادر من الجهة، مدة التنفيذ، وشروط التوريد" },
   { id: "guarantee_final", label: "التأمين النهائي (5%)", shortLabel: "التأمين النهائي", icon: ShieldCheck, order: 14, color: "emerald", description: "خطابات سداد التأمين النهائي، الخصم من المستحقات، الضمان البنكي، والباركود" },
-  { id: "supply", label: "التوريد والاستلام والفحص", shortLabel: "التوريد", icon: Truck, order: 15, color: "blue", description: "توريد الشحنات، أذون الإضافة بالمخازن، ومحاضر الفحص والاستلام" },
-  { id: "certificates", label: "المستخلصات والدفعات", shortLabel: "المستخلصات", icon: Calculator, order: 16, color: "teal", description: "أوامر الصرف، المستخلصات المالية، واستقطاعات الضرائب والتأمينات" },
-  { id: "finance", label: "الحسابات والمالية والأرباح", shortLabel: "المالية", icon: BarChart3, order: 17, color: "emerald", description: "التكلفة الإجمالية الفعلية، التدفقات النقدية، وصافي أرباح العملية" },
-  { id: "close", label: "إغلاق العملية والأرشيف", shortLabel: "الإغلاق والأرشيف", icon: Archive, order: 18, color: "slate", description: "استرداد خطابات الضمان، الأرشيف الرقمي للمستندات، والإغلاق النهائي" },
+  { id: "supply", label: "حالة التوريد والتجهيز", shortLabel: "حالة التوريد", icon: Truck, order: 15, color: "blue", description: "حصر وتجهيز أصناف البت المالي، مقارنة أسعار دراسة السوق بالتوريد، وأذون الإضافة المخزنية" },
+  { id: "invoicing", label: "إصدار الفاتورة والتسليم", shortLabel: "الفاتورة والتسليم", icon: FileText, order: 16, color: "indigo", description: "إصدار الفاتورة الرسمية، ضريبة 14%، رفع ملف الفاتورة المعتمدة، وإذن ومحضر التسليم الفعلي" },
+  { id: "insurances_labor", label: "التأمينات والقوى العاملة وأمر الدفع", shortLabel: "التأمينات والعمالة", icon: ShieldCheck, order: 17, color: "amber", description: "سداد التأمينات والعمالة، تسليم الشهادات للجهة الإدارية، ومتابعة استخراج أمر الدفع الحكومي" },
+  { id: "certificates", label: "المستخلصات والاستقطاعات والضرائب", shortLabel: "المستخلصات والضرائب", icon: Calculator, order: 18, color: "teal", description: "أمر الدفع، بيان الاستقطاعات الضريبية (14% VAT + 1% أ.ت.ص) وصافي الصرف" },
+  { id: "finance", label: "الحسابات والمالية والأرباح", shortLabel: "المالية والأرباح", icon: BarChart3, order: 19, color: "emerald", description: "التكلفة الإجمالية الفعلية، التدفقات النقدية، وصافي أرباح العملية" },
+  { id: "close", label: "إغلاق العملية وفترة الضمان", shortLabel: "الضمان والإغلاق", icon: Archive, order: 20, color: "slate", description: "فترة الضمان، الزيارات الشهرية للصيانة، الاستلام النهائي، واسترداد التأمينات والأرشيف" },
 ];
 
 export const STATUS_LABELS: Record<string, { label: string; badgeBg: string }> = {
@@ -248,8 +250,10 @@ export function getTabCompletionStatus(tab: TabDef, op: Operation, manualOverrid
     case "guarantee_final": return op.guarantees?.some((g: any) => g.type === "FINAL") ? "done" : "pending";
     case "supply": {
       const receipts = op.supplyOrders?.flatMap((so: any) => so.goodsReceipts || []);
-      return receipts?.length > 0 ? "done" : "pending";
+      return (receipts?.length > 0 || (op.notes && op.notes.includes("supplyItemsPrepared"))) ? "done" : "pending";
     }
+    case "invoicing": return (op.notes && op.notes.includes("invoicingData")) ? "done" : "pending";
+    case "insurances_labor": return (op.notes && op.notes.includes("insurancesLaborData")) ? "done" : "pending";
     case "certificates": return op.certificates?.length > 0 ? "done" : "pending";
     case "finance": return op.operationFinance ? "done" : "pending";
     case "close": return ["COMPLETED", "CLOSED", "ARCHIVED"].includes(op.status) ? "done" : "pending";
