@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
+import { formatDate } from "./types";
 
 /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
    LETTER MODE & OUTGOING NUMBER UTILITIES
@@ -208,6 +209,16 @@ export async function cleanAllDocxXml(zip: any): Promise<void> {
         changed = true;
       }
 
+      // 5. Remove any leftover brackets/parentheses after "لزوم" or around operation scope
+      if (xml.includes("لزوم")) {
+        // حذف الأقواس بعد كلمة لزوم: لزوم ( ... ) طرفكم -> لزوم ... طرفكم
+        xml = xml.replace(/(<w:t[^>]*>[^<]*لزوم\s*)[(\uff08]/g, "$1");
+        xml = xml.replace(/[)\uff09](\s*<w:t[^>]*>[^<]*طرفكم)/g, "$1");
+        xml = xml.replace(/لزوم\s*[\(（]\s*/g, "لزوم ");
+        xml = xml.replace(/\s*[\)）]\s*طرفكم/g, " طرفكم");
+        changed = true;
+      }
+
       if (changed) {
         zip.file(fileName, xml);
       }
@@ -229,32 +240,70 @@ export function escapeXml(str: string): string {
 }
 
 /**
- * استخراج نطاق وموضوع التوريد المشترك ("لزوم كذا") من العملية أو الملاحظات
+ * تنظيف نص نطاق العملية وإزالة أي أقواس في البداية والنهاية
  */
-export function getSharedOperationScope(op: any, specificSavedScope?: string): string {
-  if (specificSavedScope && specificSavedScope.trim()) return specificSavedScope.trim();
-  try {
-    if (op.notes && op.notes.startsWith("{")) {
-      const parsed = JSON.parse(op.notes);
-      if (parsed.operationScope && parsed.operationScope.trim()) return parsed.operationScope.trim();
-      if (parsed.bookletLettersDocx?.operationScope && parsed.bookletLettersDocx.operationScope.trim()) {
-        return parsed.bookletLettersDocx.operationScope.trim();
-      }
-      if (parsed.clarificationLetterDocx?.operationScope && parsed.clarificationLetterDocx.operationScope.trim()) {
-        return parsed.clarificationLetterDocx.operationScope.trim();
-      }
-    }
-  } catch {}
-  return (op as any).description || op.name || "";
+export function cleanScopeText(raw?: string): string {
+  if (!raw) return "";
+  let text = raw.trim();
+  // إزالة الأقواس من البداية والنهاية
+  text = text.replace(/^[\(\[\{（\s]+|[\)\]\}）\s]+$/g, "").trim();
+  return text;
 }
 
 /**
- * استبدال نطاق وموضوع التوريد لزوم العملية ("لزوم كذا") بشكل متين وشامل
+ * استخراج نطاق وموضوع التوريد المشترك ("لزوم كذا") من العملية أو الملاحظات
+ * يتجاهل النصوص الوهمية القديمة ويأخذ البيانات الفعلية من العملية أو الردار
+ */
+export function getSharedOperationScope(op: any, specificSavedScope?: string): string {
+  const isDummyScope = (val?: string) => {
+    if (!val) return true;
+    const clean = val.trim();
+    return (
+      clean === "توريد كاوتش وبطاريات للسيارات للجامعه" ||
+      clean === "توريد كاوتش وبطاريات" ||
+      clean === "توريد الأصناف المطلوبة" ||
+      clean.includes("توريد كاوتش وبطاريات")
+    );
+  };
+
+  if (specificSavedScope && !isDummyScope(specificSavedScope)) {
+    return cleanScopeText(specificSavedScope);
+  }
+
+  try {
+    if (op.notes && op.notes.startsWith("{")) {
+      const parsed = JSON.parse(op.notes);
+      if (parsed.operationScope && !isDummyScope(parsed.operationScope)) {
+        return cleanScopeText(parsed.operationScope);
+      }
+      if (parsed.bookletLettersDocx?.operationScope && !isDummyScope(parsed.bookletLettersDocx.operationScope)) {
+        return cleanScopeText(parsed.bookletLettersDocx.operationScope);
+      }
+      if (parsed.clarificationLetterDocx?.operationScope && !isDummyScope(parsed.clarificationLetterDocx.operationScope)) {
+        return cleanScopeText(parsed.clarificationLetterDocx.operationScope);
+      }
+    }
+  } catch {}
+
+  // البيانات الفعلية القادمة من العملية أو الردار
+  const actualScope =
+    (op as any).portalDetails?.description ||
+    (op as any).portalDetails?.title ||
+    (op as any).radarItem?.title ||
+    (op as any).description ||
+    op.name ||
+    "";
+
+  return cleanScopeText(actualScope);
+}
+
+/**
+ * استبدال نطاق وموضوع التوريد لزوم العملية ("لزوم كذا") بدون أي أقواس
  * يبحث عن النص المحصور بين "لزوم" و "طرفكم" عبر كافة وسوم الوورد المتقطعة
  */
 export function replaceDocxScope(docXml: string, scopeText: string): string {
   if (!scopeText || !scopeText.trim()) return docXml;
-  const safeScope = escapeXml(scopeText.trim());
+  const safeScope = escapeXml(cleanScopeText(scopeText));
 
   // Anchor 1: نهاية وسم <w:r> الحاوي لكلمة "لزوم" أو "وطبيعتها"
   // Anchor 2: كامل وسم <w:r> الحاوي لكلمة "طرفكم" مع الإبقاء عليه دون أي تغيير في خطه وتنسيقه
@@ -264,9 +313,9 @@ export function replaceDocxScope(docXml: string, scopeText: string): string {
     replaced = true;
     return (
       anchor1 +
-      '<w:r><w:rPr><w:rFonts w:hint="cs"/><w:b/><w:bCs/><w:sz w:val="32"/><w:szCs w:val="32"/><w:highlight w:val="red"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t xml:space="preserve"> (' +
+      '<w:r><w:rPr><w:rFonts w:hint="cs"/><w:b/><w:bCs/><w:sz w:val="32"/><w:szCs w:val="32"/><w:highlight w:val="red"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t xml:space="preserve"> ' +
       safeScope +
-      ') </w:t></w:r>' +
+      ' </w:t></w:r>' +
       anchor2
     );
   });
@@ -276,7 +325,135 @@ export function replaceDocxScope(docXml: string, scopeText: string): string {
     result = result.replace(/توريد كاوتش وبطاريات للسيارات للجامعه/g, safeScope);
     result = result.replace(/توريد كاوتش وبطاريات[\s\S]*?للجامع[ةه]/g, safeScope);
   }
+
+  // إزالة أي أقواس متبقية مباشرة بعد كلمة "لزوم" أو قبل "طرفكم"
+  result = result.replace(/(لزوم\s*)[(\uff08]/g, "$1");
+  result = result.replace(/[)\uff09](\s*طرفكم)/g, "$1");
+  result = result.replace(/لزوم\s*[\(（]\s*([^)]*?)\s*[\)）]\s*طرفكم/g, "لزوم $1 طرفكم");
+
   return result;
+}
+
+/**
+ * استخراج مسمى جهة الإسناد الرسمي الفعلي من العملية (Radar Authority) وتجنب أي قيم وهمية سابقة
+ */
+export function getOperationRecipientTitle(op: any, savedTitle?: string): string {
+  const isDummyRecipient = (val?: string) => {
+    if (!val) return true;
+    return val.includes("بجامعة دمنهور") && op.authority && !op.authority.includes("دمنهور");
+  };
+
+  if (savedTitle && !isDummyRecipient(savedTitle)) {
+    return savedTitle;
+  }
+
+  if (op.authority && op.authority.trim()) {
+    const auth = op.authority.trim();
+    if (auth.startsWith("مدير") || auth.startsWith("السيد") || auth.startsWith("رئيس")) {
+      return auth;
+    }
+    return `مدير الادارة العامة للمشتريات والمخازن بـ ${auth}`;
+  }
+
+  return "مدير الادارة العامة للمشتريات والمخازن";
+}
+
+/**
+ * استخراج السنة المالية الحقيقية من العملية أو بيانات بوابة التعاقدات (Radar)
+ */
+export function getOperationFiscalYear(op: any, savedFiscalYear?: string): string {
+  const portalFiscal = (op as any).portalDetails?.fiscalYear || (op as any).radarItem?.fiscalYear;
+  if (portalFiscal && portalFiscal.trim()) {
+    return portalFiscal.trim();
+  }
+
+  try {
+    if (op.notes && op.notes.startsWith("{")) {
+      const parsed = JSON.parse(op.notes);
+      if (parsed.portalDetails?.fiscalYear) return parsed.portalDetails.fiscalYear.trim();
+      if (parsed.radarItem?.fiscalYear) return parsed.radarItem.fiscalYear.trim();
+      if (parsed.fiscalYear && parsed.fiscalYear !== "2024 / 2025") return parsed.fiscalYear.trim();
+    }
+  } catch {}
+
+  if (savedFiscalYear && savedFiscalYear.trim() && savedFiscalYear !== "2024 / 2025") {
+    return savedFiscalYear.trim();
+  }
+
+  const baseDate = op.dates?.find((d: any) => d.dateValue || d.date)?.dateValue || op.createdAt;
+  if (baseDate) {
+    const d = new Date(baseDate);
+    if (!isNaN(d.getTime())) {
+      const year = d.getFullYear();
+      const month = d.getMonth() + 1;
+      return month >= 7 ? `${year} / ${year + 1}` : `${year - 1} / ${year}`;
+    }
+  }
+
+  return "2024 / 2025";
+}
+
+/**
+ * استخراج تاريخ جلسة فتح المظاريف الفنية الفعلي من العملية (Radar Technical Opening Date)
+ */
+export function getOperationTechnicalOpeningDate(op: any, savedDate?: string): string {
+  if (Array.isArray(op.dates) && op.dates.length > 0) {
+    const d = op.dates.find(
+      (dt: any) =>
+        dt.type === "TECHNICAL_OPENING" ||
+        dt.title?.includes("فني") ||
+        dt.title?.includes("المظروف الفني") ||
+        dt.title?.includes("جلسة")
+    );
+    if (d?.dateValue) return formatDate(d.dateValue);
+    if (d?.date) return formatDate(d.date);
+
+    const deadline = op.dates.find((dt: any) => dt.type === "SUBMISSION_DEADLINE" || dt.title?.includes("تقديم"));
+    if (deadline?.dateValue) return formatDate(deadline.dateValue);
+    if (deadline?.date) return formatDate(deadline.date);
+  }
+
+  const portal = (op as any).portalDetails;
+  if (portal?.dates?.technicalSession) {
+    return formatDate(portal.dates.technicalSession);
+  }
+  if (portal?.dates?.deadline) {
+    return formatDate(portal.dates.deadline);
+  }
+
+  if (savedDate && savedDate.trim() && !savedDate.includes("14/ 1 /2024") && !savedDate.includes("14/1/2024")) {
+    return savedDate.trim();
+  }
+
+  return new Date().toLocaleDateString("en-GB");
+}
+
+/**
+ * استخراج طريقة الطرح باللغة العربية الرسمية من العملية
+ */
+export function getOperationTenderMethod(op: any): string {
+  const map: Record<string, string> = {
+    TENDER: "بالمناقصة العامة",
+    LIMITED_TENDER: "بالمناقصة المحدودة",
+    PRACTICE: "بالممارسة العامة",
+    LIMITED_PRACTICE: "بالممارسة المحدودة",
+    AUCTION: "بالمزايدة العلنية",
+    DIRECT_ORDER: "بالاتفاق المباشر",
+  };
+  if (op.tenderType && map[op.tenderType]) {
+    return map[op.tenderType];
+  }
+
+  try {
+    const portal = (op as any).portalDetails || (op.notes && op.notes.startsWith("{") ? JSON.parse(op.notes).portalDetails : null);
+    if (portal?.tenderMethod) {
+      const m = portal.tenderMethod;
+      if (m.startsWith("بـ") || m.startsWith("بالـ") || m.startsWith("بالمـ")) return m;
+      return `بـ ${m}`;
+    }
+  } catch {}
+
+  return "بالمناقصة العامة";
 }
 
 /**

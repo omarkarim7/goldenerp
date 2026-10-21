@@ -2397,7 +2397,49 @@ try {
       console.warn('Catbox upload failed:', catboxErr?.message);
     }
 
-    // 3. Fallback: If PUBLIC_APP_URL is set, use direct backend URL
+    // 3. Fallback: Tmpfiles.org
+    try {
+      const tmpForm = new FormData();
+      tmpForm.append('input', new File([new Uint8Array(pdfBuffer)], finalName, { type: 'application/pdf' }));
+      const tmpRes = await fetch('https://tmpfiles.org/api/v1/upload', {
+        method: 'POST',
+        body: tmpForm,
+        signal: AbortSignal.timeout(15000),
+      });
+      if (tmpRes.ok) {
+        const tmpJson = (await tmpRes.json()) as any;
+        const rawUrl = tmpJson?.data?.url;
+        if (rawUrl && typeof rawUrl === 'string') {
+          const directUrl = rawUrl.replace('tmpfiles.org/', 'tmpfiles.org/dl/');
+          this.logger.log(`تم رفع المستند سحابياً بنجاح عبر Tmpfiles: ${directUrl}`);
+          return { success: true, url: directUrl, provider: 'tmpfiles' };
+        }
+      }
+    } catch (tmpErr: any) {
+      console.warn('Tmpfiles upload failed:', tmpErr?.message);
+    }
+
+    // 4. Fallback: File.io
+    try {
+      const fileioForm = new FormData();
+      fileioForm.append('file', new File([new Uint8Array(pdfBuffer)], finalName, { type: 'application/pdf' }));
+      const fileioRes = await fetch('https://file.io', {
+        method: 'POST',
+        body: fileioForm,
+        signal: AbortSignal.timeout(15000),
+      });
+      if (fileioRes.ok) {
+        const fileioJson = (await fileioRes.json()) as any;
+        if (fileioJson?.success && fileioJson?.link) {
+          this.logger.log(`تم رفع المستند سحابياً بنجاح عبر File.io: ${fileioJson.link}`);
+          return { success: true, url: fileioJson.link, provider: 'fileio' };
+        }
+      }
+    } catch (fileioErr: any) {
+      console.warn('File.io upload failed:', fileioErr?.message);
+    }
+
+    // 5. Fallback: If PUBLIC_APP_URL is set, use direct backend URL
     if (process.env.PUBLIC_APP_URL) {
       const publicBase = process.env.PUBLIC_APP_URL.replace(/\/+$/, '');
       const directUrl = `${publicBase}/api/operations/public-doc/${encodeURIComponent(finalName)}`;

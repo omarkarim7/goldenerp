@@ -38,6 +38,10 @@ import {
   replaceDocxFiscalAndDate,
   replaceDocxChairman,
   sanitizeChairmanTitle,
+  getOperationRecipientTitle,
+  getOperationFiscalYear,
+  getOperationTechnicalOpeningDate,
+  getOperationTenderMethod,
 } from "./letter-utils";
 import JSZip from "jszip";
 import QRCode from "qrcode";
@@ -139,12 +143,7 @@ export function TabDeclarations({
     return savedDec?.recipientPrefix || "الأستاذ";
   });
   const [recipientTitleAndAuthority, setRecipientTitleAndAuthority] = useState(() => {
-    return (
-      savedDec?.recipientTitleAndAuthority ||
-      (op.authority
-        ? `مدير الادارة العامة للمشتريات والمخازن بـ ${op.authority}`
-        : "مدير الادارة العامة للمشتريات والمخازن بجامعة دمنهور")
-    );
+    return getOperationRecipientTitle(op, savedDec?.recipientTitleAndAuthority);
   });
 
   const [operationRegisteredName, setOperationRegisteredName] = useState(() => {
@@ -154,20 +153,16 @@ export function TabDeclarations({
     return savedDec?.operationNumber || op.externalNumber || (op.serialNumber ? String(op.serialNumber) : "") || "";
   });
   const [tenderMethod, setTenderMethod] = useState(() => {
-    return savedDec?.tenderMethod || "المناقصة المحدودة";
+    return savedDec?.tenderMethod || getOperationTenderMethod(op);
   });
   const [operationScope, setOperationScope] = useState(() => {
     return getSharedOperationScope(op, savedDec?.operationScope);
   });
   const [fiscalYear, setFiscalYear] = useState(() => {
-    return savedDec?.fiscalYear || "2024 / 2025";
+    return getOperationFiscalYear(op, savedDec?.fiscalYear);
   });
   const [technicalOpeningDate, setTechnicalOpeningDate] = useState(() => {
-    if (savedDec?.technicalOpeningDate) return savedDec.technicalOpeningDate;
-    const d = op.dates?.find((dt: any) => dt.type === "TECHNICAL_OPENING" || dt.title?.includes("فني"));
-    if (d?.dateValue) return formatDate(d.dateValue);
-    if (d?.date) return formatDate(d.date);
-    return "14/ 1 /2024";
+    return getOperationTechnicalOpeningDate(op, savedDec?.technicalOpeningDate);
   });
 
   // مزامنة تلقائية للبيانات إذا تغيرت العملية دون وجود تعديل يدوي محفوظ
@@ -229,9 +224,13 @@ export function TabDeclarations({
     return savedDec?.generalSubject || (op.name ? `بشأن عملية ${op.name}` : "طلب إفادة رسمية بشأن العملية");
   });
   const [generalLetterBody, setGeneralLetterBody] = useState(() => {
+    const tm = getOperationTenderMethod(op);
+    const sc = getSharedOperationScope(op, savedDec?.operationScope);
+    const fy = getOperationFiscalYear(op, savedDec?.fiscalYear);
+    const tod = getOperationTechnicalOpeningDate(op, savedDec?.technicalOpeningDate);
     return (
       savedDec?.generalLetterBody ||
-      `الرجاء من سيادتكم التكرم بالموافقة على سحب كراسة الشروط والمواصفات والخاصة (${op.tenderType === "LIMITED_TENDER" ? "بالمناقصة المحدودة" : "بالمناقصة العامة"}) لزوم (${op.name || "توريد الأصناف المطلوبة"}) طرفكم للعام المالى 2024 / 2025 والمحدد لها جلسة ( 14/ 1 /2024 ) لفتح المظروف الفنى . وتفوض الشركة السيد / (أحمد محمد أحمد ) وصفته ( مندوب التعاقدات المفوض ) قومى رقم : 23056289523202 في تمثيل الشركة في كل ما يلزم من استلام المستندات وسداد المبالغ واستلام الايصالات وحضور الجلسات وجميع الأوراق والتوقيع على العقود واستلام الخطابات والمكاتبات الرسميه .`
+      `الرجاء من سيادتكم التكرم بالموافقة على سحب كراسة الشروط والمواصفات والخاصة (${tm}) لزوم ${sc} طرفكم للعام المالى ${fy} والمحدد لها جلسة ( ${tod} ) لفتح المظروف الفنى . وتفوض الشركة السيد / (أحمد محمد أحمد ) وصفته ( مندوب التعاقدات المفوض ) قومى رقم : 23056289523202 في تمثيل الشركة في كل ما يلزم من استلام المستندات وسداد المبالغ واستلام الايصالات وحضور الجلسات وجميع الأوراق والتوقيع على العقود واستلام الخطابات والمكاتبات الرسميه .`
     );
   });
 

@@ -30,7 +30,8 @@ import {
   getUnifiedOperationRegistrationNumber, regenerateUnifiedRegistrationNumber,
   FiscalYearSelect, OperationDocArchiveCard,
   getSharedOperationScope, replaceDocxScope, replaceDocxFiscalAndDate,
-  replaceDocxChairman, sanitizeChairmanTitle
+  replaceDocxChairman, sanitizeChairmanTitle,
+  getOperationRecipientTitle, getOperationFiscalYear, getOperationTechnicalOpeningDate, getOperationTenderMethod
 } from "./letter-utils";
 import JSZip from "jszip";
 import QRCode from "qrcode";
@@ -221,9 +222,7 @@ export function TabBooklet({
     return savedData?.recipientPrefix || "الأستاذ";
   });
   const [recipientTitleAndAuthority, setRecipientTitleAndAuthority] = useState<string>(() => {
-    if (savedData?.recipientTitleAndAuthority) return savedData.recipientTitleAndAuthority;
-    if (op.authority) return `مدير الادارة العامة للمشتريات والمخازن بـ ${op.authority}`;
-    return "مدير الادارة العامة للمشتريات والمخازن";
+    return getOperationRecipientTitle(op, savedData?.recipientTitleAndAuthority);
   });
 
   const [operationRegisteredName, setOperationRegisteredName] = useState<string>(() => {
@@ -233,28 +232,16 @@ export function TabBooklet({
     return savedData?.operationNumber || op.externalNumber || (op.serialNumber ? String(op.serialNumber) : "") || "";
   });
   const [tenderMethod, setTenderMethod] = useState<string>(() => {
-    return savedData?.tenderMethod || defaultTenderMethod;
+    return savedData?.tenderMethod || getOperationTenderMethod(op);
   });
   const [operationScope, setOperationScope] = useState<string>(() => {
     return getSharedOperationScope(op, savedData?.operationScope);
   });
   const [fiscalYear, setFiscalYear] = useState<string>(() => {
-    if (savedData?.fiscalYear) return savedData.fiscalYear;
-    try {
-      if (op.notes && op.notes.includes("fiscalYear")) {
-        const parsed = JSON.parse(op.notes);
-        if (parsed.portalDetails?.fiscalYear) return parsed.portalDetails.fiscalYear;
-        if (parsed.radarItem?.fiscalYear) return parsed.radarItem.fiscalYear;
-      }
-    } catch {}
-    return "2024 / 2025";
+    return getOperationFiscalYear(op, savedData?.fiscalYear);
   });
   const [technicalOpeningDate, setTechnicalOpeningDate] = useState<string>(() => {
-    if (savedData?.technicalOpeningDate) return savedData.technicalOpeningDate;
-    const d = op.dates?.find((dt: any) => dt.type === "TECHNICAL_OPENING" || dt.title?.includes("فني"));
-    if (d?.dateValue) return formatDate(d.dateValue);
-    if (d?.date) return formatDate(d.date);
-    return "14/ 1 /2024";
+    return getOperationTechnicalOpeningDate(op, savedData?.technicalOpeningDate);
   });
 
   // مزامنة تلقائية للبيانات إذا تغيرت العملية الأصلية دون وجود تعديل يدوي مخصص محفوظ

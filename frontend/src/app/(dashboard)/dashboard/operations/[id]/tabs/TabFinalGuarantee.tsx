@@ -35,6 +35,10 @@ import {
   getSharedOperationScope,
   replaceDocxScope,
   replaceDocxFiscalAndDate,
+  getOperationRecipientTitle,
+  getOperationFiscalYear,
+  getOperationTechnicalOpeningDate,
+  getOperationTenderMethod,
 } from "./letter-utils";
 import JSZip from "jszip";
 import QRCode from "qrcode";
@@ -128,21 +132,15 @@ export function TabFinalGuarantee({
   // Addressee & Operation Fields
   const [recipientPrefix, setRecipientPrefix] = useState(() => savedSettings?.recipientPrefix || "الأستاذ");
   const [recipientTitleAndAuthority, setRecipientTitleAndAuthority] = useState(() => {
-    if (savedSettings?.recipientTitleAndAuthority) return savedSettings.recipientTitleAndAuthority;
-    if (op.authority) return `مدير الادارة العامة للمشتريات والمخازن بـ ${op.authority}`;
-    return "مدير الادارة العامة للمشتريات والمخازن";
+    return getOperationRecipientTitle(op, savedSettings?.recipientTitleAndAuthority);
   });
   const [operationRegisteredName, setOperationRegisteredName] = useState(() => savedSettings?.operationRegisteredName || op.name || "");
   const [operationNumber, setOperationNumber] = useState(() => savedSettings?.operationNumber || op.externalNumber || (op.serialNumber ? String(op.serialNumber) : "") || "");
-  const [tenderMethod, setTenderMethod] = useState(() => savedSettings?.tenderMethod || "المناقصة المحدودة");
+  const [tenderMethod, setTenderMethod] = useState(() => savedSettings?.tenderMethod || getOperationTenderMethod(op));
   const [operationScope, setOperationScope] = useState(() => getSharedOperationScope(op, savedSettings?.operationScope));
-  const [fiscalYear, setFiscalYear] = useState(() => savedSettings?.fiscalYear || "2024 / 2025");
+  const [fiscalYear, setFiscalYear] = useState(() => getOperationFiscalYear(op, savedSettings?.fiscalYear));
   const [technicalOpeningDate, setTechnicalOpeningDate] = useState(() => {
-    if (savedSettings?.technicalOpeningDate) return savedSettings.technicalOpeningDate;
-    const d = op.dates?.find((dt: any) => dt.type === "TECHNICAL_OPENING" || dt.title?.includes("فني"));
-    if (d?.dateValue) return formatDate(d.dateValue);
-    if (d?.date) return formatDate(d.date);
-    return "14/ 1 /2024";
+    return getOperationTechnicalOpeningDate(op, savedSettings?.technicalOpeningDate);
   });
 
   // مزامنة تلقائية للبيانات إذا تغيرت العملية دون وجود تعديل يدوي محفوظ

@@ -205,7 +205,7 @@ export async function openDocxInDesktopWord(
 }
 
 /**
- * رفع وتوثيق ملف الـ PDF على السحابة المجانية (Catbox.moe / Gofile.io)
+ * رفع وتوثيق ملف الـ PDF على السحابة المجانية (Catbox.moe / TmpFiles / File.io)
  * يتيح مسح الباركود وفتح النسخة الرقمية المعتمدة فوراً على أي هاتف محمول
  */
 export async function uploadPdfToFreeCloud(
@@ -214,11 +214,76 @@ export async function uploadPdfToFreeCloud(
 ): Promise<{ success: boolean; url: string; provider: string }> {
   const formData = new FormData();
   formData.append("file", pdfBlob, fileName);
-  const res = await api.post("/operations/upload-cloud-pdf", formData, {
-    headers: { "Content-Type": "multipart/form-data" },
-    timeout: 35000,
-  });
-  return res.data;
+
+  // 1. المحاولة الأولى: راوت Next.js الداخلي المباشر
+  try {
+    const res = await fetch("/api/upload-cloud-pdf", {
+      method: "POST",
+      body: formData,
+    });
+    if (res.ok) {
+      const data = await res.json();
+      if (data.success && data.url) {
+        return data;
+      }
+    }
+  } catch (e: any) {
+    console.warn("Next.js internal cloud upload failed, trying backend...", e?.message);
+  }
+
+  // 2. المحاولة الثانية: راوت خادم NestJS الخلفي
+  try {
+    const res = await api.post("/operations/upload-cloud-pdf", formData, {
+      headers: { "Content-Type": "multipart/form-data" },
+      timeout: 35000,
+    });
+    if (res.data && res.data.url) {
+      return res.data;
+    }
+  } catch (backendErr: any) {
+    console.warn("Backend cloud upload failed, falling back to direct browser upload...", backendErr?.message);
+  }
+
+  // 3. المحاولة الثالثة: رفع مباشر من المتصفح إلى Catbox.moe
+  try {
+    const catboxForm = new FormData();
+    catboxForm.append("reqtype", "fileupload");
+    catboxForm.append("fileToUpload", pdfBlob, fileName);
+    const cbRes = await fetch("https://catbox.moe/user/api.php", {
+      method: "POST",
+      body: catboxForm,
+    });
+    if (cbRes.ok) {
+      const text = (await cbRes.text()).trim();
+      if (text.startsWith("http") && (text.includes(".pdf") || text.includes("files.catbox.moe"))) {
+        return { success: true, url: text, provider: "Catbox Cloud" };
+      }
+    }
+  } catch (directErr: any) {
+    console.warn("Direct browser Catbox failed:", directErr?.message);
+  }
+
+  // 4. المحاولة الرابعة: رفع مباشر من المتصفح إلى Tmpfiles.org
+  try {
+    const tmpForm = new FormData();
+    tmpForm.append("input", pdfBlob, fileName);
+    const tmpRes = await fetch("https://tmpfiles.org/api/v1/upload", {
+      method: "POST",
+      body: tmpForm,
+    });
+    if (tmpRes.ok) {
+      const tmpJson = (await tmpRes.json()) as any;
+      const rawUrl = tmpJson?.data?.url;
+      if (rawUrl && typeof rawUrl === "string") {
+        const directUrl = rawUrl.replace("tmpfiles.org/", "tmpfiles.org/dl/");
+        return { success: true, url: directUrl, provider: "TmpFiles Cloud" };
+      }
+    }
+  } catch (tmpErr: any) {
+    console.warn("Direct browser Tmpfiles failed:", tmpErr?.message);
+  }
+
+  throw new Error("تعذر توثيق المستند سحابياً حالياً، يرجى التحقق من اتصال الإنترنت والمحاولة مجدداً");
 }
 
 

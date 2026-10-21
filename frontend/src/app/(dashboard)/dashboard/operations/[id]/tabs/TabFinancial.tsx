@@ -36,6 +36,11 @@ import {
   replaceDocxFiscalAndDate,
   replaceDocxChairman,
   sanitizeChairmanTitle,
+  getOperationRecipientTitle,
+  getOperationFiscalYear,
+  getOperationTechnicalOpeningDate,
+  getOperationTenderMethod,
+  getSharedOperationScope,
 } from "./letter-utils";
 import JSZip from "jszip";
 import QRCode from "qrcode";
@@ -311,12 +316,7 @@ export function TabFinancial({
     return savedFin?.recipientPrefix || "الأستاذ";
   });
   const [recipientTitleAndAuthority, setRecipientTitleAndAuthority] = useState(() => {
-    return (
-      savedFin?.recipientTitleAndAuthority ||
-      (op.authority
-        ? `مدير الادارة العامة للمشتريات والمخازن بـ ${op.authority}`
-        : "مدير الادارة العامة للمشتريات والمخازن بجامعة دمنهور")
-    );
+    return getOperationRecipientTitle(op, savedFin?.recipientTitleAndAuthority);
   });
 
   const [subjectTarget, setSubjectTarget] = useState(() => {
@@ -329,14 +329,10 @@ export function TabFinancial({
     return savedFin?.operationNumber || op.externalNumber || (op.serialNumber ? String(op.serialNumber) : "") || "";
   });
   const [fiscalYear, setFiscalYear] = useState(() => {
-    return savedFin?.fiscalYear || "2024 / 2025";
+    return getOperationFiscalYear(op, savedFin?.fiscalYear);
   });
   const [financialOpeningDate, setFinancialOpeningDate] = useState(() => {
-    if (savedFin?.financialOpeningDate) return savedFin.financialOpeningDate;
-    const d = op.dates?.find((dt: any) => dt.type === "FINANCIAL_OPENING" || dt.title?.includes("مالي") || dt.type === "TECHNICAL_OPENING");
-    if (d?.dateValue) return formatDate(d.dateValue);
-    if (d?.date) return formatDate(d.date);
-    return "14/ 1 /2024";
+    return getOperationTechnicalOpeningDate(op, savedFin?.financialOpeningDate);
   });
 
   // مزامنة تلقائية للبيانات إذا تغيرت العملية الأصلية دون وجود تعديل يدوي محفوظ

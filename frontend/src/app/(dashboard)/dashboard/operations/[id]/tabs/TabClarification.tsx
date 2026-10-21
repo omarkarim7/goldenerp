@@ -39,6 +39,10 @@ import {
   replaceDocxFiscalAndDate,
   replaceDocxChairman,
   sanitizeChairmanTitle,
+  getOperationRecipientTitle,
+  getOperationFiscalYear,
+  getOperationTechnicalOpeningDate,
+  getOperationTenderMethod,
 } from "./letter-utils";
 import { GOLDEN_STAMP_BASE64, GOLDEN_LOGO_BASE64 } from "./stamp-assets";
 import JSZip from "jszip";
@@ -229,12 +233,9 @@ export function TabClarification({
   const [recipientPrefix, setRecipientPrefix] = useState(
     savedLetter?.recipientPrefix || "الأستاذ"
   );
-  const [recipientTitleAndAuthority, setRecipientTitleAndAuthority] = useState(
-    savedLetter?.recipientTitleAndAuthority ||
-    (op.authority
-      ? `مدير الادارة العامة للمشتريات والمخازن بـ ${op.authority}`
-      : "مدير الادارة العامة للمشتريات والمخازن بجامعة دمنهور")
-  );
+  const [recipientTitleAndAuthority, setRecipientTitleAndAuthority] = useState(() => {
+    return getOperationRecipientTitle(op, savedLetter?.recipientTitleAndAuthority);
+  });
 
   const [subjectTarget, setSubjectTarget] = useState(
     savedLetter?.subjectTarget || "للأصناف"
@@ -245,23 +246,19 @@ export function TabClarification({
   const [operationNumber, setOperationNumber] = useState(
     savedLetter?.operationNumber || op.externalNumber || (op.serialNumber ? String(op.serialNumber) : "") || ""
   );
-  const [tenderMethod, setTenderMethod] = useState(
-    savedLetter?.tenderMethod || "بالمناقصة المحدودة"
-  );
-  const [operationScope, setOperationScope] = useState(
-    getSharedOperationScope(op, savedLetter?.operationScope)
-  );
-  const [fiscalYear, setFiscalYear] = useState(
-    savedLetter?.fiscalYear || "2024 / 2025"
-  );
+  const [tenderMethod, setTenderMethod] = useState(() => {
+    return savedLetter?.tenderMethod || getOperationTenderMethod(op);
+  });
+  const [operationScope, setOperationScope] = useState(() => {
+    return getSharedOperationScope(op, savedLetter?.operationScope);
+  });
+  const [fiscalYear, setFiscalYear] = useState(() => {
+    return getOperationFiscalYear(op, savedLetter?.fiscalYear);
+  });
 
   // تاريخ جلسة فتح المظروف الفني
   const [technicalOpeningDate, setTechnicalOpeningDate] = useState(() => {
-    if (savedLetter?.technicalOpeningDate) return savedLetter.technicalOpeningDate;
-    const d = op.dates?.find((dt: any) => dt.type === "TECHNICAL_OPENING" || dt.title?.includes("فني"));
-    if (d?.dateValue) return formatDate(d.dateValue);
-    if (d?.date) return formatDate(d.date);
-    return "14/ 1 /2024";
+    return getOperationTechnicalOpeningDate(op, savedLetter?.technicalOpeningDate);
   });
 
   // مزامنة تلقائية للبيانات إذا تغيرت العملية الأصلية دون وجود تعديل يدوي مخصص محفوظ
