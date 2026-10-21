@@ -148,14 +148,19 @@ export async function getPdfBlobFromDocx(
     const res = await api.post("/operations/convert-docx-to-pdf", formData, {
       headers: { "Content-Type": "multipart/form-data" },
       responseType: "blob",
-      timeout: 25000,
+      timeout: 40000,
     });
 
     if (res.data && res.data.size > 1000) {
-      return res.data;
+      if (res.data.type === "application/json") {
+        const text = await res.data.text();
+        console.warn("استجابة غير متوقعة من السيرفر عند تحويل PDF:", text);
+      } else {
+        return res.data;
+      }
     }
   } catch (err) {
-    console.warn("محرك Word COM غير متاح بالخادم، جاري استخدام التحويل الداخلي بالمتصفح بخطوط الوورد المعتمدة:", err);
+    console.warn("تعذر التحويل عبر السيرفر الرسمي (Adobe/Word COM)، جاري استخدام التحويل الداخلي بالمتصفح:", err);
   }
 
   // 2. التحويل الذكي في المتصفح بالخطوط العربية الأصلية (يعمل 100% على Vercel وجميع الأنظمة)

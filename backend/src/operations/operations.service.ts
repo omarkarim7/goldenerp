@@ -1687,7 +1687,17 @@ export class OperationsService {
    * - المحرك الثاني (تلقائي): سكربت تحويل سحابي ذكي ومجاني 100% عبر iLovePDF (يعمل آلياً بدون أي مفاتيح API أو تكلفة).
    */
   async convertDocxBufferToPdf(docxBuffer: Buffer): Promise<Buffer> {
-    // 1. محاولة التحويل عبر محرك Microsoft Word Desktop المحلي أولاً (بدقة 100% وبكامل الخطوط على Windows)
+    // 1. محاولة التحويل عبر Adobe PDF Services API الرسمي أولاً (إذا تم تزويد مفاتيح ADOBE_CLIENT_ID و ADOBE_CLIENT_SECRET)
+    // يضمن دقة 100% متطابقة مع Microsoft Word بما يشمل الهيدر، اللوجو، الباركود، والخطوط الأصلية
+    if (process.env.ADOBE_CLIENT_ID && process.env.ADOBE_CLIENT_SECRET) {
+      try {
+        return await this.convertDocxViaAdobePdfServices(docxBuffer);
+      } catch (adobeErr: any) {
+        this.logger.warn(`فشل التحويل عبر Adobe PDF Services API: ${adobeErr?.message}`);
+      }
+    }
+
+    // 2. محاولة التحويل عبر محرك Microsoft Word Desktop المحلي (على Windows)
     if (process.platform === 'win32') {
       try {
         return await this.convertDocxViaWordCom(docxBuffer);
@@ -1699,15 +1709,6 @@ export class OperationsService {
         } catch (retryErr: any) {
           this.logger.warn(`فشلت إعادة محاولة Word COM المحلي: ${retryErr?.message}`);
         }
-      }
-    }
-
-    // 2. محاولة التحويل عبر Adobe PDF Services API الرسمي (إذا تم تزويد مفاتيح ADOBE_CLIENT_ID و ADOBE_CLIENT_SECRET)
-    if (process.env.ADOBE_CLIENT_ID && process.env.ADOBE_CLIENT_SECRET) {
-      try {
-        return await this.convertDocxViaAdobePdfServices(docxBuffer);
-      } catch (adobeErr: any) {
-        this.logger.warn(`فشل التحويل عبر Adobe PDF Services API: ${adobeErr?.message}`);
       }
     }
 
