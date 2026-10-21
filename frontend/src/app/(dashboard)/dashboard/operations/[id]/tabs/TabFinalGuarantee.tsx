@@ -360,11 +360,11 @@ export function TabFinalGuarantee({
     let qrDrawingXml = "";
     try {
       const activeCloud = cloudUrls[type];
-      const isDirectPdf = activeCloud && !activeCloud.includes("gofile.io") && !activeCloud.includes("tmpfiles.org");
+      const isDirectPdf = activeCloud && (activeCloud.startsWith("http://") || activeCloud.startsWith("https://")) && !activeCloud.includes("gofile.io") && !activeCloud.includes("tmpfiles.org");
       const origin = typeof window !== "undefined" ? window.location.origin : "https://goldenerp-tau.vercel.app";
       const targetVerifyUrl = isDirectPdf
         ? activeCloud
-        : `${origin}/verify-doc?ref=${encodeURIComponent(registrationNumber)}&opId=${op.id}&type=guarantee_final_${type}`;
+        : `${origin}/verify-doc?ref=${encodeURIComponent(registrationNumber)}&opId=${op.id}&type=guarantee_final_${type}&printedBy=${encodeURIComponent(getCurrentUserName())}&printedAt=${Date.now()}`;
 
       const qrDataUrl = await QRCode.toDataURL(targetVerifyUrl, { width: 160, margin: 1 });
       const qrBase64 = qrDataUrl.split(",")[1];
@@ -811,25 +811,30 @@ export function TabFinalGuarantee({
   };
 
   const handleSaveToSystem = async () => {
+    const snapToSave = currentSnapshot;
+    setSavedSnapshot(snapToSave);
     setSavingState(true);
+    toast.success("تم حفظ إعدادات وبيانات التأمين النهائي بنجاح! 💾✨");
+
     try {
       let existingNotes: any = {};
       if (op.notes && op.notes.startsWith("{")) existingNotes = JSON.parse(op.notes);
       else if (op.notes) existingNotes = { textNotes: op.notes };
 
-      existingNotes.finalGuaranteeLetter = JSON.parse(currentSnapshot);
+      existingNotes.finalGuaranteeLetter = {
+        ...(existingNotes.finalGuaranteeLetter || {}),
+        ...JSON.parse(snapToSave),
+        cloudUrls,
+        printHistory,
+      };
       existingNotes.operationScope = operationScope;
       existingNotes.fiscalYear = fiscalYear;
 
       await api.patch(`/operations/${op.id}`, {
         notes: JSON.stringify(existingNotes),
       });
-
-      setSavedSnapshot(currentSnapshot);
-      toast.success("تم حفظ إعدادات وبيانات التأمين النهائي بنجاح! 💾☁️");
-      onRefresh();
     } catch (err: any) {
-      toast.error(err?.response?.data?.message || "فشل الحفظ في قاعدة البيانات");
+      toast.error(err?.response?.data?.message || "فشل الحفظ في السيرفر");
     } finally {
       setSavingState(false);
     }

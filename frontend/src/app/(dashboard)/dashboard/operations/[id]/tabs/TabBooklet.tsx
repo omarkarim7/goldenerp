@@ -457,8 +457,6 @@ export function TabBooklet({
       financeManagerName,
       boardChairman,
       additionalNotes,
-      cloudUrls,
-      printHistory,
     });
   }, [
     activeLetterType, selectedCompanyId, registrationNumber, companyOpCode,
@@ -473,7 +471,7 @@ export function TabBooklet({
     guaranteeDurationText, guaranteeStartDate, guaranteeEndDate,
     bankAccountNumber, accountBankName, accountBankBranch, accountOwnerName,
     accountOwnerNationalId, specialistTitle, specialistName, financeManagerName,
-    boardChairman, additionalNotes, cloudUrls, printHistory,
+    boardChairman, additionalNotes,
   ]);
 
   const [savedSnapshot, setSavedSnapshot] = useState<string>(() => currentSnapshot);
@@ -481,7 +479,12 @@ export function TabBooklet({
   const [savingChanges, setSavingChanges] = useState<boolean>(false);
 
   const handleSaveAll = async () => {
+    // تحديث فوري مباشر (Optimistic UI) بدون أي تأخير
+    const snapshotToSave = currentSnapshot;
+    setSavedSnapshot(snapshotToSave);
     setSavingChanges(true);
+    toast.success("تم حفظ بيانات خطابات الكراسة والتأمين بنجاح! 💾✨");
+
     try {
       let notesObj: any = {};
       try {
@@ -490,19 +493,20 @@ export function TabBooklet({
         }
       } catch {}
 
-      notesObj.bookletLettersDocx = JSON.parse(currentSnapshot);
+      notesObj.bookletLettersDocx = {
+        ...(notesObj.bookletLettersDocx || {}),
+        ...JSON.parse(snapshotToSave),
+        cloudUrls,
+        printHistory,
+      };
       notesObj.operationScope = operationScope;
       notesObj.fiscalYear = fiscalYear;
 
       await api.patch(`/operations/${op.id}`, {
         notes: JSON.stringify(notesObj),
       });
-
-      setSavedSnapshot(currentSnapshot);
-      toast.success("تم حفظ بيانات خطابات الكراسة والتأمين في قاعدة البيانات بنجاح! 💾☁️");
-      onRefresh();
     } catch {
-      toast.error("فشل حفظ التعديلات");
+      toast.error("فشل حفظ التعديلات في السيرفر");
     } finally {
       setSavingChanges(false);
     }
@@ -590,8 +594,11 @@ export function TabBooklet({
     let qrDrawingXml = "";
     try {
       const activeCloud = cloudUrls[type];
-      const isDirectPdf = activeCloud && !activeCloud.includes("gofile.io") && !activeCloud.includes("tmpfiles.org");
-      const targetVerifyUrl = isDirectPdf ? activeCloud : registrationNumber;
+      const isDirectPdf = activeCloud && (activeCloud.startsWith("http://") || activeCloud.startsWith("https://")) && !activeCloud.includes("gofile.io") && !activeCloud.includes("tmpfiles.org");
+      const origin = typeof window !== "undefined" ? window.location.origin : "https://goldenerp-tau.vercel.app";
+      const targetVerifyUrl = isDirectPdf
+        ? activeCloud
+        : `${origin}/verify-doc?ref=${encodeURIComponent(registrationNumber)}&opId=${op.id}&type=booklet_${type}&printedBy=${encodeURIComponent(getCurrentUserName())}&printedAt=${Date.now()}`;
       const qrDataUrl = await QRCode.toDataURL(targetVerifyUrl, { width: 160, margin: 1 });
       const qrBase64 = qrDataUrl.split(",")[1];
       const qrBinary = Uint8Array.from(atob(qrBase64), (c) => c.charCodeAt(0));

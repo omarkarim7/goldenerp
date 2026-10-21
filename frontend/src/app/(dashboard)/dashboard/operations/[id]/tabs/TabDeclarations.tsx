@@ -378,7 +378,11 @@ export function TabDeclarations({
           : type === "insurance"
           ? cloudPdfUrlInsurance
           : cloudPdfUrlGeneral;
-      const targetVerifyUrl = activeCloud || registrationNumber;
+      const isDirectPdf = activeCloud && (activeCloud.startsWith("http://") || activeCloud.startsWith("https://")) && !activeCloud.includes("gofile.io") && !activeCloud.includes("tmpfiles.org");
+      const origin = typeof window !== "undefined" ? window.location.origin : "https://goldenerp-tau.vercel.app";
+      const targetVerifyUrl = isDirectPdf
+        ? activeCloud
+        : `${origin}/verify-doc?ref=${encodeURIComponent(registrationNumber)}&opId=${op.id}&type=declaration_${type}&printedBy=${encodeURIComponent(getCurrentUserName())}&printedAt=${Date.now()}`;
       const qrDataUrl = await QRCode.toDataURL(targetVerifyUrl, { width: 160, margin: 1 });
       const qrBase64 = qrDataUrl.split(",")[1];
       const qrBinary = Uint8Array.from(atob(qrBase64), (c) => c.charCodeAt(0));
@@ -853,7 +857,11 @@ export function TabDeclarations({
 
   // حفظ الإقرارات في قاعدة بيانات النظام
   const handleSaveToSystem = async () => {
+    const snapToSave = currentSnapshot;
+    setSavedSnapshot(snapToSave);
     setSavingState(true);
+    toast.success("تم حفظ بيانات الإقرارات بنجاح! 💾✨");
+
     try {
       let existingNotesObj: Record<string, any> = {};
       try {
@@ -865,35 +873,11 @@ export function TabDeclarations({
       } catch {}
 
       existingNotesObj.declarationsDocx = {
-        activeDeclType,
-        selectedCompanyId,
-        registrationNumber,
-        companyOpCode,
-        companyCommercialRegister,
-        companyTaxCard,
-        phoneWhatsapp,
-        phoneMobile,
-        companyAddress,
-        companyEmail,
-        outgoingDate,
-        recipientPrefix,
-        recipientTitleAndAuthority,
-        operationRegisteredName,
-        operationNumber,
-        tenderMethod,
-        operationScope,
-        fiscalYear,
-        technicalOpeningDate,
-        specialistTitle,
-        specialistName,
-        financeManagerName,
-        boardChairman,
-        additionalNotes,
+        ...(existingNotesObj.declarationsDocx || {}),
+        ...JSON.parse(snapToSave),
         cloudPdfUrlSpecs,
         cloudPdfUrlInsurance,
         cloudPdfUrlGeneral,
-        generalSubject,
-        generalLetterBody,
       };
 
       existingNotesObj.operationScope = operationScope;
@@ -902,12 +886,8 @@ export function TabDeclarations({
       await api.patch(`/operations/${op.id}`, {
         notes: JSON.stringify(existingNotesObj),
       });
-
-      setSavedSnapshot(currentSnapshot);
-      toast.success("تم حفظ بيانات الإقرارات الرسمية في قاعدة البيانات بنجاح! 💾☁️");
-      onRefresh();
     } catch (err: any) {
-      toast.error(err?.response?.data?.message || "فشل الحفظ في قاعدة البيانات");
+      toast.error(err?.response?.data?.message || "فشل الحفظ في السيرفر");
     } finally {
       setSavingState(false);
     }

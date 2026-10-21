@@ -17,11 +17,13 @@ export async function GET(
 
     const safeName = decodeURIComponent(fileName).replace(/[^a-zA-Z0-9_\-\.]/g, "");
     
-    // Look in possible cloud doc directories
+    // Look in possible cloud doc directories across frontend, backend and temp
     const searchDirs = [
       path.resolve(process.cwd(), "public", "cloud_docs"),
-      path.resolve(os.tmpdir(), "cloud_docs"),
+      path.resolve(process.cwd(), "..", "backend", "uploads", "cloud_docs"),
+      path.resolve(process.cwd(), "..", "uploads", "cloud_docs"),
       path.resolve(process.cwd(), "uploads", "cloud_docs"),
+      path.resolve(os.tmpdir(), "cloud_docs"),
       os.tmpdir(),
     ];
 
@@ -36,7 +38,22 @@ export async function GET(
     }
 
     if (!foundBuffer) {
-      // Redirect to verification page if file not locally found
+      // Try querying the backend server if running
+      try {
+        const backendRes = await fetch(`http://localhost:4000/api/operations/public-doc/${encodeURIComponent(safeName)}`, {
+          signal: AbortSignal.timeout(3000),
+        });
+        if (backendRes.ok) {
+          const ab = await backendRes.arrayBuffer();
+          if (ab && ab.byteLength > 100) {
+            foundBuffer = Buffer.from(ab);
+          }
+        }
+      } catch {}
+    }
+
+    if (!foundBuffer) {
+      // Redirect to verification page if file not found
       const host = req.headers.get("host") || "";
       const proto = req.headers.get("x-forwarded-proto") || "https";
       return NextResponse.redirect(`${proto}://${host}/verify-doc?ref=${encodeURIComponent(safeName)}`);

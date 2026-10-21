@@ -513,7 +513,11 @@ export function TabClarification({
     // توليد رمز التحقق الرقمي والباركود للنسخة الرقمية
     let qrDrawingXml = "";
     try {
-      const targetVerifyUrl = cloudPdfUrl || registrationNumber;
+      const isDirectPdf = cloudPdfUrl && (cloudPdfUrl.startsWith("http://") || cloudPdfUrl.startsWith("https://")) && !cloudPdfUrl.includes("gofile.io") && !cloudPdfUrl.includes("tmpfiles.org");
+      const origin = typeof window !== "undefined" ? window.location.origin : "https://goldenerp-tau.vercel.app";
+      const targetVerifyUrl = isDirectPdf
+        ? cloudPdfUrl
+        : `${origin}/verify-doc?ref=${encodeURIComponent(registrationNumber)}&opId=${op.id}&type=clarification&printedBy=${encodeURIComponent(getCurrentUserName())}&printedAt=${Date.now()}`;
       const qrDataUrl = await QRCode.toDataURL(targetVerifyUrl, { width: 160, margin: 1 });
       const qrBase64 = qrDataUrl.split(",")[1];
       const qrBinary = Uint8Array.from(atob(qrBase64), (c) => c.charCodeAt(0));
@@ -988,7 +992,11 @@ export function TabClarification({
 
   // حفظ الخطاب في قاعدة بيانات النظام
   const handleSaveToSystem = async () => {
+    const snapToSave = currentSnapshot;
+    setSavedSnapshot(snapToSave);
     setSavingLetter(true);
+    toast.success("تم حفظ بيانات خطاب التوضيح بنجاح! 💾✨");
+
     try {
       let existingNotesObj: Record<string, any> = {};
       try {
@@ -1000,35 +1008,10 @@ export function TabClarification({
       } catch {}
 
       existingNotesObj.clarificationLetter = {
-        selectedCompanyId,
-        registrationNumber,
-        outgoingDate,
-        companyCommercialRegister,
-        companyTaxCard,
-        companyOpCode,
-        companyWhatsapp,
-        companyMobile,
-        companyEmail,
-        companyAddress,
-        recipientPrefix,
-        recipientTitleAndAuthority,
-        subjectTarget,
-        operationRegisteredName,
-        operationNumber,
-        tenderMethod,
-        operationScope,
-        fiscalYear,
-        technicalOpeningDate,
-        inquiryAspect,
-        companyRequest,
-        inquiries,
-        itemHeaderLabel,
-        inquiryColumnLabel,
-        specialistTitle,
-        specialistName,
-        financeManagerName,
-        boardChairman,
+        ...(existingNotesObj.clarificationLetter || {}),
+        ...JSON.parse(snapToSave),
         cloudPdfUrl,
+        printHistory,
       };
 
       existingNotesObj.operationScope = operationScope;
@@ -1037,12 +1020,8 @@ export function TabClarification({
       await api.patch(`/operations/${op.id}`, {
         notes: JSON.stringify(existingNotesObj),
       });
-
-      setSavedSnapshot(currentSnapshot);
-      toast.success("تم حفظ بيانات خطاب التوضيح في قاعدة البيانات بنجاح! 💾☁️");
-      onRefresh();
     } catch (err: any) {
-      toast.error(err?.response?.data?.message || "فشل الحفظ في قاعدة البيانات");
+      toast.error(err?.response?.data?.message || "فشل الحفظ في السيرفر");
     } finally {
       setSavingLetter(false);
     }

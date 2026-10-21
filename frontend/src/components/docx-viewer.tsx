@@ -13,7 +13,7 @@ import {
   FileDown,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { getPdfBlobFromDocx } from "@/app/(dashboard)/dashboard/operations/[id]/tabs/client-pdf";
+import { getPdfBlobFromDocx, getLastPdfEngineUsed } from "@/app/(dashboard)/dashboard/operations/[id]/tabs/client-pdf";
 
 interface DocxViewerProps {
   blob: Blob | null;
@@ -229,11 +229,17 @@ export function DocxViewer({
               </span>
               <span className="px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 font-bold text-[10px] flex items-center gap-1 shadow-xs">
                 <CheckCircle2 className="h-3 w-3" />
-                معاينة PDF المعتمدة 100%
+                {getLastPdfEngineUsed() === "Instant Cache"
+                  ? "⚡ معاينة فورية (نسخة معتمدة محفوظة مسبقاً)"
+                  : getLastPdfEngineUsed() === "Adobe PDF"
+                  ? "معاينة Adobe PDF Services الرسمية 100%"
+                  : "معاينة Word COM الرسمية 100%"}
               </span>
             </div>
             <span className="text-[10px] text-slate-400 hidden sm:inline">
-              معاينة رسمية مطابقة تماماً لمستند الوورد الأصلي بدقة متجهة فائقة
+              {getLastPdfEngineUsed() === "Instant Cache"
+                ? "تم فتح النسخة المعتمدة مباشرة في 0ms بدون استهلاك كوتا التحويل لعدم وجود تعديلات جديدة"
+                : "معاينة رسمية مطابقة تماماً لمستند الوورد الأصلي بدقة متجهة فائقة"}
             </span>
           </div>
         </div>

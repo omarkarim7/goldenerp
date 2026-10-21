@@ -725,7 +725,11 @@ export function TabFinancial({
     // توليد رمز التحقق الرقمي المباشر
     let qrDrawingXml = "";
     try {
-      const targetVerifyUrl = cloudPdfUrl || registrationNumber;
+      const isDirectPdf = cloudPdfUrl && (cloudPdfUrl.startsWith("http://") || cloudPdfUrl.startsWith("https://")) && !cloudPdfUrl.includes("gofile.io") && !cloudPdfUrl.includes("tmpfiles.org");
+      const origin = typeof window !== "undefined" ? window.location.origin : "https://goldenerp-tau.vercel.app";
+      const targetVerifyUrl = isDirectPdf
+        ? cloudPdfUrl
+        : `${origin}/verify-doc?ref=${encodeURIComponent(registrationNumber)}&opId=${op.id}&type=financial&printedBy=${encodeURIComponent(getCurrentUserName())}&printedAt=${Date.now()}`;
       const qrDataUrl = await QRCode.toDataURL(targetVerifyUrl, { width: 160, margin: 1 });
       const qrBase64 = qrDataUrl.split(",")[1];
       const qrBinary = Uint8Array.from(atob(qrBase64), (c) => c.charCodeAt(0));
@@ -867,7 +871,11 @@ export function TabFinancial({
 
   // ━━━ حفظ التعديلات ━━━
   const handleSaveOffer = async () => {
+    const snapToSave = currentSnapshot;
+    setSavedSnapshot(snapToSave);
     setSavingOffer(true);
+    toast.success("تم حفظ جميع تعديلات العرض المالي بنجاح! 💾✨");
+
     try {
       let currentNotesObj: any = {};
       try {
@@ -876,54 +884,18 @@ export function TabFinancial({
         }
       } catch {}
 
-      const finPayload = {
-        selectedCompanyId,
-        registrationNumber,
-        companyOpCode,
-        companyCommercialRegister,
-        companyTaxCard,
-        phoneWhatsapp,
-        phoneMobile,
-        companyAddress,
-        issueDate,
-        barcodeRef,
+      currentNotesObj.financialOfferDocx = {
+        ...(currentNotesObj.financialOfferDocx || {}),
+        ...JSON.parse(snapToSave),
         cloudPdfUrl,
-        recipientPrefix,
-        recipientTitleAndAuthority,
-        subjectTarget,
-        operationRegisteredName,
-        operationNumber,
-        fiscalYear,
-        financialOpeningDate,
-        items,
-        taxCondition,
-        vatRate,
-        subtotal,
-        grandTotal,
-        tafqeetText,
-        warrantyDuration,
-        warrantyTerms,
-        condition1,
-        condition2,
-        condition3,
-        condition4,
-        specialistTitle,
-        specialistName,
-        financeManagerName,
-        boardChairman,
+        printHistory,
         updatedAt: new Date().toISOString(),
       };
-
-      currentNotesObj.financialOfferDocx = finPayload;
       currentNotesObj.fiscalYear = fiscalYear;
 
       await api.patch(`/operations/${op.id}`, {
         notes: JSON.stringify(currentNotesObj),
       });
-
-      setSavedSnapshot(currentSnapshot);
-      toast.success("تم حفظ جميع تعديلات العرض المالي بنجاح في قاعدة البيانات! 💾✨");
-      onRefresh();
     } catch (err: any) {
       console.error(err);
       toast.error("فشل حفظ التعديلات: " + (err?.response?.data?.message || err?.message || "خطأ اتصال"));

@@ -641,7 +641,11 @@ export function TabTechnical({
     // توليد رمز التحقق الرقمي والباركود للنسخة الرقمية
     let qrDrawingXml = "";
     try {
-      const targetVerifyUrl = cloudPdfUrl || registrationNumber;
+      const isDirectPdf = cloudPdfUrl && (cloudPdfUrl.startsWith("http://") || cloudPdfUrl.startsWith("https://")) && !cloudPdfUrl.includes("gofile.io") && !cloudPdfUrl.includes("tmpfiles.org");
+      const origin = typeof window !== "undefined" ? window.location.origin : "https://goldenerp-tau.vercel.app";
+      const targetVerifyUrl = isDirectPdf
+        ? cloudPdfUrl
+        : `${origin}/verify-doc?ref=${encodeURIComponent(registrationNumber)}&opId=${op.id}&type=technical&printedBy=${encodeURIComponent(getCurrentUserName())}&printedAt=${Date.now()}`;
       const qrDataUrl = await QRCode.toDataURL(targetVerifyUrl, { width: 160, margin: 1 });
       const qrBase64 = qrDataUrl.split(",")[1];
       const qrBinary = Uint8Array.from(atob(qrBase64), (c) => c.charCodeAt(0));
@@ -1105,7 +1109,11 @@ export function TabTechnical({
 
   // حفظ العرض الفني في قاعدة بيانات النظام
   const handleSaveToSystem = async () => {
+    const snapToSave = currentSnapshot;
+    setSavedSnapshot(snapToSave);
     setSavingOffer(true);
+    toast.success("تم حفظ بيانات العرض الفني بنجاح! 💾✨");
+
     try {
       let existingNotesObj: Record<string, any> = {};
       try {
@@ -1117,35 +1125,10 @@ export function TabTechnical({
       } catch {}
 
       existingNotesObj.technicalOfferDocx = {
-        selectedCompanyId,
-        registrationNumber,
-        companyOpCode,
-        companyCommercialRegister,
-        companyTaxCard,
-        phoneWhatsapp,
-        phoneMobile,
-        companyAddress,
-        issueDate,
-        barcodeRef,
-        recipientPrefix,
-        recipientTitleAndAuthority,
-        subjectTarget,
-        operationRegisteredName,
-        operationNumber,
-        fiscalYear,
-        technicalOpeningDate,
-        items,
-        warrantyDuration,
-        warrantyTerms,
-        condition1,
-        condition2,
-        condition3,
-        condition4,
-        specialistTitle,
-        specialistName,
-        financeManagerName,
-        boardChairman,
+        ...(existingNotesObj.technicalOfferDocx || {}),
+        ...JSON.parse(snapToSave),
         cloudPdfUrl,
+        printHistory,
       };
 
       existingNotesObj.fiscalYear = fiscalYear;
@@ -1153,12 +1136,8 @@ export function TabTechnical({
       await api.patch(`/operations/${op.id}`, {
         notes: JSON.stringify(existingNotesObj),
       });
-
-      setSavedSnapshot(currentSnapshot);
-      toast.success("تم حفظ بيانات العرض الفني في قاعدة البيانات بنجاح! 💾☁️");
-      onRefresh();
     } catch (err: any) {
-      toast.error(err?.response?.data?.message || "فشل الحفظ في قاعدة البيانات");
+      toast.error(err?.response?.data?.message || "فشل الحفظ في السيرفر");
     } finally {
       setSavingOffer(false);
     }

@@ -132,15 +132,67 @@ export async function convertDocxBlobToPdfBlob(docxBlob: Blob): Promise<Blob> {
 }
 
 const pdfConversionCache = new Map<string, Blob>();
-let lastPdfEngineUsed: "Word COM" | "Adobe PDF" = "Word COM";
+let lastPdfEngineUsed: "Word COM" | "Adobe PDF" | "Instant Cache" = "Word COM";
 
-export function getLastPdfEngineUsed(): "Word COM" | "Adobe PDF" {
+export function getLastPdfEngineUsed(): "Word COM" | "Adobe PDF" | "Instant Cache" {
   return lastPdfEngineUsed;
 }
 
+// ━━━ مخزن IndexedDB الدائم لحفظ مستندات الـ PDF وتوفير كوتا Adobe API ━━━
+const IDB_NAME = "goldenerp_pdf_vault";
+const IDB_STORE = "pdf_blobs";
+
+async function getFromPdfVault(key: string): Promise<Blob | null> {
+  if (typeof window === "undefined" || !window.indexedDB) return null;
+  return new Promise((resolve) => {
+    try {
+      const req = indexedDB.open(IDB_NAME, 1);
+      req.onupgradeneeded = () => {
+        if (!req.result.objectStoreNames.contains(IDB_STORE)) {
+          req.result.createObjectStore(IDB_STORE);
+        }
+      };
+      req.onsuccess = () => {
+        try {
+          const db = req.result;
+          const tx = db.transaction(IDB_STORE, "readonly");
+          const getReq = tx.objectStore(IDB_STORE).get(key);
+          getReq.onsuccess = () => resolve(getReq.result || null);
+          getReq.onerror = () => resolve(null);
+        } catch {
+          resolve(null);
+        }
+      };
+      req.onerror = () => resolve(null);
+    } catch {
+      resolve(null);
+    }
+  });
+}
+
+async function saveToPdfVault(key: string, blob: Blob): Promise<void> {
+  if (typeof window === "undefined" || !window.indexedDB) return;
+  try {
+    const req = indexedDB.open(IDB_NAME, 1);
+    req.onupgradeneeded = () => {
+      if (!req.result.objectStoreNames.contains(IDB_STORE)) {
+        req.result.createObjectStore(IDB_STORE);
+      }
+    };
+    req.onsuccess = () => {
+      try {
+        const db = req.result;
+        const tx = db.transaction(IDB_STORE, "readwrite");
+        tx.objectStore(IDB_STORE).put(blob, key);
+      } catch {}
+    };
+  } catch {}
+}
+
 /**
- * مولد مستندات PDF المعتمد:
- * - محلياً (بيئة التطوير والتجربة على جهازك Windows): يستخدم محرك Microsoft Word Desktop COM الأصلي عبر السيرفر المحلي.
+ * مولد مستندات PDF المعتمد والذكي:
+ * - فحص الكاش الفوري (0ms): إذا كان المستند تم تحويله سابقاً ولم تتغير بياناته، يتم فتحه فورياً مجاناً بدون استهلاك أي كوتا أو تحويل.
+ * - محلياً (بيئة التطوير على جهازك Windows): يستخدم محرك Microsoft Word Desktop COM الأصلي مجاناً.
  * - أونلاين (المشروع مرفوع على Vercel أو GitHub): يستخدم مجمع حسابات Adobe PDF Services API الرسمي.
  */
 export async function getPdfBlobFromDocx(
@@ -148,11 +200,22 @@ export async function getPdfBlobFromDocx(
   fileName: string = "document.docx"
 ): Promise<Blob> {
   const cacheKey = `${fileName}_${docxBlob.size}_${docxBlob.type}`;
+
+  // 1. فحص الكاش السريع في الذاكرة الحية (0ms)
   if (pdfConversionCache.has(cacheKey)) {
     const cached = pdfConversionCache.get(cacheKey)!;
     if (cached && cached.size > 1000) {
+      lastPdfEngineUsed = "Instant Cache";
       return cached;
     }
+  }
+
+  // 2. فحص مخزن المتصفح الدائم IndexedDB (0ms - توفير كوتا Adobe API حتى بعد تحديث الصفحة)
+  const persisted = await getFromPdfVault(cacheKey);
+  if (persisted && persisted.size > 1000) {
+    pdfConversionCache.set(cacheKey, persisted);
+    lastPdfEngineUsed = "Instant Cache";
+    return persisted;
   }
 
   const isLocalhost =
@@ -162,6 +225,7 @@ export async function getPdfBlobFromDocx(
       window.location.hostname.startsWith("192.168."));
 
   let finalPdf: Blob | null = null;
+
 
   // دالة مساعدة للتحويل عبر سيرفر الباك إند المحلي (Word COM على Windows)
   const tryBackendConversion = async (): Promise<Blob | null> => {
@@ -240,6 +304,7 @@ export async function getPdfBlobFromDocx(
 
   if (finalPdf && finalPdf.size > 1000) {
     pdfConversionCache.set(cacheKey, finalPdf);
+    await saveToPdfVault(cacheKey, finalPdf);
   }
 
   return finalPdf;

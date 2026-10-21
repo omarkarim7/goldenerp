@@ -13,7 +13,7 @@ import {
   FileDown,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { getPdfBlobFromDocx } from "@/app/(dashboard)/dashboard/operations/[id]/tabs/client-pdf";
+import { getPdfBlobFromDocx, getLastPdfEngineUsed } from "@/app/(dashboard)/dashboard/operations/[id]/tabs/client-pdf";
 
 export interface OnlyOfficeDocViewerProps {
   documentTitle: string;
@@ -243,11 +243,17 @@ export const OnlyOfficeDocViewer: React.FC<OnlyOfficeDocViewerProps> = ({
               </span>
               <span className="px-2.5 py-0.5 text-[11px] font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 rounded-full flex items-center gap-1.5 shadow-xs">
                 <CheckCircle2 className="w-3.5 h-3.5" />
-                معاينة PDF المعتمدة 100%
+                {getLastPdfEngineUsed() === "Instant Cache"
+                  ? "⚡ معاينة فورية (نسخة معتمدة محفوظة مسبقاً)"
+                  : getLastPdfEngineUsed() === "Adobe PDF"
+                  ? "معاينة Adobe PDF Services الرسمية 100%"
+                  : "معاينة Word COM الرسمية 100%"}
               </span>
             </div>
             <p className="text-[11px] text-slate-400 hidden sm:block">
-              معاينة طبق الأصل لملف الـ PDF الرسمي مطابقة تماماً لما يظهر على السحابة وGitHub
+              {getLastPdfEngineUsed() === "Instant Cache"
+                ? "تم فتح النسخة المعتمدة مباشرة في 0ms بدون استهلاك كوتا التحويل لعدم وجود تعديلات جديدة"
+                : "معاينة طبق الأصل لملف الـ PDF الرسمي مطابقة تماماً لما يظهر على السحابة وGitHub"}
             </p>
           </div>
         </div>
