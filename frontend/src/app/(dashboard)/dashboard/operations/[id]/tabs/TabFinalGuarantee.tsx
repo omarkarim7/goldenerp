@@ -35,6 +35,9 @@ import {
   getSharedOperationScope,
   replaceDocxScope,
   replaceDocxFiscalAndDate,
+  replaceDocxChairman,
+  sanitizeChairmanTitle,
+  FiscalYearSelect,
   getOperationRecipientTitle,
   getOperationFiscalYear,
   getOperationTechnicalOpeningDate,
@@ -195,6 +198,11 @@ export function TabFinalGuarantee({
   const [specialistTitle, setSpecialistTitle] = useState(() => savedSettings?.specialistTitle || "المختص / المندوب :");
   const [specialistName, setSpecialistName] = useState(() => savedSettings?.specialistName || "أحمد محمد");
   const [financeManagerName, setFinanceManagerName] = useState(() => savedSettings?.financeManagerName || "محمود إبراهيم");
+  const [boardChairman, setBoardChairman] = useState(() => {
+    if (savedSettings?.boardChairman) return sanitizeChairmanTitle(savedSettings.boardChairman);
+    const comp = currentCompanyLink?.company || op.companies?.[0]?.company;
+    return sanitizeChairmanTitle(comp?.managerName || "سحر حسن محمد أحمد عبد السلام");
+  });
   const [additionalNotes, setAdditionalNotes] = useState(() => savedSettings?.additionalNotes || "");
 
   // Cloud URLs per letter type (Catbox.moe / Gofile.io)
@@ -216,6 +224,9 @@ export function TabFinalGuarantee({
   const [previewPdfUrl, setPreviewPdfUrl] = useState<string | null>(null);
   const [previewDocxBlob, setPreviewDocxBlob] = useState<Blob | null>(null);
   const [previewPdfBlob, setPreviewPdfBlob] = useState<Blob | null>(null);
+  const [directPdfModalOpen, setDirectPdfModalOpen] = useState(false);
+  const [directPdfUrl, setDirectPdfUrl] = useState<string | null>(null);
+  const [generatingDirectPdf, setGeneratingDirectPdf] = useState(false);
   const [renderingDocx, setRenderingDocx] = useState(false);
   const [downloadingDocx, setDownloadingDocx] = useState(false);
   const [downloadingPdf, setDownloadingPdf] = useState(false);
@@ -282,6 +293,7 @@ export function TabFinalGuarantee({
       specialistTitle,
       specialistName,
       financeManagerName,
+      boardChairman,
       additionalNotes,
       cloudUrls,
     });
@@ -293,7 +305,7 @@ export function TabFinalGuarantee({
     initialGuaranteeFieldAmount, deductionOperationName, deductionMonth, deductionYear,
     bankRecipientTitle, bankTargetAuthority, bankTargetAddress, bankAccountNumber, bankNameAndBranch,
     accountHolderName, accountNationalId, guaranteeDurationText, guaranteeStartDate, guaranteeEndDate,
-    specialistTitle, specialistName, financeManagerName, additionalNotes, cloudUrls,
+    specialistTitle, specialistName, financeManagerName, boardChairman, additionalNotes, cloudUrls,
   ]);
 
   const [savedSnapshot, setSavedSnapshot] = useState<string>(() => currentSnapshot);
@@ -309,6 +321,7 @@ export function TabFinalGuarantee({
       setTotalAwardAmount(snap.totalAwardAmount);
       setSpecialistName(snap.specialistName);
       setFinanceManagerName(snap.financeManagerName);
+      if (snap.boardChairman) setBoardChairman(sanitizeChairmanTitle(snap.boardChairman));
       setAdditionalNotes(snap.additionalNotes);
       toast.info("تم التراجع عن التعديلات ↺");
     } catch {
@@ -327,7 +340,7 @@ export function TabFinalGuarantee({
     });
   };
 
-  // ━━━ Word Document Generation Engine ━━━
+  // ━━━ Word Document Generation Engine (محرك توليد مستندات الوورد المعتمدة بدقة 100%) ━━━
   const generateGuaranteeDocxBlob = async (type: FinalGuaranteeLetterType = activeLetterType): Promise<Blob> => {
     let templateFilename = "final_insurance_cash_template.docx";
     if (type === "DEDUCTION") templateFilename = "final_insurance_deduction_template.docx";
@@ -382,74 +395,99 @@ export function TabFinalGuarantee({
     const numInitial = Number(initialGuaranteeFieldAmount) || initialGuarAmount;
     const tafqeetInitial = tafqeetArabic(numInitial);
 
+    // 1. استبدال السيد / الموجه إليه بدقة 100%
     if (type === "BANK_GUARANTEE") {
-      // ━━━ متغيرات خطاب الضمان البنكي ━━━
-      docXml = docXml.replace(/مدير بنك مصر\s+فرع\s+دمنهور/g, escapeXml(bankRecipientTitle));
-      docXml = docXml.replace(/مديرية الصحة بالبحيرة/g, escapeXml(bankTargetAuthority));
-      docXml = docXml.replace(/البحيرة\s*–\s*دمنهور\s*-\s*خلف مستشفى الصدر/g, escapeXml(bankTargetAddress));
+      const recipientRegex = /(<w:t[^>]*>\s*\/\s*<\/w:t><\/w:r>)([\s\S]*?)(<\/w:p>)/;
+      docXml = docXml.replace(recipientRegex, `$1<w:r><w:rPr><w:rFonts w:ascii="Arabic Typesetting" w:hAnsi="Arabic Typesetting" w:cs="Arabic Typesetting" w:hint="cs"/><w:b/><w:bCs/><w:sz w:val="56"/><w:szCs w:val="56"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t xml:space="preserve"> ${escapeXml(bankRecipientTitle)}</w:t></w:r>$3`);
+
+      // الجهة المستفيدة من خطاب الضمان وعنوانها
+      const bankAuthRegex = /(<w:t[^>]*>[^<]*الجهه[^<]*<\/w:t><\/w:r>)([\s\S]*?)(<\/w:p>)/;
+      docXml = docXml.replace(bankAuthRegex, `$1<w:r><w:rPr><w:rFonts w:hint="cs"/><w:b/><w:bCs/><w:sz w:val="32"/><w:szCs w:val="32"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t xml:space="preserve"> ${escapeXml(bankTargetAuthority)} وعنوانها : ${escapeXml(bankTargetAddress)}</w:t></w:r>$3`);
+
+      // مدة الارتباط بالتأمين
+      const durationRegex = /(<w:t[^>]*>[^<]*ومدة\s*الارتباط\s*بالتأمين[^<]*<\/w:t><\/w:r>)([\s\S]*?)(<w:r\b[^>]*>(?:(?!<\/w:r>)[\s\S])*?<w:t[^>]*>[^<]*تبدأ\s*من[^<]*<\/w:t>[\s\S]*?<\/w:r>)/;
+      docXml = docXml.replace(durationRegex, `$1<w:r><w:rPr><w:rFonts w:hint="cs"/><w:b/><w:bCs/><w:sz w:val="32"/><w:szCs w:val="32"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t xml:space="preserve"> ${escapeXml(guaranteeDurationText)} </w:t></w:r>$3`);
+
+      docXml = docXml.replace(/12\/12\/2027/g, escapeXml(guaranteeStartDate));
+      docXml = docXml.replace(/12\/12\s*\/2028/g, escapeXml(guaranteeEndDate));
       docXml = docXml.replace(/2670220000004113/g, escapeXml(bankAccountNumber));
       docXml = docXml.replace(/مصر الاسلامى\s+فرع\s+:\s+دمنهور/g, escapeXml(bankNameAndBranch));
       docXml = docXml.replace(/مصر الاسلامى/g, escapeXml(bankNameAndBranch));
-      docXml = docXml.replace(/ســـحر حسن محمد أحمد عبد السلام جولدن سرفيس/g, escapeXml(accountHolderName));
+      docXml = docXml.replace(/ســـحر حسن محمد أحمد عبد السلام(?:\s+جولدن سرفيس)?/g, escapeXml(accountHolderName));
       docXml = docXml.replace(/سحر حسن محمد أحمد عبد السلام/g, escapeXml(accountHolderName));
       docXml = docXml.replace(/28912111802623/g, escapeXml(accountNationalId));
-      docXml = docXml.replace(/12\/12\/2027/g, escapeXml(guaranteeStartDate));
-      docXml = docXml.replace(/12\/12\s*\/2028/g, escapeXml(guaranteeEndDate));
     } else {
-      // ━━━ متغيرات خطابات جهة الإسناد الرسمية ━━━
-      docXml = docXml.replace(/الأستاذ/g, escapeXml(recipientPrefix));
-      docXml = docXml.replace(/مدير الادارة العامة للمشتريات والمخازن بجامعة دمنهور/g, escapeXml(recipientTitleAndAuthority));
+      const recipientRegex = /(<w:t[^>]*>\s*\/\s*<\/w:t><\/w:r>)([\s\S]*?)(<\/w:p>)/;
+      docXml = docXml.replace(recipientRegex, `$1<w:r><w:rPr><w:rFonts w:ascii="Arabic Typesetting" w:hAnsi="Arabic Typesetting" w:cs="Arabic Typesetting" w:hint="cs"/><w:b/><w:bCs/><w:sz w:val="56"/><w:szCs w:val="56"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t xml:space="preserve"> ${escapeXml(recipientTitleAndAuthority)}</w:t></w:r>$3`);
     }
 
-    // Shared Operation variables
-    docXml = docXml.replace(/اسم العملية المسجله[\s\.]*/g, escapeXml(operationRegisteredName) + " ");
-    docXml = docXml.replace(/365/g, escapeXml(operationNumber));
-    docXml = docXml.replace(/المناقصة المحدودة/g, escapeXml(tenderMethod));
+    // لقب المخاطب (السيد الأستاذ / المهندس / الدكتور)
+    const prefixRegex = /(<w:t[^>]*>السيد<\/w:t><\/w:r>)([\s\S]*?)(<w:r\b[^>]*>(?:(?!<\/w:r>)[\s\S])*?<w:t[^>]*>\s*\/\s*<\/w:t>[\s\S]*?<\/w:r>)/;
+    docXml = docXml.replace(prefixRegex, `$1<w:r><w:rPr><w:rFonts w:ascii="Arabic Typesetting" w:hAnsi="Arabic Typesetting" w:cs="Arabic Typesetting" w:hint="cs"/><w:b/><w:bCs/><w:sz w:val="56"/><w:szCs w:val="56"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t xml:space="preserve"> ${escapeXml(recipientPrefix)} </w:t></w:r>$3`);
+
+    // 2. أسلوب الطرح الرسمي (بالمناقصة العامة / المحدودة / الممارسة)
+    const tenderRegex = /(<w:t[^>]*>[^<]*والخاص[^<]*<\/w:t><\/w:r>)([\s\S]*?)(<w:r\b[^>]*>(?:(?!<\/w:r>)[\s\S])*?<w:t[^>]*>[^<]*لزوم[^<]*<\/w:t>[\s\S]*?<\/w:r>)/;
+    const methodWithBa = tenderMethod.startsWith("ب") ? tenderMethod : `بـ ${tenderMethod}`;
+    docXml = docXml.replace(tenderRegex, `$1<w:r><w:rPr><w:rFonts w:hint="cs"/><w:b/><w:bCs/><w:sz w:val="32"/><w:szCs w:val="32"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t xml:space="preserve"> ${escapeXml(methodWithBa)} </w:t></w:r>$3`);
+
+    // 3. نطاق وموضوع التوريد لزوم العملية (بدون أقواس)
     docXml = replaceDocxScope(docXml, operationScope);
+
+    // 4. السنة المالية وموعد جلسة فتح المظاريف
     docXml = replaceDocxFiscalAndDate(docXml, fiscalYear, technicalOpeningDate);
 
-    // Shared Amounts & Tafqeet
+    // 5. بيانات العملية العامة
+    docXml = docXml.replace(/اسم العملية المسجله[\s\.]*/g, escapeXml(operationRegisteredName) + " ");
+    docXml = docXml.replace(/365/g, escapeXml(operationNumber));
+
+    // 6. المبالغ والتفقيط
     docXml = docXml.replace(/37547/g, String(numPaid));
     docXml = docXml.replace(/سبعة وثلاثون ألفا وخمسمائة وسبعه وأربعون/g, tafqeetPaid);
     docXml = docXml.replace(/47547/g, String(numTotal));
     docXml = docXml.replace(/سبعه وأربعون ألفا وخمسمائة وسبعه وأربعون/g, tafqeetTotal);
 
-    // Initial Guarantee replacements
-    if (type === "DEDUCTION_AND_INITIAL" || type === "INITIAL_TRANSFER") {
-      docXml = docXml.replace(/10000|10\s*000/g, String(numInitial));
-      docXml = docXml.replace(/عشرة ألاف/g, tafqeetInitial);
-    }
-
-    // Deduction operation & period replacements
+    // 7. بيانات الخصم من مستحقات عملية أخرى
     if (type === "DEDUCTION" || type === "DEDUCTION_AND_INITIAL") {
-      docXml = docXml.replace(/عملية\s*\.{3,}/g, `عملية ${escapeXml(deductionOperationName)}`);
-      docXml = docXml.replace(/شهر\s*\.{3,}/g, `شهر ${escapeXml(deductionMonth)}`);
-      docXml = docXml.replace(/سنة\s*\.{3,}/g, `سنة ${escapeXml(deductionYear)}`);
+      const deductionRegex = /(<w:t[^>]*>[^<]*مستحقات\s*الشركة\s*لديكم\s*في\s*عملية[^<]*<\/w:t><\/w:r>)([\s\S]*?)(<w:r\b[^>]*>(?:(?!<\/w:r>)[\s\S])*?<w:t[^>]*>[^<]*والتي\s*تستحق[^<]*<\/w:t>[\s\S]*?<\/w:r>)/;
+      docXml = docXml.replace(deductionRegex, `$1<w:r><w:rPr><w:rFonts w:hint="cs"/><w:b/><w:bCs/><w:sz w:val="32"/><w:szCs w:val="32"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t xml:space="preserve"> ${escapeXml(deductionOperationName)} عن شهر ${escapeXml(deductionMonth)} سنة ${escapeXml(deductionYear)} </w:t></w:r>$3`);
     }
 
-    // Signatures & Notes
+    // 8. تحويل التأمين الابتدائي
+    if (type === "DEDUCTION_AND_INITIAL" || type === "INITIAL_TRANSFER") {
+      const initialRegex = /(<w:t[^>]*>[^<]*وتحويل\s*مبلغ\s*التأمين\s*ال[أا]بتدائ[ىي]\s*وقدره[^<]*<\/w:t><\/w:r>)([\s\S]*?)(<w:r\b[^>]*>(?:(?!<\/w:r>)[\s\S])*?<w:t[^>]*>[^<]*جنيه\s*لا\s*غير\s*ال[ىي]\s*تأمين\s*نهائي[^<]*<\/w:t>[\s\S]*?<\/w:r>)/;
+      docXml = docXml.replace(initialRegex, `$1<w:r><w:rPr><w:rFonts w:hint="cs"/><w:b/><w:bCs/><w:sz w:val="32"/><w:szCs w:val="32"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t xml:space="preserve"> ${String(numInitial)} فقط وقدره : ${tafqeetInitial} </w:t></w:r>$3`);
+    }
+
+    // 9. التوقيعات واعتماد رئيس مجلس الإدارة
     docXml = docXml.replace(/المختص\s*\/\s*المندوب\s*:/g, escapeXml(specialistTitle));
     docXml = docXml.replace(/المختص\s*:/g, escapeXml(specialistTitle));
     docXml = docXml.replace(/أحمد محمد/g, escapeXml(specialistName));
     docXml = docXml.replace(/توقيع صورة أو اسم/g, escapeXml(financeManagerName || " "));
     docXml = docXml.replace(/توقيع صورة/g, escapeXml(financeManagerName || " "));
+    docXml = replaceDocxChairman(docXml, boardChairman);
+
     if (additionalNotes.trim()) {
       docXml = docXml.replace(/خان[ةه] خالي[ةه] للملاحظات/g, escapeXml(additionalNotes));
     } else {
       docXml = docXml.replace(/خان[ةه] خالي[ةه] للملاحظات/g, "");
     }
 
-    // Header (word/header2.xml)
+    // 10. إزالة كافة علامات التمييز والألوان الحمراء
+    docXml = docXml.replace(/<w:highlight\s+[^>]*\/>/g, "");
+    docXml = docXml.replace(/<w:color\s+w:val=\"(red|FF0000)\"[^>]*\/>/g, "");
+
+    // 11. الترويسة والتذييل
     let hdrXml = await zip.file("word/header2.xml")?.async("text");
     if (hdrXml) {
       hdrXml = hdrXml.replace(/110200700036620/g, escapeXml(companyCommercialRegister));
       hdrXml = hdrXml.replace(/658369652/g, escapeXml(companyTaxCard));
       hdrXml = hdrXml.replace(/\(\s*كود العملية بالشركه\s*\)/g, `( ${escapeXml(companyOpCode)} )`);
       hdrXml = hdrXml.replace(/كود العملية بالشركه/g, escapeXml(companyOpCode));
+      hdrXml = hdrXml.replace(/<w:highlight\s+[^>]*\/>/g, "");
+      hdrXml = hdrXml.replace(/<w:color\s+w:val=\"(red|FF0000)\"[^>]*\/>/g, "");
       zip.file("word/header2.xml", hdrXml);
     }
 
-    // Footer (word/footer1.xml)
     let ftrXml = await zip.file("word/footer1.xml")?.async("text");
     if (ftrXml) {
       ftrXml = ftrXml.replace(/15\/10\/2026/g, escapeXml(outgoingDate));
@@ -461,11 +499,12 @@ export function TabFinalGuarantee({
       ftrXml = ftrXml.replace(/01557018818/g, escapeXml(phoneMobile));
       ftrXml = ftrXml.replace(/بجوار مستشفى ليدى كير\s*-\s*بدمنهور\s*-\s*البح\s*يره/g, escapeXml(companyAddress));
       ftrXml = ftrXml.replace(/goldengolden8818@gmail.com/g, escapeXml(companyEmail));
+      ftrXml = ftrXml.replace(/<w:highlight\s+[^>]*\/>/g, "");
+      ftrXml = ftrXml.replace(/<w:color\s+w:val=\"(red|FF0000)\"[^>]*\/>/g, "");
       zip.file("word/footer1.xml", ftrXml);
     }
 
-    // Strip red highlights & colors in all XML files
-    // إزالة كافة علامات التحديد الأحمر والعلامات المائية والصور التالفة
+    // إزالة أي علامات حمراء في كافة ملفات القالب
     await cleanAllDocxXml(zip);
 
     return await zip.generateAsync({
@@ -481,6 +520,54 @@ export function TabFinalGuarantee({
     setPreviewPdfBlob(pdf);
     setLastGeneratedSnapshot(currentSnapshot);
     return pdf;
+  };
+
+  const handleOpenDirectPdfPreview = async () => {
+    setGeneratingDirectPdf(true);
+    setDirectPdfModalOpen(true);
+    try {
+      if (directPdfUrl) {
+        URL.revokeObjectURL(directPdfUrl);
+        setDirectPdfUrl(null);
+      }
+      let pdfBlob = previewPdfBlob;
+      if (!pdfBlob || lastGeneratedSnapshot !== currentSnapshot) {
+        pdfBlob = await generateGuaranteePdfBlob(activeLetterType);
+      }
+      const url = URL.createObjectURL(pdfBlob);
+      setDirectPdfUrl(url);
+    } catch (err: any) {
+      toast.error("تعذر فتح ملف الـ PDF: " + (err?.message || ""));
+      setDirectPdfModalOpen(false);
+    } finally {
+      setGeneratingDirectPdf(false);
+    }
+  };
+
+  const loadOfficialPreview = async (type: FinalGuaranteeLetterType = activeLetterType) => {
+    setRenderingDocx(true);
+    setPreviewModalOpen(true);
+    try {
+      let docx = previewDocxBlob;
+      if (!docx || lastGeneratedSnapshot !== currentSnapshot) {
+        docx = await generateGuaranteeDocxBlob(type);
+        setPreviewDocxBlob(docx);
+      }
+      // إطلاق تحويل PDF في الخلفية لسرعة التحميل والطباعة
+      getPdfBlobFromDocx(docx, `final_guarantee_${type}_${registrationNumber}.docx`)
+        .then((pdf) => {
+          setPreviewPdfBlob(pdf);
+          setLastGeneratedSnapshot(currentSnapshot);
+          if (previewPdfUrl) URL.revokeObjectURL(previewPdfUrl);
+          const url = URL.createObjectURL(pdf);
+          setPreviewPdfUrl(url);
+        })
+        .catch((e) => console.warn("Background PDF preview notice:", e?.message));
+    } catch (err: any) {
+      toast.error("تعذر تجهيز المعاينة: " + (err?.message || ""));
+    } finally {
+      setRenderingDocx(false);
+    }
   };
 
   const handleUploadToCloud = async (type: FinalGuaranteeLetterType = activeLetterType, forceReupload = false) => {
@@ -518,28 +605,6 @@ export function TabFinalGuarantee({
       toast.error("فشل الرفع السحابي: " + (err?.response?.data?.message || err?.message || ""));
     } finally {
       setUploadingCloud(false);
-    }
-  };
-
-  const loadOfficialPreview = async () => {
-    if (previewPdfUrl && previewPdfBlob && lastGeneratedSnapshot === currentSnapshot) {
-      setPreviewModalOpen(true);
-      return;
-    }
-    setRenderingDocx(true);
-    setPreviewModalOpen(true);
-    try {
-      if (previewPdfUrl) {
-        URL.revokeObjectURL(previewPdfUrl);
-        setPreviewPdfUrl(null);
-      }
-      const pdfBlob = await generateGuaranteePdfBlob(activeLetterType);
-      const url = URL.createObjectURL(pdfBlob);
-      setPreviewPdfUrl(url);
-    } catch (err: any) {
-      toast.error("تعذر تجهيز المعاينة: " + (err?.message || ""));
-    } finally {
-      setRenderingDocx(false);
     }
   };
 
@@ -894,6 +959,62 @@ export function TabFinalGuarantee({
             5 نماذج معتمدة رسمياً
           </Badge>
         }
+        actions={
+          <div className="flex items-center gap-2 flex-wrap">
+            <Button
+              type="button"
+              size="sm"
+              onClick={() => loadOfficialPreview(activeLetterType)}
+              className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold h-8.5 px-3 rounded-xl cursor-pointer shadow-xs flex items-center gap-1.5"
+            >
+              <Eye className="h-4 w-4" />
+              <span>معاينة الخطاب الرسمي 👁️</span>
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={handleOpenDirectPdfPreview}
+              className="border-emerald-500/40 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-500/10 text-xs font-bold h-8.5 px-3 rounded-xl cursor-pointer flex items-center gap-1.5"
+            >
+              <FileCheck className="h-4 w-4" />
+              <span>معاينة PDF مباشرة 📑</span>
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={() => handleDownloadDocx(activeLetterType)}
+              disabled={downloadingDocx}
+              className="border-blue-500/40 text-blue-700 dark:text-blue-300 hover:bg-blue-500/10 text-xs font-bold h-8.5 px-3 rounded-xl cursor-pointer flex items-center gap-1.5"
+            >
+              {downloadingDocx ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
+              <span>تنزيل Word 📄</span>
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={() => handleDownloadPdf(activeLetterType)}
+              disabled={downloadingPdf}
+              className="border-amber-500/40 text-amber-700 dark:text-amber-300 hover:bg-amber-500/10 text-xs font-bold h-8.5 px-3 rounded-xl cursor-pointer flex items-center gap-1.5"
+            >
+              {downloadingPdf ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
+              <span>تنزيل PDF 📑</span>
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={handlePrintWordDocument}
+              disabled={printingDocx}
+              className="border-emerald-500/40 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-500/10 text-xs font-bold h-8.5 px-3 rounded-xl cursor-pointer flex items-center gap-1.5"
+            >
+              {printingDocx ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Printer className="h-3.5 w-3.5" />}
+              <span>طباعة فورية 🖨️</span>
+            </Button>
+          </div>
+        }
       >
         <div className="space-y-5">
           {/* Five Letter Selectors */}
@@ -961,6 +1082,143 @@ export function TabFinalGuarantee({
                 </button>
               );
             })}
+          </div>
+
+          {/* بيانات الشركة والترويسة ورقم القيد الصادر الذكي وتاريخ الخطاب */}
+          <div className="p-4 sm:p-5 rounded-2xl bg-card border border-border space-y-4">
+            <div className="flex items-center justify-between pb-2 border-b border-border flex-wrap gap-2">
+              <div className="flex items-center gap-2">
+                <Building2 className="h-4.5 w-4.5 text-blue-600" />
+                <h4 className="font-extrabold text-sm text-foreground">
+                  بيانات الشركة والترويسة ورقم القيد الصادر الذكي
+                </h4>
+              </div>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={handleRegenerateRef}
+                className="h-7 text-[11px] font-bold rounded-lg border-dashed hover:bg-muted"
+              >
+                <RefreshCw className="h-3.5 w-3.5 ml-1.5" />
+                <span>تحديث رقم القيد</span>
+              </Button>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
+              <div className="space-y-1.5">
+                <Label className="text-xs font-bold text-foreground">الشركة المشاركة بالعملية *</Label>
+                <Select
+                  value={selectedCompanyId}
+                  onValueChange={(val) => {
+                    setSelectedCompanyId(val || "");
+                    const link = op.companies?.find((c: any) => (c.companyId || c.id) === val);
+                    if (link?.company) {
+                      setCompanyCommercialRegister(link.company.commercialRegister || "");
+                      setCompanyTaxCard(link.company.taxCard || "");
+                      setCompanyAddress(link.company.address || "");
+                      setCompanyEmail(link.company.email || "");
+                      if (link.company.phone) setPhoneWhatsapp(link.company.phone);
+                      if (link.company.managerName) setBoardChairman(sanitizeChairmanTitle(link.company.managerName));
+                    }
+                    if (link?.displayCode) {
+                      setCompanyOpCode(link.displayCode);
+                      setRegistrationNumber(getUnifiedOperationRegistrationNumber(op, link.displayCode));
+                    }
+                  }}
+                >
+                  <SelectTrigger className="h-9.5 text-xs font-bold rounded-xl bg-background">
+                    <SelectValue placeholder="اختر الشركة">
+                      {currentCompanyLink?.company?.name
+                        ? `${currentCompanyLink.company.name} (${currentCompanyLink.displayCode || "A"})`
+                        : "اختر الشركة"}
+                    </SelectValue>
+                  </SelectTrigger>
+                  <SelectContent>
+                    {(op.companies || []).map((c: any) => {
+                      const val = c.companyId || c.id;
+                      return (
+                        <SelectItem key={val} value={val} className="text-xs font-bold">
+                          {c.company?.name || "الشركة"} ({c.displayCode})
+                        </SelectItem>
+                      );
+                    })}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-1.5">
+                <Label className="text-xs font-bold text-foreground">كود العملية بالشركة (الترويسة) *</Label>
+                <Input
+                  value={companyOpCode}
+                  onChange={(e) => setCompanyOpCode(e.target.value)}
+                  placeholder="( AZ-01 )"
+                  className="h-9.5 text-xs font-bold font-mono text-blue-700 dark:text-blue-300 rounded-xl text-center bg-background"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <Label className="text-xs font-bold text-foreground">رقم القيد الصادر الذكي *</Label>
+                <Input
+                  value={registrationNumber}
+                  onChange={(e) => setRegistrationNumber(e.target.value)}
+                  className="h-9.5 text-xs font-mono font-bold text-indigo-700 dark:text-indigo-300 rounded-xl text-center bg-background"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <Label className="text-xs font-bold text-foreground">تاريخ الصادر (التذييل) *</Label>
+                <Input
+                  value={outgoingDate}
+                  onChange={(e) => setOutgoingDate(e.target.value)}
+                  placeholder="15/10/2026"
+                  className="h-9.5 text-xs font-mono rounded-xl text-center font-bold bg-background"
+                />
+              </div>
+            </div>
+
+            {/* السجل التجاري والبطاقة الضريبية والهواتف */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5 pt-1">
+              <div className="space-y-1.5">
+                <Label className="text-xs font-bold text-foreground">السجل التجاري (س . ت بالترويسة) *</Label>
+                <Input
+                  value={companyCommercialRegister}
+                  onChange={(e) => setCompanyCommercialRegister(e.target.value)}
+                  placeholder="110200700036620"
+                  className="h-9.5 text-xs font-mono rounded-xl text-center font-bold bg-background"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <Label className="text-xs font-bold text-foreground">البطاقة الضريبية (ب . ض بالترويسة) *</Label>
+                <Input
+                  value={companyTaxCard}
+                  onChange={(e) => setCompanyTaxCard(e.target.value)}
+                  placeholder="658369652"
+                  className="h-9.5 text-xs font-mono rounded-xl text-center font-bold bg-background"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <Label className="text-xs font-bold text-foreground">هاتف الواتساب (التذييل) *</Label>
+                <Input
+                  value={phoneWhatsapp}
+                  onChange={(e) => setPhoneWhatsapp(e.target.value)}
+                  placeholder="01091708818"
+                  className="h-9.5 text-xs font-mono rounded-xl text-center font-bold bg-background"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <Label className="text-xs font-bold text-foreground">هاتف الموبايل (التذييل) *</Label>
+                <Input
+                  value={phoneMobile}
+                  onChange={(e) => setPhoneMobile(e.target.value)}
+                  placeholder="01557018818"
+                  className="h-9.5 text-xs font-mono rounded-xl text-center font-bold bg-background"
+                />
+              </div>
+            </div>
           </div>
 
           {/* Conditional Template Fields */}
@@ -1185,7 +1443,7 @@ export function TabFinalGuarantee({
             )}
 
             {/* Signatures & Notes */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2 border-t border-border">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 pt-2 border-t border-border">
               <div className="space-y-1.5">
                 <Label className="text-xs font-bold text-foreground">اسم المندوب / المختص</Label>
                 <Input
@@ -1201,6 +1459,17 @@ export function TabFinalGuarantee({
                   value={financeManagerName}
                   onChange={(e) => setFinanceManagerName(e.target.value)}
                   className="h-9.5 text-xs font-bold rounded-xl"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <Label className="text-xs font-bold text-emerald-700 dark:text-emerald-400">
+                  رئيس مجلس الإدارة (الاعتماد النهائي)
+                </Label>
+                <Input
+                  value={boardChairman}
+                  onChange={(e) => setBoardChairman(e.target.value)}
+                  className="h-9.5 text-xs font-bold rounded-xl border-emerald-500/30 focus-visible:ring-emerald-500"
                 />
               </div>
 
@@ -1561,6 +1830,70 @@ export function TabFinalGuarantee({
         </Portal>
       )}
 
+      {/* ━━━ MODAL: عرض نسخة الـ PDF الرسمية فقط المطبوعة (بدون وورد) ━━━ */}
+      {directPdfModalOpen && directPdfUrl && (
+        <Portal>
+          <div className="fixed inset-0 z-[999999] bg-black/85 backdrop-blur-md flex items-center justify-center p-2 sm:p-4 animate-fade-in">
+            <div className="bg-card border border-border rounded-3xl max-w-5xl w-full h-[92vh] flex flex-col overflow-hidden shadow-2xl text-foreground">
+              <div className="flex items-center justify-between p-4 border-b border-border bg-card">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-9 h-9 rounded-xl bg-red-500/15 text-red-600 flex items-center justify-center font-black">
+                    PDF
+                  </div>
+                  <div>
+                    <h3 className="font-extrabold text-sm text-foreground">
+                      عرض مستند PDF الرسمي المعتمد: {
+                        activeLetterType === "CASH"
+                          ? "خطاب سداد التأمين النهائي نقداً بالخزينة"
+                          : activeLetterType === "BANK_GUARANTEE"
+                          ? "خطاب إصدار خطاب ضمان بنكي للتأمين النهائي"
+                          : activeLetterType === "DEDUCTION"
+                          ? "خطاب خصم التأمين النهائي من مستحقات عملية أخرى"
+                          : activeLetterType === "INITIAL_TRANSFER"
+                          ? "خطاب تحويل التأمين الابتدائي إلى نهائي"
+                          : "خطاب خصم التأمين النهائي وتحويل التأمين الابتدائي"
+                      }
+                    </h3>
+                    <p className="text-[11px] text-muted-foreground font-mono">
+                      رقم القيد: {registrationNumber} • نسخة رسمية للقراءة والطباعة
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <a
+                    href={directPdfUrl}
+                    download={`تأمين_نهائي_${activeLetterType}_${op.externalNumber || op.serialNumber}_${registrationNumber}.pdf`}
+                    className="inline-flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-xl bg-red-600 hover:bg-red-700 text-white shadow-xs cursor-pointer"
+                  >
+                    <Download className="h-3.5 w-3.5" />
+                    <span>تنزيل PDF</span>
+                  </a>
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    onClick={() => {
+                      setDirectPdfModalOpen(false);
+                      if (directPdfUrl) URL.revokeObjectURL(directPdfUrl);
+                      setDirectPdfUrl(null);
+                    }}
+                    className="h-8 w-8 rounded-full hover:bg-muted cursor-pointer"
+                  >
+                    <X className="h-4 w-4" />
+                  </Button>
+                </div>
+              </div>
+              <div className="flex-1 w-full h-full bg-slate-900">
+                <iframe
+                  src={`${directPdfUrl}#toolbar=1`}
+                  className="w-full h-full border-0"
+                  title="عرض مستند PDF الرسمي"
+                />
+              </div>
+            </div>
+          </div>
+        </Portal>
+      )}
+
       {/* ━━━ الباركود الذكي ورمز QR والرفع السحابي المجاني للنسخة الرقمية بأسفل الصفحة ━━━ */}
       <LetterQrCloudCard
         cloudPdfUrl={currentCloudUrl}
@@ -1592,7 +1925,8 @@ export function TabFinalGuarantee({
         registrationNumber={registrationNumber}
         isDirty={isDirty}
         printInfo={printHistory[activeLetterType]}
-        onPreview={() => setPreviewModalOpen(true)}
+        onPreview={() => loadOfficialPreview(activeLetterType)}
+        onPreviewPdfDirect={handleOpenDirectPdfPreview}
         onSave={handleSaveToSystem}
         onCancelEdits={handleCancelEdits}
         saving={savingState}

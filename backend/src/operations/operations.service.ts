@@ -2358,23 +2358,36 @@ try {
     const rawName = fileName || `goldenerp_doc_${Date.now()}.pdf`;
     const finalName = rawName.endsWith('.pdf') ? rawName : `${rawName}.pdf`;
 
-    // 1. Save local permanent copy in uploads/cloud_docs
-    const cloudDocsDir = path.resolve(process.cwd(), 'uploads', 'cloud_docs');
-    if (!fs.existsSync(cloudDocsDir)) {
-      fs.mkdirSync(cloudDocsDir, { recursive: true });
-    }
-    const localFilePath = path.resolve(cloudDocsDir, finalName);
+    // 1. إذا كان خادم VPS محلي أو معرّف عبر PUBLIC_APP_URL، نحفظ الملف محلياً ونقدمه مباشرة من السيرفر
     try {
+      const isServerless = process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME;
+      const baseDir = isServerless ? os.tmpdir() : process.cwd();
+      const cloudDocsDir = path.resolve(baseDir, 'uploads', 'cloud_docs');
+      if (!fs.existsSync(cloudDocsDir)) {
+        fs.mkdirSync(cloudDocsDir, { recursive: true });
+      }
+      const localFilePath = path.resolve(cloudDocsDir, finalName);
       await fs.promises.writeFile(localFilePath, pdfBuffer);
-    } catch (saveErr) {
-      console.warn('Failed to save local cloud_docs copy:', saveErr);
+
+      if (process.env.PUBLIC_APP_URL && !isServerless) {
+        const publicBase = process.env.PUBLIC_APP_URL.replace(/\/+$/, '');
+        const directUrl = `${publicBase}/api/operations/public-doc/${encodeURIComponent(finalName)}`;
+        this.logger.log(`تم حفظ المستند سحابياً على السيرفر الخاص: ${directUrl}`);
+        return { success: true, url: directUrl, provider: 'GoldenERP VPS Cloud' };
+      }
+    } catch (saveErr: any) {
+      this.logger.warn(`تنبيه: تعذر حفظ نسخة القرص المحلي للمستند السحابي (${saveErr?.message})`);
     }
 
-    // 2. Primary: Catbox.moe (Free permanent direct PDF link - opens PDF directly in mobile camera scan)
+    // 2. المحرك السحابي الأول: Catbox.moe (رابط مباشر دائم يفتح فورياً في كاميرا الهاتف)
     try {
       const form = new FormData();
       form.append('reqtype', 'fileupload');
-      form.append('fileToUpload', new File([new Uint8Array(pdfBuffer)], finalName, { type: 'application/pdf' }));
+      form.append(
+        'fileToUpload',
+        new Blob([new Uint8Array(pdfBuffer)], { type: 'application/pdf' }),
+        finalName
+      );
 
       const res = await fetch('https://catbox.moe/user/api.php', {
         method: 'POST',
@@ -2390,17 +2403,21 @@ try {
         const text = (await res.text()).trim();
         if (text.startsWith('http') && (text.endsWith('.pdf') || text.includes('files.catbox.moe'))) {
           this.logger.log(`تم رفع المستند سحابياً بنجاح عبر Catbox: ${text}`);
-          return { success: true, url: text, provider: 'catbox' };
+          return { success: true, url: text, provider: 'Catbox Cloud' };
         }
       }
     } catch (catboxErr: any) {
-      console.warn('Catbox upload failed:', catboxErr?.message);
+      this.logger.warn(`Catbox upload failed: ${catboxErr?.message}`);
     }
 
-    // 3. Fallback: Tmpfiles.org
+    // 3. المحرك السحابي الثاني: Tmpfiles.org
     try {
       const tmpForm = new FormData();
-      tmpForm.append('input', new File([new Uint8Array(pdfBuffer)], finalName, { type: 'application/pdf' }));
+      tmpForm.append(
+        'file',
+        new Blob([new Uint8Array(pdfBuffer)], { type: 'application/pdf' }),
+        finalName
+      );
       const tmpRes = await fetch('https://tmpfiles.org/api/v1/upload', {
         method: 'POST',
         body: tmpForm,
@@ -2412,17 +2429,21 @@ try {
         if (rawUrl && typeof rawUrl === 'string') {
           const directUrl = rawUrl.replace('tmpfiles.org/', 'tmpfiles.org/dl/');
           this.logger.log(`تم رفع المستند سحابياً بنجاح عبر Tmpfiles: ${directUrl}`);
-          return { success: true, url: directUrl, provider: 'tmpfiles' };
+          return { success: true, url: directUrl, provider: 'Tmpfiles Cloud' };
         }
       }
     } catch (tmpErr: any) {
-      console.warn('Tmpfiles upload failed:', tmpErr?.message);
+      this.logger.warn(`Tmpfiles upload failed: ${tmpErr?.message}`);
     }
 
-    // 4. Fallback: File.io
+    // 4. المحرك السحابي الثالث: File.io
     try {
       const fileioForm = new FormData();
-      fileioForm.append('file', new File([new Uint8Array(pdfBuffer)], finalName, { type: 'application/pdf' }));
+      fileioForm.append(
+        'file',
+        new Blob([new Uint8Array(pdfBuffer)], { type: 'application/pdf' }),
+        finalName
+      );
       const fileioRes = await fetch('https://file.io', {
         method: 'POST',
         body: fileioForm,
@@ -2432,18 +2453,18 @@ try {
         const fileioJson = (await fileioRes.json()) as any;
         if (fileioJson?.success && fileioJson?.link) {
           this.logger.log(`تم رفع المستند سحابياً بنجاح عبر File.io: ${fileioJson.link}`);
-          return { success: true, url: fileioJson.link, provider: 'fileio' };
+          return { success: true, url: fileioJson.link, provider: 'File.io' };
         }
       }
     } catch (fileioErr: any) {
-      console.warn('File.io upload failed:', fileioErr?.message);
+      this.logger.warn(`File.io upload failed: ${fileioErr?.message}`);
     }
 
-    // 5. Fallback: If PUBLIC_APP_URL is set, use direct backend URL
+    // 5. المحرك السحابي الرابع: إذا كان PUBLIC_APP_URL متاحاً
     if (process.env.PUBLIC_APP_URL) {
       const publicBase = process.env.PUBLIC_APP_URL.replace(/\/+$/, '');
       const directUrl = `${publicBase}/api/operations/public-doc/${encodeURIComponent(finalName)}`;
-      return { success: true, url: directUrl, provider: 'goldenerp_cloud' };
+      return { success: true, url: directUrl, provider: 'GoldenERP Cloud' };
     }
 
     throw new BadRequestException('تعذر توثيق المستند سحابياً حالياً، يرجى المحاولة مرة أخرى');
