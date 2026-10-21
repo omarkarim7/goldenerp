@@ -860,27 +860,23 @@ export function TabTechnical({
       }
       const docx = await generateTechnicalDocxBlob();
       setPreviewDocxBlob(docx);
-      setLastGeneratedSnapshot(currentSnapshot);
-      setRenderingDocx(false);
 
-      // في الخلفية: تجهيز الـ PDF بهدوء
-      getPdfBlobFromDocx(
+      const pdfBlob = await getPdfBlobFromDocx(
         docx,
         `technical_offer_${registrationNumber || op.serialNumber}.docx`
-      )
-        .then((pdfBlob) => {
-          setPreviewPdfBlob(pdfBlob);
-          const url = URL.createObjectURL(pdfBlob);
-          setPreviewPdfUrl(url);
+      );
+      setPreviewPdfBlob(pdfBlob);
+      const url = URL.createObjectURL(pdfBlob);
+      setPreviewPdfUrl(url);
 
-          if (!cloudPdfUrl || cloudPdfUrl.includes("tmpfiles.org")) {
-            handleUploadToCloud(false, pdfBlob);
-          }
-        })
-        .catch((e) => console.warn("Deferred PDF generation error:", e));
+      if (!cloudPdfUrl || cloudPdfUrl.includes("tmpfiles.org")) {
+        handleUploadToCloud(false, pdfBlob);
+      }
+      setLastGeneratedSnapshot(currentSnapshot);
     } catch (err: any) {
       console.error("فشل تجهيز معاينة العرض الفني:", err);
       toast.error("تعذر تجهيز المعاينة: " + (err?.message || ""));
+    } finally {
       setRenderingDocx(false);
     }
   };

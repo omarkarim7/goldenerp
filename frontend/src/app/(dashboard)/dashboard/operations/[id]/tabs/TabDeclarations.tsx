@@ -597,24 +597,20 @@ export function TabDeclarations({
       }
       const docx = await generateDeclarationDocxBlob(activeDeclType);
       setPreviewDocxBlob(docx);
+
+      const pdfBlob = await getPdfBlobFromDocx(docx, `declaration_${activeDeclType}_${registrationNumber}.docx`);
+      setPreviewPdfBlob(pdfBlob);
+      const url = URL.createObjectURL(pdfBlob);
+      setPreviewPdfUrl(url);
+
+      if (!currentCloudUrl || currentCloudUrl.includes("tmpfiles.org")) {
+        handleUploadToCloud(activeDeclType, false, pdfBlob);
+      }
       setLastGeneratedSnapshot(currentSnapshot);
-      setRenderingDocx(false);
-
-      // في الخلفية: تجهيز الـ PDF بهدوء
-      getPdfBlobFromDocx(docx, `declaration_${activeDeclType}_${registrationNumber}.docx`)
-        .then((pdfBlob) => {
-          setPreviewPdfBlob(pdfBlob);
-          const url = URL.createObjectURL(pdfBlob);
-          setPreviewPdfUrl(url);
-
-          if (!currentCloudUrl || currentCloudUrl.includes("tmpfiles.org")) {
-            handleUploadToCloud(activeDeclType, false, pdfBlob);
-          }
-        })
-        .catch((e) => console.warn("Deferred PDF generation error:", e));
     } catch (err: any) {
       console.error("فشل تجهيز المعاينة:", err);
       toast.error("تعذر تجهيز المعاينة: " + (err?.message || ""));
+    } finally {
       setRenderingDocx(false);
     }
   };

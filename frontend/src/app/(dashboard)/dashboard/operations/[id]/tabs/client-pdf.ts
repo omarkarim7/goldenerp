@@ -140,7 +140,28 @@ export async function getPdfBlobFromDocx(
   docxBlob: Blob,
   fileName: string = "document.docx"
 ): Promise<Blob> {
-  // 1. محاولة خادم Microsoft Word Desktop COM (في حال توفره على Windows)
+  // 1. محاولة التحويل عبر مسار Next.js الداخلي المباشر (يعمل فورياً على Vercel وأونلاين عبر Adobe PDF Services API)
+  try {
+    const formData = new FormData();
+    formData.append("file", docxBlob, fileName);
+
+    const directRes = await fetch("/api/convert-docx-to-pdf", {
+      method: "POST",
+      body: formData,
+      signal: AbortSignal.timeout(40000),
+    });
+
+    if (directRes.ok) {
+      const blob = await directRes.blob();
+      if (blob && blob.size > 1000 && blob.type.includes("pdf")) {
+        return blob;
+      }
+    }
+  } catch (directErr) {
+    console.warn("المسار الداخلي /api/convert-docx-to-pdf تعذر، جاري تجربة مسار الباك إند:", directErr);
+  }
+
+  // 2. محاولة خادم الباك إند (NestJS) الرسمي عبر Adobe أو LibreOffice
   try {
     const formData = new FormData();
     formData.append("file", docxBlob, fileName);
@@ -160,10 +181,10 @@ export async function getPdfBlobFromDocx(
       }
     }
   } catch (err) {
-    console.warn("تعذر التحويل عبر السيرفر الرسمي (Adobe/Word COM)، جاري استخدام التحويل الداخلي بالمتصفح:", err);
+    console.warn("تعذر التحويل عبر سيرفر الباك إند، جاري التحويل الداخلي بالمتصفح:", err);
   }
 
-  // 2. التحويل الذكي في المتصفح بالخطوط العربية الأصلية (يعمل 100% على Vercel وجميع الأنظمة)
+  // 3. التحويل الذكي في المتصفح بالخطوط العربية الأصلية
   return await convertDocxBlobToPdfBlob(docxBlob);
 }
 

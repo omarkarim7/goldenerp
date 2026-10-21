@@ -133,7 +133,28 @@ export const OnlyOfficeDocViewer: React.FC<OnlyOfficeDocViewerProps> = ({
 
   // تنفيذ الطباعة المباشرة بأعلى دقة متجهة وجودة مطابقة لقالب الوورد الأصلي
   const handleDirectPrint = () => {
-    if (viewMode === "word" && docxContainerRef.current && docxContainerRef.current.innerHTML.trim()) {
+    if (pdfObjectUrl) {
+      const printIframe = document.createElement("iframe");
+      printIframe.style.position = "fixed";
+      printIframe.style.right = "0";
+      printIframe.style.bottom = "0";
+      printIframe.style.width = "0";
+      printIframe.style.height = "0";
+      printIframe.style.border = "0";
+      printIframe.src = pdfObjectUrl;
+      document.body.appendChild(printIframe);
+      printIframe.onload = () => {
+        try {
+          printIframe.contentWindow?.focus();
+          printIframe.contentWindow?.print();
+        } catch {
+          window.open(pdfObjectUrl, "_blank");
+        }
+      };
+      return;
+    }
+
+    if (docxContainerRef.current && docxContainerRef.current.innerHTML.trim()) {
       const printIframe = document.createElement("iframe");
       printIframe.style.position = "fixed";
       printIframe.style.right = "0";
@@ -324,31 +345,40 @@ export const OnlyOfficeDocViewer: React.FC<OnlyOfficeDocViewerProps> = ({
 
       {/* ━━━ نافذة العرض الرئيسية للمستند الرسمي المعتمد ━━━ */}
       <div className="flex-1 min-h-0 w-full bg-slate-950 relative flex overflow-hidden">
-        {/* نمط معاينة المستند المعتمد مع تمكين السكرول الكامل لكافة الصفحات والجداول */}
-        <div className="docx-viewer-scroll-area flex">
-          {isRenderingDocx && (
-            <div className="w-full h-full min-h-[400px] flex flex-col items-center justify-center gap-4 text-slate-300 p-8 text-center">
-              <div className="w-16 h-16 rounded-2xl bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center shadow-lg">
-                <RefreshCw className="w-8 h-8 animate-spin text-emerald-400" />
+        {pdfObjectUrl ? (
+          <div className="w-full h-full flex flex-col bg-slate-900 overflow-hidden">
+            <iframe
+              src={`${pdfObjectUrl}#toolbar=0&navpanes=0&view=FitH`}
+              className="w-full h-full border-0 bg-slate-900"
+              title={documentTitle}
+            />
+          </div>
+        ) : (
+          <div className="docx-viewer-scroll-area flex">
+            {isRenderingDocx && (
+              <div className="w-full h-full min-h-[400px] flex flex-col items-center justify-center gap-4 text-slate-300 p-8 text-center">
+                <div className="w-16 h-16 rounded-2xl bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center shadow-lg">
+                  <RefreshCw className="w-8 h-8 animate-spin text-emerald-400" />
+                </div>
+                <div className="space-y-1">
+                  <h4 className="text-base font-bold text-white">جاري معالجة وتوليد المستند الرسمي المعتمد...</h4>
+                  <p className="text-xs text-slate-400">تطبيق الباركود الرقمي والهيدر المعتمد بدقة 100%</p>
+                </div>
               </div>
-              <div className="space-y-1">
-                <h4 className="text-base font-bold text-white">جاري عرض المستند بالخطوط الأصلية (Arabic Typesetting)...</h4>
-                <p className="text-xs text-slate-400">تطبيق خطوط وهوامش وجداول القالب الأصلي بدقة 100%</p>
+            )}
+
+            {docxRenderError && !isRenderingDocx && (
+              <div className="w-full h-[400px] flex flex-col items-center justify-center gap-3 text-red-400 p-8 text-center">
+                <p className="text-sm font-bold">حدث خطأ أثناء عرض القالب: {docxRenderError}</p>
               </div>
-            </div>
-          )}
+            )}
 
-          {docxRenderError && !isRenderingDocx && (
-            <div className="w-full h-[400px] flex flex-col items-center justify-center gap-3 text-red-400 p-8 text-center">
-              <p className="text-sm font-bold">حدث خطأ أثناء عرض القالب: {docxRenderError}</p>
-            </div>
-          )}
-
-          <div
-            ref={docxContainerRef}
-            className={`w-full flex flex-col items-center pb-12 ${isRenderingDocx ? "hidden" : "block"}`}
-          />
-        </div>
+            <div
+              ref={docxContainerRef}
+              className={`w-full flex flex-col items-center pb-12 ${isRenderingDocx ? "hidden" : "block"}`}
+            />
+          </div>
+        )}
       </div>
     </div>
   );

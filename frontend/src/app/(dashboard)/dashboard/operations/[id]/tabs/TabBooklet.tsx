@@ -924,23 +924,21 @@ export function TabBooklet({
   const [printingDocx, setPrintingDocx] = useState(false);
 
   const loadOfficialPreview = async () => {
-    if (previewDocxBlob && lastGeneratedSnapshot === currentSnapshot) {
+    if (previewPdfBlob && lastGeneratedSnapshot === currentSnapshot) {
       return;
     }
     setRenderingDocx(true);
     try {
       const docx = await generateBookletDocxBlob(activeLetterType);
       setPreviewDocxBlob(docx);
-      setLastGeneratedSnapshot(currentSnapshot);
-      setRenderingDocx(false);
 
-      // خلف الكواليس: تجهيز ملف الـ PDF بهدوء
-      generateBookletPdfBlob(activeLetterType).catch((e) => {
-        console.warn("Deferred PDF generation error:", e);
-      });
+      const pdf = await generateBookletPdfBlob(activeLetterType);
+      setPreviewPdfBlob(pdf);
+      setLastGeneratedSnapshot(currentSnapshot);
     } catch (err: any) {
       console.error(err);
-      toast.error("فشل تجهيز معاينة الوورد: " + (err?.message || ""));
+      toast.error("فشل تجهيز معاينة المستند: " + (err?.message || ""));
+    } finally {
       setRenderingDocx(false);
     }
   };
