@@ -3,10 +3,188 @@ import { NextRequest, NextResponse } from "next/server";
 export const maxDuration = 60; // 60 seconds max for Vercel Serverless
 export const dynamic = "force-dynamic";
 
+interface AdobeCredential {
+  name: string;
+  clientId: string;
+  clientSecret: string;
+}
+
 /**
- * محرك تحويل مستندات Word (.docx) إلى PDF سحابياً عبر Adobe PDF Services API الرسمي
- * مدمج مباشرة في Next.js ليعمل أونلاين على Vercel و Hostinger وفي كل مكان
- * بدون الحاجة لأي خوادم وسيطة وبدقة 100% مطابقة لـ Microsoft Word
+ * استخراج قائمة حسابات Adobe المتاحة في النظام لتمكين التبديل التلقائي ومضاعفة الحصص الشهرية
+ */
+function getAdobeAccounts(): AdobeCredential[] {
+  const accounts: AdobeCredential[] = [];
+
+  // الحساب الأول (500 تحويل شهرياً)
+  if (process.env.ADOBE_CLIENT_ID && process.env.ADOBE_CLIENT_SECRET) {
+    accounts.push({
+      name: "الحساب الأول (Account 1)",
+      clientId: process.env.ADOBE_CLIENT_ID.trim(),
+      clientSecret: process.env.ADOBE_CLIENT_SECRET.trim(),
+    });
+  }
+
+  // الحساب الثاني (500 تحويل إضافي = 1000 تحويل شهرياً)
+  if (process.env.ADOBE_CLIENT_ID_2 && process.env.ADOBE_CLIENT_SECRET_2) {
+    accounts.push({
+      name: "الحساب الثاني (Account 2)",
+      clientId: process.env.ADOBE_CLIENT_ID_2.trim(),
+      clientSecret: process.env.ADOBE_CLIENT_SECRET_2.trim(),
+    });
+  }
+
+  // الحساب الثالث (إن وُجد مستقبلاً)
+  if (process.env.ADOBE_CLIENT_ID_3 && process.env.ADOBE_CLIENT_SECRET_3) {
+    accounts.push({
+      name: "الحساب الثالث (Account 3)",
+      clientId: process.env.ADOBE_CLIENT_ID_3.trim(),
+      clientSecret: process.env.ADOBE_CLIENT_SECRET_3.trim(),
+    });
+  }
+
+  return accounts;
+}
+
+/**
+ * تنفيذ عملية التحويل الفعلية عبر حساب Adobe محدد
+ */
+async function convertViaAdobe(docxBuffer: Buffer, account: AdobeCredential): Promise<ArrayBuffer> {
+  const { clientId, clientSecret, name } = account;
+
+  // 1. استخراج رمز الوصول Access Token من Adobe
+  const tokenParams = new URLSearchParams();
+  tokenParams.append("client_id", clientId);
+  tokenParams.append("client_secret", clientSecret);
+
+  const tokenRes = await fetch("https://pdf-services.adobe.io/token", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: tokenParams.toString(),
+    cache: "no-store",
+    signal: AbortSignal.timeout(15000),
+  });
+
+  if (!tokenRes.ok) {
+    const errText = await tokenRes.text();
+    throw new Error(`[${name}] فشل الحصول على Access Token: ${tokenRes.status} ${errText}`);
+  }
+
+  const tokenData = (await tokenRes.json()) as any;
+  const accessToken = tokenData.access_token;
+  if (!accessToken) {
+    throw new Error(`[${name}] لم يتم استلام access_token من Adobe`);
+  }
+
+  // 2. طلب رابط رفع مشفر مسبقاً Presigned Upload URI
+  const assetRes = await fetch("https://pdf-services.adobe.io/assets", {
+    method: "POST",
+    headers: {
+      "X-API-Key": clientId,
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      mediaType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    }),
+    cache: "no-store",
+    signal: AbortSignal.timeout(15000),
+  });
+
+  if (!assetRes.ok) {
+    const errText = await assetRes.text();
+    throw new Error(`[${name}] فشل إنشاء الأصل Asset في Adobe: ${assetRes.status} ${errText}`);
+  }
+
+  const assetData = (await assetRes.json()) as any;
+  const assetID = assetData.assetID;
+  const uploadUri = assetData.uploadUri;
+  if (!assetID || !uploadUri) {
+    throw new Error(`[${name}] لم يتم استلام assetID أو uploadUri`);
+  }
+
+  // 3. رفع ملف الوورد الثنائي مباشرة إلى Adobe S3
+  const uploadRes = await fetch(uploadUri, {
+    method: "PUT",
+    headers: {
+      "Content-Type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    },
+    body: new Uint8Array(docxBuffer),
+    cache: "no-store",
+    signal: AbortSignal.timeout(30000),
+  });
+
+  if (!uploadRes.ok) {
+    throw new Error(`[${name}] فشل رفع المستند إلى خادم تخزين Adobe: ${uploadRes.status}`);
+  }
+
+  // 4. إرسال أمر إنشاء مهمة التحويل Create PDF Job
+  const jobRes = await fetch("https://pdf-services.adobe.io/operation/createpdf", {
+    method: "POST",
+    headers: {
+      "X-API-Key": clientId,
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ assetID }),
+    cache: "no-store",
+    signal: AbortSignal.timeout(15000),
+  });
+
+  if (jobRes.status !== 201 && jobRes.status !== 200) {
+    const errText = await jobRes.text();
+    throw new Error(`[${name}] فشل إرسال مهمة Create PDF: ${jobRes.status} ${errText}`);
+  }
+
+  const location = jobRes.headers.get("location");
+  if (!location) {
+    throw new Error(`[${name}] لم يتم استلام رابط تتبع المهمة location header`);
+  }
+
+  // 5. متابعة حالة المهمة Polling حتى تكتمل
+  let downloadUri = "";
+  const maxPollAttempts = 30;
+  for (let attempt = 0; attempt < maxPollAttempts; attempt++) {
+    await new Promise((r) => setTimeout(r, 1000));
+
+    const statusRes = await fetch(location, {
+      headers: {
+        "X-API-Key": clientId,
+        Authorization: `Bearer ${accessToken}`,
+      },
+      cache: "no-store",
+      signal: AbortSignal.timeout(10000),
+    });
+
+    if (!statusRes.ok) continue;
+
+    const statusJson = (await statusRes.json()) as any;
+    if (statusJson.status === "done") {
+      downloadUri = statusJson.asset?.downloadUri || statusJson.downloadUri;
+      break;
+    } else if (statusJson.status === "failed") {
+      throw new Error(`[${name}] فشلت مهمة تحويل Adobe: ${JSON.stringify(statusJson.error || statusJson)}`);
+    }
+  }
+
+  if (!downloadUri) {
+    throw new Error(`[${name}] انتهت مهلة انتظار تحويل المستند`);
+  }
+
+  // 6. تحميل ملف الـ PDF الناتج
+  const downloadRes = await fetch(downloadUri, {
+    cache: "no-store",
+    signal: AbortSignal.timeout(30000),
+  });
+  if (!downloadRes.ok) {
+    throw new Error(`[${name}] فشل تنزيل ملف الـ PDF: ${downloadRes.status}`);
+  }
+
+  return await downloadRes.arrayBuffer();
+}
+
+/**
+ * محرك تحويل مستندات Word (.docx) إلى PDF سحابياً عبر مجمع حسابات Adobe PDF Services API
+ * يدعم التبديل التلقائي بين الحسابات لمضاعفة الحصص الشهرية وضمان استمرارية الخدمة 100%
  */
 export async function POST(req: NextRequest) {
   try {
@@ -19,149 +197,39 @@ export async function POST(req: NextRequest) {
     const arrayBuffer = await file.arrayBuffer();
     const docxBuffer = Buffer.from(arrayBuffer);
 
-    const clientId = process.env.ADOBE_CLIENT_ID;
-    const clientSecret = process.env.ADOBE_CLIENT_SECRET;
-    if (!clientId || !clientSecret) {
+    const accounts = getAdobeAccounts();
+    if (accounts.length === 0) {
       return NextResponse.json(
         { error: "بيانات اعتماد Adobe PDF Services غير مهيأة في متغيرات البيئة (ADOBE_CLIENT_ID, ADOBE_CLIENT_SECRET)" },
         { status: 503 }
       );
     }
 
-    // 1. استخراج رمز الوصول Access Token من Adobe
-    const tokenParams = new URLSearchParams();
-    tokenParams.append("client_id", clientId);
-    tokenParams.append("client_secret", clientSecret);
-
-    const tokenRes = await fetch("https://pdf-services.adobe.io/token", {
-      method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: tokenParams.toString(),
-      cache: "no-store",
-    });
-
-    if (!tokenRes.ok) {
-      const errText = await tokenRes.text();
-      throw new Error(`فشل الحصول على Access Token من Adobe: ${tokenRes.status} ${errText}`);
-    }
-
-    const tokenData = (await tokenRes.json()) as any;
-    const accessToken = tokenData.access_token;
-    if (!accessToken) {
-      throw new Error("لم يتم استلام access_token من Adobe");
-    }
-
-    // 2. طلب رابط رفع مشفر مسبقاً Presigned Upload URI
-    const assetRes = await fetch("https://pdf-services.adobe.io/assets", {
-      method: "POST",
-      headers: {
-        "X-API-Key": clientId,
-        Authorization: `Bearer ${accessToken}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        mediaType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-      }),
-      cache: "no-store",
-    });
-
-    if (!assetRes.ok) {
-      const errText = await assetRes.text();
-      throw new Error(`فشل إنشاء الأصل Asset في Adobe: ${assetRes.status} ${errText}`);
-    }
-
-    const assetData = (await assetRes.json()) as any;
-    const assetID = assetData.assetID;
-    const uploadUri = assetData.uploadUri;
-    if (!assetID || !uploadUri) {
-      throw new Error("لم يتم استلام assetID أو uploadUri من Adobe");
-    }
-
-    // 3. رفع ملف الوورد الثنائي مباشرة إلى Adobe S3
-    const uploadRes = await fetch(uploadUri, {
-      method: "PUT",
-      headers: {
-        "Content-Type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-      },
-      body: docxBuffer,
-      cache: "no-store",
-    });
-
-    if (!uploadRes.ok) {
-      throw new Error(`فشل رفع المستند إلى خادم تخزين Adobe: ${uploadRes.status}`);
-    }
-
-    // 4. إرسال أمر إنشاء مهمة التحويل Create PDF Job
-    const jobRes = await fetch("https://pdf-services.adobe.io/operation/createpdf", {
-      method: "POST",
-      headers: {
-        "X-API-Key": clientId,
-        Authorization: `Bearer ${accessToken}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ assetID }),
-      cache: "no-store",
-    });
-
-    if (jobRes.status !== 201 && jobRes.status !== 200) {
-      const errText = await jobRes.text();
-      throw new Error(`فشل إرسال مهمة Create PDF في Adobe: ${jobRes.status} ${errText}`);
-    }
-
-    const location = jobRes.headers.get("location");
-    if (!location) {
-      throw new Error("لم يتم استلام رابط تتبع المهمة location header من Adobe");
-    }
-
-    // 5. متابعة حالة المهمة Polling حتى تكتمل
-    let downloadUri = "";
-    const maxPollAttempts = 30;
-    for (let attempt = 0; attempt < maxPollAttempts; attempt++) {
-      await new Promise((r) => setTimeout(r, 1000));
-
-      const statusRes = await fetch(location, {
-        headers: {
-          "X-API-Key": clientId,
-          Authorization: `Bearer ${accessToken}`,
-        },
-        cache: "no-store",
-      });
-
-      if (!statusRes.ok) continue;
-
-      const statusJson = (await statusRes.json()) as any;
-      if (statusJson.status === "done") {
-        downloadUri = statusJson.asset?.downloadUri || statusJson.downloadUri;
-        break;
-      } else if (statusJson.status === "failed") {
-        throw new Error(`فشلت مهمة تحويل Adobe: ${JSON.stringify(statusJson.error || statusJson)}`);
+    let lastError: any = null;
+    for (let i = 0; i < accounts.length; i++) {
+      const account = accounts[i];
+      try {
+        const pdfBuffer = await convertViaAdobe(docxBuffer, account);
+        return new Response(pdfBuffer, {
+          status: 200,
+          headers: {
+            "Content-Type": "application/pdf",
+            "Content-Disposition": 'inline; filename="letter.pdf"',
+            "Content-Length": pdfBuffer.byteLength.toString(),
+            "X-Adobe-Account-Used": `account-${i + 1}`,
+          },
+        });
+      } catch (err: any) {
+        lastError = err;
+        console.warn(`تعذر التحويل عبر ${account.name} (${err?.message})، جاري التبديل التلقائي للحساب التالي...`);
       }
     }
 
-    if (!downloadUri) {
-      throw new Error("انتهت مهلة انتظار تحويل المستند في Adobe PDF Services");
-    }
-
-    // 6. تحميل ملف الـ PDF الناتج
-    const downloadRes = await fetch(downloadUri, { cache: "no-store" });
-    if (!downloadRes.ok) {
-      throw new Error(`فشل تنزيل ملف الـ PDF من Adobe S3: ${downloadRes.status}`);
-    }
-
-    const pdfBuffer = await downloadRes.arrayBuffer();
-
-    return new Response(pdfBuffer, {
-      status: 200,
-      headers: {
-        "Content-Type": "application/pdf",
-        "Content-Disposition": 'inline; filename="letter.pdf"',
-        "Content-Length": pdfBuffer.byteLength.toString(),
-      },
-    });
+    throw lastError || new Error("فشلت جميع حسابات Adobe المتاحة في التحويل");
   } catch (err: any) {
     console.error("خطأ تحويل DOCX إلى PDF في Next.js Route:", err);
     return NextResponse.json(
-      { error: err?.message || "فشل تحويل المستند إلى PDF عبر Adobe" },
+      { error: err?.message || "فشل تحويل المستند إلى PDF عبر مجمع حسابات Adobe" },
       { status: 500 }
     );
   }
