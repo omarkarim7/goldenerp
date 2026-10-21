@@ -83,7 +83,7 @@ export const OnlyOfficeDocViewer: React.FC<OnlyOfficeDocViewerProps> = ({
             className: "docx-page",
             inWrapper: true,
             ignoreWidth: false,
-            ignoreHeight: false,
+            ignoreHeight: true, // مهم جداً: true لكي تتمدد الصفحة بكامل محتواها ولا يتم قص أي جدول أو ختم أو توقيع
             breakPages: true,
             experimental: true,
             renderHeaders: true,
@@ -99,9 +99,6 @@ export const OnlyOfficeDocViewer: React.FC<OnlyOfficeDocViewerProps> = ({
           if (!cancelled) {
             setDocxRenderError(err?.message || "تعذر تصيير قالب الوورد");
             setIsRenderingDocx(false);
-            if (pdfBlob) {
-              setViewMode("pdf");
-            }
           }
         }
       };
@@ -265,35 +262,10 @@ export const OnlyOfficeDocViewer: React.FC<OnlyOfficeDocViewerProps> = ({
         {/* أزرار التحكم والتحميل والطباعة */}
         <div className="flex items-center gap-2 flex-wrap">
           {/* محول نمط العرض (Word المباشر مقابل PDF) */}
-          <div className="flex items-center gap-1 bg-slate-950/80 p-0.5 rounded-xl border border-slate-700/60 shadow-inner">
-            <button
-              type="button"
-              onClick={() => setViewMode("word")}
-              className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all cursor-pointer flex items-center gap-1.5 ${
-                viewMode === "word"
-                  ? "bg-emerald-600 text-white shadow"
-                  : "text-slate-400 hover:text-slate-200"
-              }`}
-              title="معاينة حية مباشرة بدقة خطوط مايكروسوفت وورد العربية الأصلية"
-            >
-              <Eye className="w-3.5 h-3.5" />
-              <span>معاينة Word الأصلية</span>
-            </button>
-            {pdfObjectUrl && (
-              <button
-                type="button"
-                onClick={() => setViewMode("pdf")}
-                className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all cursor-pointer flex items-center gap-1.5 ${
-                  viewMode === "pdf"
-                    ? "bg-blue-600 text-white shadow"
-                    : "text-slate-400 hover:text-slate-200"
-                }`}
-                title="عرض ملف الـ PDF المولد"
-              >
-                <FileText className="w-3.5 h-3.5" />
-                <span>عرض PDF</span>
-              </button>
-            )}
+          {/* شارة معاينة المستند الرسمية */}
+          <div className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 rounded-xl text-xs font-bold shadow-inner">
+            <Eye className="w-3.5 h-3.5 text-emerald-400" />
+            <span>معاينة المستند</span>
           </div>
 
           {/* ملء الشاشة */}
@@ -351,20 +323,16 @@ export const OnlyOfficeDocViewer: React.FC<OnlyOfficeDocViewerProps> = ({
       </div>
 
       {/* ━━━ نافذة العرض الرئيسية للمستند الرسمي المعتمد ━━━ */}
-      <div className="flex-1 w-full bg-slate-950 relative min-h-[660px] flex overflow-hidden">
-        {/* نمط معاينة Word الأصلية المعتمدة */}
-        <div
-          className={`docx-viewer-scroll-area ${
-            viewMode === "word" ? "flex" : "hidden"
-          }`}
-        >
+      <div className="flex-1 min-h-0 w-full bg-slate-950 relative flex overflow-hidden">
+        {/* نمط معاينة المستند المعتمد مع تمكين السكرول الكامل لكافة الصفحات والجداول */}
+        <div className="docx-viewer-scroll-area flex">
           {isRenderingDocx && (
-            <div className="w-full h-[520px] flex flex-col items-center justify-center gap-4 text-slate-300 p-8 text-center">
+            <div className="w-full h-full min-h-[400px] flex flex-col items-center justify-center gap-4 text-slate-300 p-8 text-center">
               <div className="w-16 h-16 rounded-2xl bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center shadow-lg">
                 <RefreshCw className="w-8 h-8 animate-spin text-emerald-400" />
               </div>
               <div className="space-y-1">
-                <h4 className="text-base font-bold text-white">جاري عرض قالب الوورد بالخطوط الأصلية (Arabic Typesetting)...</h4>
+                <h4 className="text-base font-bold text-white">جاري عرض المستند بالخطوط الأصلية (Arabic Typesetting)...</h4>
                 <p className="text-xs text-slate-400">تطبيق خطوط وهوامش وجداول القالب الأصلي بدقة 100%</p>
               </div>
             </div>
@@ -378,29 +346,9 @@ export const OnlyOfficeDocViewer: React.FC<OnlyOfficeDocViewerProps> = ({
 
           <div
             ref={docxContainerRef}
-            className={`w-full flex flex-col items-center ${isRenderingDocx ? "hidden" : "block"}`}
+            className={`w-full flex flex-col items-center pb-12 ${isRenderingDocx ? "hidden" : "block"}`}
           />
         </div>
-
-        {/* نمط عرض الـ PDF البديل */}
-        {viewMode === "pdf" && (
-          pdfObjectUrl ? (
-            <iframe
-              src={`${pdfObjectUrl}#toolbar=1&navpanes=0&view=FitH`}
-              className="w-full h-full min-h-[660px] border-0 bg-white"
-              title="المعاينة المعتمدة لمستند الوورد الأصلي"
-            />
-          ) : (
-            <div className="w-full h-full min-h-[660px] flex flex-col items-center justify-center gap-4 bg-slate-950 text-slate-300 p-8 text-center">
-              <div className="w-16 h-16 rounded-2xl bg-blue-500/15 border border-blue-500/30 flex items-center justify-center shadow-lg">
-                <RefreshCw className="w-8 h-8 animate-spin text-blue-400" />
-              </div>
-              <div className="space-y-1">
-                <h4 className="text-base font-bold text-white">جاري تجهيز نسخة PDF...</h4>
-              </div>
-            </div>
-          )
-        )}
       </div>
     </div>
   );

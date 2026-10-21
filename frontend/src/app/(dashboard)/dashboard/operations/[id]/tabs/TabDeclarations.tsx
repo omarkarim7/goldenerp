@@ -1338,8 +1338,8 @@ export function TabDeclarations({
       {/* ━━━ MODAL: معاينة مستند الوورد الأصلي المعتمد ━━━ */}
       {previewModalOpen && (
         <Portal>
-          <div className="fixed inset-0 z-[99999] bg-black/85 backdrop-blur-md flex items-center justify-center p-2 sm:p-4 animate-fade-in overflow-y-auto">
-            <div className="bg-card border border-border rounded-3xl max-w-5xl w-full p-4 sm:p-6 space-y-4 shadow-2xl my-auto max-h-[96vh] flex flex-col overflow-hidden text-foreground">
+          <div className="fixed inset-0 z-[99999] bg-black/85 backdrop-blur-md flex items-center justify-center p-2 sm:p-4 animate-fade-in">
+            <div className="bg-card border border-border rounded-3xl max-w-5xl w-full p-4 sm:p-6 shadow-2xl h-[94vh] max-h-[94vh] flex flex-col overflow-hidden text-foreground">
               {/* Header */}
               <div className="flex items-center justify-between pb-3 border-b border-border flex-wrap gap-3 shrink-0">
                 <div className="flex items-center gap-2.5">
@@ -1389,9 +1389,9 @@ export function TabDeclarations({
               </div>
 
               {/* View: OnlyOffice & Authentic Word Document Viewer */}
-              <div className="flex-1 overflow-hidden min-h-[640px]">
+              <div className="flex-1 min-h-0 overflow-hidden pt-3 flex flex-col">
                 {renderingDocx ? (
-                  <div className="h-full min-h-[600px] flex flex-col items-center justify-center gap-4 text-center bg-slate-950 rounded-2xl">
+                  <div className="h-full flex flex-col items-center justify-center gap-4 text-center bg-slate-950 rounded-2xl">
                     <div className="w-16 h-16 rounded-2xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-center shadow-lg">
                       <RefreshCw className="h-8 w-8 animate-spin text-amber-500" />
                     </div>

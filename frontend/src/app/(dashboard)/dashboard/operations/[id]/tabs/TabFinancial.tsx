@@ -2147,9 +2147,9 @@ export function TabFinancial({
               </div>
 
               {/* View: OnlyOffice & Authentic Word Document Viewer */}
-              <div className="flex-1 overflow-hidden min-h-[640px]">
+              <div className="flex-1 min-h-0 overflow-hidden flex flex-col">
                 {renderingDocx ? (
-                  <div className="h-full min-h-[600px] flex flex-col items-center justify-center gap-4 text-center bg-slate-950 rounded-2xl">
+                  <div className="h-full flex flex-col items-center justify-center gap-4 text-center bg-slate-950 rounded-2xl">
                     <div className="w-16 h-16 rounded-2xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-center shadow-lg">
                       <RefreshCw className="h-8 w-8 animate-spin text-amber-500" />
                     </div>

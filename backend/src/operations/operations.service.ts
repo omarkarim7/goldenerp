@@ -1711,7 +1711,16 @@ export class OperationsService {
       }
     }
 
-    // 3. محاولة التحويل عبر ONLYOFFICE Document Server (إذا تم إعداده للإنتاج السحابي)
+    // 3. محاولة التحويل عبر FreeConvert API (إذا تم تزويد FREECONVERT_API_KEY)
+    if (process.env.FREECONVERT_API_KEY) {
+      try {
+        return await this.convertDocxViaFreeConvert(docxBuffer);
+      } catch (fcErr: any) {
+        this.logger.warn(`فشل التحويل عبر FreeConvert API: ${fcErr?.message}`);
+      }
+    }
+
+    // 4. محاولة التحويل عبر ONLYOFFICE Document Server (إذا تم إعداده للإنتاج السحابي)
     if (process.env.ONLYOFFICE_CONVERTER_URL || process.env.ONLYOFFICE_URL) {
       try {
         return await this.convertDocxViaOnlyOffice(docxBuffer);
@@ -1720,7 +1729,7 @@ export class OperationsService {
       }
     }
 
-    // 4. محاولة التحويل عبر LibreOffice Headless (المحرك الافتراضي للينكس / VPS على Hostinger مع الخطوط العربية)
+    // 5. محاولة التحويل عبر LibreOffice Headless (المحرك الافتراضي للينكس / VPS على Hostinger مع الخطوط العربية)
     try {
       return await this.convertDocxViaLibreOffice(docxBuffer);
     } catch (loErr: any) {
@@ -1871,6 +1880,123 @@ export class OperationsService {
     const arrayBuf = await downloadRes.arrayBuffer();
     const pdfBuf = Buffer.from(arrayBuf);
     this.logger.log(`تم تحويل المستند بنجاح عبر Adobe PDF Services API! الحجم: ${pdfBuf.length} بايت`);
+    return pdfBuf;
+  }
+
+  /**
+   * تحويل المستند عبر FreeConvert API الرسمي
+   */
+  private async convertDocxViaFreeConvert(docxBuffer: Buffer): Promise<Buffer> {
+    const apiKey = process.env.FREECONVERT_API_KEY;
+    if (!apiKey) {
+      throw new Error('FREECONVERT_API_KEY is not configured');
+    }
+
+    this.logger.log('بدء التحويل عبر FreeConvert API...');
+
+    const inputBody = {
+      tasks: {
+        'import-1': { operation: 'import/upload' },
+        'convert-1': {
+          operation: 'convert',
+          input: 'import-1',
+          input_format: 'docx',
+          output_format: 'pdf',
+          options: {
+            create_pdfa: 'true',
+            optimize_for: 'print',
+            bookmarks: 'none',
+          },
+        },
+        'export-1': {
+          operation: 'export/url',
+          input: ['convert-1'],
+        },
+      },
+    };
+
+    const jobRes = await fetch('https://api.freeconvert.com/v1/process/jobs', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        'Authorization': `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify(inputBody),
+      signal: AbortSignal.timeout(15000),
+    });
+
+    if (!jobRes.ok) {
+      const errText = await jobRes.text();
+      throw new Error(`فشل إنشاء مهمة FreeConvert: ${jobRes.status} ${errText}`);
+    }
+
+    const jobData = (await jobRes.json()) as any;
+    const jobId = jobData.id;
+    const importTask = jobData.tasks?.find((t: any) => t.name === 'import-1' || t.operation === 'import/upload');
+    if (!importTask || !importTask.result?.form) {
+      throw new Error('لم يتم استلام معلومات رفع الملف من FreeConvert');
+    }
+
+    const uploadUrl = importTask.result.form.url;
+    const formParams = importTask.result.form.parameters || {};
+
+    // رفع الملف عبر multipart/form-data
+    const formData = new FormData();
+    for (const [key, val] of Object.entries(formParams)) {
+      formData.append(key, val as any);
+    }
+    const blob = new Blob([new Uint8Array(docxBuffer)], {
+      type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    });
+    formData.append('file', blob, 'document.docx');
+
+    const uploadRes = await fetch(uploadUrl, {
+      method: 'POST',
+      body: formData,
+      signal: AbortSignal.timeout(45000),
+    });
+
+    if (!uploadRes.ok) {
+      throw new Error(`فشل رفع المستند إلى خادم FreeConvert: ${uploadRes.status}`);
+    }
+
+    // استطلاع حالة المهمة حتى تكتمل
+    let downloadUrl = '';
+    for (let i = 0; i < 35; i++) {
+      await new Promise((r) => setTimeout(r, 1000));
+      const pollRes = await fetch(`https://api.freeconvert.com/v1/process/jobs/${jobId}`, {
+        headers: {
+          'Authorization': `Bearer ${apiKey}`,
+          'Accept': 'application/json',
+        },
+        signal: AbortSignal.timeout(10000),
+      });
+
+      if (!pollRes.ok) continue;
+
+      const pollData = (await pollRes.json()) as any;
+      if (pollData.status === 'completed') {
+        const exportTask = pollData.tasks?.find((t: any) => t.name === 'export-1' || t.operation === 'export/url');
+        downloadUrl = exportTask?.result?.url;
+        break;
+      } else if (pollData.status === 'failed') {
+        throw new Error(`فشلت مهمة FreeConvert: ${JSON.stringify(pollData)}`);
+      }
+    }
+
+    if (!downloadUrl) {
+      throw new Error('انتهت مهلة انتظار تحويل المستند في FreeConvert API');
+    }
+
+    const pdfRes = await fetch(downloadUrl, { signal: AbortSignal.timeout(30000) });
+    if (!pdfRes.ok) {
+      throw new Error(`فشل تنزيل PDF من FreeConvert: ${pdfRes.status}`);
+    }
+
+    const pdfArrayBuf = await pdfRes.arrayBuffer();
+    const pdfBuf = Buffer.from(pdfArrayBuf);
+    this.logger.log(`تم تحويل المستند بنجاح عبر FreeConvert API! الحجم: ${pdfBuf.length} بايت`);
     return pdfBuf;
   }
 

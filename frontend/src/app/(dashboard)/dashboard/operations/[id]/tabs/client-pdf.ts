@@ -45,7 +45,7 @@ export async function convertDocxBlobToPdfBlob(docxBlob: Blob): Promise<Blob> {
         className: "docx-page",
         inWrapper: true,
         ignoreWidth: false,
-        ignoreHeight: false,
+        ignoreHeight: true, // true لكي لا يتم قص أو إخفاء أي جزء من محتوى المستند
         breakPages: true,
         experimental: true,
         renderHeaders: true,
