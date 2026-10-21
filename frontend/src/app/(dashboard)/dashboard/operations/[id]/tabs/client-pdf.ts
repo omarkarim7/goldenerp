@@ -131,15 +131,28 @@ export async function convertDocxBlobToPdfBlob(docxBlob: Blob): Promise<Blob> {
   }
 }
 
+const pdfConversionCache = new Map<string, Blob>();
+
 /**
  * مولد مستندات PDF المعتمد:
- * 1. يحاول أولاً الاستفادة من محرك Microsoft Word Desktop COM الحقيقي إذا كان متاحاً على خادم محلي (Windows).
- * 2. في حال تعذر ذلك أو عند العمل على Vercel/Linux، يتم التحويل بالمتصفح مباشرة بخطوط Arabic Typesetting الأصلية بدقة 100%.
+ * 1. يحاول أولاً الاستفادة من مجمع حسابات Adobe PDF Services API الرسمي (دقة 100% متطابقة مع Word).
+ * 2. محاولة خادم الباك إند (NestJS) الرسمي عبر Adobe أو Word COM أو LibreOffice.
+ * 3. في حال تعذر ذلك أو العمل دون إنترنت، يتم التحويل بالمتصفح مباشرة بخطوط Arabic Typesetting الأصلية بدقة 100%.
  */
 export async function getPdfBlobFromDocx(
   docxBlob: Blob,
   fileName: string = "document.docx"
 ): Promise<Blob> {
+  const cacheKey = `${fileName}_${docxBlob.size}_${docxBlob.type}`;
+  if (pdfConversionCache.has(cacheKey)) {
+    const cached = pdfConversionCache.get(cacheKey)!;
+    if (cached && cached.size > 1000) {
+      return cached;
+    }
+  }
+
+  let finalPdf: Blob | null = null;
+
   // 1. محاولة التحويل عبر مسار Next.js الداخلي المباشر (يعمل فورياً على Vercel وأونلاين عبر Adobe PDF Services API)
   try {
     const formData = new FormData();
@@ -153,8 +166,10 @@ export async function getPdfBlobFromDocx(
 
     if (directRes.ok) {
       const blob = await directRes.blob();
-      if (blob && blob.size > 1000 && blob.type.includes("pdf")) {
-        return blob;
+      if (blob && blob.size > 1000) {
+        finalPdf = blob.type.includes("pdf")
+          ? blob
+          : new Blob([await blob.arrayBuffer()], { type: "application/pdf" });
       }
     }
   } catch (directErr) {
@@ -162,30 +177,42 @@ export async function getPdfBlobFromDocx(
   }
 
   // 2. محاولة خادم الباك إند (NestJS) الرسمي عبر Adobe أو LibreOffice
-  try {
-    const formData = new FormData();
-    formData.append("file", docxBlob, fileName);
+  if (!finalPdf) {
+    try {
+      const formData = new FormData();
+      formData.append("file", docxBlob, fileName);
 
-    const res = await api.post("/operations/convert-docx-to-pdf", formData, {
-      headers: { "Content-Type": "multipart/form-data" },
-      responseType: "blob",
-      timeout: 40000,
-    });
+      const res = await api.post("/operations/convert-docx-to-pdf", formData, {
+        headers: { "Content-Type": "multipart/form-data" },
+        responseType: "blob",
+        timeout: 40000,
+      });
 
-    if (res.data && res.data.size > 1000) {
-      if (res.data.type === "application/json") {
-        const text = await res.data.text();
-        console.warn("استجابة غير متوقعة من السيرفر عند تحويل PDF:", text);
-      } else {
-        return res.data;
+      if (res.data && res.data.size > 1000) {
+        if (res.data.type === "application/json") {
+          const text = await res.data.text();
+          console.warn("استجابة غير متوقعة من السيرفر عند تحويل PDF:", text);
+        } else {
+          finalPdf = res.data.type?.includes("pdf")
+            ? res.data
+            : new Blob([await res.data.arrayBuffer()], { type: "application/pdf" });
+        }
       }
+    } catch (err) {
+      console.warn("تعذر التحويل عبر سيرفر الباك إند، جاري التحويل الداخلي بالمتصفح:", err);
     }
-  } catch (err) {
-    console.warn("تعذر التحويل عبر سيرفر الباك إند، جاري التحويل الداخلي بالمتصفح:", err);
   }
 
   // 3. التحويل الذكي في المتصفح بالخطوط العربية الأصلية
-  return await convertDocxBlobToPdfBlob(docxBlob);
+  if (!finalPdf) {
+    finalPdf = await convertDocxBlobToPdfBlob(docxBlob);
+  }
+
+  if (finalPdf && finalPdf.size > 1000) {
+    pdfConversionCache.set(cacheKey, finalPdf);
+  }
+
+  return finalPdf;
 }
 
 

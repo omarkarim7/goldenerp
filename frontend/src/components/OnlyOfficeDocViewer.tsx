@@ -9,16 +9,17 @@ import {
   CheckCircle2,
   Maximize2,
   Minimize2,
-  Eye,
-  Sparkles,
+  AlertCircle,
+  FileDown,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { renderAsync } from "docx-preview";
+import { getPdfBlobFromDocx } from "@/app/(dashboard)/dashboard/operations/[id]/tabs/client-pdf";
 
 export interface OnlyOfficeDocViewerProps {
   documentTitle: string;
   docxBlob?: Blob | null;
   pdfBlob?: Blob | null;
+  pdfUrl?: string | null;
   onDownloadDocx?: () => void;
   onDownloadPdf?: () => void;
   onPrint?: () => void;
@@ -26,89 +27,103 @@ export interface OnlyOfficeDocViewerProps {
 }
 
 /**
- * عارض المستندات المعتمد الفائق (Microsoft Word & PDF Official Document Viewer)
- * - يعرض النسخة الرسمية الحية لقالب Word الأصلي مباشرة بالمتصفح باستخدام خطوط Microsoft Arabic Typesetting الأصلية
- * - يعمل بدقة 100% وبسرعة فائقة على Vercel وجميع البيئات دون الاعتماد على خوادم خارجية
- * - يدعم ملء الشاشة، وتحميل ملف Word، وتحميل PDF، والطباعة المباشرة بأعلى جودة
+ * عارض المستندات والقوالب الرسمي المعتمد (PDF Official Viewer & Word Exporter)
+ * - يعرض المستند حصرياً بصيغة PDF الرسمية المعتمدة والمطابقة تماماً لنسخة الإستضافة وGitHub (دقة 100%)
+ * - يمنع أي تشوه في الخطوط أو الجداول أو التنسيقات الناتجة عن محولات المتصفح التجريبية
+ * - يوفر أزراراً رسمية واضحة لتحميل نسخة Word (.docx) وتحميل نسخة PDF وطباعة المستند مباشرة
  */
 export const OnlyOfficeDocViewer: React.FC<OnlyOfficeDocViewerProps> = ({
   documentTitle,
   docxBlob,
   pdfBlob,
+  pdfUrl,
   onDownloadDocx,
   onDownloadPdf,
   onPrint,
 }) => {
   const [pdfObjectUrl, setPdfObjectUrl] = useState<string | null>(null);
+  const [internalPdfBlob, setInternalPdfBlob] = useState<Blob | null>(null);
   const [isFullscreen, setIsFullscreen] = useState<boolean>(false);
-  const [isRenderingDocx, setIsRenderingDocx] = useState<boolean>(false);
-  const [docxRenderError, setDocxRenderError] = useState<string | null>(null);
+  const [isGeneratingPdf, setIsGeneratingPdf] = useState<boolean>(false);
+  const [pdfError, setPdfError] = useState<string | null>(null);
 
   const wrapperRef = useRef<HTMLDivElement>(null);
-  const docxContainerRef = useRef<HTMLDivElement>(null);
+  const generatedUrlRef = useRef<string | null>(null);
 
-  // تحديث رابط الـ PDF عند توفره لاستخدامه في الطباعة المباشرة والتحميل الفوري
-  useEffect(() => {
-    if (pdfBlob) {
-      const url = URL.createObjectURL(pdfBlob);
-      setPdfObjectUrl(url);
-      return () => {
-        URL.revokeObjectURL(url);
-      };
-    } else {
-      setPdfObjectUrl(null);
-    }
-  }, [pdfBlob]);
+  // اسم المستند بدون لاحقة لتسمية التنزيلات بدقة
+  const cleanBaseName = documentTitle
+    .replace(/\.pdf$/i, "")
+    .replace(/\.docx$/i, "")
+    .replace(/\.doc$/i, "")
+    .trim() || "المستند_الرسمي";
 
-  // تصيير مستند الوورد الأصلي مباشرة عبر محرك docx-preview مع خطوط Arabic Typesetting المعتمدة
+  // إدارة ومعالجة عرض الـ PDF
   useEffect(() => {
     let cancelled = false;
 
-    if (docxBlob && docxContainerRef.current) {
-      setIsRenderingDocx(true);
-      setDocxRenderError(null);
-      docxContainerRef.current.innerHTML = "";
+    // تنظيف أي رابط سابق تم إنشاؤه
+    const cleanupPreviousUrl = () => {
+      if (generatedUrlRef.current) {
+        URL.revokeObjectURL(generatedUrlRef.current);
+        generatedUrlRef.current = null;
+      }
+    };
 
-      const executeRender = async () => {
-        try {
-          // التأكد من جاهزية واكتمال تحميل الخطوط العربية المعتمدة
-          if (typeof document !== "undefined" && document.fonts) {
-            await document.fonts.ready;
-          }
-
-          if (cancelled || !docxContainerRef.current) return;
-
-          await renderAsync(docxBlob, docxContainerRef.current, undefined, {
-            className: "docx-page",
-            inWrapper: true,
-            ignoreWidth: false,
-            ignoreHeight: true, // مهم جداً: true لكي تتمدد الصفحة بكامل محتواها ولا يتم قص أي جدول أو ختم أو توقيع
-            breakPages: true,
-            experimental: true,
-            renderHeaders: true,
-            renderFooters: true,
-            useBase64URL: true,
-          });
-
-          if (!cancelled) {
-            setIsRenderingDocx(false);
-          }
-        } catch (err: any) {
-          console.error("فشل تصيير قالب الوورد في المتصفح:", err);
-          if (!cancelled) {
-            setDocxRenderError(err?.message || "تعذر تصيير قالب الوورد");
-            setIsRenderingDocx(false);
-          }
-        }
-      };
-
-      executeRender();
+    // 1. إذا توفر رابط مباشر (URL)
+    if (pdfUrl) {
+      cleanupPreviousUrl();
+      setPdfObjectUrl(pdfUrl);
+      setIsGeneratingPdf(false);
+      setPdfError(null);
+      return;
     }
+
+    // 2. إذا توفر ملف PDF جاهز من الخصائص (Prop)
+    if (pdfBlob && pdfBlob.size > 100) {
+      cleanupPreviousUrl();
+      const url = URL.createObjectURL(pdfBlob);
+      generatedUrlRef.current = url;
+      setInternalPdfBlob(pdfBlob);
+      setPdfObjectUrl(url);
+      setIsGeneratingPdf(false);
+      setPdfError(null);
+      return;
+    }
+
+    // 3. إذا توفر ملف Word (.docx) فقط، نقوم بتحويله إلى PDF رسمي متطابق 100%
+    if (docxBlob && docxBlob.size > 100) {
+      cleanupPreviousUrl();
+      setIsGeneratingPdf(true);
+      setPdfError(null);
+
+      getPdfBlobFromDocx(docxBlob, `${cleanBaseName}.docx`)
+        .then((generatedPdf) => {
+          if (cancelled) return;
+          setInternalPdfBlob(generatedPdf);
+          const url = URL.createObjectURL(generatedPdf);
+          generatedUrlRef.current = url;
+          setPdfObjectUrl(url);
+          setIsGeneratingPdf(false);
+        })
+        .catch((err: any) => {
+          if (cancelled) return;
+          console.error("خطأ في توليد معاينة PDF للقالب:", err);
+          setPdfError(err?.message || "تعذر توليد النسخة الرسمية للمعاينة (PDF)");
+          setIsGeneratingPdf(false);
+        });
+      return;
+    }
+
+    // لم يتم توفير ملف
+    cleanupPreviousUrl();
+    setPdfObjectUrl(null);
+    setIsGeneratingPdf(false);
 
     return () => {
       cancelled = true;
+      cleanupPreviousUrl();
     };
-  }, [docxBlob]);
+  }, [pdfBlob, pdfUrl, docxBlob, cleanBaseName]);
 
   // ملء الشاشة
   const toggleFullscreen = () => {
@@ -130,6 +145,50 @@ export const OnlyOfficeDocViewer: React.FC<OnlyOfficeDocViewerProps> = ({
     return () => document.removeEventListener("fullscreenchange", handleFsChange);
   }, []);
 
+  // تنفيذ تنزيل ملف Word الأصلي المحدث
+  const handleDownloadDocxFile = () => {
+    if (onDownloadDocx) {
+      onDownloadDocx();
+      return;
+    }
+    if (docxBlob) {
+      const url = URL.createObjectURL(docxBlob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${cleanBaseName}.docx`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    }
+  };
+
+  // تنفيذ تنزيل ملف الـ PDF الرسمي
+  const handleDownloadPdfFile = () => {
+    if (onDownloadPdf) {
+      onDownloadPdf();
+      return;
+    }
+    const targetBlob = pdfBlob || internalPdfBlob;
+    if (targetBlob) {
+      const url = URL.createObjectURL(targetBlob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${cleanBaseName}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } else if (pdfObjectUrl) {
+      const a = document.createElement("a");
+      a.href = pdfObjectUrl;
+      a.download = `${cleanBaseName}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+    }
+  };
+
   // تنفيذ الطباعة المباشرة بأعلى دقة متجهة وجودة مطابقة لقالب الوورد الأصلي
   const handleDirectPrint = () => {
     if (pdfObjectUrl) {
@@ -147,100 +206,14 @@ export const OnlyOfficeDocViewer: React.FC<OnlyOfficeDocViewerProps> = ({
           printIframe.contentWindow?.focus();
           printIframe.contentWindow?.print();
         } catch {
-          window.open(pdfObjectUrl, "_blank");
+          window.open(pdfObjectUrl, "_blank")?.print();
         }
-      };
-      return;
-    }
-
-    if (docxContainerRef.current && docxContainerRef.current.innerHTML.trim()) {
-      const printIframe = document.createElement("iframe");
-      printIframe.style.position = "fixed";
-      printIframe.style.right = "0";
-      printIframe.style.bottom = "0";
-      printIframe.style.width = "0";
-      printIframe.style.height = "0";
-      printIframe.style.border = "0";
-      document.body.appendChild(printIframe);
-
-      const doc = printIframe.contentDocument || printIframe.contentWindow?.document;
-      if (doc) {
-        doc.open();
-        doc.write(`
-          <!DOCTYPE html>
-          <html dir="rtl" lang="ar">
-          <head>
-            <meta charset="utf-8">
-            <title>${documentTitle}</title>
-            <style>
-              @font-face {
-                font-family: 'Arabic Typesetting';
-                src: url('/fonts/arabtype.ttf') format('truetype');
-                font-weight: 100 900;
-                font-style: normal;
-              }
-              @font-face {
-                font-family: 'Andalus';
-                src: url('/fonts/andlso.ttf') format('truetype');
-                font-weight: 100 900;
-                font-style: normal;
-              }
-              @font-face {
-                font-family: 'Aldhabi';
-                src: url('/fonts/aldhabi.ttf') format('truetype');
-                font-weight: 100 900;
-                font-style: normal;
-              }
-              @font-face {
-                font-family: 'Traditional Arabic';
-                src: url('/fonts/trado.ttf') format('truetype');
-                font-weight: normal;
-                font-style: normal;
-              }
-              @page {
-                size: A4 portrait;
-                margin: 0;
-              }
-              body {
-                margin: 0;
-                padding: 0;
-                background: #ffffff;
-                direction: rtl;
-                font-family: 'Arabic Typesetting', serif;
-              }
-              .docx-wrapper {
-                background: transparent !important;
-                padding: 0 !important;
-              }
-              .docx-page, section.docx {
-                margin: 0 auto !important;
-                box-shadow: none !important;
-                border: none !important;
-                page-break-after: always;
-              }
-              * {
-                -webkit-print-color-adjust: exact !important;
-                print-color-adjust: exact !important;
-              }
-            </style>
-          </head>
-          <body>
-            ${docxContainerRef.current.innerHTML}
-          </body>
-          </html>
-        `);
-        doc.close();
-
         setTimeout(() => {
-          printIframe.contentWindow?.focus();
-          printIframe.contentWindow?.print();
-          setTimeout(() => {
-            if (document.body.contains(printIframe)) {
-              document.body.removeChild(printIframe);
-            }
-          }, 2000);
-        }, 400);
-      }
+          if (document.body.contains(printIframe)) {
+            document.body.removeChild(printIframe);
+          }
+        }, 3000);
+      };
       return;
     }
 
@@ -256,9 +229,9 @@ export const OnlyOfficeDocViewer: React.FC<OnlyOfficeDocViewerProps> = ({
         isFullscreen ? "p-0 rounded-none fixed inset-0 z-[999999]" : ""
       }`}
     >
-      {/* ━━━ شريط الأدوات العلوي على طراز Microsoft Word Ribbon ━━━ */}
-      <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-2.5 bg-gradient-to-r from-slate-900 via-[#1e293b] to-slate-900 border-b border-slate-800 text-white select-none">
-        {/* عنوان المستند وشارة الجودة */}
+      {/* ━━━ شريط الأدوات العلوي الموحد ━━━ */}
+      <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-2.5 bg-gradient-to-r from-slate-900 via-[#1e293b] to-slate-900 border-b border-slate-800 text-white select-none shrink-0">
+        {/* عنوان المستند وشارة الجودة الرسمية */}
         <div className="flex items-center gap-3">
           <div className="w-9 h-9 rounded-xl bg-blue-600/25 border border-blue-500/40 flex items-center justify-center text-blue-400 shrink-0 shadow-inner">
             <FileText className="w-5 h-5" />
@@ -266,15 +239,15 @@ export const OnlyOfficeDocViewer: React.FC<OnlyOfficeDocViewerProps> = ({
           <div>
             <div className="flex items-center gap-2 flex-wrap">
               <span className="font-extrabold text-sm text-slate-100 truncate max-w-xs sm:max-w-md">
-                {documentTitle}
+                {cleanBaseName}
               </span>
-              <span className="px-2.5 py-0.5 text-[10px] font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 rounded-full flex items-center gap-1">
-                <CheckCircle2 className="w-3 h-3" />
-                خطوط وقالب Word الأصلي 100%
+              <span className="px-2.5 py-0.5 text-[11px] font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 rounded-full flex items-center gap-1.5 shadow-xs">
+                <CheckCircle2 className="w-3.5 h-3.5" />
+                معاينة PDF المعتمدة 100%
               </span>
             </div>
             <p className="text-[11px] text-slate-400 hidden sm:block">
-              معاينة رسمية حية بنفس خطوط وتنسيقات وجداول وهوامش قالب مايكروسوفت وورد
+              معاينة طبق الأصل لملف الـ PDF الرسمي مطابقة تماماً لما يظهر على السحابة وGitHub
             </p>
           </div>
         </div>
@@ -293,41 +266,43 @@ export const OnlyOfficeDocViewer: React.FC<OnlyOfficeDocViewerProps> = ({
             {isFullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
           </Button>
 
-          {/* Download Word */}
-          {onDownloadDocx && (
+          {/* Download Word (.docx) */}
+          {(onDownloadDocx || docxBlob) && (
             <Button
+              type="button"
               size="sm"
               variant="outline"
-              onClick={onDownloadDocx}
-              disabled={!docxBlob}
-              className="bg-slate-900 border-slate-700 text-slate-200 hover:bg-slate-800 text-xs h-8 px-3 rounded-xl cursor-pointer shadow-xs font-bold"
-              title="تنزيل الملف المحدث بصيغة مايكروسوفت وورد الأصلي (.docx)"
+              onClick={handleDownloadDocxFile}
+              className="bg-blue-950/70 border-blue-500/40 text-blue-200 hover:bg-blue-900/80 hover:text-white text-xs h-8 px-3 rounded-xl cursor-pointer shadow-xs font-bold transition-all active:scale-95"
+              title="تنزيل الملف بصيغة مايكروسوفت وورد الأصلي (.docx)"
             >
-              <Download className="w-3.5 h-3.5 ml-1.5 text-blue-400" />
+              <FileDown className="w-3.5 h-3.5 ml-1.5 text-blue-400" />
               <span>تحميل Word (.docx)</span>
             </Button>
           )}
 
-          {/* Download PDF */}
-          {onDownloadPdf && (
-            <Button
-              size="sm"
-              onClick={onDownloadPdf}
-              className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs h-8 px-3 rounded-xl shadow cursor-pointer font-bold"
-              title="تحميل الملف بصيغة PDF الرسمية المعتمدة"
-            >
-              <Download className="w-3.5 h-3.5 ml-1.5" />
-              <span>تحميل PDF</span>
-            </Button>
-          )}
-
-          {/* Print */}
+          {/* Download PDF (.pdf) */}
           <Button
+            type="button"
+            size="sm"
+            onClick={handleDownloadPdfFile}
+            disabled={!pdfObjectUrl && !pdfBlob && !internalPdfBlob}
+            className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs h-8 px-3 rounded-xl shadow cursor-pointer font-bold transition-all active:scale-95 disabled:opacity-50"
+            title="تحميل الملف بصيغة PDF الرسمية المعتمدة"
+          >
+            <Download className="w-3.5 h-3.5 ml-1.5" />
+            <span>تحميل PDF</span>
+          </Button>
+
+          {/* Print PDF */}
+          <Button
+            type="button"
             size="sm"
             variant="outline"
             onClick={handleDirectPrint}
-            className="bg-amber-600/20 border-amber-500/40 text-amber-300 hover:bg-amber-600/30 text-xs h-8 px-3 rounded-xl cursor-pointer font-bold"
-            title="طباعة المستند الرسمي بأعلى دقة"
+            disabled={!pdfObjectUrl}
+            className="bg-amber-600/20 border-amber-500/40 text-amber-300 hover:bg-amber-600/30 text-xs h-8 px-3 rounded-xl cursor-pointer font-bold transition-all active:scale-95 disabled:opacity-50"
+            title="طباعة المستند الرسمي بأعلى دقة متجهة"
           >
             <Printer className="w-3.5 h-3.5 ml-1.5" />
             <span>طباعة</span>
@@ -335,39 +310,53 @@ export const OnlyOfficeDocViewer: React.FC<OnlyOfficeDocViewerProps> = ({
         </div>
       </div>
 
-      {/* ━━━ نافذة العرض الرئيسية الموحدة للمستند الرسمي المعتمد ━━━ */}
+      {/* ━━━ نافذة العرض الرئيسية للمستند الرسمي المعتمد (PDF فقط) ━━━ */}
       <div className="flex-1 min-h-0 w-full bg-slate-950 relative flex overflow-hidden">
-        {!docxBlob && pdfObjectUrl ? (
+        {/* حالة التحميل والتوليد */}
+        {isGeneratingPdf && !pdfObjectUrl && (
+          <div className="absolute inset-0 w-full h-full flex flex-col items-center justify-center gap-4 text-slate-300 p-8 text-center bg-slate-950 z-20">
+            <div className="w-16 h-16 rounded-2xl bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center shadow-lg">
+              <RefreshCw className="w-8 h-8 animate-spin text-emerald-400" />
+            </div>
+            <div className="space-y-1">
+              <h4 className="text-base font-bold text-white">جاري معالجة وتجهيز معاينة الـ PDF الرسمية المعتمدة...</h4>
+              <p className="text-xs text-slate-400">تطبيق الباركود الرقمي والهيدر وتنسيقات القالب المعتمد بدقة 100%</p>
+            </div>
+          </div>
+        )}
+
+        {/* حالة الخطأ */}
+        {pdfError && !pdfObjectUrl && !isGeneratingPdf && (
+          <div className="m-auto max-w-md p-6 rounded-2xl bg-slate-900 border border-rose-500/30 text-center space-y-4 shadow-xl z-20">
+            <div className="w-12 h-12 rounded-2xl bg-rose-500/20 text-rose-400 flex items-center justify-center mx-auto">
+              <AlertCircle className="h-6 w-6" />
+            </div>
+            <div>
+              <h4 className="text-base font-bold text-rose-300">تعذر عرض معاينة PDF</h4>
+              <p className="text-xs text-slate-400 mt-1 leading-relaxed">{pdfError}</p>
+            </div>
+            <div className="flex items-center justify-center gap-2 pt-2">
+              {(onDownloadDocx || docxBlob) && (
+                <Button
+                  type="button"
+                  onClick={handleDownloadDocxFile}
+                  className="bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold"
+                >
+                  <Download className="h-3.5 w-3.5 ml-1.5" />
+                  تحميل ملف Word الأصلي
+                </Button>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* عارض الـ PDF الرسمي الدقيق */}
+        {pdfObjectUrl && (
           <div className="w-full h-full flex flex-col bg-slate-900 overflow-hidden">
             <iframe
-              src={`${pdfObjectUrl}#toolbar=0&navpanes=0&view=FitH`}
+              src={`${pdfObjectUrl}#toolbar=1&navpanes=0&view=FitH`}
               className="w-full h-full border-0 bg-slate-900"
-              title={documentTitle}
-            />
-          </div>
-        ) : (
-          <div className="docx-viewer-scroll-area flex">
-            {isRenderingDocx && (
-              <div className="w-full h-full min-h-[400px] flex flex-col items-center justify-center gap-4 text-slate-300 p-8 text-center">
-                <div className="w-16 h-16 rounded-2xl bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center shadow-lg">
-                  <RefreshCw className="w-8 h-8 animate-spin text-emerald-400" />
-                </div>
-                <div className="space-y-1">
-                  <h4 className="text-base font-bold text-white">جاري معالجة وتوليد المستند الرسمي المعتمد...</h4>
-                  <p className="text-xs text-slate-400">تطبيق الباركود الرقمي والهيدر المعتمد بدقة 100%</p>
-                </div>
-              </div>
-            )}
-
-            {docxRenderError && !isRenderingDocx && (
-              <div className="w-full h-[400px] flex flex-col items-center justify-center gap-3 text-red-400 p-8 text-center">
-                <p className="text-sm font-bold">حدث خطأ أثناء عرض القالب: {docxRenderError}</p>
-              </div>
-            )}
-
-            <div
-              ref={docxContainerRef}
-              className={`w-full flex flex-col items-center pb-12 ${isRenderingDocx ? "hidden" : "block"}`}
+              title={cleanBaseName}
             />
           </div>
         )}

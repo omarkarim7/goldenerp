@@ -198,34 +198,66 @@ export async function POST(req: NextRequest) {
     const docxBuffer = Buffer.from(arrayBuffer);
 
     const accounts = getAdobeAccounts();
-    if (accounts.length === 0) {
-      return NextResponse.json(
-        { error: "بيانات اعتماد Adobe PDF Services غير مهيأة في متغيرات البيئة (ADOBE_CLIENT_ID, ADOBE_CLIENT_SECRET)" },
-        { status: 503 }
-      );
-    }
 
     let lastError: any = null;
-    for (let i = 0; i < accounts.length; i++) {
-      const account = accounts[i];
-      try {
-        const pdfBuffer = await convertViaAdobe(docxBuffer, account);
-        return new Response(pdfBuffer, {
-          status: 200,
-          headers: {
-            "Content-Type": "application/pdf",
-            "Content-Disposition": 'inline; filename="letter.pdf"',
-            "Content-Length": pdfBuffer.byteLength.toString(),
-            "X-Adobe-Account-Used": `account-${i + 1}`,
-          },
-        });
-      } catch (err: any) {
-        lastError = err;
-        console.warn(`تعذر التحويل عبر ${account.name} (${err?.message})، جاري التبديل التلقائي للحساب التالي...`);
+    if (accounts.length > 0) {
+      for (let i = 0; i < accounts.length; i++) {
+        const account = accounts[i];
+        try {
+          const pdfBuffer = await convertViaAdobe(docxBuffer, account);
+          return new Response(pdfBuffer, {
+            status: 200,
+            headers: {
+              "Content-Type": "application/pdf",
+              "Content-Disposition": 'inline; filename="letter.pdf"',
+              "Content-Length": pdfBuffer.byteLength.toString(),
+              "X-Adobe-Account-Used": `account-${i + 1}`,
+            },
+          });
+        } catch (err: any) {
+          lastError = err;
+          console.warn(`تعذر التحويل عبر ${account.name} (${err?.message})، جاري التبديل التلقائي للحساب التالي...`);
+        }
       }
     }
 
-    throw lastError || new Error("فشلت جميع حسابات Adobe المتاحة في التحويل");
+    // المحاولة الاحتياطية: إرسال الطلب لخادم الباك إند الخلفي (يدعم LibreOffice و Word COM)
+    try {
+      const backendBase =
+        process.env.BACKEND_INTERNAL_URL ||
+        process.env.NEXT_PUBLIC_API_URL ||
+        "http://localhost:4000";
+      const forwardForm = new FormData();
+      const docxBlob = new Blob([docxBuffer], {
+        type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      });
+      forwardForm.append("file", docxBlob, "document.docx");
+
+      const backendRes = await fetch(`${backendBase}/api/operations/convert-docx-to-pdf`, {
+        method: "POST",
+        body: forwardForm,
+        signal: AbortSignal.timeout(30000),
+      });
+
+      if (backendRes.ok) {
+        const backendPdf = await backendRes.arrayBuffer();
+        if (backendPdf.byteLength > 1000) {
+          return new Response(backendPdf, {
+            status: 200,
+            headers: {
+              "Content-Type": "application/pdf",
+              "Content-Disposition": 'inline; filename="letter.pdf"',
+              "Content-Length": backendPdf.byteLength.toString(),
+              "X-PDF-Engine": "backend-nest-fallback",
+            },
+          });
+        }
+      }
+    } catch (backendErr: any) {
+      console.warn("Backend conversion fallback failed:", backendErr?.message);
+    }
+
+    throw lastError || new Error("فشلت جميع محركات تحويل مستند Word إلى PDF المتاحة");
   } catch (err: any) {
     console.error("خطأ تحويل DOCX إلى PDF في Next.js Route:", err);
     return NextResponse.json(
