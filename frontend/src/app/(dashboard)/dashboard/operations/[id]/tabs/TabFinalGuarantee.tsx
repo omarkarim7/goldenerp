@@ -42,10 +42,11 @@ import {
   getOperationFiscalYear,
   getOperationTechnicalOpeningDate,
   getOperationTenderMethod,
+  isValidCloudDocUrl,
 } from "./letter-utils";
 import JSZip from "jszip";
 import QRCode from "qrcode";
-import { getPdfBlobFromDocx, uploadPdfToFreeCloud } from "./client-pdf";
+import { getPdfBlobFromDocx, uploadPdfToFreeCloud, getExpectedCloudPdfUrl } from "./client-pdf";
 import { OnlyOfficeDocViewer } from "@/components/OnlyOfficeDocViewer";
 
 export type FinalGuaranteeLetterType =
@@ -203,17 +204,12 @@ export function TabFinalGuarantee({
     const comp = currentCompanyLink?.company || op.companies?.[0]?.company;
     return sanitizeChairmanTitle(comp?.managerName || "سحر حسن محمد أحمد عبد السلام");
   });
-  // Cloud URLs per letter type (Catbox.moe / Tmpfile / Gofile)
+  // Cloud URLs per letter type (Cloudflare R2 / Gofile)
   const [cloudUrls, setCloudUrls] = useState<Record<string, string>>(() => {
     const initial = savedSettings?.cloudUrls || {};
     const cleaned: Record<string, string> = {};
     for (const [k, v] of Object.entries(initial)) {
-      if (
-        typeof v === "string" &&
-        (v.startsWith("http://") || v.startsWith("https://")) &&
-        !v.includes("public-doc") &&
-        !v.includes("17a9mx.pdf")
-      ) {
+      if (typeof v === "string" && isValidCloudDocUrl(v)) {
         cleaned[k] = v;
       }
     }
@@ -364,11 +360,18 @@ export function TabFinalGuarantee({
     // QR Code Generation
     let qrDrawingXml = "";
     try {
-      const activeCloud = cloudUrls[type];
-      const origin = typeof window !== "undefined" ? window.location.origin : "https://goldenerp-tau.vercel.app";
-      let targetVerifyUrl = `${origin}/verify-doc?ref=${encodeURIComponent(registrationNumber)}&opId=${op.id}&type=guarantee_final_${type}&printedBy=${encodeURIComponent(getCurrentUserName())}&printedAt=${Date.now()}`;
-      if (activeCloud && (activeCloud.startsWith("http://") || activeCloud.startsWith("https://")) && !activeCloud.includes("public-doc")) {
-        targetVerifyUrl = activeCloud;
+      const fileName = `final_guarantee_${type}_${registrationNumber || op.serialNumber}.pdf`;
+      let activeCloud = cloudUrls[type];
+      if (!isValidCloudDocUrl(activeCloud)) {
+        activeCloud = await getExpectedCloudPdfUrl(fileName);
+        if (activeCloud) {
+          setCloudUrls((prev) => ({ ...prev, [type]: activeCloud }));
+        }
+      }
+      let targetVerifyUrl: string = activeCloud || "";
+      if (!isValidCloudDocUrl(targetVerifyUrl)) {
+        const origin = typeof window !== "undefined" ? window.location.origin : "https://goldenerp-tau.vercel.app";
+        targetVerifyUrl = `${origin}/verify-doc?ref=${encodeURIComponent(registrationNumber)}&opId=${op.id}&type=guarantee_final_${type}&printedBy=${encodeURIComponent(getCurrentUserName())}&printedAt=${Date.now()}`;
       }
 
       const qrDataUrl = await QRCode.toDataURL(targetVerifyUrl, { width: 160, margin: 1 });

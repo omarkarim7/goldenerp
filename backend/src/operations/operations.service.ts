@@ -2452,5 +2452,39 @@ try {
       'تعذر الرفع إلى مراكز التخزين السحابي (Cloudflare R2 / Gofile). يرجى التحقق من اتصال الإنترنت.'
     );
   }
+
+  async getExpectedCloudUrl(fileName: string): Promise<string> {
+    const rawName = fileName || `goldenerp_doc_${Date.now()}.pdf`;
+    const finalName = rawName.endsWith('.pdf') ? rawName : `${rawName}.pdf`;
+
+    const accountId = process.env.R2_ACCOUNT_ID || 'e955866121f5a31f17c8cd21f8c09d19';
+    const bucketName = process.env.R2_BUCKET_NAME || 'goldenerp-storage';
+    const accessKeyId = process.env.R2_ACCESS_KEY_ID || '87f6a410e812d016695a39cb23c6c4ce';
+    const secretAccessKey = process.env.R2_SECRET_ACCESS_KEY || '717642f36c3f9d7f8af1b0d57999b724ad504becd460b826ba7aa9a7dede42c3';
+    const endpoint = process.env.R2_ENDPOINT || `https://${accountId}.r2.cloudflarestorage.com`;
+
+    const s3 = new S3Client({
+      region: 'auto',
+      endpoint,
+      credentials: { accessKeyId, secretAccessKey },
+    });
+
+    const key = `official_docs/${finalName}`;
+    const publicDomain = process.env.R2_PUBLIC_DOMAIN;
+    if (publicDomain && publicDomain.startsWith('http')) {
+      return `${publicDomain.replace(/\/+$/, '')}/${key}`;
+    }
+
+    return await getSignedUrl(
+      s3,
+      new GetObjectCommand({
+        Bucket: bucketName,
+        Key: key,
+        ResponseContentType: 'application/pdf',
+        ResponseContentDisposition: `inline; filename="${finalName}"`,
+      }),
+      { expiresIn: 604800 }
+    );
+  }
 }
 

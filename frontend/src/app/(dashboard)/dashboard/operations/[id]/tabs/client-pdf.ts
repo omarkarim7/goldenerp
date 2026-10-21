@@ -402,5 +402,31 @@ export async function uploadPdfToFreeCloud(
   throw new Error("تعذر الرفع إلى مراكز التخزين السحابي (Cloudflare R2 / Gofile). يرجى التحقق من اتصال الإنترنت والمحاولة مجدداً.");
 }
 
+/**
+ * الحصول المسبق على رابط الـ PDF السحابي المعتمد (Cloudflare R2)
+ * لضمان دمجه فوراً داخل رمز الـ QR بالخطاب قبل اكتمال الرفع
+ */
+export async function getExpectedCloudPdfUrl(fileName: string): Promise<string> {
+  try {
+    const res = await fetch(`/api/upload-cloud-pdf?fileName=${encodeURIComponent(fileName)}`);
+    if (res.ok) {
+      const data = await res.json();
+      if (data?.url) return data.url;
+    }
+  } catch (e: any) {
+    console.warn("Could not pre-fetch Cloudflare R2 url from Next.js route:", e?.message);
+  }
+
+  try {
+    const res = await api.get(`/operations/expected-cloud-url?fileName=${encodeURIComponent(fileName)}`);
+    if (res?.data?.url) return res.data.url;
+  } catch (e: any) {
+    console.warn("Could not pre-fetch Cloudflare R2 url from backend:", e?.message);
+  }
+
+  return "";
+}
+
+
 
 

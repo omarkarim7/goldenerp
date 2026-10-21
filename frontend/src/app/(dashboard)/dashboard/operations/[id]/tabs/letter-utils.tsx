@@ -595,6 +595,26 @@ export interface LetterQrCloudCardProps {
   isModifiedAfterUpload?: boolean;
 }
 
+export function isValidCloudDocUrl(url?: string | null): boolean {
+  if (!url || typeof url !== "string") return false;
+  const trimmed = url.trim();
+  if (!trimmed.startsWith("https://")) return false;
+  if (
+    trimmed.includes("tmpfile") ||
+    trimmed.includes("tmpfiles") ||
+    trimmed.includes("catbox") ||
+    trimmed.includes("public-doc") ||
+    trimmed.includes("17a9mx.pdf")
+  ) {
+    return false;
+  }
+  return (
+    trimmed.includes("r2.cloudflarestorage.com") ||
+    trimmed.includes("r2.dev") ||
+    trimmed.includes("gofile.io")
+  );
+}
+
 /**
  * بطاقة الباركود الذكي ورمز QR والرفع السحابي المجاني (Catbox.moe / رابط PDF مباشر)
  * موضوعة دائماً بأسفل الصفحة بجوار شريط الإجراءات والانتقال لعدم إعاقة ملء الخانات
@@ -612,15 +632,7 @@ export function LetterQrCloudCard({
   gradientClass = "from-amber-500/10 via-orange-500/10 to-transparent border-amber-500/25",
   isModifiedAfterUpload = false,
 }: LetterQrCloudCardProps) {
-  const isInvalidCloud = Boolean(
-    cloudPdfUrl && (
-      cloudPdfUrl.includes("tmpfiles") ||
-      cloudPdfUrl.includes("tmpfile") ||
-      cloudPdfUrl.includes("catbox") ||
-      cloudPdfUrl.includes("17a9mx.pdf")
-    )
-  );
-  const effectiveCloudUrl = isInvalidCloud ? "" : (cloudPdfUrl || "");
+  const effectiveCloudUrl = isValidCloudDocUrl(cloudPdfUrl) ? (cloudPdfUrl || "") : "";
 
   return (
     <div className={`p-4 rounded-2xl bg-gradient-to-r ${gradientClass} border space-y-3 my-4 shadow-sm transition-all`}>

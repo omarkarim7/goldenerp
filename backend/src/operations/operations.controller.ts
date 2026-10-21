@@ -90,6 +90,12 @@ export class OperationsController {
     return this.operationsService.findByCode(code);
   }
 
+  @Get('expected-cloud-url')
+  async getExpectedCloudUrl(@Query('fileName') fileName: string) {
+    const url = await this.operationsService.getExpectedCloudUrl(fileName);
+    return { success: true, url, provider: 'Cloudflare R2 Storage (حساب الشركة المعتمد)' };
+  }
+
   @Get(':id')
   findOne(@Param('id') id: string) {
     return this.operationsService.findOne(id);

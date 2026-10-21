@@ -9,6 +9,7 @@ export class JwtAuthGuard extends AuthGuard('jwt') {
     if (
       url.includes('/convert-docx-to-pdf') ||
       url.includes('/upload-cloud-pdf') ||
+      url.includes('/expected-cloud-url') ||
       url.includes('/open-in-word') ||
       (url.includes('/documents/') && (url.includes('/file') || url.includes('/download')))
     ) {

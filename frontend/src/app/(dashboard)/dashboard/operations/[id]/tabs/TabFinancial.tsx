@@ -41,10 +41,11 @@ import {
   getOperationTechnicalOpeningDate,
   getOperationTenderMethod,
   getSharedOperationScope,
+  isValidCloudDocUrl,
 } from "./letter-utils";
 import JSZip from "jszip";
 import QRCode from "qrcode";
-import { getPdfBlobFromDocx, uploadPdfToFreeCloud } from "./client-pdf";
+import { getPdfBlobFromDocx, uploadPdfToFreeCloud, getExpectedCloudPdfUrl } from "./client-pdf";
 import { OnlyOfficeDocViewer } from "@/components/OnlyOfficeDocViewer";
 
 // ━━━ تعريف بيانات بنود وبدائل العرض المالي ━━━
@@ -303,18 +304,10 @@ export function TabFinancial({
     return savedFin?.barcodeRef || `GS-FIN-${op.serialNumber || "365"}`;
   });
 
-  // الرابط السحابي المعتمد للنسخة الرقمية (Catbox.moe / Tmpfile / Gofile)
+  // الرابط السحابي المعتمد للنسخة الرقمية (Cloudflare R2 / Gofile)
   const [cloudPdfUrl, setCloudPdfUrl] = useState<string>(() => {
     const url = savedFin?.cloudPdfUrl || "";
-    if (
-      url &&
-      (url.startsWith("http://") || url.startsWith("https://")) &&
-      !url.includes("public-doc") &&
-      !url.includes("17a9mx.pdf")
-    ) {
-      return url;
-    }
-    return "";
+    return isValidCloudDocUrl(url) ? url : "";
   });
   const [uploadingCloud, setUploadingCloud] = useState(false);
   const [lastGeneratedSnapshot, setLastGeneratedSnapshot] = useState<string | null>(null);
@@ -733,10 +726,18 @@ export function TabFinancial({
     // توليد رمز التحقق الرقمي المباشر
     let qrDrawingXml = "";
     try {
-      const origin = typeof window !== "undefined" ? window.location.origin : "https://goldenerp-tau.vercel.app";
-      let targetVerifyUrl = `${origin}/verify-doc?ref=${encodeURIComponent(registrationNumber)}&opId=${op.id}&type=financial&printedBy=${encodeURIComponent(getCurrentUserName())}&printedAt=${Date.now()}`;
-      if (cloudPdfUrl && (cloudPdfUrl.startsWith("http://") || cloudPdfUrl.startsWith("https://")) && !cloudPdfUrl.includes("public-doc")) {
-        targetVerifyUrl = cloudPdfUrl;
+      const fileName = `financial_offer_${registrationNumber || op.serialNumber}.pdf`;
+      let activeCloud = cloudPdfUrl;
+      if (!isValidCloudDocUrl(activeCloud)) {
+        activeCloud = await getExpectedCloudPdfUrl(fileName);
+        if (activeCloud) {
+          setCloudPdfUrl(activeCloud);
+        }
+      }
+      let targetVerifyUrl: string = activeCloud || "";
+      if (!isValidCloudDocUrl(targetVerifyUrl)) {
+        const origin = typeof window !== "undefined" ? window.location.origin : "https://goldenerp-tau.vercel.app";
+        targetVerifyUrl = `${origin}/verify-doc?ref=${encodeURIComponent(registrationNumber)}&opId=${op.id}&type=financial&printedBy=${encodeURIComponent(getCurrentUserName())}&printedAt=${Date.now()}`;
       }
       const qrDataUrl = await QRCode.toDataURL(targetVerifyUrl, { width: 160, margin: 1 });
       const qrBase64 = qrDataUrl.split(",")[1];

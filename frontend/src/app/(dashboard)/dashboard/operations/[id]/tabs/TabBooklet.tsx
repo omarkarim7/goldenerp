@@ -31,11 +31,12 @@ import {
   FiscalYearSelect, OperationDocArchiveCard,
   getSharedOperationScope, replaceDocxScope, replaceDocxFiscalAndDate,
   replaceDocxChairman, sanitizeChairmanTitle,
-  getOperationRecipientTitle, getOperationFiscalYear, getOperationTechnicalOpeningDate, getOperationTenderMethod
+  getOperationRecipientTitle, getOperationFiscalYear, getOperationTechnicalOpeningDate, getOperationTenderMethod,
+  isValidCloudDocUrl
 } from "./letter-utils";
 import JSZip from "jszip";
 import QRCode from "qrcode";
-import { getPdfBlobFromDocx, uploadPdfToFreeCloud } from "./client-pdf";
+import { getPdfBlobFromDocx, uploadPdfToFreeCloud, getExpectedCloudPdfUrl } from "./client-pdf";
 import { OnlyOfficeDocViewer } from "@/components/OnlyOfficeDocViewer";
 
 export type BookletLetterType =
@@ -391,18 +392,13 @@ export function TabBooklet({
     return savedData?.additionalNotes || "";
   });
 
-  // ━━━ 7. الروابط السحابية للنسخ الرقمية المعتمدة (Catbox.moe / Tmpfile / Gofile.io) ━━━
+  // ━━━ 7. الروابط السحابية للنسخ الرقمية المعتمدة (Cloudflare R2 / Gofile.io) ━━━
   const [cloudUrls, setCloudUrls] = useState<{ [key in BookletLetterType]?: string }>(() => {
     const raw = savedData?.cloudUrls || {};
     const cleaned: { [key in BookletLetterType]?: string } = {};
     for (const [k, v] of Object.entries(raw)) {
-      if (
-        typeof v === "string" &&
-        (v.startsWith("http://") || v.startsWith("https://")) &&
-        !v.includes("public-doc") &&
-        !v.includes("17a9mx.pdf")
-      ) {
-        cleaned[k as BookletLetterType] = v;
+      if (isValidCloudDocUrl(v as string)) {
+        cleaned[k as BookletLetterType] = v as string;
       }
     }
     return cleaned;
@@ -598,11 +594,18 @@ export function TabBooklet({
 
     let qrDrawingXml = "";
     try {
-      const activeCloud = cloudUrls[type];
-      const origin = typeof window !== "undefined" ? window.location.origin : "https://goldenerp-tau.vercel.app";
-      let targetVerifyUrl = `${origin}/verify-doc?ref=${encodeURIComponent(registrationNumber)}&opId=${op.id}&type=booklet_${type}&printedBy=${encodeURIComponent(getCurrentUserName())}&printedAt=${Date.now()}`;
-      if (activeCloud && (activeCloud.startsWith("http://") || activeCloud.startsWith("https://")) && !activeCloud.includes("public-doc")) {
-        targetVerifyUrl = activeCloud;
+      const fileName = `official_letter_${type}_${registrationNumber || op.serialNumber}.pdf`;
+      let activeCloud = cloudUrls[type];
+      if (!isValidCloudDocUrl(activeCloud)) {
+        activeCloud = await getExpectedCloudPdfUrl(fileName);
+        if (activeCloud) {
+          setCloudUrls((prev) => ({ ...prev, [type]: activeCloud }));
+        }
+      }
+      let targetVerifyUrl: string = activeCloud || "";
+      if (!isValidCloudDocUrl(targetVerifyUrl)) {
+        const origin = typeof window !== "undefined" ? window.location.origin : "https://goldenerp-tau.vercel.app";
+        targetVerifyUrl = `${origin}/verify-doc?ref=${encodeURIComponent(registrationNumber)}&opId=${op.id}&type=booklet_${type}&printedBy=${encodeURIComponent(getCurrentUserName())}&printedAt=${Date.now()}`;
       }
       const qrDataUrl = await QRCode.toDataURL(targetVerifyUrl, { width: 160, margin: 1 });
       const qrBase64 = qrDataUrl.split(",")[1];
