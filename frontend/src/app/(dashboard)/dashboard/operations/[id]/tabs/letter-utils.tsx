@@ -612,8 +612,10 @@ export function LetterQrCloudCard({
   gradientClass = "from-amber-500/10 via-orange-500/10 to-transparent border-amber-500/25",
   isModifiedAfterUpload = false,
 }: LetterQrCloudCardProps) {
-  // تصفية وحجب أي روابط سابقة لمواقع وسيطة غير مستقرة مثل tmpfiles القديمة
-  const isInvalidCloud = Boolean(cloudPdfUrl && cloudPdfUrl.includes("tmpfiles.org"));
+  // تصفية وحجب أي روابط سابقة لمواقع وسيطة غير مستقرة مثل tmpfiles أو gofile التي تفتح صفحات وسيطة بدلاً من فتح الـ PDF مباشرة
+  const isInvalidCloud = Boolean(
+    cloudPdfUrl && (cloudPdfUrl.includes("tmpfiles.org") || cloudPdfUrl.includes("gofile.io"))
+  );
   const effectiveCloudUrl = isInvalidCloud ? "" : (cloudPdfUrl || "");
 
   return (

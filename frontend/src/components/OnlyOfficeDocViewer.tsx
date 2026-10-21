@@ -39,7 +39,6 @@ export const OnlyOfficeDocViewer: React.FC<OnlyOfficeDocViewerProps> = ({
   onDownloadPdf,
   onPrint,
 }) => {
-  const [viewMode, setViewMode] = useState<"word" | "pdf">("word");
   const [pdfObjectUrl, setPdfObjectUrl] = useState<string | null>(null);
   const [isFullscreen, setIsFullscreen] = useState<boolean>(false);
   const [isRenderingDocx, setIsRenderingDocx] = useState<boolean>(false);
@@ -48,18 +47,16 @@ export const OnlyOfficeDocViewer: React.FC<OnlyOfficeDocViewerProps> = ({
   const wrapperRef = useRef<HTMLDivElement>(null);
   const docxContainerRef = useRef<HTMLDivElement>(null);
 
-  // تحديث رابط الـ PDF عند توفره وضبط نمط العرض تلقائياً
+  // تحديث رابط الـ PDF عند توفره لاستخدامه في الطباعة المباشرة والتحميل الفوري
   useEffect(() => {
     if (pdfBlob) {
       const url = URL.createObjectURL(pdfBlob);
       setPdfObjectUrl(url);
-      setViewMode("pdf");
       return () => {
         URL.revokeObjectURL(url);
       };
     } else {
       setPdfObjectUrl(null);
-      setViewMode("word");
     }
   }, [pdfBlob]);
 
@@ -284,36 +281,6 @@ export const OnlyOfficeDocViewer: React.FC<OnlyOfficeDocViewerProps> = ({
 
         {/* أزرار التحكم والتحميل والطباعة */}
         <div className="flex items-center gap-2 flex-wrap">
-          {/* محول نمط العرض (PDF مقابل Word المباشر) */}
-          {pdfObjectUrl && (
-            <div className="flex items-center bg-slate-900 border border-slate-700/80 rounded-xl p-0.5 shadow-inner">
-              <button
-                type="button"
-                onClick={() => setViewMode("pdf")}
-                className={`px-2.5 py-1 text-xs font-bold rounded-lg cursor-pointer transition-all ${
-                  viewMode === "pdf"
-                    ? "bg-emerald-600 text-white shadow-xs"
-                    : "text-slate-400 hover:text-slate-200"
-                }`}
-                title="عرض النسخة المعتمدة للطباعة بصيغة PDF"
-              >
-                نسخة PDF المعتمدة
-              </button>
-              <button
-                type="button"
-                onClick={() => setViewMode("word")}
-                className={`px-2.5 py-1 text-xs font-bold rounded-lg cursor-pointer transition-all ${
-                  viewMode === "word"
-                    ? "bg-blue-600 text-white shadow-xs"
-                    : "text-slate-400 hover:text-slate-200"
-                }`}
-                title="عرض قالب الوورد الحي مع الخطوط العربية"
-              >
-                نسخة Word الأصلية
-              </button>
-            </div>
-          )}
-
           {/* ملء الشاشة */}
           <Button
             type="button"
@@ -368,9 +335,9 @@ export const OnlyOfficeDocViewer: React.FC<OnlyOfficeDocViewerProps> = ({
         </div>
       </div>
 
-      {/* ━━━ نافذة العرض الرئيسية للمستند الرسمي المعتمد ━━━ */}
+      {/* ━━━ نافذة العرض الرئيسية الموحدة للمستند الرسمي المعتمد ━━━ */}
       <div className="flex-1 min-h-0 w-full bg-slate-950 relative flex overflow-hidden">
-        {viewMode === "pdf" && pdfObjectUrl ? (
+        {!docxBlob && pdfObjectUrl ? (
           <div className="w-full h-full flex flex-col bg-slate-900 overflow-hidden">
             <iframe
               src={`${pdfObjectUrl}#toolbar=0&navpanes=0&view=FitH`}

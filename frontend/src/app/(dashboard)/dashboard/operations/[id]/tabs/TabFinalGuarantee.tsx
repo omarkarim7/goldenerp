@@ -203,14 +203,12 @@ export function TabFinalGuarantee({
     const comp = currentCompanyLink?.company || op.companies?.[0]?.company;
     return sanitizeChairmanTitle(comp?.managerName || "سحر حسن محمد أحمد عبد السلام");
   });
-  const [additionalNotes, setAdditionalNotes] = useState(() => savedSettings?.additionalNotes || "");
-
-  // Cloud URLs per letter type (Catbox.moe / Gofile.io)
+  // Cloud URLs per letter type (Catbox.moe / روابط PDF مباشرة)
   const [cloudUrls, setCloudUrls] = useState<Record<string, string>>(() => {
     const initial = savedSettings?.cloudUrls || {};
     const cleaned: Record<string, string> = {};
     for (const [k, v] of Object.entries(initial)) {
-      if (typeof v === "string" && !v.includes("tmpfiles.org")) {
+      if (typeof v === "string" && !v.includes("tmpfiles.org") && !v.includes("gofile.io")) {
         cleaned[k] = v;
       }
     }
@@ -228,9 +226,6 @@ export function TabFinalGuarantee({
   const [downloadingPdf, setDownloadingPdf] = useState(false);
   const [printingDocx, setPrintingDocx] = useState(false);
   const [savingState, setSavingState] = useState(false);
-  const [directPdfModalOpen, setDirectPdfModalOpen] = useState(false);
-  const [directPdfUrl, setDirectPdfUrl] = useState<string | null>(null);
-  const [generatingDirectPdf, setGeneratingDirectPdf] = useState(false);
 
   // Step 2: Guarantee Receipt Submission State
   const [addingReceipt, setAddingReceipt] = useState(false);
@@ -301,7 +296,6 @@ export function TabFinalGuarantee({
       specialistName,
       financeManagerName,
       boardChairman,
-      additionalNotes,
     });
   }, [
     activeLetterType, selectedCompanyId, registrationNumber, companyOpCode, companyCommercialRegister,
@@ -311,7 +305,7 @@ export function TabFinalGuarantee({
     initialGuaranteeFieldAmount, deductionOperationName, deductionMonth, deductionYear,
     bankRecipientTitle, bankTargetAuthority, bankTargetAddress, bankAccountNumber, bankNameAndBranch,
     accountHolderName, accountNationalId, guaranteeDurationText, guaranteeStartDate, guaranteeEndDate,
-    specialistTitle, specialistName, financeManagerName, boardChairman, additionalNotes,
+    specialistTitle, specialistName, financeManagerName, boardChairman,
   ]);
 
   const [savedSnapshot, setSavedSnapshot] = useState<string>(() => currentSnapshot);
@@ -328,7 +322,9 @@ export function TabFinalGuarantee({
       setSpecialistName(snap.specialistName);
       setFinanceManagerName(snap.financeManagerName);
       if (snap.boardChairman) setBoardChairman(sanitizeChairmanTitle(snap.boardChairman));
-      setAdditionalNotes(snap.additionalNotes);
+      if (snap.deductionOperationName) setDeductionOperationName(snap.deductionOperationName);
+      if (snap.deductionMonth) setDeductionMonth(snap.deductionMonth);
+      if (snap.deductionYear) setDeductionYear(snap.deductionYear);
       toast.info("تم التراجع عن التعديلات ↺");
     } catch {
       toast.error("تعذر التراجع عن التعديلات");
@@ -364,9 +360,10 @@ export function TabFinalGuarantee({
     let qrDrawingXml = "";
     try {
       const activeCloud = cloudUrls[type];
+      const isDirectPdf = activeCloud && !activeCloud.includes("gofile.io") && !activeCloud.includes("tmpfiles.org");
       const origin = typeof window !== "undefined" ? window.location.origin : "https://goldenerp-tau.vercel.app";
-      const targetVerifyUrl = activeCloud
-        ? `${origin}/verify-doc?ref=${encodeURIComponent(registrationNumber)}&opId=${op.id}&type=guarantee_final_${type}&pdfUrl=${encodeURIComponent(activeCloud)}`
+      const targetVerifyUrl = isDirectPdf
+        ? activeCloud
         : `${origin}/verify-doc?ref=${encodeURIComponent(registrationNumber)}&opId=${op.id}&type=guarantee_final_${type}`;
 
       const qrDataUrl = await QRCode.toDataURL(targetVerifyUrl, { width: 160, margin: 1 });
@@ -460,6 +457,8 @@ export function TabFinalGuarantee({
     if (type === "DEDUCTION" || type === "DEDUCTION_AND_INITIAL") {
       const deductionRegex = /(<w:t[^>]*>[^<]*مستحقات\s*الشركة\s*لديكم\s*في\s*عملية[^<]*<\/w:t><\/w:r>)([\s\S]*?)(<w:r\b[^>]*>(?:(?!<\/w:r>)[\s\S])*?<w:t[^>]*>[^<]*والتي\s*تستحق[^<]*<\/w:t>[\s\S]*?<\/w:r>)/;
       docXml = docXml.replace(deductionRegex, `$1<w:r><w:rPr><w:rFonts w:hint="cs"/><w:b/><w:bCs/><w:sz w:val="32"/><w:szCs w:val="32"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t xml:space="preserve"> ${escapeXml(deductionOperationName)} عن شهر ${escapeXml(deductionMonth)} سنة ${escapeXml(deductionYear)} </w:t></w:r>$3`);
+      // إزالة أي نقاط استبدال متبقية لضمان نظافة المستند 100%
+      docXml = docXml.replace(/\.{4,}/g, "");
     }
 
     // 8. تحويل التأمين الابتدائي
@@ -476,13 +475,10 @@ export function TabFinalGuarantee({
     docXml = docXml.replace(/توقيع صورة/g, escapeXml(financeManagerName || " "));
     docXml = replaceDocxChairman(docXml, boardChairman);
 
-    if (additionalNotes.trim()) {
-      docXml = docXml.replace(/خان[ةه]\s*خالي[ةه]\s*للملاحظات/g, escapeXml(additionalNotes));
-    } else {
-      // إزالة فقرة الملاحظات تماماً حتى لا تظهر كلمة (خانه خاليه للملاحظات) في الطباعة أو الملف
-      docXml = docXml.replace(/<w:p\b[^>]*>(?:(?!<\/w:p>)[\s\S])*?خان[ةه]\s*خالي[ةه]\s*للملاحظات[\s\S]*?<\/w:p>/g, "");
-      docXml = docXml.replace(/خان[ةه]\s*خالي[ةه]\s*للملاحظات/g, "");
-    }
+    // إزالة خانة الملاحظات تماماً من أسفل الخطاب كما طلب المستخدم
+    docXml = docXml.replace(/<w:p\b[^>]*>(?:(?!<w:p\b)[\s\S])*?خان[ةه]\s*خالي[ةه]\s*للملاحظات[\s\S]*?<\/w:p>/g, "");
+    docXml = docXml.replace(/<w:t[^>]*>[^<]*خان[ةه]\s*خالي[ةه]\s*للملاحظات[^<]*<\/w:t>/g, "<w:t></w:t>");
+    docXml = docXml.replace(/خان[ةه]\s*خالي[ةه]\s*للملاحظات/g, "");
 
     // 10. إزالة كافة علامات التمييز والألوان الحمراء
     docXml = docXml.replace(/<w:highlight\s+[^>]*\/>/g, "");
@@ -515,6 +511,9 @@ export function TabFinalGuarantee({
       ftrXml = ftrXml.replace(/<w:color\s+w:val=\"(red|FF0000)\"[^>]*\/>/g, "");
       zip.file("word/footer1.xml", ftrXml);
     }
+
+    // 12. حفظ مستند Word الأساسي بعد تطبيق كافة التعديلات والمتغيرات والباركود
+    zip.file("word/document.xml", docXml);
 
     // إزالة أي علامات حمراء في كافة ملفات القالب
     await cleanAllDocxXml(zip);
@@ -558,7 +557,7 @@ export function TabFinalGuarantee({
       setPreviewPdfUrl(url);
       setLastGeneratedSnapshot(currentSnapshot);
 
-      if (!cloudUrls[type] || cloudUrls[type].includes("tmpfiles.org")) {
+      if (!cloudUrls[type] || cloudUrls[type].includes("tmpfiles.org") || cloudUrls[type].includes("gofile.io")) {
         handleUploadToCloud(type, false, pdf);
       }
     } catch (err: any) {
@@ -570,25 +569,8 @@ export function TabFinalGuarantee({
   };
 
   const handleOpenDirectPdfPreview = async () => {
-    setGeneratingDirectPdf(true);
-    setDirectPdfModalOpen(true);
-    try {
-      if (directPdfUrl) {
-        URL.revokeObjectURL(directPdfUrl);
-        setDirectPdfUrl(null);
-      }
-      let pdfBlob = previewPdfBlob;
-      if (!pdfBlob || lastGeneratedSnapshot !== currentSnapshot) {
-        pdfBlob = await generateGuaranteePdfBlob(activeLetterType);
-      }
-      const url = URL.createObjectURL(pdfBlob);
-      setDirectPdfUrl(url);
-    } catch (err: any) {
-      toast.error("تعذر فتح ملف الـ PDF: " + (err?.message || ""));
-      setDirectPdfModalOpen(false);
-    } finally {
-      setGeneratingDirectPdf(false);
-    }
+    // توحيد المعاينة الرسمية لتفتح النافذة المعتمدة نفسها دائماً
+    await loadOfficialPreview(activeLetterType);
   };
 
   const handleUploadToCloud = async (
@@ -596,7 +578,7 @@ export function TabFinalGuarantee({
     forceReupload = false,
     existingBlob?: Blob
   ) => {
-    if (cloudUrls[type] && !forceReupload) {
+    if (cloudUrls[type] && !forceReupload && !cloudUrls[type].includes("gofile.io") && !cloudUrls[type].includes("tmpfiles.org")) {
       return;
     }
     setUploadingCloud(true);
@@ -1440,16 +1422,6 @@ export function TabFinalGuarantee({
                   className="h-9.5 text-xs font-bold rounded-xl border-emerald-500/30 focus-visible:ring-emerald-500"
                 />
               </div>
-
-              <div className="space-y-1.5">
-                <Label className="text-xs font-bold text-foreground">ملاحظات إضافية بالخطاب (اختياري)</Label>
-                <Input
-                  value={additionalNotes}
-                  onChange={(e) => setAdditionalNotes(e.target.value)}
-                  placeholder="خانة خالية للملاحظات..."
-                  className="h-9.5 text-xs rounded-xl"
-                />
-              </div>
             </div>
           </div>
         </div>
@@ -1858,70 +1830,6 @@ export function TabFinalGuarantee({
                     onPrint={handlePrintWordDocument}
                   />
                 )}
-              </div>
-            </div>
-          </div>
-        </Portal>
-      )}
-
-      {/* ━━━ MODAL: عرض نسخة الـ PDF الرسمية فقط المطبوعة (بدون وورد) ━━━ */}
-      {directPdfModalOpen && directPdfUrl && (
-        <Portal>
-          <div className="fixed inset-0 z-[999999] bg-black/85 backdrop-blur-md flex items-center justify-center p-2 sm:p-4 animate-fade-in">
-            <div className="bg-card border border-border rounded-3xl max-w-5xl w-full h-[92vh] flex flex-col overflow-hidden shadow-2xl text-foreground">
-              <div className="flex items-center justify-between p-4 border-b border-border bg-card">
-                <div className="flex items-center gap-2.5">
-                  <div className="w-9 h-9 rounded-xl bg-red-500/15 text-red-600 flex items-center justify-center font-black">
-                    PDF
-                  </div>
-                  <div>
-                    <h3 className="font-extrabold text-sm text-foreground">
-                      عرض مستند PDF الرسمي المعتمد: {
-                        activeLetterType === "CASH"
-                          ? "خطاب سداد التأمين النهائي نقداً بالخزينة"
-                          : activeLetterType === "BANK_GUARANTEE"
-                          ? "خطاب إصدار خطاب ضمان بنكي للتأمين النهائي"
-                          : activeLetterType === "DEDUCTION"
-                          ? "خطاب خصم التأمين النهائي من مستحقات عملية أخرى"
-                          : activeLetterType === "INITIAL_TRANSFER"
-                          ? "خطاب تحويل التأمين الابتدائي إلى نهائي"
-                          : "خطاب خصم التأمين النهائي وتحويل التأمين الابتدائي"
-                      }
-                    </h3>
-                    <p className="text-[11px] text-muted-foreground font-mono">
-                      رقم القيد: {registrationNumber} • نسخة رسمية للقراءة والطباعة
-                    </p>
-                  </div>
-                </div>
-                <div className="flex items-center gap-2">
-                  <a
-                    href={directPdfUrl}
-                    download={`تأمين_نهائي_${activeLetterType}_${op.externalNumber || op.serialNumber}_${registrationNumber}.pdf`}
-                    className="inline-flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-xl bg-red-600 hover:bg-red-700 text-white shadow-xs cursor-pointer"
-                  >
-                    <Download className="h-3.5 w-3.5" />
-                    <span>تنزيل PDF</span>
-                  </a>
-                  <Button
-                    size="icon"
-                    variant="ghost"
-                    onClick={() => {
-                      setDirectPdfModalOpen(false);
-                      if (directPdfUrl) URL.revokeObjectURL(directPdfUrl);
-                      setDirectPdfUrl(null);
-                    }}
-                    className="h-8 w-8 rounded-full hover:bg-muted cursor-pointer"
-                  >
-                    <X className="h-4 w-4" />
-                  </Button>
-                </div>
-              </div>
-              <div className="flex-1 w-full h-full bg-slate-900">
-                <iframe
-                  src={`${directPdfUrl}#toolbar=1`}
-                  className="w-full h-full border-0"
-                  title="عرض مستند PDF الرسمي"
-                />
               </div>
             </div>
           </div>

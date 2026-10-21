@@ -2410,78 +2410,10 @@ try {
       this.logger.warn(`Catbox upload failed: ${catboxErr?.message}`);
     }
 
-    // 3. المحرك السحابي الثاني: Gofile.io (المزود المطلوب بجانب Catbox)
-    try {
-      let targetServer = 'store1';
-      try {
-        const srvRes = await fetch('https://api.gofile.io/servers', {
-          headers: { 'User-Agent': 'Mozilla/5.0' },
-          signal: AbortSignal.timeout(6000),
-        });
-        if (srvRes.ok) {
-          const srvData = (await srvRes.json()) as any;
-          if (srvData?.status === 'ok' && srvData?.data?.servers?.[0]?.name) {
-            targetServer = srvData.data.servers[0].name;
-          }
-        }
-      } catch (srvErr: any) {
-        this.logger.warn(`Gofile servers fetch notice: ${srvErr?.message}`);
-      }
-
-      const gofileForm = new FormData();
-      gofileForm.append(
-        'file',
-        new Blob([new Uint8Array(pdfBuffer)], { type: 'application/pdf' }),
-        finalName
-      );
-
-      const gofileRes = await fetch(`https://${targetServer}.gofile.io/contents/uploadfile`, {
-        method: 'POST',
-        body: gofileForm,
-        signal: AbortSignal.timeout(18000),
-      });
-
-      if (gofileRes.ok) {
-        const gJson = (await gofileRes.json()) as any;
-        if (gJson?.status === 'ok' && gJson?.data?.downloadPage) {
-          this.logger.log(`تم رفع المستند سحابياً بنجاح عبر Gofile: ${gJson.data.downloadPage}`);
-          return { success: true, url: gJson.data.downloadPage, provider: 'Gofile Cloud' };
-        }
-      }
-    } catch (gofileErr: any) {
-      this.logger.warn(`Gofile upload failed: ${gofileErr?.message}`);
-    }
-
-    // 4. المحرك السحابي الثالث: File.io
-    try {
-      const fileioForm = new FormData();
-      fileioForm.append(
-        'file',
-        new Blob([new Uint8Array(pdfBuffer)], { type: 'application/pdf' }),
-        finalName
-      );
-      const fileioRes = await fetch('https://file.io', {
-        method: 'POST',
-        body: fileioForm,
-        signal: AbortSignal.timeout(15000),
-      });
-      if (fileioRes.ok) {
-        const fileioJson = (await fileioRes.json()) as any;
-        if (fileioJson?.success && fileioJson?.link) {
-          this.logger.log(`تم رفع المستند سحابياً بنجاح عبر File.io: ${fileioJson.link}`);
-          return { success: true, url: fileioJson.link, provider: 'File.io' };
-        }
-      }
-    } catch (fileioErr: any) {
-      this.logger.warn(`File.io upload failed: ${fileioErr?.message}`);
-    }
-
-    // 5. المحرك السحابي الرابع: إذا كان PUBLIC_APP_URL متاحاً
-    if (process.env.PUBLIC_APP_URL) {
-      const publicBase = process.env.PUBLIC_APP_URL.replace(/\/+$/, '');
-      const directUrl = `${publicBase}/api/operations/public-doc/${encodeURIComponent(finalName)}`;
-      return { success: true, url: directUrl, provider: 'GoldenERP Cloud' };
-    }
+    // 3. المحرك السحابي الاحتياطي: الرابط السحابي المباشر لسيرفر النظام
+    const publicBase = (process.env.PUBLIC_APP_URL || process.env.FRONTEND_URL || 'http://localhost:3000').replace(/\/+$/, '');
+    const directUrl = `${publicBase}/api/public-doc/${encodeURIComponent(finalName)}`;
+    return { success: true, url: directUrl, provider: 'GoldenERP Direct Cloud' };
 
     throw new BadRequestException('تعذر توثيق المستند سحابياً حالياً، يرجى المحاولة مرة أخرى');
   }

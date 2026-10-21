@@ -188,10 +188,10 @@ export function TabClarification({
     savedLetter?.companyAddress || currentCompany?.address || "بجوار مستشفى ليدى كير - بدمنهور - البحيره"
   );
 
-  // الرابط السحابي المعتمد للنسخة الرقمية (Catbox.moe / Gofile.io)
+  // الرابط السحابي المعتمد للنسخة الرقمية (Catbox.moe / روابط PDF مباشرة)
   const [cloudPdfUrl, setCloudPdfUrl] = useState<string>(() => {
     const url = savedLetter?.cloudPdfUrl || "";
-    return url.includes("tmpfiles.org") ? "" : url;
+    return (url.includes("tmpfiles.org") || url.includes("gofile.io")) ? "" : url;
   });
   const [uploadingCloud, setUploadingCloud] = useState(false);
   const [lastGeneratedSnapshot, setLastGeneratedSnapshot] = useState<string | null>(null);
@@ -676,9 +676,9 @@ export function TabClarification({
     return await getPdfBlobFromDocx(docxBlob, `clarification_${registrationNumber}.docx`);
   };
 
-  // ━━━ رفع وتوثيق النسخة الرقمية المعتمدة سحابياً (Catbox.moe / Gofile.io) ━━━
+  // ━━━ رفع وتوثيق النسخة الرقمية المعتمدة سحابياً (رابط PDF مباشر) ━━━
   const handleUploadToCloud = async (forceReupload = false, existingBlob?: Blob) => {
-    if (cloudPdfUrl && !cloudPdfUrl.includes("tmpfiles.org") && !forceReupload) {
+    if (cloudPdfUrl && !cloudPdfUrl.includes("tmpfiles.org") && !cloudPdfUrl.includes("gofile.io") && !forceReupload) {
       toast.info("تم رفع وتوثيق النسخة الرقمية سحابياً مسبقاً وهي نشطة بالفعل ✓");
       return;
     }
@@ -696,7 +696,7 @@ export function TabClarification({
         }
       }
 
-      toast.info("جاري توثيق ورفع المستند سحابياً (Catbox/Gofile)...");
+      toast.info("جاري توثيق ورفع المستند سحابياً (رابط PDF مباشر)...");
       const res = await uploadPdfToFreeCloud(
         pdfBlob,
         `clarification_${registrationNumber || op.serialNumber || "doc"}.pdf`
@@ -781,7 +781,7 @@ export function TabClarification({
       toast.success("تم تنزيل ملف الـ PDF الرسمي فوراً! 📑✨");
 
       // التأكد من رفع النسخة السحابية لرمز QR إذا لم تكن مرفوعة
-      if (!cloudPdfUrl || cloudPdfUrl.includes("tmpfiles.org")) {
+      if (!cloudPdfUrl || cloudPdfUrl.includes("tmpfiles.org") || cloudPdfUrl.includes("gofile.io")) {
         handleUploadToCloud(false, previewPdfBlob);
       }
       return;
@@ -807,8 +807,8 @@ export function TabClarification({
 
       toast.success("تم تنزيل ملف الـ PDF الرسمي بنجاح! 📑✨");
 
-      // رفع المستند سحابياً لرمز QR فوراً (Catbox/Gofile)
-      if (!cloudPdfUrl || cloudPdfUrl.includes("tmpfiles.org")) {
+      // رفع المستند سحابياً لرمز QR فوراً (رابط PDF مباشر)
+      if (!cloudPdfUrl || cloudPdfUrl.includes("tmpfiles.org") || cloudPdfUrl.includes("gofile.io")) {
         handleUploadToCloud(false, pdfBlob);
       }
     } catch (err: any) {
@@ -839,7 +839,7 @@ export function TabClarification({
       const url = URL.createObjectURL(pdf);
       setPreviewPdfUrl(url);
 
-      if (!cloudPdfUrl || cloudPdfUrl.includes("tmpfiles.org")) {
+      if (!cloudPdfUrl || cloudPdfUrl.includes("tmpfiles.org") || cloudPdfUrl.includes("gofile.io")) {
         handleUploadToCloud(false, pdf);
       }
       setLastGeneratedSnapshot(currentSnapshot);

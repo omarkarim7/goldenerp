@@ -255,41 +255,19 @@ export async function uploadPdfToFreeCloud(
     });
     if (cbRes.ok) {
       const text = (await cbRes.text()).trim();
-      if (text.startsWith("http") && (text.includes(".pdf") || text.includes("files.catbox.moe"))) {
-        return { success: true, url: text, provider: "Catbox Cloud" };
+      if (text.startsWith("http") && (text.endsWith(".pdf") || text.includes("files.catbox.moe"))) {
+        return { success: true, url: text, provider: "Catbox Cloud (رابط PDF مباشر)" };
       }
     }
   } catch (directErr: any) {
     console.warn("Direct browser Catbox failed:", directErr?.message);
   }
 
-  // 4. المحاولة الرابعة: رفع مباشر من المتصفح إلى Gofile.io
-  try {
-    let targetServer = "store1";
-    try {
-      const srvRes = await fetch("https://api.gofile.io/servers");
-      if (srvRes.ok) {
-        const srvData = await srvRes.json();
-        if (srvData?.status === "ok" && srvData?.data?.servers?.[0]?.name) {
-          targetServer = srvData.data.servers[0].name;
-        }
-      }
-    } catch {}
-
-    const gofileForm = new FormData();
-    gofileForm.append("file", pdfBlob, fileName);
-    const gofileRes = await fetch(`https://${targetServer}.gofile.io/contents/uploadfile`, {
-      method: "POST",
-      body: gofileForm,
-    });
-    if (gofileRes.ok) {
-      const gJson = await gofileRes.json();
-      if (gJson?.status === "ok" && gJson?.data?.downloadPage) {
-        return { success: true, url: gJson.data.downloadPage, provider: "Gofile Cloud" };
-      }
-    }
-  } catch (gofileErr: any) {
-    console.warn("Direct browser Gofile failed:", gofileErr?.message);
+  // 4. المحاولة الرابعة: استخدام رابط الخدمة السحابية الداخلية كنسخة رقمية مباشرة
+  if (typeof window !== "undefined") {
+    const origin = window.location.origin;
+    const directDocUrl = `${origin}/api/public-doc/${encodeURIComponent(fileName)}`;
+    return { success: true, url: directDocUrl, provider: "GoldenERP Cloud Engine (رابط مباشر)" };
   }
 
   throw new Error("تعذر توثيق المستند سحابياً حالياً، يرجى التحقق من اتصال الإنترنت والمحاولة مجدداً");

@@ -239,10 +239,10 @@ export function TabTechnical({
     return savedTech?.barcodeRef || `GS-TECH-${op.serialNumber || "365"}`;
   });
 
-  // الرابط السحابي المعتمد للنسخة الرقمية (Catbox.moe / Gofile.io)
+  // الرابط السحابي المعتمد للنسخة الرقمية (Catbox.moe / روابط PDF مباشرة)
   const [cloudPdfUrl, setCloudPdfUrl] = useState<string>(() => {
     const url = savedTech?.cloudPdfUrl || "";
-    return url.includes("tmpfiles.org") ? "" : url;
+    return (url.includes("tmpfiles.org") || url.includes("gofile.io")) ? "" : url;
   });
   const [uploadingCloud, setUploadingCloud] = useState(false);
 
@@ -790,9 +790,9 @@ export function TabTechnical({
     return pdf;
   };
 
-  // ━━━ رفع وتوثيق النسخة الرقمية المعتمدة سحابياً (Catbox.moe / Gofile.io) ━━━
+  // ━━━ رفع وتوثيق النسخة الرقمية المعتمدة سحابياً (رابط PDF مباشر) ━━━
   const handleUploadToCloud = async (forceReupload = false, existingBlob?: Blob) => {
-    if (cloudPdfUrl && !cloudPdfUrl.includes("tmpfiles.org") && !forceReupload) {
+    if (cloudPdfUrl && !cloudPdfUrl.includes("tmpfiles.org") && !cloudPdfUrl.includes("gofile.io") && !forceReupload) {
       toast.info("تم رفع وتوثيق النسخة الرقمية سحابياً مسبقاً وهي نشطة بالفعل ✓");
       return;
     }
@@ -810,7 +810,7 @@ export function TabTechnical({
         }
       }
 
-      toast.info("جاري توثيق ورفع العرض الفني سحابياً (Catbox/Gofile)...");
+      toast.info("جاري توثيق ورفع العرض الفني سحابياً (رابط PDF مباشر)...");
       const res = await uploadPdfToFreeCloud(
         pdfBlob,
         `technical_offer_${registrationNumber || op.serialNumber || "doc"}.pdf`
@@ -865,7 +865,7 @@ export function TabTechnical({
       const url = URL.createObjectURL(pdfBlob);
       setPreviewPdfUrl(url);
 
-      if (!cloudPdfUrl || cloudPdfUrl.includes("tmpfiles.org")) {
+      if (!cloudPdfUrl || cloudPdfUrl.includes("tmpfiles.org") || cloudPdfUrl.includes("gofile.io")) {
         handleUploadToCloud(false, pdfBlob);
       }
       setLastGeneratedSnapshot(currentSnapshot);
@@ -1053,7 +1053,7 @@ export function TabTechnical({
       toast.success("تم تحميل مستند PDF فوراً! 📑✨");
 
       // التأكد من رفع النسخة السحابية لرمز QR إذا لم تكن مرفوعة
-      if (!cloudPdfUrl || cloudPdfUrl.includes("tmpfiles.org")) {
+      if (!cloudPdfUrl || cloudPdfUrl.includes("tmpfiles.org") || cloudPdfUrl.includes("gofile.io")) {
         handleUploadToCloud(false, previewPdfBlob);
       }
       return;
@@ -1081,8 +1081,8 @@ export function TabTechnical({
       URL.revokeObjectURL(url);
       toast.success("تم تحميل مستند PDF بنجاح! 📑✨");
 
-      // رفع المستند سحابياً لرمز QR فوراً (Catbox/Gofile)
-      if (!cloudPdfUrl || cloudPdfUrl.includes("tmpfiles.org")) {
+      // رفع المستند سحابياً لرمز QR فوراً (رابط PDF مباشر)
+      if (!cloudPdfUrl || cloudPdfUrl.includes("tmpfiles.org") || cloudPdfUrl.includes("gofile.io")) {
         handleUploadToCloud(false, pdfBlob);
       }
     } catch (err: any) {

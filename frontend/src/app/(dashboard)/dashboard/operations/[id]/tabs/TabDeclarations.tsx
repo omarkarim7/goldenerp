@@ -203,18 +203,18 @@ export function TabDeclarations({
     return savedDec?.additionalNotes || "";
   });
 
-  // ━━━ 4. الروابط السحابية لرمز QR (Catbox.moe / Gofile.io) ━━━
+  // ━━━ 4. الروابط السحابية لرمز QR (Catbox.moe / Direct PDF) ━━━
   const [cloudPdfUrlSpecs, setCloudPdfUrlSpecs] = useState<string>(() => {
     const u = savedDec?.cloudPdfUrlSpecs || "";
-    return u.includes("tmpfiles.org") ? "" : u;
+    return u.includes("tmpfiles.org") || u.includes("gofile.io") ? "" : u;
   });
   const [cloudPdfUrlInsurance, setCloudPdfUrlInsurance] = useState<string>(() => {
     const u = savedDec?.cloudPdfUrlInsurance || "";
-    return u.includes("tmpfiles.org") ? "" : u;
+    return u.includes("tmpfiles.org") || u.includes("gofile.io") ? "" : u;
   });
   const [cloudPdfUrlGeneral, setCloudPdfUrlGeneral] = useState<string>(() => {
     const u = savedDec?.cloudPdfUrlGeneral || "";
-    return u.includes("tmpfiles.org") ? "" : u;
+    return u.includes("tmpfiles.org") || u.includes("gofile.io") ? "" : u;
   });
   const [uploadingCloud, setUploadingCloud] = useState(false);
   const [lastGeneratedSnapshot, setLastGeneratedSnapshot] = useState<string | null>(null);
@@ -521,7 +521,7 @@ export function TabDeclarations({
         : type === "insurance"
         ? cloudPdfUrlInsurance
         : cloudPdfUrlGeneral;
-    if (existingUrl && !existingUrl.includes("tmpfiles.org") && !forceReupload) {
+    if (existingUrl && !existingUrl.includes("tmpfiles.org") && !existingUrl.includes("gofile.io") && !forceReupload) {
       toast.info("تم رفع وتوثيق هذا المستند سحابياً مسبقاً وهو نشط بالفعل ✓");
       return;
     }
@@ -539,7 +539,7 @@ export function TabDeclarations({
         }
       }
 
-      toast.info("جاري توثيق ورفع المستند سحابياً (Catbox/Gofile)...");
+      toast.info("جاري توثيق ورفع المستند سحابياً (Catbox)...");
       const res = await uploadPdfToFreeCloud(
         pdfBlob,
         `declaration_${type}_${registrationNumber || op.serialNumber}.pdf`
@@ -602,7 +602,7 @@ export function TabDeclarations({
       const url = URL.createObjectURL(pdfBlob);
       setPreviewPdfUrl(url);
 
-      if (!currentCloudUrl || currentCloudUrl.includes("tmpfiles.org")) {
+      if (!currentCloudUrl || currentCloudUrl.includes("tmpfiles.org") || currentCloudUrl.includes("gofile.io")) {
         handleUploadToCloud(activeDeclType, false, pdfBlob);
       }
       setLastGeneratedSnapshot(currentSnapshot);
@@ -805,7 +805,7 @@ export function TabDeclarations({
       URL.revokeObjectURL(url);
       toast.success("تم تحميل مستند PDF فوراً! 📑✨");
 
-      if (!currentCloudUrl || currentCloudUrl.includes("tmpfiles.org")) {
+      if (!currentCloudUrl || currentCloudUrl.includes("tmpfiles.org") || currentCloudUrl.includes("gofile.io")) {
         handleUploadToCloud(type, false, previewPdfBlob);
       }
       return;
@@ -830,7 +830,7 @@ export function TabDeclarations({
       URL.revokeObjectURL(url);
       toast.success("تم تحميل مستند PDF بنجاح! 📑✨");
 
-      if (!currentCloudUrl || currentCloudUrl.includes("tmpfiles.org")) {
+      if (!currentCloudUrl || currentCloudUrl.includes("tmpfiles.org") || currentCloudUrl.includes("gofile.io")) {
         handleUploadToCloud(type, false, pdfBlob);
       }
     } catch (err: any) {

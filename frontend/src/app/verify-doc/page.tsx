@@ -13,14 +13,23 @@ function VerifyDocContent() {
   const pdfUrl = searchParams.get("pdfUrl") || "";
   const docType = searchParams.get("type") === "technical" ? "العرض الفني والمواصفات" : "خطاب التوضيح والاستفسار";
 
-  // تحويل فوري ومباشر إلى الرابط السحابي المعتمد لملف الـ PDF بدون أي شاشات وسيطة
+  // تحويل فوري ومباشر إلى الرابط المباشر لملف الـ PDF بدون أي شاشات وسيطة
   useEffect(() => {
     if (pdfUrl) {
-      window.location.replace(pdfUrl);
+      if (pdfUrl.toLowerCase().endsWith(".pdf") || pdfUrl.includes("files.catbox.moe") || pdfUrl.includes("/api/public-doc/")) {
+        window.location.replace(pdfUrl);
+      } else if (pdfUrl.includes("gofile.io")) {
+        // منع التحويل لصفحة gofile الوسيطة، والتوجيه للنسخة المباشرة إذا توفر رقم القيد
+        if (refNo) {
+          window.location.replace(`/api/public-doc/${encodeURIComponent(refNo)}.pdf`);
+        }
+      } else {
+        window.location.replace(pdfUrl);
+      }
     } else if (opId) {
       window.location.replace(`/dashboard/operations/${opId}`);
     }
-  }, [pdfUrl, opId]);
+  }, [pdfUrl, opId, refNo]);
 
   const currentDate = new Date().toLocaleDateString("ar-EG", {
     year: "numeric",
