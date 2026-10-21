@@ -16,6 +16,7 @@ import {
   AlertTriangle,
   Receipt,
   FileCheck2,
+  Copy,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -228,8 +229,24 @@ export function FinalInsuranceRefundSection({
     return sanitizeChairmanTitle(savedLetter?.boardChairman || "رئيس مجلس الإدارة");
   });
 
+  // نوع المرفق المعتمد (صورة أو أصل)
+  const [attachmentType, setAttachmentType] = useState<"COPY" | "ORIGINAL">(() => {
+    return savedLetter?.attachmentType || "COPY";
+  });
+
   const [attachmentNote, setAttachmentNote] = useState(() => {
-    return savedLetter?.attachmentNote || "مرفق صورة – أصل من إيصال السداد";
+    if (savedLetter?.attachmentNote) {
+      if (
+        savedLetter.attachmentNote.includes("–") ||
+        (savedLetter.attachmentNote.includes("صورة") && savedLetter.attachmentNote.includes("أصل"))
+      ) {
+        return savedLetter?.attachmentType === "ORIGINAL"
+          ? "مرفق أصل من إيصال السداد"
+          : "مرفق صورة من إيصال السداد";
+      }
+      return savedLetter.attachmentNote;
+    }
+    return "مرفق صورة من إيصال السداد";
   });
 
   const [letterNotes, setLetterNotes] = useState(() => {
@@ -298,6 +315,7 @@ export function FinalInsuranceRefundSection({
       specialistName,
       financeManagerName,
       boardChairman,
+      attachmentType,
       attachmentNote,
       letterNotes,
     });
@@ -334,6 +352,7 @@ export function FinalInsuranceRefundSection({
     specialistName,
     financeManagerName,
     boardChairman,
+    attachmentType,
     attachmentNote,
     letterNotes,
   ]);
@@ -415,18 +434,32 @@ export function FinalInsuranceRefundSection({
       paymentText = `بايصال سداد نقدى رقم (${escapeXml(receiptNumber)}) بتاريخ (${escapeXml(receiptDate)})`;
     }
 
-    // استبدال الجزء بين القوسين لطريقة السداد
-    docXml = docXml.replace(
-      /خصما من مستحقات الشركة لديكم في عملية[\s\S]*?بايصال سداد نقدى/g,
-      paymentText
-    );
+    // استبدال الجزء بين القوسين لطريقة السداد بالكامل
+    const payStartToken = "والمسدد </w:t></w:r>";
+    const payEndToken = "<w:t>والخاص</w:t>";
+    const pStartIdx = docXml.indexOf(payStartToken);
+    const pEndIdx = docXml.indexOf(payEndToken);
 
-    // طريقة الطرح ونطاق العملية والعام المالي وموعد الجلسة
-    docXml = docXml.replace(/المناقصة ال[\s]*محدود[\s]*ة/g, escapeXml(tenderMethod));
-    docXml = docXml.replace(/بالمناقصة المحدودة/g, escapeXml(tenderMethod));
-    docXml = docXml.replace(/توريد كاوتش وبطاريات للسيارات للجامعه/g, escapeXml(operationScope));
-    docXml = docXml.replace(/2024\s*\/\s*2025/g, escapeXml(fiscalYear));
-    docXml = docXml.replace(/14\/\s*1\s*\/2024/g, escapeXml(technicalOpeningDate));
+    if (pStartIdx !== -1 && pEndIdx !== -1) {
+      const before = docXml.substring(0, pStartIdx + payStartToken.length);
+      const after = docXml.substring(pEndIdx);
+      const replacementRun = `<w:r><w:rPr><w:rFonts w:ascii="Arabic Typesetting" w:hAnsi="Arabic Typesetting" w:cs="Arabic Typesetting" w:hint="cs"/><w:b/><w:bCs/><w:sz w:val="36"/><w:szCs w:val="36"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t xml:space="preserve"> ( ${paymentText} ) </w:t></w:r><w:r><w:rPr><w:rFonts w:ascii="Arabic Typesetting" w:hAnsi="Arabic Typesetting" w:cs="Arabic Typesetting" w:hint="cs"/><w:b/><w:bCs/><w:sz w:val="36"/><w:szCs w:val="36"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr>`;
+      docXml = before + replacementRun + after;
+    }
+
+    // ━━━ استبدال نطاق العملية والمناقصة والعام المالي وموعد الجلسة بالكامل ━━━
+    const scopeStartToken = "<w:t>والخاص</w:t></w:r>";
+    const scopeEndToken = "<w:t>لفتح المظروف الفنى .</w:t>";
+    const sStartIdx = docXml.indexOf(scopeStartToken);
+    const sEndIdx = docXml.indexOf(scopeEndToken);
+
+    if (sStartIdx !== -1 && sEndIdx !== -1) {
+      const before = docXml.substring(0, sStartIdx);
+      const after = docXml.substring(sEndIdx + scopeEndToken.length);
+      const fullScopeText = `والخاص ${escapeXml(tenderMethod)} لزوم ${escapeXml(operationScope)} طرفكم للعام المالى ${escapeXml(fiscalYear)} والمحدد لها جلسة (${escapeXml(technicalOpeningDate)}) لفتح المظروف الفنى .`;
+      const replacementRun = `<w:r><w:rPr><w:rFonts w:ascii="Arabic Typesetting" w:hAnsi="Arabic Typesetting" w:cs="Arabic Typesetting" w:hint="cs"/><w:b/><w:bCs/><w:sz w:val="36"/><w:szCs w:val="36"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t xml:space="preserve">${fullScopeText} </w:t></w:r>`;
+      docXml = before + replacementRun + after;
+    }
 
     // بيانات الحساب البنكي
     docXml = docXml.replace(/2670220000004113/g, escapeXml(bankAccountNumber));
@@ -443,9 +476,28 @@ export function FinalInsuranceRefundSection({
     docXml = docXml.replace(/توقيع صورة/g, escapeXml(financeManagerName));
     docXml = docXml.replace(/رئيس مجلس الإدارة/g, escapeXml(boardChairman));
 
-    // المرفقات والملاحظات
-    docXml = docXml.replace(/مرفق صورة – أصل من إيصال السداد/g, escapeXml(attachmentNote));
+    // ━━━ استبدال فقرة المرفقات (صورة أو أصل من إيصال السداد) بدقة 100% ━━━
+    const attStartToken = '<w:t xml:space="preserve">مرفق </w:t></w:r>';
+    const attEndToken = 'من إيصال السداد </w:t></w:r>';
+    const aStartIdx = docXml.indexOf(attStartToken);
+    const aEndIdx = docXml.indexOf(attEndToken);
+
+    const defaultAttText = attachmentType === "ORIGINAL" ? "مرفق أصل من إيصال السداد" : "مرفق صورة من إيصال السداد";
+    const finalAttachmentText = attachmentNote || defaultAttText;
+
+    if (aStartIdx !== -1 && aEndIdx !== -1) {
+      const before = docXml.substring(0, aStartIdx);
+      const after = docXml.substring(aEndIdx + attEndToken.length);
+      const replacementRun = `<w:r><w:rPr><w:rFonts w:ascii="Arabic Typesetting" w:hAnsi="Arabic Typesetting" w:cs="Arabic Typesetting" w:hint="cs"/><w:b/><w:bCs/><w:sz w:val="32"/><w:szCs w:val="32"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t xml:space="preserve">${escapeXml(finalAttachmentText)} </w:t></w:r>`;
+      docXml = before + replacementRun + after;
+    } else {
+      docXml = docXml.replace(/مرفق[\s\S]*?من إيصال السداد/g, escapeXml(finalAttachmentText));
+    }
+
     docXml = docXml.replace(/خانه خاليه للملاحظات/g, escapeXml(letterNotes));
+
+    // تنظيف علامات التمييز من نص المستند
+    docXml = docXml.replace(/<w:highlight\s+[^>]*\/>/gi, "").replace(/<w:color\s+w:val="(?:red|FF0000)"[^>]*\/>/gi, "");
 
     zip.file("word/document.xml", docXml);
 
@@ -914,49 +966,88 @@ export function FinalInsuranceRefundSection({
         </div>
       </SectionCard>
 
-      {/* ━━━ SECTION 3: طريقة سداد التأمين الأصلية ━━━ */}
+      {/* ━━━ SECTION 3: طريقة سداد التأمين الأصلية (خصم من المستحقات أو إيصال سداد نقدي) ━━━ */}
       <SectionCard
-        title="3. بيان كيفية سداد التأمين النهائي المراد استرداده"
+        title="3. بيان كيفية سداد التأمين النهائي المراد استرداده (خصم من المستحقات أو إيصال نقدي)"
         icon={Receipt}
         iconColor="text-amber-600"
+        badge={
+          <Badge className={`text-[10px] font-bold px-2 py-0.5 ${
+            paymentMethod === "DEDUCTION"
+              ? "bg-amber-500/15 text-amber-700 dark:text-amber-300 border-amber-500/30"
+              : "bg-blue-500/15 text-blue-700 dark:text-blue-300 border-blue-500/30"
+          }`}>
+            {paymentMethod === "DEDUCTION" ? "الحالة 1: خصماً من مستحقات عملية" : "الحالة 2: بإيصال سداد نقدي"}
+          </Badge>
+        }
       >
         <div className="space-y-4">
-          <div className="flex items-center gap-3 flex-wrap">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <button
               type="button"
               onClick={() => setPaymentMethod("DEDUCTION")}
-              className={`px-4 py-2.5 rounded-2xl text-xs font-bold border transition-all cursor-pointer flex items-center gap-2 ${
+              className={`p-3.5 rounded-2xl text-right border transition-all cursor-pointer flex items-start gap-3 ${
                 paymentMethod === "DEDUCTION"
-                  ? "bg-amber-500 text-white border-amber-600 shadow-md"
-                  : "bg-muted/40 hover:bg-muted text-foreground border-border"
+                  ? "bg-amber-500/10 border-amber-500 text-foreground ring-2 ring-amber-500/30 shadow-sm"
+                  : "bg-card hover:bg-muted/50 border-border text-muted-foreground hover:text-foreground"
               }`}
             >
-              <span>خصماً من مستحقات الشركة في عملية أخرى</span>
+              <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${
+                paymentMethod === "DEDUCTION" ? "bg-amber-500 text-white" : "bg-muted text-muted-foreground"
+              }`}>
+                <Receipt className="h-4.5 w-4.5" />
+              </div>
+              <div className="space-y-0.5">
+                <div className="text-xs font-black text-foreground">الحالة 1: خصماً من مستحقات الشركة</div>
+                <div className="text-[11px] text-muted-foreground leading-relaxed">
+                  تحديد اسم العملية المخصوم منها مستحقات الشركة والشهر والسنة
+                </div>
+              </div>
             </button>
 
             <button
               type="button"
               onClick={() => setPaymentMethod("CASH_RECEIPT")}
-              className={`px-4 py-2.5 rounded-2xl text-xs font-bold border transition-all cursor-pointer flex items-center gap-2 ${
+              className={`p-3.5 rounded-2xl text-right border transition-all cursor-pointer flex items-start gap-3 ${
                 paymentMethod === "CASH_RECEIPT"
-                  ? "bg-amber-500 text-white border-amber-600 shadow-md"
-                  : "bg-muted/40 hover:bg-muted text-foreground border-border"
+                  ? "bg-blue-500/10 border-blue-500 text-foreground ring-2 ring-blue-500/30 shadow-sm"
+                  : "bg-card hover:bg-muted/50 border-border text-muted-foreground hover:text-foreground"
               }`}
             >
-              <span>بإيصال سداد نقدي بخزينة الجهة</span>
+              <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${
+                paymentMethod === "CASH_RECEIPT" ? "bg-blue-600 text-white" : "bg-muted text-muted-foreground"
+              }`}>
+                <FileCheck2 className="h-4.5 w-4.5" />
+              </div>
+              <div className="space-y-0.5">
+                <div className="text-xs font-black text-foreground">الحالة 2: بإيصال سداد نقدي</div>
+                <div className="text-[11px] text-muted-foreground leading-relaxed">
+                  تحديد رقم إيصال التوريد النقدي المسدد بخزينة الجهة وتاريخه
+                </div>
+              </div>
             </button>
           </div>
 
           {paymentMethod === "DEDUCTION" ? (
-            <div className="p-4 rounded-2xl bg-muted/40 border border-border space-y-3">
+            <div className="p-4 rounded-2xl bg-amber-500/5 border border-amber-500/25 space-y-3.5 animate-fade-in">
+              <div className="flex items-center justify-between flex-wrap gap-2">
+                <div className="text-xs font-bold text-amber-800 dark:text-amber-300 flex items-center gap-1.5">
+                  <Receipt className="h-4 w-4 text-amber-600" />
+                  <span>بيانات الخصم من مستحقات الشركة</span>
+                </div>
+                <Badge className="bg-amber-500/15 text-amber-700 dark:text-amber-300 border-amber-500/30 text-[10px]">
+                  نمط الخصم: شهر + سنة + اسم العملية
+                </Badge>
+              </div>
+
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div className="space-y-1.5 sm:col-span-1">
-                  <Label className="text-xs font-bold text-foreground">اسم العملية المخصوم منها *</Label>
+                  <Label className="text-xs font-bold text-foreground">اسم العملية المخصوم منها مستحقات الشركة *</Label>
                   <Input
                     value={deductionOperationName}
                     onChange={(e) => setDeductionOperationName(e.target.value)}
                     placeholder="توريد مستلزمات..."
-                    className="h-9 text-xs rounded-xl"
+                    className="h-9.5 text-xs rounded-xl bg-background"
                   />
                 </div>
                 <div className="space-y-1.5 sm:col-span-1">
@@ -965,41 +1056,104 @@ export function FinalInsuranceRefundSection({
                     value={deductionMonth}
                     onChange={(e) => setDeductionMonth(e.target.value)}
                     placeholder="سبتمبر"
-                    className="h-9 text-xs rounded-xl"
+                    className="h-9.5 text-xs rounded-xl bg-background"
                   />
+                  <div className="flex items-center gap-1 flex-wrap pt-0.5">
+                    {["يناير", "مارس", "يونيو", "سبتمبر", "ديسمبر"].map((m) => (
+                      <button
+                        key={m}
+                        type="button"
+                        onClick={() => setDeductionMonth(m)}
+                        className={`text-[10px] px-2 py-0.5 rounded-lg border cursor-pointer ${
+                          deductionMonth === m ? "bg-amber-500 text-white border-amber-600 font-bold" : "bg-muted/50 hover:bg-muted text-muted-foreground"
+                        }`}
+                      >
+                        {m}
+                      </button>
+                    ))}
+                  </div>
                 </div>
                 <div className="space-y-1.5 sm:col-span-1">
-                  <Label className="text-xs font-bold text-foreground">سنة *</Label>
+                  <Label className="text-xs font-bold text-foreground">سنة الخصم *</Label>
                   <Input
                     value={deductionYear}
                     onChange={(e) => setDeductionYear(e.target.value)}
                     placeholder="2024"
-                    className="h-9 text-xs font-mono rounded-xl"
+                    className="h-9.5 text-xs font-mono font-bold rounded-xl bg-background"
                   />
+                  <div className="flex items-center gap-1 flex-wrap pt-0.5">
+                    {["2023", "2024", "2025", "2026"].map((y) => (
+                      <button
+                        key={y}
+                        type="button"
+                        onClick={() => setDeductionYear(y)}
+                        className={`text-[10px] px-2 py-0.5 rounded-lg border font-mono cursor-pointer ${
+                          deductionYear === y ? "bg-amber-500 text-white border-amber-600 font-bold" : "bg-muted/50 hover:bg-muted text-muted-foreground"
+                        }`}
+                      >
+                        {y}
+                      </button>
+                    ))}
+                  </div>
                 </div>
+              </div>
+
+              {/* معاينة النص الناتج في الخطاب */}
+              <div className="p-3 rounded-xl bg-background border border-amber-500/25 text-xs font-semibold text-foreground space-y-1">
+                <span className="text-[11px] text-muted-foreground font-normal">معاينة النص كما يظهر بالخطاب المعتمد (بدون ذكر إيصال نقدي):</span>
+                <p className="text-amber-900 dark:text-amber-200">
+                  قيمة التأمين النهائي والمسدد ( <span className="font-bold underline decoration-amber-500">خصما من مستحقات الشركة لديكم في عملية ({deductionOperationName || "..."}) عن شهر ({deductionMonth || "..."}) سنة ({deductionYear || "..."})</span> )
+                </p>
               </div>
             </div>
           ) : (
-            <div className="p-4 rounded-2xl bg-muted/40 border border-border space-y-3">
+            <div className="p-4 rounded-2xl bg-blue-500/5 border border-blue-500/25 space-y-3.5 animate-fade-in">
+              <div className="flex items-center justify-between flex-wrap gap-2">
+                <div className="text-xs font-bold text-blue-800 dark:text-blue-300 flex items-center gap-1.5">
+                  <FileCheck2 className="h-4 w-4 text-blue-600" />
+                  <span>بيانات إيصال السداد النقدي المسدد بالخزينة</span>
+                </div>
+                <Badge className="bg-blue-500/15 text-blue-700 dark:text-blue-300 border-blue-500/30 text-[10px]">
+                  نمط الإيصال: رقم الإيصال + تاريخ التوريد
+                </Badge>
+              </div>
+
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div className="space-y-1.5">
                   <Label className="text-xs font-bold text-foreground">رقم إيصال السداد النقدي *</Label>
                   <Input
                     value={receiptNumber}
                     onChange={(e) => setReceiptNumber(e.target.value)}
-                    placeholder="102548"
-                    className="h-9 text-xs font-mono rounded-xl"
+                    placeholder="مثلاً: 102548"
+                    className="h-9.5 text-xs font-mono font-bold rounded-xl bg-background"
                   />
                 </div>
                 <div className="space-y-1.5">
-                  <Label className="text-xs font-bold text-foreground">تاريخ إيصال السداد *</Label>
+                  <div className="flex items-center justify-between">
+                    <Label className="text-xs font-bold text-foreground">تاريخ إيصال السداد *</Label>
+                    <button
+                      type="button"
+                      onClick={() => setReceiptDate(new Date().toLocaleDateString("en-GB"))}
+                      className="text-[10px] text-blue-600 font-bold hover:underline cursor-pointer"
+                    >
+                      تاريخ اليوم
+                    </button>
+                  </div>
                   <Input
                     value={receiptDate}
                     onChange={(e) => setReceiptDate(e.target.value)}
                     placeholder="15/ 10 /2024"
-                    className="h-9 text-xs font-mono rounded-xl"
+                    className="h-9.5 text-xs font-mono rounded-xl bg-background"
                   />
                 </div>
+              </div>
+
+              {/* معاينة النص الناتج في الخطاب */}
+              <div className="p-3 rounded-xl bg-background border border-blue-500/25 text-xs font-semibold text-foreground space-y-1">
+                <span className="text-[11px] text-muted-foreground font-normal">معاينة النص كما يظهر بالخطاب المعتمد (بدون ذكر خصم مستحقات):</span>
+                <p className="text-blue-900 dark:text-blue-200">
+                  قيمة التأمين النهائي والمسدد ( <span className="font-bold underline decoration-blue-500">بايصال سداد نقدى رقم ({receiptNumber || "..."}){receiptDate ? ` بتاريخ (${receiptDate})` : ""}</span> )
+                </p>
               </div>
             </div>
           )}
@@ -1122,22 +1276,125 @@ export function FinalInsuranceRefundSection({
             </div>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div className="space-y-1.5">
-              <Label className="text-xs font-bold text-foreground">بيان المرفقات المطبوع بالخطاب *</Label>
-              <Input
-                value={attachmentNote}
-                onChange={(e) => setAttachmentNote(e.target.value)}
-                className="h-9.5 text-xs rounded-xl"
-              />
+          {/* اختيار نوع المرفق: صورة إيصال أم أصل إيصال */}
+          <div className="space-y-3 p-3.5 rounded-2xl bg-muted/30 border border-border/60">
+            <div className="flex items-center justify-between flex-wrap gap-2">
+              <Label className="text-xs font-bold text-foreground flex items-center gap-1.5">
+                <FileCheck2 className="w-4 h-4 text-primary" />
+                <span>نوع المرفق الخاص بإيصال السداد (صورة أم أصل؟) *</span>
+              </Label>
+              <Badge variant="outline" className="text-[11px] font-normal">
+                {attachmentType === "ORIGINAL" ? "محدد: أصل إيصال السداد" : "محدد: صورة إيصال السداد"}
+              </Badge>
             </div>
-            <div className="space-y-1.5">
-              <Label className="text-xs font-bold text-foreground">ملاحظات إضافية (خانة الملاحظات)</Label>
-              <Input
-                value={letterNotes}
-                onChange={(e) => setLetterNotes(e.target.value)}
-                className="h-9.5 text-xs rounded-xl"
-              />
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {/* خيار صورة */}
+              <button
+                type="button"
+                onClick={() => {
+                  setAttachmentType("COPY");
+                  setAttachmentNote("مرفق صورة من إيصال السداد");
+                }}
+                className={`p-3 rounded-xl border text-right transition-all flex items-start gap-3 cursor-pointer ${
+                  attachmentType === "COPY"
+                    ? "bg-blue-500/10 border-blue-500 ring-2 ring-blue-500/30 text-blue-900 dark:text-blue-200"
+                    : "bg-card hover:bg-muted/60 border-border text-foreground"
+                }`}
+              >
+                <div
+                  className={`mt-0.5 p-2 rounded-lg ${
+                    attachmentType === "COPY"
+                      ? "bg-blue-600 text-white"
+                      : "bg-muted text-muted-foreground"
+                  }`}
+                >
+                  <Copy className="w-4 h-4" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-xs">صورة من إيصال السداد</span>
+                    {attachmentType === "COPY" && (
+                      <span className="text-[10px] font-bold text-blue-600 bg-blue-100 dark:bg-blue-950/60 px-1.5 py-0.5 rounded-md">
+                        مُفعل ✓
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-[11px] text-muted-foreground mt-0.5">
+                    إرفاق صورة طبق الأصل من إيصال السداد بالخطاب
+                  </p>
+                </div>
+              </button>
+
+              {/* خيار أصل */}
+              <button
+                type="button"
+                onClick={() => {
+                  setAttachmentType("ORIGINAL");
+                  setAttachmentNote("مرفق أصل من إيصال السداد");
+                }}
+                className={`p-3 rounded-xl border text-right transition-all flex items-start gap-3 cursor-pointer ${
+                  attachmentType === "ORIGINAL"
+                    ? "bg-emerald-500/10 border-emerald-500 ring-2 ring-emerald-500/30 text-emerald-900 dark:text-emerald-200"
+                    : "bg-card hover:bg-muted/60 border-border text-foreground"
+                }`}
+              >
+                <div
+                  className={`mt-0.5 p-2 rounded-lg ${
+                    attachmentType === "ORIGINAL"
+                      ? "bg-emerald-600 text-white"
+                      : "bg-muted text-muted-foreground"
+                  }`}
+                >
+                  <FileCheck2 className="w-4 h-4" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-xs">أصل إيصال السداد</span>
+                    {attachmentType === "ORIGINAL" && (
+                      <span className="text-[10px] font-bold text-emerald-600 bg-emerald-100 dark:bg-emerald-950/60 px-1.5 py-0.5 rounded-md">
+                        مُفعل ✓
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-[11px] text-muted-foreground mt-0.5">
+                    إرفاق إيصال السداد الأصلي المالي المعتمد
+                  </p>
+                </div>
+              </button>
+            </div>
+
+            {/* حقل التعديل اليدوي والمعاينة المباشرة */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+              <div className="space-y-1.5">
+                <Label className="text-xs font-bold text-foreground">
+                  صيغة بيان المرفقات المطبوع بالخطاب *
+                </Label>
+                <Input
+                  value={attachmentNote}
+                  onChange={(e) => setAttachmentNote(e.target.value)}
+                  className="h-9.5 text-xs rounded-xl bg-background"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <Label className="text-xs font-bold text-foreground">ملاحظات إضافية (خانة الملاحظات)</Label>
+                <Input
+                  value={letterNotes}
+                  onChange={(e) => setLetterNotes(e.target.value)}
+                  className="h-9.5 text-xs rounded-xl bg-background"
+                />
+              </div>
+            </div>
+
+            {/* معاينة النص كما يظهر بالخطاب المطبوع */}
+            <div className="p-2.5 rounded-xl bg-background border border-border text-xs flex items-center justify-between gap-2 flex-wrap">
+              <span className="text-muted-foreground text-[11px]">
+                معاينة عبارة المرفق في أسفل الخطاب المعتمد:
+              </span>
+              <span className="font-bold text-primary text-xs">
+                {attachmentNote || (attachmentType === "ORIGINAL" ? "مرفق أصل من إيصال السداد" : "مرفق صورة من إيصال السداد")}
+              </span>
             </div>
           </div>
         </div>
