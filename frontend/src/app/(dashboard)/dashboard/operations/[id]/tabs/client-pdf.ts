@@ -13,21 +13,30 @@ import api from "@/lib/api";
 export async function convertDocxBlobToPdfBlob(docxBlob: Blob): Promise<Blob> {
   const container = document.createElement("div");
   container.style.position = "fixed";
-  container.style.left = "0px";
+  container.style.left = "-9999px";
   container.style.top = "0px";
-  container.style.width = "820px";
+  container.style.width = "794px"; // مقاس A4 القياسي عند دقة 96DPI
   container.style.background = "#ffffff";
   container.style.color = "#000000";
   container.style.zIndex = "-9999";
-  container.style.opacity = "0.01";
+  container.style.opacity = "1"; // إبقاء الشفافية كاملة لضمان رسم حاد ونقي في html2canvas
   container.style.pointerEvents = "none";
   container.setAttribute("dir", "rtl");
   document.body.appendChild(container);
 
   try {
-    // الانتظار حتى اكتمال تحميل خطوط الوورد العربية بالكامل (Arabic Typesetting / Andalus)
+    // التأكد من اكتمال تحميل خطوط الوورد العربية بالكامل (Arabic Typesetting / Andalus / Aldhabi)
     if (typeof document !== "undefined" && document.fonts) {
       await document.fonts.ready;
+      try {
+        await Promise.all([
+          document.fonts.load('16px "Arabic Typesetting"'),
+          document.fonts.load('bold 16px "Arabic Typesetting"'),
+          document.fonts.load('16px "Andalus"'),
+          document.fonts.load('bold 16px "Andalus"'),
+          document.fonts.load('16px "Aldhabi"'),
+        ]);
+      } catch {}
     }
 
     let rendered = false;
@@ -76,6 +85,8 @@ export async function convertDocxBlobToPdfBlob(docxBlob: Blob): Promise<Blob> {
       compress: true,
     });
 
+    const pageHeightLimit = 297; // ارتفاع صفحة A4 بالميليمتر
+
     for (let i = 0; i < elementsToCapture.length; i++) {
       const pageEl = elementsToCapture[i];
       pageEl.style.backgroundColor = "#ffffff";
@@ -92,10 +103,24 @@ export async function convertDocxBlobToPdfBlob(docxBlob: Blob): Promise<Blob> {
       const imgWidth = 210; // A4 width in mm
       const imgHeight = (canvas.height * imgWidth) / canvas.width;
 
+      let heightLeft = imgHeight;
+      let position = 0;
+
       if (i > 0) {
         pdf.addPage("a4", "portrait");
       }
-      pdf.addImage(imgData, "JPEG", 0, 0, imgWidth, Math.min(imgHeight, 297), undefined, "FAST");
+
+      // إضافة الصفحة الأولى أو القسم الأول
+      pdf.addImage(imgData, "JPEG", 0, position, imgWidth, imgHeight, undefined, "FAST");
+      heightLeft -= pageHeightLimit;
+
+      // إذا كان العنصر أو الجدول يتجاوز صفحة واحدة (A4)، نقسمه عبر صفحات متتالية حتى لا ينقص أي سطر
+      while (heightLeft > 5) {
+        position -= pageHeightLimit;
+        pdf.addPage("a4", "portrait");
+        pdf.addImage(imgData, "JPEG", 0, position, imgWidth, imgHeight, undefined, "FAST");
+        heightLeft -= pageHeightLimit;
+      }
     }
 
     return pdf.output("blob");

@@ -5,31 +5,55 @@
 /* ━━━ Authentic Microsoft Arabic TrueType Fonts for 100% Word Fidelity on Vercel & All Browsers ━━━ */
 @font-face {
   font-family: 'Arabic Typesetting';
-  src: url('/fonts/arabtype.ttf') format('truetype');
-  font-weight: 100 900;
+  src: local('Arabic Typesetting'), url('/fonts/arabtype.ttf') format('truetype');
+  font-weight: normal;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Arabic Typesetting';
+  src: local('Arabic Typesetting'), url('/fonts/arabtype.ttf') format('truetype');
+  font-weight: bold;
   font-style: normal;
   font-display: swap;
 }
 
 @font-face {
   font-family: 'Andalus';
-  src: url('/fonts/andlso.ttf') format('truetype');
-  font-weight: 100 900;
+  src: local('Andalus'), url('/fonts/andlso.ttf') format('truetype');
+  font-weight: normal;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Andalus';
+  src: local('Andalus'), url('/fonts/andlso.ttf') format('truetype');
+  font-weight: bold;
   font-style: normal;
   font-display: swap;
 }
 
 @font-face {
   font-family: 'Aldhabi';
-  src: url('/fonts/aldhabi.ttf') format('truetype');
-  font-weight: 100 900;
+  src: local('Aldhabi'), url('/fonts/aldhabi.ttf') format('truetype');
+  font-weight: normal;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Aldhabi';
+  src: local('Aldhabi'), url('/fonts/aldhabi.ttf') format('truetype');
+  font-weight: bold;
   font-style: normal;
   font-display: swap;
 }
 
 @font-face {
   font-family: 'Traditional Arabic';
-  src: url('/fonts/trado.ttf') format('truetype');
+  src: local('Traditional Arabic'), url('/fonts/trado.ttf') format('truetype');
   font-weight: normal;
   font-style: normal;
   font-display: swap;
@@ -37,7 +61,23 @@
 
 @font-face {
   font-family: 'Traditional Arabic';
-  src: url('/fonts/tradbdo.ttf') format('truetype');
+  src: local('Traditional Arabic Bold'), url('/fonts/tradbdo.ttf') format('truetype');
+  font-weight: bold;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'PT Bold Heading';
+  src: local('PT Bold Heading'), local('B Bold Heading'), url('/fonts/arabtype.ttf') format('truetype');
+  font-weight: bold;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'PT Bold Dusky';
+  src: local('PT Bold Dusky'), url('/fonts/arabtype.ttf') format('truetype');
   font-weight: bold;
   font-style: normal;
   font-display: swap;

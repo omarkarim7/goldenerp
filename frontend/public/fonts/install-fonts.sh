@@ -16,6 +16,16 @@ TARGET_LOCAL_DIR="/usr/local/share/fonts/goldenerp"
 
 echo "🌟 [GoldenERP] Starting Arabic fonts installation..."
 
+# Install LibreOffice & fontconfig dependencies if on Debian/Ubuntu (Hostinger VPS)
+if command -v apt-get >/dev/null 2>&1; then
+    echo "📦 Checking LibreOffice & fontconfig packages..."
+    if ! command -v soffice >/dev/null 2>&1 || ! command -v fc-cache >/dev/null 2>&1; then
+        echo "⬇️ Installing libreoffice-writer & fontconfig for headless PDF conversion..."
+        sudo apt-get update -y || true
+        sudo apt-get install -y libreoffice-writer fontconfig || true
+    fi
+fi
+
 # Create target directories
 sudo mkdir -p "$TARGET_SYSTEM_DIR"
 sudo mkdir -p "$TARGET_LOCAL_DIR"
