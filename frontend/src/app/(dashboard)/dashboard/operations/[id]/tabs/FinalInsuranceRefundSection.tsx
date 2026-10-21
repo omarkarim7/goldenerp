@@ -466,22 +466,14 @@ export function FinalInsuranceRefundSection({
     docXml = docXml.replace(/توقيع صورة/g, escapeXml(financeManagerName));
     docXml = docXml.replace(/رئيس مجلس الإدارة/g, escapeXml(boardChairman));
 
-    // ━━━ استبدال فقرة المرفقات (صورة أو أصل من إيصال السداد) بدقة 100% ━━━
-    const attStartToken = '<w:t xml:space="preserve">مرفق </w:t></w:r>';
-    const attEndToken = 'من إيصال السداد </w:t></w:r>';
-    const aStartIdx = docXml.indexOf(attStartToken);
-    const aEndIdx = docXml.indexOf(attEndToken);
-
+    // ━━━ استبدال فقرة المرفقات (صورة أو أصل من إيصال السداد) بالكامل كفقرة XML منضبطة 100% ━━━
     const defaultAttText = attachmentType === "ORIGINAL" ? "مرفق أصل من إيصال السداد" : "مرفق صورة من إيصال السداد";
     const finalAttachmentText = attachmentNote || defaultAttText;
 
-    if (aStartIdx !== -1 && aEndIdx !== -1) {
-      const before = docXml.substring(0, aStartIdx);
-      const after = docXml.substring(aEndIdx + attEndToken.length);
-      const replacementRun = `<w:r><w:rPr><w:rFonts w:ascii="Arabic Typesetting" w:hAnsi="Arabic Typesetting" w:cs="Arabic Typesetting" w:hint="cs"/><w:b/><w:bCs/><w:sz w:val="32"/><w:szCs w:val="32"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t xml:space="preserve">${escapeXml(finalAttachmentText)} </w:t></w:r>`;
-      docXml = before + replacementRun + after;
-    } else {
-      docXml = docXml.replace(/مرفق[\s\S]*?من إيصال السداد/g, escapeXml(finalAttachmentText));
+    const attMatch = docXml.match(/<w:p\b[^>]*>[\s\S]*?مرفق[\s\S]*?من إيصال السداد[\s\S]*?<\/w:p>/);
+    if (attMatch) {
+      const newParagraph = `<w:p><w:pPr><w:pStyle w:val="ListParagraph"/><w:spacing w:after="0" w:line="240" w:lineRule="auto"/><w:ind w:left="-150"/><w:rPr><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr></w:pPr><w:r><w:rPr><w:rFonts w:ascii="Arabic Typesetting" w:hAnsi="Arabic Typesetting" w:cs="Arabic Typesetting" w:hint="cs"/><w:b/><w:bCs/><w:sz w:val="32"/><w:szCs w:val="32"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t xml:space="preserve">${escapeXml(finalAttachmentText)}</w:t></w:r></w:p>`;
+      docXml = docXml.replace(attMatch[0], newParagraph);
     }
 
     docXml = docXml.replace(/خانه خاليه للملاحظات/g, escapeXml(letterNotes));
