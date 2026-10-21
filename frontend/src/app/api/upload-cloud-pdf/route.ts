@@ -82,10 +82,37 @@ export async function POST(req: NextRequest) {
         }
       }
     } catch (tmpErr: any) {
-      console.warn("Tmpfile upload failed, switching to Gofile:", tmpErr?.message);
+      console.warn("Tmpfile upload failed, switching to Tmpfiles.org:", tmpErr?.message);
     }
 
-    // 3. المحاولة الثالثة: Gofile.io (تخزين سحابي خارجي مجاني وموثوق 100%)
+    // 3. المحاولة الثالثة: TmpFiles.org (رابط PDF فوري ومباشر 100%)
+    try {
+      const orgForm = new FormData();
+      const pdfFile = new File([uint8Data], finalFileName, { type: "application/pdf" });
+      orgForm.append("file", pdfFile);
+
+      const orgRes = await fetch("https://tmpfiles.org/api/v1/upload", {
+        method: "POST",
+        body: orgForm,
+        signal: AbortSignal.timeout(10000),
+      });
+
+      if (orgRes.ok) {
+        const orgData = await orgRes.json();
+        if (orgData?.status === "success" && orgData?.data?.url) {
+          const directDlUrl = orgData.data.url.replace("tmpfiles.org/", "tmpfiles.org/dl/");
+          return NextResponse.json({
+            success: true,
+            url: directDlUrl,
+            provider: "TmpFiles (رابط PDF مباشر)",
+          });
+        }
+      }
+    } catch (orgErr: any) {
+      console.warn("Tmpfiles.org upload failed, switching to Gofile:", orgErr?.message);
+    }
+
+    // 4. المحاولة الرابعة: Gofile.io (تخزين سحابي خارجي مجاني وموثوق 100%)
     try {
       const srvRes = await fetch("https://api.gofile.io/servers", {
         headers: { "User-Agent": "Mozilla/5.0" },

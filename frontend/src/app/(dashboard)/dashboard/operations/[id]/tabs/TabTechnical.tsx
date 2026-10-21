@@ -903,8 +903,8 @@ export function TabTechnical({
   const executePrintDoc = async () => {
     setPrintingDocx(true);
     try {
-      toast.info("جاري تجهيز مستند العرض الفني للطباعة بأعلى دقة...");
-      const pdfBlob = await generateTechnicalPdfBlob();
+      // استخدام ملف الـ PDF المعروض للمعاينة فوراً لتوفير الوقت
+      const pdfBlob = previewPdfBlob || (await generateTechnicalPdfBlob());
       const pdfUrl = URL.createObjectURL(pdfBlob);
 
       const iframe = document.createElement("iframe");
@@ -960,8 +960,13 @@ export function TabTechnical({
         existingLetter.printHistory = updatedHistory;
         notesObj.technicalOfferLetter = existingLetter;
         await api.patch(`/operations/${op.id}`, { notes: JSON.stringify(notesObj) });
+        onRefresh();
       } catch (e) {
         console.warn("Could not persist print history:", e);
+      }
+
+      if (!cloudPdfUrl) {
+        handleUploadToCloud(false, pdfBlob).catch(() => {});
       }
 
       toast.success("تم إرسال المستند للطباعة وتحديث سجل الطباعة بنجاح ✓");

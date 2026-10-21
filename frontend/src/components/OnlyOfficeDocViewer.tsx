@@ -191,6 +191,13 @@ export const OnlyOfficeDocViewer: React.FC<OnlyOfficeDocViewerProps> = ({
 
   // تنفيذ الطباعة المباشرة بأعلى دقة متجهة وجودة مطابقة لقالب الوورد الأصلي
   const handleDirectPrint = () => {
+    // 1. إذا وفّر المكون الأب معالج طباعة رسمي يسجل التاريخ والمستخدمين وعدد المرات، ننفذه فوراً
+    if (onPrint) {
+      onPrint();
+      return;
+    }
+
+    // 2. كبديل في حال عدم توفر معالج رسمي، نقوم بطباعة الـ PDF المعروض مباشرة عبر iframe خفي
     if (pdfObjectUrl) {
       const printIframe = document.createElement("iframe");
       printIframe.style.position = "fixed";
@@ -215,10 +222,6 @@ export const OnlyOfficeDocViewer: React.FC<OnlyOfficeDocViewerProps> = ({
         }, 3000);
       };
       return;
-    }
-
-    if (onPrint) {
-      onPrint();
     }
   };
 

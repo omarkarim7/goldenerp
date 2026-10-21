@@ -2411,10 +2411,37 @@ try {
         }
       }
     } catch (tmpErr: any) {
-      this.logger.warn(`Tmpfile upload failed, trying Gofile: ${tmpErr?.message}`);
+      this.logger.warn(`Tmpfile upload failed, trying Tmpfiles.org: ${tmpErr?.message}`);
     }
 
-    // 3. المحرك السحابي الثالث: Gofile.io (تخزين سحابي خارجي مجاني)
+    // 3. المحرك السحابي الثالث: TmpFiles.org (رابط PDF فوري ومباشر 100%)
+    try {
+      const orgForm = new FormData();
+      orgForm.append(
+        'file',
+        new Blob([new Uint8Array(pdfBuffer)], { type: 'application/pdf' }),
+        finalName
+      );
+
+      const orgRes = await fetch('https://tmpfiles.org/api/v1/upload', {
+        method: 'POST',
+        body: orgForm,
+        signal: AbortSignal.timeout(10000),
+      });
+
+      if (orgRes.ok) {
+        const orgData = await orgRes.json();
+        if (orgData?.status === 'success' && orgData?.data?.url) {
+          const directDlUrl = orgData.data.url.replace('tmpfiles.org/', 'tmpfiles.org/dl/');
+          this.logger.log(`تم رفع المستند سحابياً بنجاح عبر TmpFiles: ${directDlUrl}`);
+          return { success: true, url: directDlUrl, provider: 'TmpFiles Direct Cloud' };
+        }
+      }
+    } catch (orgErr: any) {
+      this.logger.warn(`Tmpfiles.org upload failed, trying Gofile: ${orgErr?.message}`);
+    }
+
+    // 4. المحرك السحابي الرابع: Gofile.io (تخزين سحابي خارجي مجاني)
     try {
       const srvRes = await fetch('https://api.gofile.io/servers', {
         headers: { 'User-Agent': 'Mozilla/5.0' },

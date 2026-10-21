@@ -630,7 +630,7 @@ export function TabDeclarations({
     setPrintingDocx(true);
     try {
       toast.info("جاري تجهيز مستند الإقرار للطباعة بأعلى دقة...");
-      const pdfBlob = await generateDeclarationPdfBlob(activeDeclType);
+      const pdfBlob = previewPdfBlob || (await generateDeclarationPdfBlob(activeDeclType));
       const pdfUrl = URL.createObjectURL(pdfBlob);
 
       const iframe = document.createElement("iframe");
@@ -686,8 +686,13 @@ export function TabDeclarations({
         existingDec.printHistory = updatedHistory;
         notesObj.declarationsDocx = existingDec;
         await api.patch(`/operations/${op.id}`, { notes: JSON.stringify(notesObj) });
+        onRefresh();
       } catch (e) {
         console.warn("Could not persist print history:", e);
+      }
+
+      if (!currentCloudUrl) {
+        handleUploadToCloud(activeDeclType, false, pdfBlob).catch(() => {});
       }
 
       toast.success("تم إرسال المستند للطباعة وتحديث سجل الطباعة بنجاح ✓");

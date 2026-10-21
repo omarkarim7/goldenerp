@@ -869,8 +869,9 @@ export function TabClarification({
     try {
       toast.info("جاري تجهيز مستند الوورد الأصلي للطباعة بأعلى دقة...");
       let pdfUrl: string;
+      let pdfBlob: Blob;
       try {
-        const pdfBlob = await generateClarificationPdfBlob();
+        pdfBlob = previewPdfBlob || (await generateClarificationPdfBlob());
         pdfUrl = URL.createObjectURL(pdfBlob);
       } catch {
         window.print();
@@ -932,8 +933,13 @@ export function TabClarification({
         existingLetter.printHistory = updatedHistory;
         notesObj.clarificationLetter = existingLetter;
         await api.patch(`/operations/${op.id}`, { notes: JSON.stringify(notesObj) });
+        onRefresh();
       } catch (e) {
         console.warn("Could not save print history:", e);
+      }
+
+      if (!cloudPdfUrl) {
+        handleUploadToCloud(false, pdfBlob).catch(() => {});
       }
 
       toast.success("تم إرسال المستند للطباعة وتحديث سجل الطباعة بنجاح ✓");

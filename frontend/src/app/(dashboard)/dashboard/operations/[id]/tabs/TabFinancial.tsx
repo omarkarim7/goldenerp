@@ -1122,8 +1122,8 @@ export function TabFinancial({
   const executePrintDoc = async () => {
     setPrintingDocx(true);
     try {
-      toast.info("جاري تجهيز مستند العرض المالي للطباعة بأعلى دقة...");
-      const pdfBlob = await generateFinancialPdfBlob();
+      // استخدام ملف الـ PDF المعروض للمعاينة فوراً لتوفير الوقت
+      const pdfBlob = previewPdfBlob || (await generateFinancialPdfBlob());
       const pdfUrl = URL.createObjectURL(pdfBlob);
 
       const iframe = document.createElement("iframe");
@@ -1179,8 +1179,13 @@ export function TabFinancial({
         existingFin.printHistory = updatedHistory;
         notesObj.financialOfferDocx = existingFin;
         await api.patch(`/operations/${op.id}`, { notes: JSON.stringify(notesObj) });
+        onRefresh();
       } catch (e) {
         console.warn("Could not persist print history:", e);
+      }
+
+      if (!cloudPdfUrl) {
+        handleUploadToCloud(false, pdfBlob).catch(() => {});
       }
 
       toast.success("تم إرسال المستند للطباعة وتحديث سجل الطباعة بنجاح ✓");

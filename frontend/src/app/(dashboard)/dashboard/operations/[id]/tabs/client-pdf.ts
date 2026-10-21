@@ -386,7 +386,27 @@ export async function uploadPdfToFreeCloud(
     console.warn("Direct browser Tmpfile failed:", tmpErr?.message);
   }
 
-  // 4. المحاولة الرابعة: رفع مباشر من المتصفح إلى Catbox.moe
+  // 4. المحاولة الرابعة: رفع مباشر إلى TmpFiles.org (رابط PDF فوري ومباشر 100%)
+  try {
+    const orgForm = new FormData();
+    orgForm.append("file", pdfBlob, fileName);
+    const orgRes = await fetch("https://tmpfiles.org/api/v1/upload", {
+      method: "POST",
+      body: orgForm,
+      signal: AbortSignal.timeout(10000),
+    });
+    if (orgRes.ok) {
+      const orgData = await orgRes.json();
+      if (orgData?.status === "success" && orgData?.data?.url) {
+        const directDlUrl = orgData.data.url.replace("tmpfiles.org/", "tmpfiles.org/dl/");
+        return { success: true, url: directDlUrl, provider: "TmpFiles (رابط PDF مباشر)" };
+      }
+    }
+  } catch (orgErr: any) {
+    console.warn("Direct browser Tmpfiles.org failed:", orgErr?.message);
+  }
+
+  // 5. المحاولة الخامسة: رفع مباشر من المتصفح إلى Catbox.moe
   try {
     const catboxForm = new FormData();
     catboxForm.append("reqtype", "fileupload");
@@ -394,6 +414,7 @@ export async function uploadPdfToFreeCloud(
     const cbRes = await fetch("https://catbox.moe/user/api.php", {
       method: "POST",
       body: catboxForm,
+      signal: AbortSignal.timeout(5000),
     });
     if (cbRes.ok) {
       const text = (await cbRes.text()).trim();
@@ -405,9 +426,11 @@ export async function uploadPdfToFreeCloud(
     console.warn("Direct browser Catbox failed:", directErr?.message);
   }
 
-  // 5. المحاولة الخامسة: رفع مباشر من المتصفح إلى Gofile.io
+  // 6. المحاولة السادسة: رفع مباشر من المتصفح إلى Gofile.io
   try {
-    const srvRes = await fetch("https://api.gofile.io/servers");
+    const srvRes = await fetch("https://api.gofile.io/servers", {
+      signal: AbortSignal.timeout(5000),
+    });
     if (srvRes.ok) {
       const srvData = await srvRes.json();
       const serverName = srvData?.data?.servers?.[0]?.name || "store1";
@@ -418,6 +441,7 @@ export async function uploadPdfToFreeCloud(
       const upRes = await fetch(`https://${serverName}.gofile.io/contents/uploadfile`, {
         method: "POST",
         body: gofileForm,
+        signal: AbortSignal.timeout(15000),
       });
 
       if (upRes.ok) {
@@ -435,7 +459,7 @@ export async function uploadPdfToFreeCloud(
     console.warn("Direct browser Gofile failed:", gofileErr?.message);
   }
 
-  throw new Error("تعذر الرفع إلى مراكز التخزين السحابي الخارجية (Catbox / Cloudflare R2 / Gofile). يرجى التحقق من اتصال الإنترنت والمحاولة مجدداً.");
+  throw new Error("تعذر الرفع إلى مراكز التخزين السحابي الخارجية (Tmpfile / Tmpfiles.org / Catbox / Gofile). يرجى التحقق من اتصال الإنترنت والمحاولة مجدداً.");
 }
 
 

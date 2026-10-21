@@ -635,8 +635,9 @@ export function TabFinalGuarantee({
     try {
       toast.info("جاري تجهيز مستند التأمين النهائي للطباعة بأعلى دقة...");
       let pdfUrl: string;
+      let pdfBlob: Blob;
       try {
-        const pdfBlob = await generateGuaranteePdfBlob(activeLetterType);
+        pdfBlob = previewPdfBlob || (await generateGuaranteePdfBlob(activeLetterType));
         pdfUrl = URL.createObjectURL(pdfBlob);
       } catch {
         window.print();
@@ -695,8 +696,13 @@ export function TabFinalGuarantee({
         existingLetter.printHistory = updatedHistory;
         notesObj.finalGuaranteeLetter = existingLetter;
         await api.patch(`/operations/${op.id}`, { notes: JSON.stringify(notesObj) });
+        onRefresh();
       } catch (e) {
         console.warn("Could not persist print history:", e);
+      }
+
+      if (!cloudUrls[activeLetterType]) {
+        handleUploadToCloud(activeLetterType, false).catch(() => {});
       }
 
       toast.success("تم إرسال المستند للطباعة وتحديث سجل الطباعة بنجاح ✓");

@@ -653,7 +653,10 @@ export class OperationsController {
       }
     }
 
-    throw new NotFoundException('المستند غير موجود');
+    const frontendUrl = process.env.FRONTEND_URL || 'https://goldenerp-tau.vercel.app';
+    const regMatch = safeName.match(/([a-zA-Z]{1,4}\d{6,14})/i);
+    const regNo = regMatch ? regMatch[1] : safeName;
+    return res.redirect(302, `${frontendUrl}/verify-doc?ref=${encodeURIComponent(regNo)}`);
   }
 
 }

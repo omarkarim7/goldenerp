@@ -49,10 +49,12 @@ export async function GET(
     }
 
     if (!foundBuffer) {
-      // Redirect to verification page if file not found
-      const host = req.headers.get("host") || "";
+      // Redirect to verification page if file not found on local disk
+      const regMatch = safeName.match(/([a-zA-Z]{1,4}\d{6,14})/i);
+      const regNo = regMatch ? regMatch[1] : safeName;
+      const host = req.headers.get("x-forwarded-host") || req.headers.get("host") || "";
       const proto = req.headers.get("x-forwarded-proto") || "https";
-      return NextResponse.redirect(`${proto}://${host}/verify-doc?ref=${encodeURIComponent(safeName)}`);
+      return NextResponse.redirect(`${proto}://${host}/verify-doc?ref=${encodeURIComponent(regNo)}`);
     }
 
     return new NextResponse(new Uint8Array(foundBuffer), {

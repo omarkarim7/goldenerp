@@ -934,6 +934,11 @@ export function TabBooklet({
       const pdf = await generateBookletPdfBlob(activeLetterType);
       setPreviewPdfBlob(pdf);
       setLastGeneratedSnapshot(currentSnapshot);
+
+      // الرفع السحابي التلقائي في الخلفية بدون حجب واجهة المستخدم
+      if (!cloudUrls[activeLetterType]) {
+        handleUploadToCloud(activeLetterType, false).catch(() => {});
+      }
     } catch (err: any) {
       console.error(err);
       toast.error("فشل تجهيز معاينة المستند: " + (err?.message || ""));
@@ -957,8 +962,8 @@ export function TabBooklet({
   const executePrintDoc = async () => {
     setPrintingDocx(true);
     try {
-      toast.info("جاري تجهيز مستند الوورد الأصلي للطباعة بأعلى دقة...");
-      const pdfBlob = await generateBookletPdfBlob(activeLetterType);
+      // إعادة استخدام ملف الـ PDF المعروض للمعاينة فوراً بدون إعادة تحويل
+      const pdfBlob = previewPdfBlob || (await generateBookletPdfBlob(activeLetterType));
       const pdfUrl = URL.createObjectURL(pdfBlob);
 
       const iframe = document.createElement("iframe");
@@ -1019,9 +1024,16 @@ export function TabBooklet({
         await api.patch(`/operations/${op.id}`, {
           notes: JSON.stringify(notesObj),
         });
+        onRefresh();
       } catch (saveErr) {
         console.warn("Could not persist print history:", saveErr);
       }
+
+      // رفع المستند سحابياً في الخلفية لضمان تفعيل رابط التحقق من الباركود فورياً
+      if (!cloudUrls[activeLetterType]) {
+        handleUploadToCloud(activeLetterType, false).catch(() => {});
+      }
+
       toast.success("تم إرسال المستند للطباعة وتحديث سجل الطباعة الرسمي بنجاح ✓");
     } catch (err: any) {
       console.warn("فشل تجهيز الطباعة:", err);
