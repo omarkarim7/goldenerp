@@ -84,7 +84,10 @@ export function FinalInsuranceRefundSection({
   const currentCompanyLink = useMemo(() => {
     return (
       op.companies?.find(
-        (c: any) => c.companyId === selectedCompanyId || c.id === selectedCompanyId
+        (c: any) =>
+          c.companyId === selectedCompanyId ||
+          c.id === selectedCompanyId ||
+          c.company?.id === selectedCompanyId
       ) || op.companies?.[0]
     );
   }, [op.companies, selectedCompanyId]);
@@ -818,7 +821,7 @@ export function FinalInsuranceRefundSection({
                 onValueChange={(val) => {
                   setSelectedCompanyId(val);
                   const matched = op.companies?.find(
-                    (c: any) => c.companyId === val || c.id === val
+                    (c: any) => c.companyId === val || c.id === val || c.company?.id === val
                   );
                   if (matched) {
                     if (matched.company?.commercialRegister) setCompanyCommercialRegister(matched.company.commercialRegister);
@@ -828,14 +831,21 @@ export function FinalInsuranceRefundSection({
                 }}
               >
                 <SelectTrigger className="h-9.5 text-xs font-bold rounded-xl">
-                  <SelectValue placeholder="اختر الشركة" />
+                  <SelectValue placeholder="اختر الشركة">
+                    {currentCompany?.name
+                      ? `${currentCompany.name} (${currentCompanyLink?.displayCode || ""})`
+                      : (op.companies?.[0]?.company?.name
+                          ? `${op.companies[0].company.name} (${op.companies[0].displayCode || ""})`
+                          : "اختر الشركة")}
+                  </SelectValue>
                 </SelectTrigger>
                 <SelectContent className="text-xs font-medium">
                   {(op.companies || []).map((oc: any) => {
                     const compVal = oc.companyId || oc.id;
+                    const compName = oc.company?.name || "الشركة";
                     return (
                       <SelectItem key={oc.id || compVal} value={compVal} className="text-xs font-bold">
-                        {oc.company?.name || "الشركة"} ({oc.displayCode})
+                        {compName} ({oc.displayCode})
                       </SelectItem>
                     );
                   })}
@@ -879,12 +889,38 @@ export function FinalInsuranceRefundSection({
               />
             </div>
             <div className="space-y-1.5">
-              <Label className="text-xs font-bold text-foreground">التاريخ الصادر (Footer) *</Label>
-              <Input
-                value={issueDate}
-                onChange={(e) => setIssueDate(e.target.value)}
-                className="h-9.5 text-xs font-mono rounded-xl"
-              />
+              <div className="flex items-center justify-between">
+                <Label className="text-xs font-bold text-foreground">التاريخ الصادر (Footer) *</Label>
+                <button
+                  type="button"
+                  onClick={() => setIssueDate(new Date().toLocaleDateString("en-GB"))}
+                  className="text-[10px] text-blue-600 font-bold hover:underline cursor-pointer"
+                >
+                  اليوم
+                </button>
+              </div>
+              <div className="relative flex items-center">
+                <Input
+                  value={issueDate}
+                  onChange={(e) => setIssueDate(e.target.value)}
+                  className="h-9.5 text-xs font-mono rounded-xl pl-9"
+                  placeholder="DD/MM/YYYY"
+                />
+                <div className="absolute left-2.5 top-1/2 -translate-y-1/2 flex items-center justify-center">
+                  <input
+                    type="date"
+                    aria-label="اختر التاريخ من التقويم"
+                    className="w-5 h-5 opacity-0 absolute cursor-pointer z-10"
+                    onChange={(e) => {
+                      if (e.target.value) {
+                        const [y, m, d] = e.target.value.split("-");
+                        setIssueDate(`${d}/${m}/${y}`);
+                      }
+                    }}
+                  />
+                  <Calendar className="w-4 h-4 text-blue-600 pointer-events-none" />
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -1051,7 +1087,23 @@ export function FinalInsuranceRefundSection({
                   />
                 </div>
                 <div className="space-y-1.5 sm:col-span-1">
-                  <Label className="text-xs font-bold text-foreground">عن شهر *</Label>
+                  <div className="flex items-center justify-between">
+                    <Label className="text-xs font-bold text-foreground">عن شهر *</Label>
+                    <select
+                      value={deductionMonth}
+                      onChange={(e) => setDeductionMonth(e.target.value)}
+                      aria-label="قائمة منسدلة للشهور"
+                      className="text-[10px] bg-background border border-border rounded px-1.5 py-0.5 text-foreground cursor-pointer font-bold"
+                    >
+                      <option value="">قائمة الشهور...</option>
+                      {[
+                        "يناير", "فبراير", "مارس", "أبريل", "مايو", "يونيو",
+                        "يوليو", "أغسطس", "سبتمبر", "أكتوبر", "نوفمبر", "ديسمبر"
+                      ].map((m) => (
+                        <option key={m} value={m}>{m}</option>
+                      ))}
+                    </select>
+                  </div>
                   <Input
                     value={deductionMonth}
                     onChange={(e) => setDeductionMonth(e.target.value)}
@@ -1074,7 +1126,20 @@ export function FinalInsuranceRefundSection({
                   </div>
                 </div>
                 <div className="space-y-1.5 sm:col-span-1">
-                  <Label className="text-xs font-bold text-foreground">سنة الخصم *</Label>
+                  <div className="flex items-center justify-between">
+                    <Label className="text-xs font-bold text-foreground">سنة الخصم *</Label>
+                    <select
+                      value={deductionYear}
+                      onChange={(e) => setDeductionYear(e.target.value)}
+                      aria-label="قائمة منسدلة للسنوات"
+                      className="text-[10px] bg-background border border-border rounded px-1.5 py-0.5 text-foreground cursor-pointer font-bold font-mono"
+                    >
+                      <option value="">قائمة السنوات...</option>
+                      {["2021", "2022", "2023", "2024", "2025", "2026", "2027"].map((y) => (
+                        <option key={y} value={y}>{y}</option>
+                      ))}
+                    </select>
+                  </div>
                   <Input
                     value={deductionYear}
                     onChange={(e) => setDeductionYear(e.target.value)}
@@ -1139,12 +1204,28 @@ export function FinalInsuranceRefundSection({
                       تاريخ اليوم
                     </button>
                   </div>
-                  <Input
-                    value={receiptDate}
-                    onChange={(e) => setReceiptDate(e.target.value)}
-                    placeholder="15/ 10 /2024"
-                    className="h-9.5 text-xs font-mono rounded-xl bg-background"
-                  />
+                  <div className="relative flex items-center">
+                    <Input
+                      value={receiptDate}
+                      onChange={(e) => setReceiptDate(e.target.value)}
+                      placeholder="DD/MM/YYYY"
+                      className="h-9.5 text-xs font-mono rounded-xl pl-9 bg-background"
+                    />
+                    <div className="absolute left-2.5 top-1/2 -translate-y-1/2 flex items-center justify-center">
+                      <input
+                        type="date"
+                        aria-label="اختر التاريخ من التقويم"
+                        className="w-5 h-5 opacity-0 absolute cursor-pointer z-10"
+                        onChange={(e) => {
+                          if (e.target.value) {
+                            const [y, m, d] = e.target.value.split("-");
+                            setReceiptDate(`${d}/${m}/${y}`);
+                          }
+                        }}
+                      />
+                      <Calendar className="w-4 h-4 text-blue-600 pointer-events-none" />
+                    </div>
+                  </div>
                 </div>
               </div>
 
@@ -1158,30 +1239,98 @@ export function FinalInsuranceRefundSection({
             </div>
           )}
 
-          <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 pt-2">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 pt-2">
             <div className="space-y-1.5">
               <Label className="text-xs font-bold text-foreground">طريقة الطرح التعاقدية *</Label>
               <Input
                 value={tenderMethod}
                 onChange={(e) => setTenderMethod(e.target.value)}
-                className="h-9 text-xs rounded-xl"
+                placeholder="بالمناقصة المحدودة"
+                className="h-9 text-xs rounded-xl bg-background"
               />
+              <div className="flex items-center gap-1 flex-wrap pt-0.5">
+                {["بالمناقصة المحدودة", "بالمناقصة العامة", "بالممارسة العامة", "بالاتفاق المباشر"].map((m) => (
+                  <button
+                    key={m}
+                    type="button"
+                    onClick={() => setTenderMethod(m)}
+                    className={`text-[9px] px-1.5 py-0.5 rounded border cursor-pointer ${
+                      tenderMethod === m ? "bg-primary text-primary-foreground font-bold" : "bg-muted/50 hover:bg-muted text-muted-foreground"
+                    }`}
+                  >
+                    {m}
+                  </button>
+                ))}
+              </div>
             </div>
-            <div className="space-y-1.5 sm:col-span-2">
+
+            <div className="space-y-1.5">
               <Label className="text-xs font-bold text-foreground">نطاق وموضوع العملية *</Label>
               <Input
                 value={operationScope}
                 onChange={(e) => setOperationScope(e.target.value)}
-                className="h-9 text-xs rounded-xl"
+                placeholder="توريد كاوتش وبطاريات للسيارات..."
+                className="h-9 text-xs rounded-xl bg-background"
               />
             </div>
+
             <div className="space-y-1.5">
               <Label className="text-xs font-bold text-foreground">العام المالي *</Label>
               <Input
                 value={fiscalYear}
                 onChange={(e) => setFiscalYear(e.target.value)}
-                className="h-9 text-xs font-mono rounded-xl"
+                placeholder="2024 / 2025"
+                className="h-9 text-xs font-mono rounded-xl bg-background"
               />
+              <div className="flex items-center gap-1 flex-wrap pt-0.5">
+                {["2023 / 2024", "2024 / 2025", "2025 / 2026", "2026 / 2027"].map((fy) => (
+                  <button
+                    key={fy}
+                    type="button"
+                    onClick={() => setFiscalYear(fy)}
+                    className={`text-[9px] px-1.5 py-0.5 rounded border font-mono cursor-pointer ${
+                      fiscalYear === fy ? "bg-primary text-primary-foreground font-bold" : "bg-muted/50 hover:bg-muted text-muted-foreground"
+                    }`}
+                  >
+                    {fy}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between">
+                <Label className="text-xs font-bold text-foreground">موعد جلسة المظروف الفني *</Label>
+                <button
+                  type="button"
+                  onClick={() => setTechnicalOpeningDate(new Date().toLocaleDateString("en-GB"))}
+                  className="text-[10px] text-blue-600 font-bold hover:underline cursor-pointer"
+                >
+                  اليوم
+                </button>
+              </div>
+              <div className="relative flex items-center">
+                <Input
+                  value={technicalOpeningDate}
+                  onChange={(e) => setTechnicalOpeningDate(e.target.value)}
+                  placeholder="DD/MM/YYYY"
+                  className="h-9 text-xs font-mono rounded-xl pl-9 bg-background"
+                />
+                <div className="absolute left-2.5 top-1/2 -translate-y-1/2 flex items-center justify-center">
+                  <input
+                    type="date"
+                    aria-label="اختر التاريخ من التقويم"
+                    className="w-5 h-5 opacity-0 absolute cursor-pointer z-10"
+                    onChange={(e) => {
+                      if (e.target.value) {
+                        const [y, m, d] = e.target.value.split("-");
+                        setTechnicalOpeningDate(`${d}/${m}/${y}`);
+                      }
+                    }}
+                  />
+                  <Calendar className="w-4 h-4 text-blue-600 pointer-events-none" />
+                </div>
+              </div>
             </div>
           </div>
         </div>

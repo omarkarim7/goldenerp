@@ -1263,24 +1263,36 @@ export function TabTechOpening({
 
   return (
     <div className="space-y-6">
-      {/* 1. Graphical Interactive Decision Tree (Downward Timeline) */}
-      <OpeningDecisionTree
-        stage="tech"
-        activeBranch={effectiveResult}
-        onSelectBranch={(b) => {
-          if (!isDecisionLocked) {
-            setResult(b as any);
-          } else {
-            toast.info("القرار الحالي مسجل ومعتمد 🔒 — يمكنك تعديله عبر زر 'تعديل القرار'");
-          }
-        }}
-        statusLabel={statusLabel}
-        grievanceOutcome={grievanceOutcome}
-        onSelectGrievanceOutcome={(outcome) => {
-          handleUpdateGrievanceStatus(outcome as any);
-        }}
-        isLocked={isDecisionLocked}
-      />
+      {/* شريط خطوات مسار البت الفني المتسلسل والواضح */}
+      <div className="p-4 rounded-2xl bg-gradient-to-r from-blue-500/10 via-indigo-500/10 to-transparent border border-blue-500/20 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-blue-600 text-white flex items-center justify-center font-bold shadow-sm">
+            <Scale className="h-5 w-5" />
+          </div>
+          <div>
+            <h4 className="font-extrabold text-sm text-foreground">
+              مسار جلسة البت الفني وفحص المظاريف (قانون 182/2018)
+            </h4>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              المسار والقرار الحالي: <strong className={effectiveResult === "ACCEPTED" ? "text-emerald-600 font-bold" : "text-blue-600 font-bold"}>{statusLabel || "بانتظار تسجيل القرار"}</strong>
+            </p>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-1.5 text-xs font-bold flex-wrap">
+          <Badge className={isDecisionLocked ? "bg-emerald-600 text-white" : "bg-amber-500 text-white"}>
+            1. تسجيل القرار {isDecisionLocked ? "✓" : "✍️"}
+          </Badge>
+          <span className="text-muted-foreground">⬅️</span>
+          <Badge variant="outline" className={effectiveResult === "ACCEPTED" ? "border-emerald-500 text-emerald-700 bg-emerald-500/10" : "border-muted-foreground/30 text-muted-foreground"}>
+            2. الفتح المالي
+          </Badge>
+          <span className="text-muted-foreground">أو</span>
+          <Badge variant="outline" className={effectiveResult === "REJECTED" ? "border-rose-500 text-rose-700 bg-rose-500/10" : "border-muted-foreground/30 text-muted-foreground"}>
+            التظلم والاسترداد
+          </Badge>
+        </div>
+      </div>
 
       {/* 2. Main Technical Opening Management Card */}
       <SectionCard
@@ -1872,19 +1884,11 @@ export function TabTechOpening({
                         <div className="flex items-center gap-2 flex-wrap shrink-0">
                           <Button
                             size="sm"
-                            onClick={() => setRefundLetterModalOpen(true)}
-                            className="bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs h-9 px-3.5 rounded-xl flex items-center gap-1.5 cursor-pointer shadow-md"
-                          >
-                            <FileText className="h-3.5 w-3.5" />
-                            <span>خطاب استرداد التأمين الابتدائي</span>
-                          </Button>
-                          <Button
-                            size="sm"
                             onClick={() => setShowFinalRefundSection(!showFinalRefundSection)}
-                            className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs h-9 px-3.5 rounded-xl flex items-center gap-1.5 cursor-pointer shadow-md"
+                            className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs h-9 px-4 rounded-xl flex items-center gap-1.5 cursor-pointer shadow-md"
                           >
                             <Receipt className="h-3.5 w-3.5" />
-                            <span>{showFinalRefundSection ? "إخفاء خطاب التأمين النهائي" : "فتح خطاب استرداد التأمين النهائي (Word)"}</span>
+                            <span>{showFinalRefundSection ? "إخفاء خطاب استرداد التأمين النهائي" : "فتح خطاب استرداد التأمين النهائي"}</span>
                           </Button>
                         </div>
                       </div>
@@ -2449,18 +2453,36 @@ export function TabFinOpening({
 
   return (
     <div className="space-y-6">
-      {/* 1. Decision Tree Graphic */}
-      <OpeningDecisionTree
-        stage="fin"
-        activeBranch={evalOutcome}
-        onSelectBranch={(b) => setEvalOutcome(b as any)}
-        statusLabel={statusLabel}
-        grievanceOutcome={finGrievanceOutcome}
-        onSelectGrievanceOutcome={(outcome) => {
-          handleUpdateFinGrievanceStatus(outcome as any);
-        }}
-        isLocked={isSessionLocked}
-      />
+      {/* شريط خطوات مسار البت المالي المتسلسل والواضح */}
+      <div className="p-4 rounded-2xl bg-gradient-to-r from-emerald-500/10 via-teal-500/10 to-transparent border border-emerald-500/20 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-emerald-600 text-white flex items-center justify-center font-bold shadow-sm">
+            <DollarSign className="h-5 w-5" />
+          </div>
+          <div>
+            <h4 className="font-extrabold text-sm text-foreground">
+              مسار جلسة البت المالي وفض المظاريف المالية (قانون 182/2018)
+            </h4>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              المسار والقرار الحالي: <strong className="text-emerald-700 dark:text-emerald-400 font-bold">{statusLabel || "بانتظار تقييم الأسعار"}</strong>
+            </p>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-1.5 text-xs font-bold flex-wrap">
+          <Badge className={isSessionLocked ? "bg-emerald-600 text-white" : "bg-amber-500 text-white"}>
+            1. تقييم الأسعار {isSessionLocked ? "✓" : "✍️"}
+          </Badge>
+          <span className="text-muted-foreground">⬅️</span>
+          <Badge variant="outline" className={evalOutcome === "ACCEPT_ALL" ? "border-emerald-500 text-emerald-700 bg-emerald-500/10" : "border-muted-foreground/30 text-muted-foreground"}>
+            2. الترسية والتوريد
+          </Badge>
+          <span className="text-muted-foreground">أو</span>
+          <Badge variant="outline" className={evalOutcome === "REJECTED" ? "border-rose-500 text-rose-700 bg-rose-500/10" : "border-muted-foreground/30 text-muted-foreground"}>
+            التظلم والاسترداد
+          </Badge>
+        </div>
+      </div>
 
       {/* 2. Interactive Decision Mode Selector Cards */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -3072,19 +3094,11 @@ export function TabFinOpening({
                         <div className="flex items-center gap-2 flex-wrap shrink-0">
                           <Button
                             size="sm"
-                            onClick={() => setRefundModalOpen(true)}
-                            className="bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs h-9 px-4 rounded-xl flex items-center gap-1.5 cursor-pointer shadow-md"
-                          >
-                            <FileText className="h-3.5 w-3.5" />
-                            <span>خطاب استرداد التأمين الابتدائي</span>
-                          </Button>
-                          <Button
-                            size="sm"
                             onClick={() => setShowFinalRefundSection(!showFinalRefundSection)}
                             className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs h-9 px-4 rounded-xl flex items-center gap-1.5 cursor-pointer shadow-md"
                           >
                             <Receipt className="h-3.5 w-3.5" />
-                            <span>{showFinalRefundSection ? "إخفاء خطاب التأمين النهائي" : "طلب فتح خطاب استرداد التأمين النهائي (Word)"}</span>
+                            <span>{showFinalRefundSection ? "إخفاء خطاب استرداد التأمين النهائي" : "فتح خطاب استرداد التأمين النهائي"}</span>
                           </Button>
                         </div>
                       </div>

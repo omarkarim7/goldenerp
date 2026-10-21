@@ -134,7 +134,10 @@ export function WarrantyCertificateSection({
   const currentCompanyLink = useMemo(() => {
     return (
       op.companies?.find(
-        (c: any) => c.companyId === selectedCompanyId || c.id === selectedCompanyId
+        (c: any) =>
+          c.companyId === selectedCompanyId ||
+          c.id === selectedCompanyId ||
+          c.company?.id === selectedCompanyId
       ) || op.companies?.[0]
     );
   }, [op.companies, selectedCompanyId]);
@@ -869,7 +872,7 @@ export function WarrantyCertificateSection({
                 onValueChange={(val) => {
                   setSelectedCompanyId(val);
                   const matched = op.companies?.find(
-                    (c: any) => c.companyId === val || c.id === val
+                    (c: any) => c.companyId === val || c.id === val || c.company?.id === val
                   );
                   if (matched) {
                     if (matched.company?.commercialRegister) setCompanyCommercialRegister(matched.company.commercialRegister);
@@ -880,14 +883,21 @@ export function WarrantyCertificateSection({
                 }}
               >
                 <SelectTrigger className="h-9.5 text-xs font-bold rounded-xl">
-                  <SelectValue placeholder="اختر الشركة" />
+                  <SelectValue placeholder="اختر الشركة">
+                    {currentCompany?.name
+                      ? `${currentCompany.name} (${currentCompanyLink?.displayCode || ""})`
+                      : (op.companies?.[0]?.company?.name
+                          ? `${op.companies[0].company.name} (${op.companies[0].displayCode || ""})`
+                          : "اختر الشركة")}
+                  </SelectValue>
                 </SelectTrigger>
                 <SelectContent className="text-xs font-medium">
                   {(op.companies || []).map((oc: any) => {
                     const compVal = oc.companyId || oc.id;
+                    const compName = oc.company?.name || "الشركة";
                     return (
                       <SelectItem key={oc.id || compVal} value={compVal} className="text-xs font-bold">
-                        {oc.company?.name || "الشركة"} ({oc.displayCode})
+                        {compName} ({oc.displayCode})
                       </SelectItem>
                     );
                   })}
