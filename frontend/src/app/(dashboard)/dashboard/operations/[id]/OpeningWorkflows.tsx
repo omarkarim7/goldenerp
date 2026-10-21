@@ -46,6 +46,7 @@ import { Portal } from "@/components/ui/portal";
 import { toast } from "sonner";
 import api from "@/lib/api";
 import { StepFooterNav } from "./tabs/StepFooterNav";
+import { FinalInsuranceRefundSection } from "./tabs/FinalInsuranceRefundSection";
 
 /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
    HELPERS & FORMATTERS
@@ -1001,6 +1002,7 @@ export function TabTechOpening({
 
   // Refund Letter Modal state
   const [refundLetterModalOpen, setRefundLetterModalOpen] = useState(false);
+  const [showFinalRefundSection, setShowFinalRefundSection] = useState(false);
 
   // Optional Fulfillment
   const [fulfillmentOpen, setFulfillmentOpen] = useState(false);
@@ -1857,23 +1859,46 @@ export function TabTechOpening({
                   )}
 
                   {grievanceOutcome === "REJECTED" && (
-                    <div className="p-3.5 rounded-xl bg-rose-500/10 border border-rose-500/30 flex flex-col sm:flex-row sm:items-center justify-between gap-3 animate-fade-in">
-                      <div>
-                        <p className="font-bold text-xs text-rose-800 dark:text-rose-300">
-                          ✗ تم تأكيد قرار الاستبعاد ورفض التظلم بشكل نهائي.
-                        </p>
-                        <p className="text-[11px] text-muted-foreground mt-0.5">
-                          طبقاً للمادة (42) من القانون 182/2018، تلتزم جهة الإسناد برد التأمين الابتدائي كاملاً فوراً دون أي خصم.
-                        </p>
+                    <div className="space-y-4 animate-fade-in">
+                      <div className="p-3.5 rounded-xl bg-rose-500/10 border border-rose-500/30 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                        <div>
+                          <p className="font-bold text-xs text-rose-800 dark:text-rose-300">
+                            ✗ تم تأكيد قرار الاستبعاد ورفض التظلم بشكل نهائي.
+                          </p>
+                          <p className="text-[11px] text-muted-foreground mt-0.5">
+                            طبقاً للمادة (38) و(42) من القانون 182/2018، تلتزم جهة الإسناد برد التأمينات فوراً دون أي خصم.
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-2 flex-wrap shrink-0">
+                          <Button
+                            size="sm"
+                            onClick={() => setRefundLetterModalOpen(true)}
+                            className="bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs h-9 px-3.5 rounded-xl flex items-center gap-1.5 cursor-pointer shadow-md"
+                          >
+                            <FileText className="h-3.5 w-3.5" />
+                            <span>خطاب استرداد التأمين الابتدائي</span>
+                          </Button>
+                          <Button
+                            size="sm"
+                            onClick={() => setShowFinalRefundSection(!showFinalRefundSection)}
+                            className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs h-9 px-3.5 rounded-xl flex items-center gap-1.5 cursor-pointer shadow-md"
+                          >
+                            <Receipt className="h-3.5 w-3.5" />
+                            <span>{showFinalRefundSection ? "إخفاء خطاب التأمين النهائي" : "فتح خطاب استرداد التأمين النهائي (Word)"}</span>
+                          </Button>
+                        </div>
                       </div>
-                      <Button
-                        size="sm"
-                        onClick={() => setRefundLetterModalOpen(true)}
-                        className="bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs h-9 px-4 rounded-xl flex items-center gap-1.5 cursor-pointer shadow-md shrink-0"
-                      >
-                        <FileText className="h-3.5 w-3.5" />
-                        <span>توليد وطباعة خطاب استرداد التأمين الابتدائي</span>
-                      </Button>
+
+                      {showFinalRefundSection && (
+                        <div className="pt-2">
+                          <FinalInsuranceRefundSection
+                            op={op}
+                            onRefresh={onRefresh}
+                            triggerContext="GRIEVANCE_REJECTED"
+                            onClose={() => setShowFinalRefundSection(false)}
+                          />
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
@@ -2057,6 +2082,8 @@ export function TabFinOpening({
     if (savedFinGrievance.status === "REJECTED") return "REJECTED";
     return "PENDING";
   }, [savedFinGrievance]);
+
+  const [showFinalRefundSection, setShowFinalRefundSection] = useState(false);
 
   // Competitors registration
   const [adding, setAdding] = useState(false);
@@ -3032,23 +3059,46 @@ export function TabFinOpening({
                   )}
 
                   {finGrievanceOutcome === "REJECTED" && (
-                    <div className="p-3.5 rounded-xl bg-rose-500/10 border border-rose-500/30 flex flex-col sm:flex-row sm:items-center justify-between gap-3 animate-fade-in">
-                      <div>
-                        <p className="font-bold text-xs text-rose-800 dark:text-rose-300">
-                          ✗ تم تأكيد قرار الاستبعاد المالي ورفض التظلم بشكل نهائي.
-                        </p>
-                        <p className="text-[11px] text-muted-foreground mt-0.5">
-                          طبقاً للمادة (42) من القانون 182/2018، تلتزم جهة الإسناد برد مبلغ التأمين الابتدائي البالغ {formatCurrency(initialGuarAmount)} كاملاً فوراً دون أي خصم.
-                        </p>
+                    <div className="space-y-4 animate-fade-in">
+                      <div className="p-3.5 rounded-xl bg-rose-500/10 border border-rose-500/30 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                        <div>
+                          <p className="font-bold text-xs text-rose-800 dark:text-rose-300">
+                            ✗ تم تأكيد قرار الاستبعاد المالي ورفض التظلم بشكل نهائي.
+                          </p>
+                          <p className="text-[11px] text-muted-foreground mt-0.5">
+                            طبقاً للمادة (38) و(42) من القانون 182/2018، تلتزم جهة الإسناد برد التأمينات فوراً دون أي خصم.
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-2 flex-wrap shrink-0">
+                          <Button
+                            size="sm"
+                            onClick={() => setRefundModalOpen(true)}
+                            className="bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs h-9 px-4 rounded-xl flex items-center gap-1.5 cursor-pointer shadow-md"
+                          >
+                            <FileText className="h-3.5 w-3.5" />
+                            <span>خطاب استرداد التأمين الابتدائي</span>
+                          </Button>
+                          <Button
+                            size="sm"
+                            onClick={() => setShowFinalRefundSection(!showFinalRefundSection)}
+                            className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs h-9 px-4 rounded-xl flex items-center gap-1.5 cursor-pointer shadow-md"
+                          >
+                            <Receipt className="h-3.5 w-3.5" />
+                            <span>{showFinalRefundSection ? "إخفاء خطاب التأمين النهائي" : "طلب فتح خطاب استرداد التأمين النهائي (Word)"}</span>
+                          </Button>
+                        </div>
                       </div>
-                      <Button
-                        size="sm"
-                        onClick={() => setRefundModalOpen(true)}
-                        className="bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs h-9 px-4 rounded-xl flex items-center gap-1.5 cursor-pointer shadow-md shrink-0"
-                      >
-                        <FileText className="h-3.5 w-3.5" />
-                        <span>توليد وطباعة خطاب استرداد التأمين الابتدائي</span>
-                      </Button>
+
+                      {showFinalRefundSection && (
+                        <div className="pt-2">
+                          <FinalInsuranceRefundSection
+                            op={op}
+                            onRefresh={onRefresh}
+                            triggerContext="GRIEVANCE_REJECTED"
+                            onClose={() => setShowFinalRefundSection(false)}
+                          />
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>

@@ -531,9 +531,13 @@ export function TabSubmissionPackage({
   };
 
   // ━━━ دالة المعاينة الشاملة للمستند ━━━
-  const handlePreviewItem = (item: DossierItem) => {
+  const handlePreviewItem = async (item: DossierItem) => {
     if (item.docRef) {
-      onPreviewDoc?.(item.docRef);
+      onPreviewDoc?.({
+        ...item.docRef,
+        fileName: item.name,
+        fileType: item.fileType,
+      });
       return;
     }
     if (item.companyDocRef) {
@@ -542,15 +546,33 @@ export function TabSubmissionPackage({
         id: item.companyDocRef.id,
         fileName: item.name,
         filePath: item.companyDocRef.filePath,
-        fileType: item.companyDocRef.fileType,
+        fileType: item.fileType,
       });
       return;
     }
     if (item.cloudUrl) {
-      window.open(item.cloudUrl, "_blank");
+      onPreviewDoc?.({
+        fileName: item.name,
+        filePath: item.cloudUrl,
+        fileType: "pdf",
+      });
       return;
     }
     if (item.templatePath) {
+      try {
+        const res = await fetch(item.templatePath);
+        if (res.ok) {
+          const blob = await res.blob();
+          onPreviewDoc?.({
+            fileName: `${item.name}.docx`,
+            fileType: "docx",
+            blob,
+          });
+          return;
+        }
+      } catch (err) {
+        console.warn("Failed to load template for preview:", err);
+      }
       handleDownloadSingleItem(item);
       return;
     }

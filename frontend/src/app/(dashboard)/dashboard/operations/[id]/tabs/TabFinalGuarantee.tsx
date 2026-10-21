@@ -357,47 +357,40 @@ export function TabFinalGuarantee({
 
     const zip = await JSZip.loadAsync(templateBuffer);
 
-    // QR Code Generation
+    // QR Code Generation - فقط في حالة الرفع السحابي الفعلي
     let qrDrawingXml = "";
-    try {
-      const fileName = `final_guarantee_${type}_${registrationNumber || op.serialNumber}.pdf`;
-      let activeCloud = cloudUrls[type];
-      if (!isValidCloudDocUrl(activeCloud)) {
-        activeCloud = await getExpectedCloudPdfUrl(fileName);
-        if (activeCloud) {
-          setCloudUrls((prev) => ({ ...prev, [type]: activeCloud }));
+    const activeCloud = cloudUrls[type];
+    if (isValidCloudDocUrl(activeCloud)) {
+      try {
+        const qrDataUrl = await QRCode.toDataURL(activeCloud, {
+          width: 600,
+          margin: 2,
+          errorCorrectionLevel: "M",
+        });
+        const qrBase64 = qrDataUrl.split(",")[1];
+        const qrBinary = Uint8Array.from(atob(qrBase64), (c) => c.charCodeAt(0));
+
+        zip.file("word/media/doc_qr.png", qrBinary);
+
+        let relsXml = await zip.file("word/_rels/document.xml.rels")?.async("text");
+        if (relsXml && !relsXml.includes("rIdQR")) {
+          relsXml = relsXml.replace(
+            "</Relationships>",
+            '<Relationship Id="rIdQR" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/doc_qr.png"/></Relationships>'
+          );
+          zip.file("word/_rels/document.xml.rels", relsXml);
         }
+
+        let ctXml = await zip.file("[Content_Types].xml")?.async("text");
+        if (ctXml && !ctXml.includes('Extension="png"')) {
+          ctXml = ctXml.replace("</Types>", '<Default Extension="png" ContentType="image/png"/></Types>');
+          zip.file("[Content_Types].xml", ctXml);
+        }
+
+        qrDrawingXml = buildQrAnchorXml();
+      } catch (e) {
+        console.warn("QR generation failed:", e);
       }
-      let targetVerifyUrl: string = activeCloud || "";
-      if (!isValidCloudDocUrl(targetVerifyUrl)) {
-        const origin = typeof window !== "undefined" ? window.location.origin : "https://goldenerp-tau.vercel.app";
-        targetVerifyUrl = `${origin}/verify-doc?ref=${encodeURIComponent(registrationNumber)}&opId=${op.id}&type=guarantee_final_${type}&printedBy=${encodeURIComponent(getCurrentUserName())}&printedAt=${Date.now()}`;
-      }
-
-      const qrDataUrl = await QRCode.toDataURL(targetVerifyUrl, { width: 160, margin: 1 });
-      const qrBase64 = qrDataUrl.split(",")[1];
-      const qrBinary = Uint8Array.from(atob(qrBase64), (c) => c.charCodeAt(0));
-
-      zip.file("word/media/doc_qr.png", qrBinary);
-
-      let relsXml = await zip.file("word/_rels/document.xml.rels")?.async("text");
-      if (relsXml && !relsXml.includes("rIdQR")) {
-        relsXml = relsXml.replace(
-          "</Relationships>",
-          '<Relationship Id="rIdQR" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/doc_qr.png"/></Relationships>'
-        );
-        zip.file("word/_rels/document.xml.rels", relsXml);
-      }
-
-      let ctXml = await zip.file("[Content_Types].xml")?.async("text");
-      if (ctXml && !ctXml.includes('Extension="png"')) {
-        ctXml = ctXml.replace("</Types>", '<Default Extension="png" ContentType="image/png"/></Types>');
-        zip.file("[Content_Types].xml", ctXml);
-      }
-
-      qrDrawingXml = buildQrAnchorXml();
-    } catch (e) {
-      console.warn("QR generation failed:", e);
     }
 
     let docXml = await zip.file("word/document.xml")!.async("text");
@@ -541,8 +534,8 @@ export function TabFinalGuarantee({
     return pdf;
   };
 
-  const loadOfficialPreview = async (type: FinalGuaranteeLetterType = activeLetterType) => {
-    if (previewPdfBlob && lastGeneratedSnapshot === currentSnapshot && previewDocxBlob) {
+  const loadOfficialPreview = async (type: FinalGuaranteeLetterType = activeLetterType, forceRefresh = false) => {
+    if (previewPdfBlob && lastGeneratedSnapshot === currentSnapshot && previewDocxBlob && !forceRefresh) {
       setPreviewModalOpen(true);
       return;
     }
@@ -565,8 +558,8 @@ export function TabFinalGuarantee({
       setPreviewPdfUrl(url);
       setLastGeneratedSnapshot(currentSnapshot);
 
-      if (!cloudUrls[type] || cloudUrls[type]?.includes("tmpfiles") || cloudUrls[type]?.includes("tmpfile") || cloudUrls[type]?.includes("catbox")) {
-        handleUploadToCloud(type, false, pdf);
+      if (forceRefresh) {
+        toast.success("تم تحديث المعاينة الرسمية بنجاح! 🔄✨");
       }
     } catch (err: any) {
       console.error("Preview preparation failed:", err);
@@ -1816,6 +1809,17 @@ export function TabFinalGuarantee({
                 </div>
 
                 <div className="flex items-center gap-2 flex-wrap">
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => loadOfficialPreview(activeLetterType, true)}
+                    disabled={renderingDocx}
+                    className="text-xs font-bold h-9 rounded-xl border border-border hover:bg-muted cursor-pointer flex items-center gap-1.5"
+                  >
+                    <RefreshCw className={`h-3.5 w-3.5 ${renderingDocx ? "animate-spin text-amber-600" : ""}`} />
+                    <span>تحديث</span>
+                  </Button>
+
                   <Button
                     size="icon"
                     variant="ghost"

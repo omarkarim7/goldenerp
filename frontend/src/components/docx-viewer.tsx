@@ -9,11 +9,13 @@ import {
   Loader2,
   Maximize2,
   Minimize2,
-  CheckCircle2,
+  ZoomIn,
+  ZoomOut,
   FileDown,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { getPdfBlobFromDocx, getLastPdfEngineUsed } from "@/app/(dashboard)/dashboard/operations/[id]/tabs/client-pdf";
+import { renderAsync } from "docx-preview";
+import mammoth from "mammoth";
 
 interface DocxViewerProps {
   blob: Blob | null;
@@ -25,10 +27,10 @@ interface DocxViewerProps {
 }
 
 /**
- * عارض ملفات الوورد والمستندات الرسمي المعتمد (PDF File Viewer & Word Exporter)
- * - يحول ويعرض أي ملف Word تلقائياً وبدقة 100% بصيغة PDF الرسمية المعتمدة
- * - يضمن معاينة متطابقة تماماً لما يظهر على الإستضافة وGitHub بدون أي تشوه في الخطوط أو الجداول
- * - يتيح تحميل المستند بصيغة Word الأصلي (.docx) أو بصيغة PDF الرسمية مع الطباعة المباشرة
+ * عارض مستندات الوورد المباشر الأصيل (Native Word DOM Viewer)
+ * - يعرض ملفات الوورد (.docx / .doc) مباشرة عبر docx-preview بدون أي تحويل إلى PDF
+ * - دعم التحكم الكامل: تكبير وتصغير (Zoom)، ملء الشاشة، طباعة، وتحميل الملف الأصلي مباشرة
+ * - دعم عرض ملفات الـ PDF مباشرة داخل نفس العارض
  */
 export function DocxViewer({
   blob,
@@ -36,16 +38,17 @@ export function DocxViewer({
   className = "",
   onDownload,
   onDownloadWord,
-  onDownloadPdf,
 }: DocxViewerProps) {
-  const [pdfObjectUrl, setPdfObjectUrl] = useState<string | null>(null);
-  const [convertedPdfBlob, setConvertedPdfBlob] = useState<Blob | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
+  const [zoom, setZoom] = useState<number>(100);
   const [isFullscreen, setIsFullscreen] = useState<boolean>(false);
+  const [renderedWith, setRenderedWith] = useState<"docx-preview" | "mammoth" | "pdf" | null>(null);
+  const [mammothHtml, setMammothHtml] = useState<string | null>(null);
+  const [pdfUrl, setPdfUrl] = useState<string | null>(null);
 
+  const containerRef = useRef<HTMLDivElement>(null);
   const wrapperRef = useRef<HTMLDivElement>(null);
-  const activeUrlRef = useRef<string | null>(null);
 
   const cleanBaseName = fileName
     .replace(/\.pdf$/i, "")
@@ -53,66 +56,91 @@ export function DocxViewer({
     .replace(/\.doc$/i, "")
     .trim() || "مستند";
 
+  const isPdf = Boolean(
+    (blob && blob.type.includes("pdf")) ||
+    fileName.toLowerCase().endsWith(".pdf")
+  );
+
   useEffect(() => {
     let isCancelled = false;
 
-    const cleanupUrl = () => {
-      if (activeUrlRef.current) {
-        URL.revokeObjectURL(activeUrlRef.current);
-        activeUrlRef.current = null;
-      }
-    };
-
     if (!blob) {
-      cleanupUrl();
       setLoading(false);
       setError("لم يتم توفير ملف صالح للمعاينة.");
       return;
     }
 
-    async function preparePdfPreview() {
-      setLoading(true);
-      setError(null);
-      cleanupUrl();
+    setLoading(true);
+    setError(null);
+    setMammothHtml(null);
 
-      // 1. إذا كان الملف أصلاً PDF
-      if (blob && (blob.type.includes("pdf") || fileName.toLowerCase().endsWith(".pdf"))) {
-        const url = URL.createObjectURL(blob);
-        activeUrlRef.current = url;
-        setConvertedPdfBlob(blob);
-        setPdfObjectUrl(url);
-        setLoading(false);
-        return;
-      }
+    // 1. إذا كان الملف PDF
+    if (isPdf) {
+      const url = URL.createObjectURL(blob);
+      setPdfUrl(url);
+      setRenderedWith("pdf");
+      setLoading(false);
+      return () => {
+        URL.revokeObjectURL(url);
+      };
+    }
 
-      // 2. إذا كان الملف Word (.docx / .doc)، نقوم بتحويله عبر المحرك الرسمي إلى PDF
+    // 2. إذا كان ملف Word (.docx / .doc) - عرض مباشر 100% بدون تحويل PDF
+    async function renderWordDocument() {
       try {
-        if (!blob) return;
-        const pdfBlob = await getPdfBlobFromDocx(blob, `${cleanBaseName}.docx`);
-        if (isCancelled) return;
+        if (!containerRef.current || !blob) return;
+        containerRef.current.innerHTML = "";
 
-        setConvertedPdfBlob(pdfBlob);
-        const url = URL.createObjectURL(pdfBlob);
-        activeUrlRef.current = url;
-        setPdfObjectUrl(url);
-        setLoading(false);
-      } catch (err: any) {
+        await renderAsync(blob, containerRef.current, undefined, {
+          className: "docx-preview-root",
+          inWrapper: false,
+          ignoreWidth: false,
+          ignoreHeight: false,
+          ignoreFonts: false,
+          breakPages: true,
+          ignoreLastRenderedPageBreak: false,
+          experimental: true,
+          useBase64URL: true,
+        } as any);
+
         if (isCancelled) return;
-        console.error("فشل تحويل مستند Word إلى PDF للمعاينة:", err);
-        setError("تعذر تحويل صفحات مستند Word إلى PDF للعرض المباشر. يمكنك تحميل الملف لفتحه على جهازك.");
+        setRenderedWith("docx-preview");
         setLoading(false);
+      } catch (docxErr) {
+        if (isCancelled) return;
+        console.warn("docx-preview failed, attempting mammoth fallback:", docxErr);
+
+        try {
+          const arrayBuffer = await blob!.arrayBuffer();
+          const result = await mammoth.convertToHtml({ arrayBuffer });
+          if (isCancelled) return;
+          setMammothHtml(result.value);
+          setRenderedWith("mammoth");
+          setLoading(false);
+        } catch (mammothErr) {
+          if (isCancelled) return;
+          console.error("Mammoth fallback failed:", mammothErr);
+          setError("تعذر فتح معاينة مستند Word داخل المتصفح. يمكنك تحميل الملف لفتحه في Microsoft Word مباشرة.");
+          setLoading(false);
+        }
       }
     }
 
-    preparePdfPreview();
+    // إتاحة وقت كافي لتهيئة الـ DOM
+    const timer = setTimeout(() => {
+      renderWordDocument();
+    }, 40);
 
     return () => {
       isCancelled = true;
-      cleanupUrl();
+      clearTimeout(timer);
     };
-  }, [blob, fileName, cleanBaseName]);
+  }, [blob, isPdf]);
 
-  // ملء الشاشة
+  const handleZoomIn = () => setZoom((prev) => Math.min(prev + 15, 200));
+  const handleZoomOut = () => setZoom((prev) => Math.max(prev - 15, 60));
+  const handleZoomReset = () => setZoom(100);
+
   const toggleFullscreen = () => {
     if (!wrapperRef.current) return;
     if (!document.fullscreenElement) {
@@ -132,7 +160,6 @@ export function DocxViewer({
     return () => document.removeEventListener("fullscreenchange", handleFsChange);
   }, []);
 
-  // تنزيل ملف Word الأصلي
   const handleDownloadWordFile = () => {
     if (onDownloadWord) {
       onDownloadWord();
@@ -146,7 +173,7 @@ export function DocxViewer({
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `${cleanBaseName}.docx`;
+      a.download = isPdf ? `${cleanBaseName}.pdf` : `${cleanBaseName}.docx`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
@@ -154,57 +181,60 @@ export function DocxViewer({
     }
   };
 
-  // تنزيل ملف الـ PDF
-  const handleDownloadPdfFile = () => {
-    if (onDownloadPdf) {
-      onDownloadPdf();
-      return;
-    }
-    if (convertedPdfBlob) {
-      const url = URL.createObjectURL(convertedPdfBlob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `${cleanBaseName}.pdf`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-    } else if (pdfObjectUrl) {
-      const a = document.createElement("a");
-      a.href = pdfObjectUrl;
-      a.download = `${cleanBaseName}.pdf`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-    }
-  };
-
-  // طباعة الـ PDF المباشرة
   const handleDirectPrint = () => {
-    if (pdfObjectUrl) {
-      const printIframe = document.createElement("iframe");
-      printIframe.style.position = "fixed";
-      printIframe.style.right = "0";
-      printIframe.style.bottom = "0";
-      printIframe.style.width = "0";
-      printIframe.style.height = "0";
-      printIframe.style.border = "0";
-      printIframe.src = pdfObjectUrl;
-      document.body.appendChild(printIframe);
-      printIframe.onload = () => {
+    if (pdfUrl) {
+      const iframe = document.createElement("iframe");
+      iframe.style.position = "fixed";
+      iframe.style.right = "0";
+      iframe.style.bottom = "0";
+      iframe.style.width = "0";
+      iframe.style.height = "0";
+      iframe.style.border = "0";
+      iframe.src = pdfUrl;
+      document.body.appendChild(iframe);
+      iframe.onload = () => {
         try {
-          printIframe.contentWindow?.focus();
-          printIframe.contentWindow?.print();
+          iframe.contentWindow?.focus();
+          iframe.contentWindow?.print();
         } catch {
-          window.open(pdfObjectUrl, "_blank")?.print();
+          window.open(pdfUrl, "_blank")?.print();
         }
         setTimeout(() => {
-          if (document.body.contains(printIframe)) {
-            document.body.removeChild(printIframe);
-          }
+          if (document.body.contains(iframe)) document.body.removeChild(iframe);
         }, 3000);
       };
       return;
+    }
+
+    const printEl = containerRef.current;
+    if (printEl) {
+      const printWindow = window.open("", "_blank");
+      if (printWindow) {
+        printWindow.document.write(`
+          <!DOCTYPE html>
+          <html dir="rtl">
+          <head>
+            <title>${cleanBaseName}</title>
+            <style>
+              @page { size: A4; margin: 15mm; }
+              body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; direction: rtl; margin: 0; padding: 10px; color: #000; }
+              table { width: 100%; border-collapse: collapse; margin: 10px 0; }
+              th, td { border: 1px solid #333; padding: 6px 8px; text-align: right; }
+              th { background: #f0f0f0; }
+              img { max-width: 100%; }
+            </style>
+          </head>
+          <body>${printEl.innerHTML}</body>
+          </html>
+        `);
+        printWindow.document.close();
+        printWindow.focus();
+        setTimeout(() => {
+          printWindow.print();
+          printWindow.close();
+        }, 500);
+        return;
+      }
     }
     window.print();
   };
@@ -227,25 +257,60 @@ export function DocxViewer({
               <span className="font-bold text-slate-200 text-sm truncate max-w-xs sm:max-w-md">
                 {cleanBaseName}
               </span>
-              <span className="px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 font-bold text-[10px] flex items-center gap-1 shadow-xs">
-                <CheckCircle2 className="h-3 w-3" />
-                {getLastPdfEngineUsed() === "Instant Cache"
-                  ? "⚡ معاينة فورية (نسخة معتمدة محفوظة مسبقاً)"
-                  : getLastPdfEngineUsed() === "Adobe PDF"
-                  ? "معاينة Adobe PDF Services الرسمية 100%"
-                  : "معاينة Word COM الرسمية 100%"}
+              <span className="px-2.5 py-0.5 rounded-full bg-blue-500/20 text-blue-300 border border-blue-500/30 font-bold text-[10px] shadow-xs">
+                {isPdf ? "معاينة PDF مباشرة" : "معاينة Word مباشرة (بدون تحويل) ✓"}
               </span>
             </div>
             <span className="text-[10px] text-slate-400 hidden sm:inline">
-              {getLastPdfEngineUsed() === "Instant Cache"
-                ? "تم فتح النسخة المعتمدة مباشرة في 0ms بدون استهلاك كوتا التحويل لعدم وجود تعديلات جديدة"
-                : "معاينة رسمية مطابقة تماماً لمستند الوورد الأصلي بدقة متجهة فائقة"}
+              {isPdf
+                ? "عرض ملف الـ PDF الأصلي بكافة الأدوات والطباعة"
+                : "عرض صفحات وتنسيق مستند الوورد الأصلي مباشرة في المتصفح"}
             </span>
           </div>
         </div>
 
-        {/* أزرار الإجراءات والتحميل والطباعة */}
+        {/* أدوات التحكم بالمعاينة والتحميل */}
         <div className="flex items-center gap-1.5 sm:gap-2">
+          {!isPdf && (
+            <>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={handleZoomOut}
+                disabled={loading || !!error || zoom <= 60}
+                className="h-8 w-8 p-0 text-slate-300 hover:text-white hover:bg-slate-800 rounded-lg cursor-pointer"
+                title="تصغير (-15%)"
+              >
+                <ZoomOut className="h-3.5 w-3.5" />
+              </Button>
+
+              <button
+                type="button"
+                onClick={handleZoomReset}
+                disabled={loading || !!error}
+                className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-[11px] font-mono font-bold cursor-pointer transition-colors"
+                title="إعادة التعيين إلى 100%"
+              >
+                {zoom}%
+              </button>
+
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={handleZoomIn}
+                disabled={loading || !!error || zoom >= 200}
+                className="h-8 w-8 p-0 text-slate-300 hover:text-white hover:bg-slate-800 rounded-lg cursor-pointer"
+                title="تكبير (+15%)"
+              >
+                <ZoomIn className="h-3.5 w-3.5" />
+              </Button>
+
+              <div className="h-4 w-px bg-slate-800 mx-1 hidden sm:block" />
+            </>
+          )}
+
           {/* ملء الشاشة */}
           <Button
             type="button"
@@ -258,43 +323,26 @@ export function DocxViewer({
             {isFullscreen ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
           </Button>
 
-          {/* تنزيل Word */}
-          {blob && (
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              onClick={handleDownloadWordFile}
-              className="h-8 px-3 text-xs bg-blue-950/70 border-blue-500/40 hover:bg-blue-900/80 hover:text-white text-blue-200 rounded-xl cursor-pointer flex items-center gap-1.5 font-bold transition-all active:scale-95"
-              title="تحميل الملف بصيغة Word الأصلية (.docx)"
-            >
-              <FileDown className="h-3.5 w-3.5 text-blue-400" />
-              <span>تحميل Word (.docx)</span>
-            </Button>
-          )}
-
-          {/* تنزيل PDF */}
+          {/* تحميل الملف بصيغته الأصلية */}
           <Button
             type="button"
             size="sm"
-            onClick={handleDownloadPdfFile}
-            disabled={!pdfObjectUrl && !convertedPdfBlob}
-            className="h-8 px-3 text-xs bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl cursor-pointer flex items-center gap-1.5 font-bold shadow transition-all active:scale-95 disabled:opacity-50"
-            title="تحميل المستند كملف PDF رسمي"
+            onClick={handleDownloadWordFile}
+            className="h-8 px-3 text-xs bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl cursor-pointer flex items-center gap-1.5 font-bold shadow transition-all active:scale-95"
+            title={isPdf ? "تحميل ملف PDF" : "تحميل ملف Word (.docx)"}
           >
-            <Download className="h-3.5 w-3.5" />
-            <span>تحميل PDF</span>
+            {isPdf ? <Download className="h-3.5 w-3.5" /> : <FileDown className="h-3.5 w-3.5" />}
+            <span>{isPdf ? "تحميل PDF" : "تحميل Word (.docx)"}</span>
           </Button>
 
-          {/* طباعة */}
+          {/* طباعة مباشرة */}
           <Button
             type="button"
             variant="outline"
             size="sm"
             onClick={handleDirectPrint}
-            disabled={!pdfObjectUrl}
-            className="h-8 px-3 text-xs bg-amber-600/20 border-amber-500/40 hover:bg-amber-600/30 text-amber-300 rounded-xl cursor-pointer flex items-center gap-1.5 font-bold transition-all active:scale-95 disabled:opacity-50"
-            title="طباعة محتوى المستند بدقة متجهة"
+            className="h-8 px-3 text-xs bg-amber-600/20 border-amber-500/40 hover:bg-amber-600/30 text-amber-300 rounded-xl cursor-pointer flex items-center gap-1.5 font-bold transition-all active:scale-95"
+            title="طباعة محتوى المستند مباشرة"
           >
             <Printer className="h-3.5 w-3.5" />
             <span className="hidden sm:inline">طباعة</span>
@@ -302,16 +350,16 @@ export function DocxViewer({
         </div>
       </div>
 
-      {/* ━━━ مساحة العرض الرئيسية (PDF Viewer) ━━━ */}
-      <div className="flex-1 w-full bg-slate-900 overflow-hidden relative flex justify-center items-center">
+      {/* ━━━ مساحة العرض الرئيسية ━━━ */}
+      <div className="flex-1 w-full bg-slate-900/90 overflow-auto relative p-3 sm:p-6 flex justify-center items-start custom-scrollbar">
         {loading && (
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 bg-slate-950 z-20 p-8 text-center">
-            <div className="w-16 h-16 rounded-2xl bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center shadow-lg">
-              <Loader2 className="h-8 w-8 text-emerald-400 animate-spin" />
+            <div className="w-16 h-16 rounded-2xl bg-blue-500/15 border border-blue-500/30 flex items-center justify-center shadow-lg">
+              <Loader2 className="h-8 w-8 text-blue-400 animate-spin" />
             </div>
             <div className="space-y-1">
-              <h4 className="text-base font-bold text-white">جاري معالجة وتجهيز معاينة الـ PDF الرسمية المعتمدة...</h4>
-              <p className="text-xs text-slate-400">يتم مطابقة التنسيقات والخطوط والجداول بنسبة 100%</p>
+              <h4 className="text-base font-bold text-white">جاري تحضير المستند للعرض المباشر...</h4>
+              <p className="text-xs text-slate-400">تنسيق الصفحات والخطوط والجداول بدقة تامة</p>
             </div>
           </div>
         )}
@@ -332,20 +380,99 @@ export function DocxViewer({
                 className="bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold"
               >
                 <Download className="h-3.5 w-3.5 ml-1.5" />
-                تحميل المستند لفتحه في Microsoft Word
+                تحميل المستند مباشرة إلى جهازك
               </Button>
             </div>
           </div>
         )}
 
-        {pdfObjectUrl && (
+        {isPdf && pdfUrl ? (
           <iframe
-            src={`${pdfObjectUrl}#toolbar=1&navpanes=0&view=FitH`}
-            className="w-full h-full border-0 bg-slate-900"
+            src={`${pdfUrl}#toolbar=1&navpanes=0&view=FitH`}
+            className="w-full h-full min-h-[700px] border-0 bg-slate-900 rounded-xl"
             title={cleanBaseName}
           />
+        ) : (
+          <div
+            style={{
+              transform: `scale(${zoom / 100})`,
+              transformOrigin: "top center",
+              transition: "transform 0.15s ease-out",
+            }}
+            className={`w-full max-w-4xl transition-all ${loading || error ? "invisible h-0" : "visible"}`}
+          >
+            {mammothHtml ? (
+              <div
+                dir="rtl"
+                className="bg-white text-slate-900 p-8 sm:p-12 rounded-xl shadow-2xl border border-slate-300 min-h-[800px] docx-mammoth-body"
+                dangerouslySetInnerHTML={{ __html: mammothHtml }}
+              />
+            ) : (
+              <div
+                ref={containerRef}
+                dir="rtl"
+                className="docx-preview-root w-full"
+              />
+            )}
+          </div>
         )}
       </div>
+
+      <style jsx global>{`
+        .docx-preview-root .docx-wrapper {
+          background: transparent !important;
+          padding: 0 !important;
+          display: flex !important;
+          flex-direction: column !important;
+          align-items: center !important;
+          gap: 24px !important;
+        }
+        .docx-preview-root section.docx {
+          background: #ffffff !important;
+          color: #0f172a !important;
+          box-shadow: 0 10px 30px -5px rgba(0, 0, 0, 0.4), 0 8px 10px -6px rgba(0, 0, 0, 0.3) !important;
+          border-radius: 8px !important;
+          margin-bottom: 24px !important;
+          direction: rtl !important;
+          text-align: right !important;
+          padding: 40px !important;
+          min-height: 800px !important;
+        }
+        .docx-preview-root section.docx table {
+          border-collapse: collapse !important;
+          width: 100% !important;
+          margin: 14px 0 !important;
+        }
+        .docx-preview-root section.docx td,
+        .docx-preview-root section.docx th {
+          border: 1px solid #94a3b8 !important;
+          padding: 8px 10px !important;
+          text-align: right !important;
+        }
+        .docx-preview-root section.docx th {
+          background-color: #f1f5f9 !important;
+          font-weight: bold !important;
+        }
+        .docx-mammoth-body table {
+          border-collapse: collapse;
+          width: 100%;
+          margin: 16px 0;
+        }
+        .docx-mammoth-body td,
+        .docx-mammoth-body th {
+          border: 1px solid #cbd5e1;
+          padding: 8px 12px;
+          text-align: right;
+        }
+        .docx-mammoth-body th {
+          background-color: #f8fafc;
+          font-weight: bold;
+        }
+        .docx-mammoth-body p {
+          line-height: 1.8;
+          margin-bottom: 12px;
+        }
+      `}</style>
     </div>
   );
 }

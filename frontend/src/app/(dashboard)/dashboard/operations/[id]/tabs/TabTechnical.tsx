@@ -47,6 +47,7 @@ import JSZip from "jszip";
 import QRCode from "qrcode";
 import { getPdfBlobFromDocx, uploadPdfToFreeCloud, getExpectedCloudPdfUrl } from "./client-pdf";
 import { OnlyOfficeDocViewer } from "@/components/OnlyOfficeDocViewer";
+import { WarrantyCertificateSection } from "./WarrantyCertificateSection";
 
 // ━━━ تعريف بيانات البدائل والمواصفات الفنية ━━━
 export interface TechnicalVariant {
@@ -246,6 +247,9 @@ export function TabTechnical({
     return isValidCloudDocUrl(url) ? url : "";
   });
   const [uploadingCloud, setUploadingCloud] = useState(false);
+
+  // ━━━ الخطوة الحالية: الخطوة 1 (العرض الفني) أو الخطوة 2 (شهادة الضمان) ━━━
+  const [activeStep, setActiveStep] = useState<"OFFER" | "WARRANTY">("OFFER");
 
   // ━━━ 2. جهة الإسناد وبيانات العملية في الموضوع ━━━
   const [recipientPrefix, setRecipientPrefix] = useState(() => {
@@ -642,41 +646,36 @@ export function TabTechnical({
     // توليد رمز التحقق الرقمي والباركود للنسخة الرقمية
     let qrDrawingXml = "";
     try {
-      const fileName = `technical_offer_${registrationNumber || op.serialNumber}.pdf`;
-      let activeCloud = cloudPdfUrl;
-      if (!isValidCloudDocUrl(activeCloud)) {
-        activeCloud = await getExpectedCloudPdfUrl(fileName);
-        if (activeCloud) {
-          setCloudPdfUrl(activeCloud);
+      const activeCloud = cloudPdfUrl;
+      // يولد رمز QR بدقة فائقة فقط إذا تم رفع المستند مسبقاً على السحابة
+      if (isValidCloudDocUrl(activeCloud)) {
+        const qrDataUrl = await QRCode.toDataURL(activeCloud, {
+          width: 600,
+          margin: 2,
+          errorCorrectionLevel: "M",
+        });
+        const qrBase64 = qrDataUrl.split(",")[1];
+        const qrBinary = Uint8Array.from(atob(qrBase64), (c) => c.charCodeAt(0));
+
+        zip.file("word/media/doc_qr.png", qrBinary);
+
+        let relsXml = await zip.file("word/_rels/document.xml.rels")?.async("text");
+        if (relsXml && !relsXml.includes("rIdQR")) {
+          relsXml = relsXml.replace(
+            "</Relationships>",
+            '<Relationship Id="rIdQR" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/doc_qr.png"/></Relationships>'
+          );
+          zip.file("word/_rels/document.xml.rels", relsXml);
         }
-      }
-      let targetVerifyUrl: string = activeCloud || "";
-      if (!isValidCloudDocUrl(targetVerifyUrl)) {
-        const origin = typeof window !== "undefined" ? window.location.origin : "https://goldenerp-tau.vercel.app";
-        targetVerifyUrl = `${origin}/verify-doc?ref=${encodeURIComponent(registrationNumber)}&opId=${op.id}&type=technical&printedBy=${encodeURIComponent(getCurrentUserName())}&printedAt=${Date.now()}`;
-      }
-      const qrDataUrl = await QRCode.toDataURL(targetVerifyUrl, { width: 160, margin: 1 });
-      const qrBase64 = qrDataUrl.split(",")[1];
-      const qrBinary = Uint8Array.from(atob(qrBase64), (c) => c.charCodeAt(0));
 
-      zip.file("word/media/doc_qr.png", qrBinary);
+        let ctXml = await zip.file("[Content_Types].xml")?.async("text");
+        if (ctXml && !ctXml.includes('Extension="png"')) {
+          ctXml = ctXml.replace("</Types>", '<Default Extension="png" ContentType="image/png"/></Types>');
+          zip.file("[Content_Types].xml", ctXml);
+        }
 
-      let relsXml = await zip.file("word/_rels/document.xml.rels")?.async("text");
-      if (relsXml && !relsXml.includes("rIdQR")) {
-        relsXml = relsXml.replace(
-          "</Relationships>",
-          '<Relationship Id="rIdQR" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/doc_qr.png"/></Relationships>'
-        );
-        zip.file("word/_rels/document.xml.rels", relsXml);
+        qrDrawingXml = buildQrAnchorXml();
       }
-
-      let ctXml = await zip.file("[Content_Types].xml")?.async("text");
-      if (ctXml && !ctXml.includes('Extension="png"')) {
-        ctXml = ctXml.replace("</Types>", '<Default Extension="png" ContentType="image/png"/></Types>');
-        zip.file("[Content_Types].xml", ctXml);
-      }
-
-      qrDrawingXml = buildQrAnchorXml();
     } catch (e) {
       console.warn("QR generation failed:", e);
     }
@@ -856,12 +855,15 @@ export function TabTechnical({
   };
 
   // تحميل المعاينة الرسمية من محرك Word الأصيل
-  const loadOfficialPreview = async () => {
-    if (previewPdfBlob && currentSnapshot === lastGeneratedSnapshot) {
+  const loadOfficialPreview = async (forceRefresh = false) => {
+    if (!forceRefresh && previewPdfBlob && currentSnapshot === lastGeneratedSnapshot) {
       return;
     }
 
     setRenderingDocx(true);
+    if (forceRefresh) {
+      toast.info("جاري تحديث المعاينة الرسمية...");
+    }
     try {
       if (previewPdfUrl) {
         URL.revokeObjectURL(previewPdfUrl);
@@ -878,10 +880,10 @@ export function TabTechnical({
       const url = URL.createObjectURL(pdfBlob);
       setPreviewPdfUrl(url);
 
-      if (!cloudPdfUrl || cloudPdfUrl.includes("tmpfiles") || cloudPdfUrl.includes("tmpfile") || cloudPdfUrl.includes("catbox")) {
-        handleUploadToCloud(false, pdfBlob);
-      }
       setLastGeneratedSnapshot(currentSnapshot);
+      if (forceRefresh) {
+        toast.success("تم تحديث المعاينة بنجاح ✓");
+      }
     } catch (err: any) {
       console.error("فشل تجهيز معاينة العرض الفني:", err);
       toast.error("تعذر تجهيز المعاينة: " + (err?.message || ""));
@@ -1159,10 +1161,82 @@ export function TabTechnical({
 
   return (
     <div className="space-y-6 animate-fade-in text-foreground print:m-0 print:p-0">
+      {/* ━━━ شريط التنقل بين خطوات العرض الفني (الخطوة 1: العرض الفني | الخطوة 2: شهادة الضمان) ━━━ */}
+      <div className="bg-card/90 backdrop-blur-md border border-border p-2.5 rounded-2xl shadow-sm flex items-center justify-between gap-3 flex-wrap">
+        <div className="flex items-center gap-2">
+          <Button
+            type="button"
+            variant={activeStep === "OFFER" ? "default" : "outline"}
+            size="sm"
+            onClick={() => setActiveStep("OFFER")}
+            className={`h-10 px-4 rounded-xl font-bold text-xs flex items-center gap-2 transition-all cursor-pointer ${
+              activeStep === "OFFER"
+                ? "bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-md shadow-blue-500/25 hover:from-blue-700 hover:to-indigo-700"
+                : "border-border hover:bg-muted text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            <ClipboardCheck className="h-4 w-4" />
+            <span>الخطوة 1: العرض الفني وجدول المواصفات والبدائل (Word)</span>
+            <Badge className={`text-[10px] font-bold px-1.5 py-0.2 ${activeStep === "OFFER" ? "bg-white/20 text-white" : "bg-muted text-foreground"}`}>
+              {items.length} أصناف
+            </Badge>
+          </Button>
 
+          <Button
+            type="button"
+            variant={activeStep === "WARRANTY" ? "default" : "outline"}
+            size="sm"
+            onClick={() => setActiveStep("WARRANTY")}
+            className={`h-10 px-4 rounded-xl font-bold text-xs flex items-center gap-2 transition-all cursor-pointer ${
+              activeStep === "WARRANTY"
+                ? "bg-gradient-to-r from-emerald-600 to-teal-600 text-white shadow-md shadow-emerald-500/25 hover:from-emerald-700 hover:to-teal-700"
+                : "border-border hover:bg-muted text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            <ShieldCheck className="h-4 w-4" />
+            <span>الخطوة 2: شهادة الضمان المعتمدة للأصناف (Word)</span>
+            <Badge className={`text-[10px] font-bold px-1.5 py-0.2 ${activeStep === "WARRANTY" ? "bg-white/20 text-white" : "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30"}`}>
+              جديد
+            </Badge>
+          </Button>
+        </div>
 
+        <div className="flex items-center gap-2 text-xs text-muted-foreground mr-auto">
+          {activeStep === "OFFER" ? (
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={() => setActiveStep("WARRANTY")}
+              className="h-8.5 text-xs font-bold text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/10 rounded-xl cursor-pointer flex items-center gap-1.5"
+            >
+              <span>متابعة إلى: شهادة الضمان للأصناف</span>
+              <ArrowRight className="h-3.5 w-3.5 rotate-180" />
+            </Button>
+          ) : (
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={() => setActiveStep("OFFER")}
+              className="h-8.5 text-xs font-bold text-blue-600 dark:text-blue-400 hover:bg-blue-500/10 rounded-xl cursor-pointer flex items-center gap-1.5"
+            >
+              <ArrowRight className="h-3.5 w-3.5" />
+              <span>العودة للعرض الفني والبدائل</span>
+            </Button>
+          )}
+        </div>
+      </div>
 
-
+      {activeStep === "WARRANTY" ? (
+        <WarrantyCertificateSection
+          op={op}
+          onRefresh={onRefresh}
+          initialItems={items}
+          onGoBackToOffer={() => setActiveStep("OFFER")}
+        />
+      ) : (
+        <>
       {/* ━━━ SECTION 1: بيانات الشركة المصدرة وكود العملية ورقم القيد والباركود ━━━ */}
       <SectionCard
         title="1. بيانات الشركة المصدرة وكود العملية ورقم القيد والباركود الرقمي"
@@ -1804,7 +1878,7 @@ export function TabTechnical({
                   <Button
                     size="sm"
                     variant="ghost"
-                    onClick={loadOfficialPreview}
+                    onClick={() => loadOfficialPreview(true)}
                     disabled={renderingDocx}
                     className="text-xs font-bold h-9 rounded-xl border border-border hover:bg-muted cursor-pointer flex items-center gap-1.5"
                   >
@@ -1897,6 +1971,28 @@ export function TabTechnical({
 
       {/* ━━━ نافذة التحميل العائمة المبتكرة عند تنزيل PDF ━━━ */}
       <PdfExportLoadingModal open={downloadingPdf} />
+
+      {/* زر الانتقال السلس إلى شهادة الضمان للأصناف */}
+      <div className="bg-gradient-to-r from-emerald-500/10 via-teal-500/10 to-transparent border border-emerald-500/25 p-4 rounded-2xl flex items-center justify-between flex-wrap gap-3">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 flex items-center justify-center font-bold">
+            <ShieldCheck className="h-5 w-5" />
+          </div>
+          <div>
+            <h4 className="text-sm font-bold text-foreground">الخطوة التالية: شهادة الضمان المعتمدة للأصناف الموردة</h4>
+            <p className="text-xs text-muted-foreground">توليد وطباعة شهادة الضمان المعتمدة (Word/PDF) وفقاً للشروط وفترة الضمان مع دمج الباركود الذكي للأصناف.</p>
+          </div>
+        </div>
+        <Button
+          type="button"
+          onClick={() => setActiveStep("WARRANTY")}
+          className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs h-9.5 px-4 rounded-xl shadow-md shadow-emerald-600/20 cursor-pointer flex items-center gap-1.5"
+        >
+          <span>الانتقال إلى الخطوة 2: شهادة الضمان ➔</span>
+        </Button>
+      </div>
+        </>
+      )}
 
       {/* ━━━ STEP FOOTER NAVIGATION ━━━ */}
       <StepFooterNav

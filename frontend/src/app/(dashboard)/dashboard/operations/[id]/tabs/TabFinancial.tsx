@@ -723,46 +723,40 @@ export function TabFinancial({
 
     const zip = await JSZip.loadAsync(templateBuffer);
 
-    // توليد رمز التحقق الرقمي المباشر
+    // توليد رمز التحقق الرقمي المباشر - فقط في حالة الرفع السحابي الفعلي
     let qrDrawingXml = "";
-    try {
-      const fileName = `financial_offer_${registrationNumber || op.serialNumber}.pdf`;
-      let activeCloud = cloudPdfUrl;
-      if (!isValidCloudDocUrl(activeCloud)) {
-        activeCloud = await getExpectedCloudPdfUrl(fileName);
-        if (activeCloud) {
-          setCloudPdfUrl(activeCloud);
+    const activeCloud = cloudPdfUrl;
+    if (isValidCloudDocUrl(activeCloud)) {
+      try {
+        const qrDataUrl = await QRCode.toDataURL(activeCloud, {
+          width: 600,
+          margin: 2,
+          errorCorrectionLevel: "M",
+        });
+        const qrBase64 = qrDataUrl.split(",")[1];
+        const qrBinary = Uint8Array.from(atob(qrBase64), (c) => c.charCodeAt(0));
+
+        zip.file("word/media/doc_qr.png", qrBinary);
+
+        let relsXml = await zip.file("word/_rels/document.xml.rels")?.async("text");
+        if (relsXml && !relsXml.includes("rIdQR")) {
+          relsXml = relsXml.replace(
+            "</Relationships>",
+            '<Relationship Id="rIdQR" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/doc_qr.png"/></Relationships>'
+          );
+          zip.file("word/_rels/document.xml.rels", relsXml);
         }
-      }
-      let targetVerifyUrl: string = activeCloud || "";
-      if (!isValidCloudDocUrl(targetVerifyUrl)) {
-        const origin = typeof window !== "undefined" ? window.location.origin : "https://goldenerp-tau.vercel.app";
-        targetVerifyUrl = `${origin}/verify-doc?ref=${encodeURIComponent(registrationNumber)}&opId=${op.id}&type=financial&printedBy=${encodeURIComponent(getCurrentUserName())}&printedAt=${Date.now()}`;
-      }
-      const qrDataUrl = await QRCode.toDataURL(targetVerifyUrl, { width: 160, margin: 1 });
-      const qrBase64 = qrDataUrl.split(",")[1];
-      const qrBinary = Uint8Array.from(atob(qrBase64), (c) => c.charCodeAt(0));
 
-      zip.file("word/media/doc_qr.png", qrBinary);
+        let ctXml = await zip.file("[Content_Types].xml")?.async("text");
+        if (ctXml && !ctXml.includes('Extension="png"')) {
+          ctXml = ctXml.replace("</Types>", '<Default Extension="png" ContentType="image/png"/></Types>');
+          zip.file("[Content_Types].xml", ctXml);
+        }
 
-      let relsXml = await zip.file("word/_rels/document.xml.rels")?.async("text");
-      if (relsXml && !relsXml.includes("rIdQR")) {
-        relsXml = relsXml.replace(
-          "</Relationships>",
-          '<Relationship Id="rIdQR" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/doc_qr.png"/></Relationships>'
-        );
-        zip.file("word/_rels/document.xml.rels", relsXml);
+        qrDrawingXml = buildQrAnchorXml();
+      } catch (e) {
+        console.warn("QR generation failed:", e);
       }
-
-      let ctXml = await zip.file("[Content_Types].xml")?.async("text");
-      if (ctXml && !ctXml.includes('Extension="png"')) {
-        ctXml = ctXml.replace("</Types>", '<Default Extension="png" ContentType="image/png"/></Types>');
-        zip.file("[Content_Types].xml", ctXml);
-      }
-
-      qrDrawingXml = buildQrAnchorXml();
-    } catch (e) {
-      console.warn("QR generation failed:", e);
     }
 
     // 1. استبدال كافة المتغيرات في word/document.xml
@@ -1075,12 +1069,14 @@ export function TabFinancial({
   };
 
   // ━━━ تحميل المعاينة الرسمية من محرك Word الأصيل ━━━
-  const loadOfficialPreview = async () => {
-    if (previewPdfBlob && currentSnapshot === lastGeneratedSnapshot) {
+  const loadOfficialPreview = async (forceRefresh = false) => {
+    if (previewPdfBlob && currentSnapshot === lastGeneratedSnapshot && !forceRefresh) {
+      setPreviewModalOpen(true);
       return;
     }
 
     setRenderingDocx(true);
+    setPreviewModalOpen(true);
     try {
       if (previewPdfUrl) {
         URL.revokeObjectURL(previewPdfUrl);
@@ -1097,10 +1093,10 @@ export function TabFinancial({
       const url = URL.createObjectURL(pdfBlob);
       setPreviewPdfUrl(url);
 
-      if (!cloudPdfUrl || cloudPdfUrl.includes("tmpfiles") || cloudPdfUrl.includes("tmpfile") || cloudPdfUrl.includes("catbox")) {
-        handleUploadToCloud(false, pdfBlob);
-      }
       setLastGeneratedSnapshot(currentSnapshot);
+      if (forceRefresh) {
+        toast.success("تم تحديث المعاينة الرسمية بنجاح! 🔄✨");
+      }
     } catch (err: any) {
       console.error("فشل تجهيز معاينة العرض المالي:", err);
       toast.error("تعذر تجهيز المعاينة: " + (err?.message || ""));
@@ -2105,7 +2101,7 @@ export function TabFinancial({
                   <Button
                     size="sm"
                     variant="ghost"
-                    onClick={loadOfficialPreview}
+                    onClick={() => loadOfficialPreview(true)}
                     disabled={renderingDocx}
                     className="text-xs font-bold h-9 rounded-xl border border-border hover:bg-muted cursor-pointer flex items-center gap-1.5"
                   >

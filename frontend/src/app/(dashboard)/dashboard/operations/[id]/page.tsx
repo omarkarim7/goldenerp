@@ -219,12 +219,12 @@ export default function OperationDetailPage() {
       setPreviewDocTitle(title);
       toast.info("جاري تحضير المستند أو الصورة للعرض المباشر...");
 
-      let blobData: Blob | null = null;
-      let contentType = "";
+      let blobData: Blob | null = (doc as any).blob || null;
+      let contentType = blobData?.type || "";
       const currentOpId = op?.id;
 
       // Tier 1: Try fetching via operation documents endpoint
-      if (doc.id && currentOpId) {
+      if (!blobData && doc.id && currentOpId) {
         try {
           const res = await api.get(`/operations/${currentOpId}/documents/${doc.id}/file`, { responseType: "blob" });
           blobData = res.data;
@@ -238,22 +238,40 @@ export default function OperationDetailPage() {
       if (!blobData) {
         const targetUrl = doc.filePath || "";
         if (targetUrl) {
-          try {
-            const cleanUrl = targetUrl.startsWith("/") ? targetUrl : `/${targetUrl}`;
-            const res = await api.get(cleanUrl, { responseType: "blob" });
-            blobData = res.data;
-            contentType = String(res.headers?.["content-type"] || "").toLowerCase();
-          } catch (urlErr) {
-            console.warn("Target URL fetch failed:", urlErr);
+          if (targetUrl.startsWith("http://") || targetUrl.startsWith("https://")) {
+            try {
+              const res = await fetch(targetUrl);
+              if (res.ok) {
+                blobData = await res.blob();
+                contentType = blobData.type || "application/pdf";
+              }
+            } catch {
+              // Direct cloud link embedded into viewer
+              setPreviewDocUrl(targetUrl);
+              setPreviewDocType("pdf");
+              toast.success("تم فتح المستند السحابي المعتمد للمعاينة المباشرة! 📄");
+              return;
+            }
+          } else {
+            try {
+              const cleanUrl = targetUrl.startsWith("/") ? targetUrl : `/${targetUrl}`;
+              const res = await api.get(cleanUrl, { responseType: "blob" });
+              blobData = res.data;
+              contentType = String(res.headers?.["content-type"] || "").toLowerCase();
+            } catch (urlErr) {
+              console.warn("Target URL fetch failed:", urlErr);
+            }
           }
         }
       }
 
       // Tier 3: If still no blob, try radar download doc as last resort
       if (!blobData) {
-        const res = await api.get(`/radar/download-doc?docId=booklet`, { responseType: "blob" });
-        blobData = res.data;
-        contentType = String(res.headers?.["content-type"] || "").toLowerCase();
+        try {
+          const res = await api.get(`/radar/download-doc?docId=booklet`, { responseType: "blob" });
+          blobData = res.data;
+          contentType = String(res.headers?.["content-type"] || "").toLowerCase();
+        } catch {}
       }
 
       if (!blobData) {
