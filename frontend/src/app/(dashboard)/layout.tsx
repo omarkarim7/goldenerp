@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, useMemo } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import Link from "next/link";
 import { useTheme } from "next-themes";
@@ -8,7 +8,8 @@ import {
   LayoutDashboard, Building2, FileText, Radar, Shield, Package, Users,
   BarChart3, Archive, Settings, LogOut, Search, Bell, ChevronLeft, ChevronDown,
   Truck, Wallet, ClipboardCheck, Menu, X, Plus, Sparkles, CheckCircle2,
-  AlertTriangle, Sun, Moon, Laptop, ChevronsUpDown, Check, CheckCheck, ShieldAlert, Globe, RefreshCw, BookOpen
+  AlertTriangle, Sun, Moon, Laptop, ChevronsUpDown, Check, CheckCheck, ShieldAlert, Globe, RefreshCw, BookOpen,
+  ArrowLeft, AlertOctagon, Clock
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -17,7 +18,7 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { useNotifications } from "@/context/notifications-context";
-import { useCompany } from "@/context/company-context";
+import { useCompany, CompanyCode } from "@/context/company-context";
 import { API_BASE_URL } from "@/lib/api";
 
 function getPageTitle(pathname: string): string {
@@ -319,13 +320,36 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const [userMenuOpen, setUserMenuOpen] = useState(false);
 
   // Global Company Scope Context
-  const { selectedCompany, setSelectedCompany, currentCompany, isCompanyLocked } = useCompany();
+  const { selectedCompany, setSelectedCompany, currentCompany, companies, isCompanyLocked } = useCompany();
 
   // Shared Notification state from context
-  const { notifications, unreadCount, markAsRead, markAllAsRead } = useNotifications();
+  const { notifications, allNotifications, unreadCount, markAsRead, markAllAsRead } = useNotifications();
   const [notifFilter, setNotifFilter] = useState<"all" | "unread">("all");
-  const displayedNotifications =
-    notifFilter === "unread" ? notifications.filter((n) => !n.isRead) : notifications;
+  const [popoverCompany, setPopoverCompany] = useState<CompanyCode>(selectedCompany);
+
+  useEffect(() => {
+    setPopoverCompany(selectedCompany);
+  }, [selectedCompany]);
+
+  // Notifications scoped to popoverCompany (strict company isolation)
+  const scopedNotifications = useMemo(() => {
+    const list = allNotifications && allNotifications.length > 0 ? allNotifications : notifications;
+    if (!popoverCompany || popoverCompany === "ALL") {
+      return list;
+    }
+    return list.filter((n) => n.companyCode === popoverCompany);
+  }, [allNotifications, notifications, popoverCompany]);
+
+  const scopedUnreadCount = useMemo(() => {
+    return scopedNotifications.filter((n) => !n.isRead).length;
+  }, [scopedNotifications]);
+
+  const displayedNotifications = useMemo(() => {
+    if (notifFilter === "unread") {
+      return scopedNotifications.filter((n) => !n.isRead);
+    }
+    return scopedNotifications;
+  }, [scopedNotifications, notifFilter]);
 
   // Dropdown refs for click-outside detection
   const quickActionRef = useRef<HTMLDivElement>(null);
@@ -1188,35 +1212,35 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                 )}
               </Button>
 
-              {/* Notifications Dropdown (100% Solid Non-Transparent, Opaque Cards with Mark-As-Read) */}
+              {/* Notifications Dropdown (Modern, Beautiful, Simple, Company-Isolated) */}
               {notificationsOpen && (
-                <div className="absolute left-0 mt-2 w-[calc(100vw-1.5rem)] sm:w-96 max-w-sm rounded-2xl solid-dropdown p-3.5 shadow-2xl z-50 animate-scale-up">
+                <div className="absolute left-0 mt-2 w-[calc(100vw-1.5rem)] sm:w-[420px] max-w-md rounded-3xl solid-dropdown p-4 shadow-2xl z-50 animate-scale-up border border-border">
                   {/* Notifications Header */}
-                  <div className="flex items-center justify-between pb-2.5 mb-2.5 border-b border-border/60">
-                    <div className="flex items-center gap-1.5 flex-wrap">
-                      <span className="text-xs font-black text-foreground flex items-center gap-1.5">
-                        <Bell className="h-4 w-4 text-amber-500" />
-                        إشعارات {currentCompany?.name ? `شركة ${currentCompany.name}` : "المنظومة"}
-                      </span>
-                      <Badge className="bg-blue-600 text-white font-mono text-[9px] px-1.5 py-0 h-4 font-black">
-                        {selectedCompany}
-                      </Badge>
-                      {unreadCount > 0 ? (
-                        <Badge variant="outline" className="text-[10px] border-amber-500/30 text-amber-600 dark:text-amber-400 font-bold bg-amber-500/10">
-                          {unreadCount} غير مقروء
-                        </Badge>
-                      ) : (
-                        <Badge variant="outline" className="text-[10px] border-emerald-500/30 text-emerald-600 dark:text-emerald-400 font-bold bg-emerald-500/10">
-                          جميعها مقروءة
-                        </Badge>
-                      )}
+                  <div className="flex items-center justify-between pb-3 mb-3 border-b border-border/70">
+                    <div className="flex items-center gap-2">
+                      <div className="w-8 h-8 rounded-xl bg-amber-500/15 text-amber-500 flex items-center justify-center font-bold">
+                        <Bell className="h-4 w-4" />
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-1.5">
+                          <h4 className="text-xs sm:text-sm font-black text-foreground">
+                            إشعارات المنظومة
+                          </h4>
+                          <Badge className="bg-blue-600 text-white font-mono text-[9px] px-1.5 py-0 h-4 font-black">
+                            {popoverCompany === "ALL" ? "كافة الشركات" : `شركة ${popoverCompany}`}
+                          </Badge>
+                        </div>
+                        <p className="text-[11px] text-muted-foreground mt-0.5">
+                          {scopedUnreadCount > 0 ? `${scopedUnreadCount} إشعارات بانتظار الاطلاع` : "جميع التنبيهات مستوفاة ومقروءة"}
+                        </p>
+                      </div>
                     </div>
 
-                    {unreadCount > 0 && (
+                    {scopedUnreadCount > 0 && (
                       <button
                         type="button"
                         onClick={markAllAsRead}
-                        className="text-[11px] font-bold text-amber-600 dark:text-amber-400 hover:text-amber-700 dark:hover:text-amber-300 flex items-center gap-1 cursor-pointer transition-colors px-2 py-1 rounded-lg hover:bg-amber-500/10"
+                        className="text-[11px] font-bold text-amber-600 dark:text-amber-400 hover:text-amber-700 dark:hover:text-amber-300 flex items-center gap-1 cursor-pointer transition-colors px-2.5 py-1.5 rounded-xl hover:bg-amber-500/10 border border-amber-500/20"
                         title="تعيين كل التنبيهات كمقروءة"
                       >
                         <CheckCheck className="h-3.5 w-3.5" />
@@ -1225,56 +1249,116 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                     )}
                   </div>
 
+                  {/* ━━━ Company Isolation Switcher Bar Inside Dropdown ━━━ */}
+                  <div className="flex items-center gap-1 p-1 rounded-2xl bg-muted/50 border border-border/50 mb-3 overflow-x-auto scrollbar-none">
+                    <button
+                      type="button"
+                      onClick={() => setPopoverCompany("ALL")}
+                      className={`px-2.5 py-1 rounded-xl text-[11px] font-bold transition-all shrink-0 cursor-pointer ${
+                        popoverCompany === "ALL"
+                          ? "bg-blue-600 text-white shadow-xs"
+                          : "text-muted-foreground hover:text-foreground hover:bg-muted"
+                      }`}
+                    >
+                      بوابة الـ 4 شركات 🏛️
+                    </button>
+                    {companies.map((c) => (
+                      <button
+                        key={c.code}
+                        type="button"
+                        onClick={() => setPopoverCompany(c.code)}
+                        className={`px-2.5 py-1 rounded-xl text-[11px] font-bold transition-all shrink-0 cursor-pointer flex items-center gap-1 ${
+                          popoverCompany === c.code
+                            ? "bg-blue-600 text-white shadow-xs"
+                            : "text-muted-foreground hover:text-foreground hover:bg-muted"
+                        }`}
+                      >
+                        <span className="font-mono font-black">{c.code}</span>
+                        <span>{c.name}</span>
+                      </button>
+                    ))}
+                  </div>
+
                   {/* Filter tabs: الكل / غير المقروءة */}
-                  <div className="flex items-center gap-1.5 mb-2.5 text-[11px]">
-                    <button
-                      type="button"
-                      onClick={() => setNotifFilter("all")}
-                      className={`px-2.5 py-1 rounded-lg font-bold transition-all cursor-pointer ${
-                        notifFilter === "all"
-                          ? "bg-amber-500/20 text-amber-600 dark:text-amber-400 border border-amber-500/30"
-                          : "text-muted-foreground hover:text-foreground"
-                      }`}
-                    >
-                      الكل ({notifications.length})
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setNotifFilter("unread")}
-                      className={`px-2.5 py-1 rounded-lg font-bold transition-all cursor-pointer ${
-                        notifFilter === "unread"
-                          ? "bg-amber-500/20 text-amber-600 dark:text-amber-400 border border-amber-500/30"
-                          : "text-muted-foreground hover:text-foreground"
-                      }`}
-                    >
-                      غير المقروءة ({unreadCount})
-                    </button>
+                  <div className="flex items-center justify-between gap-2 mb-3 text-[11px] px-0.5">
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => setNotifFilter("all")}
+                        className={`px-3 py-1 rounded-xl font-bold transition-all cursor-pointer ${
+                          notifFilter === "all"
+                            ? "bg-foreground text-background shadow-xs"
+                            : "text-muted-foreground hover:text-foreground bg-muted/40"
+                        }`}
+                      >
+                        الكل ({scopedNotifications.length})
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setNotifFilter("unread")}
+                        className={`px-3 py-1 rounded-xl font-bold transition-all cursor-pointer ${
+                          notifFilter === "unread"
+                            ? "bg-amber-500 text-slate-950 font-black shadow-xs"
+                            : "text-muted-foreground hover:text-foreground bg-muted/40"
+                        }`}
+                      >
+                        غير المقروءة ({scopedUnreadCount})
+                      </button>
+                    </div>
+
+                    <span className="text-[10px] text-muted-foreground font-semibold">
+                      نطاق: {popoverCompany === "ALL" ? "المجموعة العامة" : `شركة ${popoverCompany}`}
+                    </span>
                   </div>
 
                   {/* Notification Items List */}
-                  <div className="space-y-2 max-h-[360px] overflow-y-auto pr-0.5">
+                  <div className="space-y-2.5 max-h-[380px] overflow-y-auto pr-0.5 scrollbar-thin">
                     {displayedNotifications.length === 0 ? (
-                      <div className="py-8 text-center space-y-2">
+                      <div className="py-10 text-center space-y-2.5 bg-muted/20 rounded-2xl border border-dashed border-border/60">
                         <CheckCircle2 className="h-8 w-8 text-emerald-500 mx-auto" />
-                        <p className="text-xs font-bold text-foreground">لا توجد تنبيهات جديدة</p>
-                        <p className="text-[11px] text-muted-foreground">جميع الإشعارات تم الاطلاع عليها</p>
+                        <p className="text-xs font-bold text-foreground">
+                          {notifFilter === "unread" ? "لا توجد إشعارات غير مقروءة" : "لا توجد إشعارات مسجلة لهذه الشركة"}
+                        </p>
+                        <p className="text-[11px] text-muted-foreground">
+                          جميع مهام واشتراطات {popoverCompany === "ALL" ? "الشركات" : `شركة ${popoverCompany}`} منتظمة بنجاح
+                        </p>
                       </div>
                     ) : (
                       displayedNotifications.map((notif) => {
+                        const isDanger = notif.type === "danger";
                         const isWarning = notif.type === "warning";
                         const isInfo = notif.type === "info";
+                        const isSuccess = notif.type === "success";
+
+                        const compColors: Record<string, string> = {
+                          A: "bg-blue-600 text-white",
+                          B: "bg-teal-600 text-white",
+                          C: "bg-purple-600 text-white",
+                          D: "bg-indigo-600 text-white",
+                          ALL: "bg-slate-700 text-white",
+                        };
+
+                        const compTitles: Record<string, string> = {
+                          A: "جولدن",
+                          B: "إكسلنت",
+                          C: "العهد",
+                          D: "الحديثة",
+                          ALL: "المجموعة",
+                        };
 
                         return (
                           <div
                             key={notif.id}
-                            className={`p-3 rounded-xl border transition-all cursor-pointer group relative ${
+                            className={`p-3.5 rounded-2xl border transition-all cursor-pointer group flex flex-col justify-between space-y-2.5 shadow-2xs ${
                               !notif.isRead
-                                ? isWarning
-                                ? "bg-amber-500/10 dark:bg-amber-950/40 border-amber-500/30 hover:border-amber-500/50"
-                                : isInfo
-                                ? "bg-blue-500/10 dark:bg-blue-950/40 border-blue-500/30 hover:border-blue-500/50"
-                                : "bg-emerald-500/10 dark:bg-emerald-950/40 border-emerald-500/30 hover:border-emerald-500/50"
-                                : "bg-muted/30 border-border opacity-70 hover:opacity-100"
+                                ? isDanger
+                                  ? "bg-red-500/[0.04] border-red-500/35 hover:border-red-500/60"
+                                  : isWarning
+                                  ? "bg-amber-500/[0.04] border-amber-500/35 hover:border-amber-500/60"
+                                  : isInfo
+                                  ? "bg-blue-500/[0.04] border-blue-500/35 hover:border-blue-500/60"
+                                  : "bg-emerald-500/[0.04] border-emerald-500/35 hover:border-emerald-500/60"
+                                : "bg-card hover:bg-muted/30 border-border/60 opacity-80 hover:opacity-100"
                             }`}
                             onClick={() => {
                               markAsRead(notif.id);
@@ -1282,55 +1366,99 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                               router.push(notif.link);
                             }}
                           >
-                            <div className="flex items-start justify-between gap-2">
-                              <div className="flex items-center gap-1.5 font-bold text-xs">
+                            {/* Top Meta Row */}
+                            <div className="flex items-center justify-between gap-2">
+                              <div className="flex items-center gap-1.5 flex-wrap">
                                 {!notif.isRead && (
-                                  <span className="w-2 h-2 rounded-full bg-amber-500 shrink-0 animate-pulse" />
+                                  <span
+                                    className={`w-2 h-2 rounded-full shrink-0 ${
+                                      isDanger
+                                        ? "bg-red-500 animate-ping"
+                                        : isWarning
+                                        ? "bg-amber-500 animate-pulse"
+                                        : "bg-blue-500"
+                                    }`}
+                                  />
                                 )}
+
                                 <span
-                                  className={
-                                    !notif.isRead
-                                      ? isWarning
-                                        ? "text-amber-600 dark:text-amber-300"
-                                        : isInfo
-                                        ? "text-blue-600 dark:text-blue-300"
-                                        : "text-emerald-600 dark:text-emerald-300"
-                                      : "text-foreground"
-                                  }
+                                  className={`text-[10px] font-mono font-black px-1.5 py-0.5 rounded-md shrink-0 shadow-2xs ${
+                                    compColors[notif.companyCode] || "bg-blue-600 text-white"
+                                  }`}
                                 >
-                                  {notif.title}
+                                  {notif.companyCode} {compTitles[notif.companyCode] || ""}
                                 </span>
+
+                                <Badge
+                                  className={`text-[10px] font-bold px-1.5 py-0 border-0 ${
+                                    isDanger
+                                      ? "bg-red-500/15 text-red-600 dark:text-red-400"
+                                      : isWarning
+                                      ? "bg-amber-500/15 text-amber-600 dark:text-amber-400"
+                                      : isInfo
+                                      ? "bg-blue-500/15 text-blue-600 dark:text-blue-400"
+                                      : "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400"
+                                  }`}
+                                >
+                                  {isDanger
+                                    ? "إجراء عاجل"
+                                    : isWarning
+                                    ? "ضمان بنكي"
+                                    : isInfo
+                                    ? "جلسة فنية"
+                                    : "ترسية معتمدة"}
+                                </Badge>
                               </div>
 
-                              <div className="flex items-center gap-1.5 shrink-0">
-                                <span className="text-[10px] text-muted-foreground font-normal">
-                                  {notif.time}
-                                </span>
-                                {!notif.isRead ? (
-                                  <button
-                                    type="button"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      markAsRead(notif.id);
-                                    }}
-                                    className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-amber-500/15 text-amber-600 dark:text-amber-400 hover:bg-amber-500/25 border border-amber-500/30 transition-colors flex items-center gap-1 cursor-pointer"
-                                    title="وضع هذا التنبيه كمقروء"
-                                  >
-                                    <Check className="h-3 w-3" />
-                                    <span>كمقروء</span>
-                                  </button>
-                                ) : (
-                                  <span className="text-[10px] text-muted-foreground flex items-center gap-0.5">
-                                    <CheckCheck className="h-3 w-3 text-emerald-500" />
-                                    مقروء
-                                  </span>
-                                )}
-                              </div>
+                              <span className="text-[10.5px] font-bold text-foreground/80 bg-muted/60 px-2 py-0.5 rounded-full border border-border/50 shrink-0">
+                                {notif.time}
+                              </span>
                             </div>
 
-                            <p className="text-foreground mt-1 text-[11px] leading-relaxed">
+                            {/* Title */}
+                            <h5 className="text-xs sm:text-[13px] font-black text-foreground leading-snug">
+                              {notif.title}
+                            </h5>
+
+                            {/* Message */}
+                            <p className="text-[11.5px] text-muted-foreground leading-relaxed">
                               {notif.message}
                             </p>
+
+                            {/* Details Box if present */}
+                            {notif.details && (
+                              <div className="text-[10.5px] text-foreground/90 font-medium bg-muted/40 p-2 rounded-xl border border-border/40">
+                                {notif.details}
+                              </div>
+                            )}
+
+                            {/* Footer Row: Action Button + Read Status */}
+                            <div className="pt-2 border-t border-border/50 flex items-center justify-between gap-2">
+                              <span className="text-xs font-bold text-blue-600 dark:text-blue-400 group-hover:underline flex items-center gap-1">
+                                <span>{notif.actionLabel || "متابعة التفاصيل"}</span>
+                                <ArrowLeft className="h-3 w-3" />
+                              </span>
+
+                              {!notif.isRead ? (
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    markAsRead(notif.id);
+                                  }}
+                                  className="px-2 py-0.5 rounded-lg text-[10px] font-bold bg-amber-500/15 text-amber-600 dark:text-amber-400 hover:bg-amber-500/25 border border-amber-500/30 transition-colors flex items-center gap-1 cursor-pointer"
+                                  title="تعيين هذا التنبيه كمقروء"
+                                >
+                                  <Check className="h-3 w-3" />
+                                  <span>كمقروء</span>
+                                </button>
+                              ) : (
+                                <span className="text-[10px] text-muted-foreground flex items-center gap-1 font-semibold">
+                                  <CheckCheck className="h-3.5 w-3.5 text-emerald-500" />
+                                  <span>تم الاطلاع</span>
+                                </span>
+                              )}
+                            </div>
                           </div>
                         );
                       })
@@ -1338,18 +1466,19 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                   </div>
 
                   {/* Notifications Footer */}
-                  <div className="mt-3 pt-2 border-t border-border/60 flex items-center justify-between text-xs">
+                  <div className="mt-3 pt-2.5 border-t border-border/70 flex items-center justify-between text-xs">
                     <Link
-                      href="/dashboard/reports"
+                      href="/dashboard/operations"
                       onClick={() => setNotificationsOpen(false)}
-                      className="text-amber-500 hover:underline font-bold cursor-pointer"
+                      className="text-blue-600 dark:text-blue-400 hover:underline font-bold cursor-pointer text-[11.5px] flex items-center gap-1"
                     >
-                      عرض التقارير والسجلات
+                      <span>عرض كافة العمليات والسجلات</span>
+                      <ArrowLeft className="h-3 w-3" />
                     </Link>
                     <button
                       type="button"
                       onClick={() => setNotificationsOpen(false)}
-                      className="text-muted-foreground hover:text-foreground text-xs cursor-pointer"
+                      className="text-muted-foreground hover:text-foreground text-xs font-bold cursor-pointer px-2 py-1 rounded-lg hover:bg-muted"
                     >
                       إغلاق
                     </button>
