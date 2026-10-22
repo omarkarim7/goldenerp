@@ -35,11 +35,11 @@ interface OperationItem {
   code: string;
   companyName: string;
   companyCode: string;
-  revenue?: number;
-  cost?: number;
-  profit?: number;
-  margin?: number;
-  billed?: number;
+  revenue: number;
+  cost: number;
+  profit: number;
+  margin: number;
+  billed: number;
   daysRemaining?: number;
 }
 
@@ -80,6 +80,21 @@ interface GuaranteeItemBrief {
   status: "ACTIVE" | "EXPIRING_SOON" | "RENEWED";
 }
 
+interface CompanyAlertItem {
+  id: string;
+  title: string;
+  companyCode: string;
+  companyName: string;
+  operationCode: string;
+  category: "SESSION" | "GUARANTEE" | "APPROVAL" | "SUPPLY" | "VISIT";
+  categoryLabel: string;
+  deadlineText: string;
+  severity: "danger" | "warning" | "info";
+  requirement: string;
+  actionLabel: string;
+  link: string;
+}
+
 export default function DashboardPage() {
   const router = useRouter();
   const { notifications, unreadCount } = useNotifications();
@@ -104,6 +119,7 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
   const [pendingApprovalsCount, setPendingApprovalsCount] = useState<number>(3);
   const [activeSectionFilter, setActiveSectionFilter] = useState<"ALL" | "ALERTS" | "FINANCE" | "RADAR" | "VISITS" | "GUARANTEES">("ALL");
+  const [alertCategoryFilter, setAlertCategoryFilter] = useState<string>("ALL");
 
   // Live formatted Arabic Date
   const [currentTimeStr, setCurrentTimeStr] = useState<string>("");
@@ -168,17 +184,20 @@ export default function DashboardPage() {
           if (opRes.ok) {
             const ops = await opRes.json();
             if (Array.isArray(ops) && ops.length > 0) {
+              const sampleRevenues = [2850000, 1800000, 1450000, 1200000, 2100000, 1650000, 3200000, 950000];
               setRecentOperations(
-                ops.map((o: any) => {
+                ops.map((o: any, idx: number) => {
                   const fin = o.operationFinance;
-                  const rev = fin ? Number(fin.totalRevenue) : 1500000;
-                  const cost = fin ? Number(fin.totalCost) : 1050000;
+                  const fallbackRev = sampleRevenues[idx % sampleRevenues.length];
+                  const rev = fin ? Number(fin.totalRevenue) : fallbackRev;
+                  const cost = fin ? Number(fin.totalCost) : Math.round(rev * 0.71);
                   const profit = fin ? Number(fin.netProfit) : (rev - cost);
-                  const margin = rev > 0 ? (profit / rev) * 100 : 30;
+                  const margin = rev > 0 ? (profit / rev) * 100 : 29;
                   const certsTotal = (o.certificates || []).reduce(
                     (s: number, c: any) => s + (Number(c.netAmount) || Number(c.grossAmount) || 0),
                     0
                   );
+                  const billedVal = certsTotal > 0 ? certsTotal : Math.round(rev * (0.55 + (idx % 4) * 0.1));
 
                   return {
                     id: o.id,
@@ -186,14 +205,14 @@ export default function DashboardPage() {
                     authority: o.authority || "جهة حكومية",
                     tenderType: o.tenderType || "TENDER",
                     status: o.status || "AWARDED",
-                    code: o.companies?.[0]?.displayCode || `${selectedCompany === "ALL" ? "A" : selectedCompany}15`,
+                    code: o.companies?.[0]?.displayCode || `${selectedCompany === "ALL" ? "A" : selectedCompany}${String(15 - idx).padStart(2, "0")}`,
                     companyName: o.companies?.[0]?.company?.name || `شركة ${selectedCompany || "جولدن"}`,
                     companyCode: o.companies?.[0]?.company?.code || selectedCompany || "A",
                     revenue: rev,
                     cost: cost,
                     profit: profit,
                     margin: Math.round(margin * 10) / 10,
-                    billed: certsTotal > 0 ? certsTotal : Math.round(rev * 0.65),
+                    billed: Math.min(rev, billedVal),
                   };
                 })
               );
@@ -283,7 +302,7 @@ export default function DashboardPage() {
         cost: 880000,
         profit: 320000,
         margin: 26.7,
-        billed: 0,
+        billed: 780000,
       },
     ],
     B: [
@@ -422,6 +441,233 @@ export default function DashboardPage() {
     };
   }, [filteredOperations]);
 
+  // Format currency helpers
+  const formatEGP = (num: number) =>
+    new Intl.NumberFormat("ar-EG", { style: "currency", currency: "EGP", maximumFractionDigits: 0 }).format(num);
+
+  // Compact EGP formatting that NEVER overflows cards (e.g. 19.5 مليون ج.م / 518 ألف ج.م)
+  const formatCompactEGP = (num: number) => {
+    if (!num || isNaN(num)) return "0 ج.م";
+    if (num >= 1_000_000) {
+      const val = num / 1_000_000;
+      const formatted = val % 1 === 0 ? val.toFixed(0) : val.toFixed(1);
+      return `${Number(formatted).toLocaleString("ar-EG")} مليون ج.م`;
+    }
+    if (num >= 100_000) {
+      const val = Math.round(num / 1_000);
+      return `${val.toLocaleString("ar-EG")} ألف ج.م`;
+    }
+    return formatEGP(num);
+  };
+
+  // 🚨 COMPANY-SPECIFIC URGENT ALERTS (Strict Isolation)
+  const companyAlertsRegistry: Record<string, CompanyAlertItem[]> = {
+    A: [
+      {
+        id: "alert-a1",
+        title: "جلسة الفتح المالي لعملية شبكة كابلات الجهد المتوسط (A15)",
+        companyCode: "A",
+        companyName: "جولدن",
+        operationCode: "A15",
+        category: "SESSION",
+        categoryLabel: "جلسة فتح مالي",
+        deadlineText: "غداً 10:00 AM 🔴",
+        severity: "danger",
+        requirement: "مراجعة الأسعار التنافسية واعتماد العرض المالي قبل موعد الجلسة بهيئة المجتمعات العمرانية.",
+        actionLabel: "تفاصيل الجلسة والأسعار",
+        link: "/dashboard/operations",
+      },
+      {
+        id: "alert-a2",
+        title: "خطاب الضمان الابتدائي للعملية A12 (كاميرات المراقبة) ينتهي قريباً",
+        companyCode: "A",
+        companyName: "جولدن",
+        operationCode: "A12",
+        category: "GUARANTEE",
+        categoryLabel: "تجديد ضمان بنكي",
+        deadlineText: "متبقي 18 يوم (10 نوفمبر) 🟡",
+        severity: "warning",
+        requirement: "بنك مصر يطلب كتاب مد الصلاحية لـ 60 يوماً إضافية لتفادي التسييل.",
+        actionLabel: "طلب مد الصلاحية",
+        link: "/dashboard/payments",
+      },
+      {
+        id: "alert-a3",
+        title: "طلب اعتماد طباعة تظلم استبعاد فني (A15) بانتظار توقيع الإدارة",
+        companyCode: "A",
+        companyName: "جولدن",
+        operationCode: "A15",
+        category: "APPROVAL",
+        categoryLabel: "اعتماد أمني للطباعة",
+        deadlineText: "معلق بانتظار التوقيع 🔴",
+        severity: "danger",
+        requirement: "يلزم فحص التظلم واعتماده وتوليد الهاش التشفيري الأمني (32 خانة) للطباعة.",
+        actionLabel: "مراجعة واعتماد الطباعة",
+        link: "/dashboard/approvals?company=A",
+      },
+      {
+        id: "alert-a4",
+        title: "إشعار سحب كراسة الشروط لعملية لوحات الجهد المنخفض (A09)",
+        companyCode: "A",
+        companyName: "جولدن",
+        operationCode: "A09",
+        category: "SESSION",
+        categoryLabel: "كراسة شروط",
+        deadlineText: "جلسة 18 نوفمبر 🔵",
+        severity: "info",
+        requirement: "تجهيز المظروفين الفني والمالي وسداد التأمين الابتدائي.",
+        actionLabel: "متابعة تجهيز العرض",
+        link: "/dashboard/operations",
+      },
+    ],
+    B: [
+      {
+        id: "alert-b1",
+        title: "جلسة الاستفسارات الرسمية لمناقصة كابلات الفايبر والسنترالات (B08)",
+        companyCode: "B",
+        companyName: "إكسلنت",
+        operationCode: "B08",
+        category: "SESSION",
+        categoryLabel: "جلسة استفسارات",
+        deadlineText: "بعد غد 11:00 AM 🟡",
+        severity: "warning",
+        requirement: "تسليم خطاب الاستفسارات الرسمي لمندوب وزارة الاتصالات بالقرية الذكية.",
+        actionLabel: "مراجعة خطاب الاستفسارات",
+        link: "/dashboard/operations",
+      },
+      {
+        id: "alert-b2",
+        title: "خطاب الضمان الابتدائي B08 ينتهي خلال 28 يوماً لدى CIB",
+        companyCode: "B",
+        companyName: "إكسلنت",
+        operationCode: "B08",
+        category: "GUARANTEE",
+        categoryLabel: "تجديد ضمان بنكي",
+        deadlineText: "متبقي 28 يوم (20 نوفمبر) 🟡",
+        severity: "warning",
+        requirement: "تجديد الضمان الابتدائي لدى البنك التجاري الدولي قبل انقضاء المهلة.",
+        actionLabel: "متابعة تجديد الضمان",
+        link: "/dashboard/payments",
+      },
+      {
+        id: "alert-b3",
+        title: "مهمات الوقاية الطبية B04 — بانتظار اعتماد إذن إضافة المخازن",
+        companyCode: "B",
+        companyName: "إكسلنت",
+        operationCode: "B04",
+        category: "SUPPLY",
+        categoryLabel: "توريد وفحص مخزني",
+        deadlineText: "خلال 48 ساعة 🔵",
+        severity: "info",
+        requirement: "مطابقة محضر الفحص الفني بمخازن العامرية لاعتماد المستخلص الأول.",
+        actionLabel: "فحص أذونات الإضافة",
+        link: "/dashboard/operations",
+      },
+    ],
+    C: [
+      {
+        id: "alert-c1",
+        title: "موعد تقديم العطاء المالي والضمان لمعامل الحاسب (C04)",
+        companyCode: "C",
+        companyName: "العهد",
+        operationCode: "C04",
+        category: "SESSION",
+        categoryLabel: "تقديم عطاء",
+        deadlineText: "متبقي 3 أيام 🔴",
+        severity: "danger",
+        requirement: "إيداع خطاب الضمان ومظاريف العرض بهيئة الأبنية التعليمية بمدينة نصر.",
+        actionLabel: "تجهيز المظاريف والضمان",
+        link: "/dashboard/operations",
+      },
+      {
+        id: "alert-c2",
+        title: "استرداد التأمين الابتدائي للعملية C01 المنتهية من وزارة الإسكان",
+        companyCode: "C",
+        companyName: "العهد",
+        operationCode: "C01",
+        category: "GUARANTEE",
+        categoryLabel: "استرداد تأمين",
+        deadlineText: "متاح للاسترداد الآن 🔵",
+        severity: "info",
+        requirement: "تقديم طلب رسمي لبنك القاهرة لفك حجز التأمين بعد صدور الاستلام النهائي.",
+        actionLabel: "بدء إجراءات الاسترداد",
+        link: "/dashboard/payments",
+      },
+      {
+        id: "alert-c3",
+        title: "معاينة مجمع المدارس التجريبية C07 بالنزهة للتنسيق الميداني",
+        companyCode: "C",
+        companyName: "العهد",
+        operationCode: "C07",
+        category: "VISIT",
+        categoryLabel: "معاينة موقع",
+        deadlineText: "الأحد القادم 🟡",
+        severity: "warning",
+        requirement: "التنسيق مع إدارة المدرسة لتحديد مواعيد تنفيذ الأعمال الإنشائية خارج اليوم الدراسي.",
+        actionLabel: "تفاصيل المعاينة والموقع",
+        link: "/dashboard/visits",
+      },
+    ],
+    D: [
+      {
+        id: "alert-d1",
+        title: "معوقات استلام موقع العزل الحراري لمباني 6 أكتوبر (D05)",
+        companyCode: "D",
+        companyName: "الحديثة",
+        operationCode: "D05",
+        category: "VISIT",
+        categoryLabel: "معوقات موقع ميداني",
+        deadlineText: "عاجل جداً 🔴",
+        severity: "danger",
+        requirement: "إخطار جهاز المدينة رسمياً بضرورة كشط الرواسب الخرسانية وتصريف المياه قبل فرد العزل.",
+        actionLabel: "إرسال إخطار رسمي للجهاز",
+        link: "/dashboard/visits",
+      },
+      {
+        id: "alert-d2",
+        title: "سريان خطاب ضمان عملية العزل D05 ينتهي خلال 20 يوماً",
+        companyCode: "D",
+        companyName: "الحديثة",
+        operationCode: "D05",
+        category: "GUARANTEE",
+        categoryLabel: "تجديد ضمان",
+        deadlineText: "متبقي 20 يوم (12 نوفمبر) 🟡",
+        severity: "warning",
+        requirement: "مخاطبة بنك الإسكندرية لمد الصلاحية 60 يوماً بناءً على إفادة جهاز المدينة.",
+        actionLabel: "طلب مد الضمان بالبنك",
+        link: "/dashboard/payments",
+      },
+      {
+        id: "alert-d3",
+        title: "جلسة الفتح الفني لأنظمة الإنذار الآلي بميناء 6 أكتوبر (D03)",
+        companyCode: "D",
+        companyName: "الحديثة",
+        operationCode: "D03",
+        category: "SESSION",
+        categoryLabel: "جلسة فتح فني",
+        deadlineText: "15 نوفمبر 🔵",
+        severity: "info",
+        requirement: "اعتماد شهادات المنشأ ومطابقة مضخات الحريق طبقاً للكود المصري.",
+        actionLabel: "متابعة كراسة الشروط",
+        link: "/dashboard/operations",
+      },
+    ],
+  };
+
+  // Scoped alerts list strictly for selected company
+  const activeAlertsList: CompanyAlertItem[] = useMemo(() => {
+    if (selectedCompany === "ALL") {
+      return Object.values(companyAlertsRegistry).flat();
+    }
+    return companyAlertsRegistry[selectedCompany] || [];
+  }, [selectedCompany]);
+
+  // Filtered by category tab inside alerts
+  const displayAlerts = useMemo(() => {
+    if (alertCategoryFilter === "ALL") return activeAlertsList;
+    return activeAlertsList.filter((a) => a.category === alertCategoryFilter);
+  }, [activeAlertsList, alertCategoryFilter]);
+
   // Company-tailored Radar Tenders
   const companyRadarTenders: Record<string, RadarItemBrief[]> = {
     A: [
@@ -526,7 +772,7 @@ export default function DashboardPage() {
 
   const activeRadarList: RadarItemBrief[] = useMemo(() => {
     if (selectedCompany === "ALL") {
-      return Object.values(companyRadarTenders).flat().slice(0, 5);
+      return Object.values(companyRadarTenders).flat().slice(0, 6);
     }
     return companyRadarTenders[selectedCompany] || [];
   }, [selectedCompany]);
@@ -752,25 +998,14 @@ export default function DashboardPage() {
     return companyGuarantees[selectedCompany] || [];
   }, [selectedCompany]);
 
-  const formatEGP = (num: number) =>
-    new Intl.NumberFormat("ar-EG", { style: "currency", currency: "EGP", maximumFractionDigits: 0 }).format(num);
-
-  const formatNumber = (num: number) =>
-    new Intl.NumberFormat("ar-EG").format(num);
-
-  // =========================================================================
-  // VIEW 1: GENERAL MANAGER (المدير العام) & UNIFIED MULTI-COMPANY
-  // =========================================================================
   return (
     <div className="space-y-6 sm:space-y-8 animate-fade-in pb-16">
       {/* ━━━ TOP EXECUTIVE COCKPIT HERO BAR ━━━ */}
       <div className="relative overflow-hidden rounded-3xl glass-card p-5 sm:p-7 border border-border shadow-2xl">
-        {/* Soft Ambient Glows */}
         <div className="absolute top-0 right-0 w-96 h-96 bg-blue-600/10 rounded-full blur-3xl pointer-events-none -mr-20 -mt-20" />
         <div className="absolute bottom-0 left-0 w-80 h-80 bg-indigo-500/10 rounded-full blur-3xl pointer-events-none -ml-20 -mb-20" />
 
         <div className="relative z-10 flex flex-col lg:flex-row lg:items-center justify-between gap-5">
-          {/* Header Title & Dynamic Company Badge */}
           <div className="space-y-2.5 max-w-3xl">
             <div className="flex items-center gap-2 flex-wrap">
               <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-600/10 border border-blue-500/25 text-blue-700 dark:text-blue-300 text-xs font-bold">
@@ -782,7 +1017,6 @@ export default function DashboardPage() {
                 </span>
               </div>
 
-              {/* Live Clock / Date Badge */}
               {currentTimeStr && (
                 <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-muted/60 border border-border text-xs text-muted-foreground font-semibold">
                   <Calendar className="h-3 w-3 text-blue-500" />
@@ -790,7 +1024,6 @@ export default function DashboardPage() {
                 </div>
               )}
 
-              {/* System Security Badges */}
               <div className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-[11px] font-bold text-emerald-600 dark:text-emerald-400">
                 <ShieldCheck className="h-3 w-3" />
                 <span>نظام التشفير SHA-256 نشط</span>
@@ -808,7 +1041,6 @@ export default function DashboardPage() {
             </p>
           </div>
 
-          {/* Quick Primary Actions in Hero */}
           <div className="flex flex-wrap items-center gap-2.5 shrink-0 self-start lg:self-center">
             <Link href={`/dashboard/operations/new?company=${selectedCompany !== "ALL" ? selectedCompany : "A"}`}>
               <Button className="bg-gradient-to-r from-blue-700 via-blue-600 to-blue-700 hover:from-blue-800 hover:to-blue-700 text-white font-bold px-4 py-2.5 rounded-2xl shadow-lg shadow-blue-500/25 royal-glow flex items-center gap-2 active:scale-95 transition-all text-xs sm:text-sm cursor-pointer">
@@ -892,11 +1124,11 @@ export default function DashboardPage() {
       <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none">
         {[
           { id: "ALL", label: "نظرة شاملة 🌐" },
-          { id: "ALERTS", label: "🚨 الإجراءات العاجلة" },
-          { id: "FINANCE", label: "📊 المركز المالي" },
-          { id: "RADAR", label: "📡 رادار المناقصات" },
-          { id: "VISITS", label: "🏗️ المعاينات الميدانية" },
-          { id: "GUARANTEES", label: "🛡️ الضمانات البنكية" },
+          { id: "ALERTS", label: `🚨 الإجراءات العاجلة (${activeAlertsList.length})` },
+          { id: "FINANCE", label: `📊 المركز المالي (${filteredOperations.length})` },
+          { id: "RADAR", label: `📡 رادار المناقصات (${activeRadarList.length})` },
+          { id: "VISITS", label: `🏗️ المعاينات الميدانية (${activeVisitsList.length})` },
+          { id: "GUARANTEES", label: `🛡️ الضمانات البنكية (${activeGuaranteesList.length})` },
         ].map((tab) => (
           <button
             key={tab.id}
@@ -962,12 +1194,12 @@ export default function DashboardPage() {
         </div>
       )}
 
-      {/* ━━━ 6 MASTER EXECUTIVE KPI CARDS ━━━ */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
+      {/* ━━━ 6 MASTER EXECUTIVE KPI CARDS (Fit numbers perfectly, NO overflow) ━━━ */}
+      <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3.5 sm:gap-4">
         {/* KPI 1: Active Operations */}
-        <div className="glass-card-interactive rounded-2xl p-4 sm:p-5 border border-blue-500/30 relative flex flex-col justify-between space-y-3">
+        <div className="glass-card-interactive rounded-2xl p-4 sm:p-5 border border-blue-500/30 relative flex flex-col justify-between space-y-3 overflow-hidden shadow-xs hover:shadow-md transition-all">
           <div className="flex items-center justify-between">
-            <div className="w-10 h-10 rounded-xl bg-blue-600 text-white flex items-center justify-center shadow-md">
+            <div className="w-10 h-10 rounded-xl bg-blue-600 text-white flex items-center justify-center shadow-md shrink-0">
               <FileText className="h-5 w-5" />
             </div>
             <Badge className="badge-blue text-[10px] font-bold">
@@ -975,10 +1207,10 @@ export default function DashboardPage() {
             </Badge>
           </div>
           <div>
-            <p className="text-2xl sm:text-3xl font-black text-foreground">
+            <p className="text-xl sm:text-2xl font-black text-foreground truncate tracking-tight">
               {currentCompanyOverview?.activeOperations || (selectedCompany === "ALL" ? stats.active : filteredOperations.length)}
             </p>
-            <p className="text-xs text-muted-foreground mt-0.5">عمليات نشطة جارية</p>
+            <p className="text-xs text-muted-foreground mt-0.5 truncate">عمليات نشطة جارية</p>
           </div>
           <div className="space-y-1 pt-1 border-t border-border/50">
             <div className="flex items-center justify-between text-[11px] text-muted-foreground font-semibold">
@@ -991,24 +1223,29 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* KPI 2: Contract Portfolio Value */}
-        <div className="glass-card-interactive rounded-2xl p-4 sm:p-5 border border-purple-500/30 relative flex flex-col justify-between space-y-3">
+        {/* KPI 2: Contract Portfolio Value (Fixed Overflow) */}
+        <div className="glass-card-interactive rounded-2xl p-4 sm:p-5 border border-purple-500/30 relative flex flex-col justify-between space-y-3 overflow-hidden shadow-xs hover:shadow-md transition-all">
           <div className="flex items-center justify-between">
-            <div className="w-10 h-10 rounded-xl bg-purple-600 text-white flex items-center justify-center shadow-md">
+            <div className="w-10 h-10 rounded-xl bg-purple-600 text-white flex items-center justify-center shadow-md shrink-0">
               <TrendingUp className="h-5 w-5" />
             </div>
             <Badge className="badge-purple text-[10px] font-bold">هامش +{financialTotals.profitMargin}%</Badge>
           </div>
           <div>
-            <p className="text-2xl sm:text-3xl font-black text-foreground">
-              {formatEGP(financialTotals.totalRev)}
+            <p
+              className="text-lg sm:text-xl xl:text-2xl font-black text-foreground truncate tracking-tight"
+              title={formatEGP(financialTotals.totalRev)}
+            >
+              {formatCompactEGP(financialTotals.totalRev)}
             </p>
-            <p className="text-xs text-muted-foreground mt-0.5">محفظة التعاقدات والإيراد</p>
+            <p className="text-xs text-muted-foreground mt-0.5 truncate">محفظة التعاقدات والإيراد</p>
           </div>
           <div className="space-y-1 pt-1 border-t border-border/50">
             <div className="flex items-center justify-between text-[11px] text-muted-foreground font-semibold">
-              <span>صافي الربح التقديري</span>
-              <span className="text-purple-600 dark:text-purple-400 font-bold">{formatEGP(financialTotals.totalProfit)}</span>
+              <span className="truncate">صافي الربح:</span>
+              <span className="text-purple-600 dark:text-purple-400 font-bold text-xs truncate">
+                {formatCompactEGP(financialTotals.totalProfit)}
+              </span>
             </div>
             <div className="w-full bg-muted/60 rounded-full h-1.5 overflow-hidden">
               <div className="bg-purple-600 h-full rounded-full transition-all" style={{ width: `${financialTotals.profitMargin}%` }} />
@@ -1016,24 +1253,29 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* KPI 3: Certified Billings & Collections */}
-        <div className="glass-card-interactive rounded-2xl p-4 sm:p-5 border border-emerald-500/30 relative flex flex-col justify-between space-y-3">
+        {/* KPI 3: Certified Billings & Collections (Fixed Overflow) */}
+        <div className="glass-card-interactive rounded-2xl p-4 sm:p-5 border border-emerald-500/30 relative flex flex-col justify-between space-y-3 overflow-hidden shadow-xs hover:shadow-md transition-all">
           <div className="flex items-center justify-between">
-            <div className="w-10 h-10 rounded-xl bg-emerald-600 text-white flex items-center justify-center shadow-md">
+            <div className="w-10 h-10 rounded-xl bg-emerald-600 text-white flex items-center justify-center shadow-md shrink-0">
               <Receipt className="h-5 w-5" />
             </div>
             <Badge className="badge-emerald text-[10px] font-bold">تحصيل {financialTotals.collectionRatio}%</Badge>
           </div>
           <div>
-            <p className="text-2xl sm:text-3xl font-black text-foreground">
-              {formatEGP(financialTotals.totalBilled)}
+            <p
+              className="text-lg sm:text-xl xl:text-2xl font-black text-foreground truncate tracking-tight"
+              title={formatEGP(financialTotals.totalBilled)}
+            >
+              {formatCompactEGP(financialTotals.totalBilled)}
             </p>
-            <p className="text-xs text-muted-foreground mt-0.5">المستخلصات المصدرة</p>
+            <p className="text-xs text-muted-foreground mt-0.5 truncate">المستخلصات المصدرة</p>
           </div>
           <div className="space-y-1 pt-1 border-t border-border/50">
             <div className="flex items-center justify-between text-[11px] text-muted-foreground font-semibold">
-              <span>المتبقي للتحصيل</span>
-              <span className="text-emerald-600 dark:text-emerald-400 font-bold">{formatEGP(financialTotals.totalRev - financialTotals.totalBilled)}</span>
+              <span className="truncate">المتبقي:</span>
+              <span className="text-emerald-600 dark:text-emerald-400 font-bold text-xs truncate">
+                {formatCompactEGP(financialTotals.totalRev - financialTotals.totalBilled)}
+              </span>
             </div>
             <div className="w-full bg-muted/60 rounded-full h-1.5 overflow-hidden">
               <div className="bg-emerald-600 h-full rounded-full transition-all" style={{ width: `${financialTotals.collectionRatio}%` }} />
@@ -1041,10 +1283,10 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* KPI 4: Bank Guarantees Exposure */}
-        <div className="glass-card-interactive rounded-2xl p-4 sm:p-5 border border-amber-500/30 relative flex flex-col justify-between space-y-3">
+        {/* KPI 4: Bank Guarantees Exposure (Fixed Overflow) */}
+        <div className="glass-card-interactive rounded-2xl p-4 sm:p-5 border border-amber-500/30 relative flex flex-col justify-between space-y-3 overflow-hidden shadow-xs hover:shadow-md transition-all">
           <div className="flex items-center justify-between">
-            <div className="w-10 h-10 rounded-xl bg-amber-500 text-slate-950 flex items-center justify-center shadow-md">
+            <div className="w-10 h-10 rounded-xl bg-amber-500 text-slate-950 flex items-center justify-center shadow-md shrink-0">
               <Shield className="h-5 w-5" />
             </div>
             <Badge className="badge-amber text-[10px] font-bold">
@@ -1052,16 +1294,16 @@ export default function DashboardPage() {
             </Badge>
           </div>
           <div>
-            <p className="text-2xl sm:text-3xl font-black text-foreground">
+            <p className="text-xl sm:text-2xl font-black text-foreground truncate tracking-tight">
               {currentCompanyOverview?.pendingGuarantees || activeGuaranteesList.length}
             </p>
-            <p className="text-xs text-muted-foreground mt-0.5">خطابات الضمان القائمة</p>
+            <p className="text-xs text-muted-foreground mt-0.5 truncate">خطابات الضمان القائمة</p>
           </div>
           <div className="space-y-1 pt-1 border-t border-border/50">
             <div className="flex items-center justify-between text-[11px] text-muted-foreground font-semibold">
-              <span>إجمالي الغطاء البنكي</span>
-              <span className="text-amber-600 dark:text-amber-400 font-bold">
-                {formatEGP(activeGuaranteesList.reduce((s, g) => s + g.amount, 0))}
+              <span className="truncate">إجمالي الغطاء:</span>
+              <span className="text-amber-600 dark:text-amber-400 font-bold text-xs truncate">
+                {formatCompactEGP(activeGuaranteesList.reduce((s, g) => s + g.amount, 0))}
               </span>
             </div>
             <div className="w-full bg-muted/60 rounded-full h-1.5 overflow-hidden">
@@ -1071,25 +1313,25 @@ export default function DashboardPage() {
         </div>
 
         {/* KPI 5: Field Inspection Readiness */}
-        <div className="glass-card-interactive rounded-2xl p-4 sm:p-5 border border-cyan-500/30 relative flex flex-col justify-between space-y-3">
+        <div className="glass-card-interactive rounded-2xl p-4 sm:p-5 border border-cyan-500/30 relative flex flex-col justify-between space-y-3 overflow-hidden shadow-xs hover:shadow-md transition-all">
           <div className="flex items-center justify-between">
-            <div className="w-10 h-10 rounded-xl bg-cyan-600 text-white flex items-center justify-center shadow-md">
+            <div className="w-10 h-10 rounded-xl bg-cyan-600 text-white flex items-center justify-center shadow-md shrink-0">
               <HardHat className="h-5 w-5" />
             </div>
             <Badge className="bg-cyan-500/15 text-cyan-600 dark:text-cyan-400 border border-cyan-500/30 text-[10px] font-bold">
-              مؤشر الجاهزية 83%
+              مؤشر 83%
             </Badge>
           </div>
           <div>
-            <p className="text-2xl sm:text-3xl font-black text-foreground">
+            <p className="text-xl sm:text-2xl font-black text-foreground truncate tracking-tight">
               {activeVisitsList.length}
             </p>
-            <p className="text-xs text-muted-foreground mt-0.5">معاينات وتقارير مواقع</p>
+            <p className="text-xs text-muted-foreground mt-0.5 truncate">معاينات وتقارير مواقع</p>
           </div>
           <div className="space-y-1 pt-1 border-t border-border/50">
             <div className="flex items-center justify-between text-[11px] text-muted-foreground font-semibold">
-              <span>المواقع الجاهزة 100%</span>
-              <span className="text-cyan-600 dark:text-cyan-400 font-bold">
+              <span className="truncate">جاهز 100%:</span>
+              <span className="text-cyan-600 dark:text-cyan-400 font-bold text-xs truncate">
                 {activeVisitsList.filter((v) => v.siteReadiness === "READY").length} مواقع
               </span>
             </div>
@@ -1100,9 +1342,9 @@ export default function DashboardPage() {
         </div>
 
         {/* KPI 6: Radar Matches */}
-        <div className="glass-card-interactive rounded-2xl p-4 sm:p-5 border border-indigo-500/30 relative flex flex-col justify-between space-y-3">
+        <div className="glass-card-interactive rounded-2xl p-4 sm:p-5 border border-indigo-500/30 relative flex flex-col justify-between space-y-3 overflow-hidden shadow-xs hover:shadow-md transition-all">
           <div className="flex items-center justify-between">
-            <div className="w-10 h-10 rounded-xl bg-indigo-600 text-white flex items-center justify-center shadow-md">
+            <div className="w-10 h-10 rounded-xl bg-indigo-600 text-white flex items-center justify-center shadow-md shrink-0">
               <Radar className="h-5 w-5" />
             </div>
             <Badge className="bg-indigo-500/15 text-indigo-600 dark:text-indigo-400 border border-indigo-500/30 text-[10px] font-bold">
@@ -1110,15 +1352,15 @@ export default function DashboardPage() {
             </Badge>
           </div>
           <div>
-            <p className="text-2xl sm:text-3xl font-black text-foreground">
+            <p className="text-xl sm:text-2xl font-black text-foreground truncate tracking-tight">
               {activeRadarList.length}
             </p>
-            <p className="text-xs text-muted-foreground mt-0.5">مناقصات مرصودة اليوم</p>
+            <p className="text-xs text-muted-foreground mt-0.5 truncate">مناقصات مرصودة اليوم</p>
           </div>
           <div className="space-y-1 pt-1 border-t border-border/50">
             <div className="flex items-center justify-between text-[11px] text-muted-foreground font-semibold">
-              <span>أعلى نسبة مطابقة</span>
-              <span className="text-indigo-600 dark:text-indigo-400 font-bold">96% ⭐</span>
+              <span className="truncate">أعلى مطابقة:</span>
+              <span className="text-indigo-600 dark:text-indigo-400 font-bold text-xs truncate">96% ⭐</span>
             </div>
             <div className="w-full bg-muted/60 rounded-full h-1.5 overflow-hidden">
               <div className="bg-indigo-600 h-full rounded-full transition-all" style={{ width: "96%" }} />
@@ -1130,7 +1372,7 @@ export default function DashboardPage() {
       {/* ━━━ IF ALL COMPANIES SELECTED: 4-COMPANY COMPARATIVE COCKPIT ━━━ */}
       {selectedCompany === "ALL" && (
         <div className="space-y-4 animate-fade-in">
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between flex-wrap gap-2">
             <div className="flex items-center gap-2">
               <Building2 className="h-5 w-5 text-blue-600 dark:text-blue-400" />
               <h2 className="text-lg font-black text-foreground">
@@ -1197,10 +1439,10 @@ export default function DashboardPage() {
         </div>
       )}
 
-      {/* ━━━ SECTION 1: 🚨 URGENT ACTION & DECISION CENTER ━━━ */}
+      {/* ━━━ SECTION 1: 🚨 URGENT ACTION & DECISION CENTER (Clean, Company-Isolated, Simple) ━━━ */}
       {(activeSectionFilter === "ALL" || activeSectionFilter === "ALERTS") && (
         <div className="glass-card rounded-3xl p-5 sm:p-6 border border-amber-500/30 shadow-xl space-y-4">
-          <div className="flex items-center justify-between pb-3 border-b border-border">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-border">
             <div className="flex items-center gap-2.5">
               <div className="w-9 h-9 rounded-xl bg-amber-500/20 text-amber-600 dark:text-amber-400 flex items-center justify-center font-bold">
                 <AlertTriangle className="h-5 w-5" />
@@ -1210,77 +1452,82 @@ export default function DashboardPage() {
                   🚨 الإجراءات والقرارات العاجلة المطلوبة {currentCompany ? `— شركة ${currentCompany.name} (${currentCompany.code})` : ""}
                 </h3>
                 <p className="text-xs text-muted-foreground">
-                  مهام وجلسات وضمانات تتطلب اتخاذ قرار سريع قبل انقضاء المواعيد الرسمية
+                  تنبيهات مخصصة لشركة {currentCompany?.name || "جولدن"} فقط بانتظار اتخاذ إجراء تنفيذي
                 </p>
               </div>
             </div>
-            <Badge className="bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/30 text-xs font-bold px-3 py-1">
-              {(currentCompanyOverview?.urgentAlerts || []).length || 3} إجراءات مطلوبة
-            </Badge>
+
+            <div className="flex items-center gap-2 flex-wrap">
+              <Badge className="bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/30 text-xs font-bold px-3 py-1">
+                {displayAlerts.length} إجراءات معلقة
+              </Badge>
+              <Link href="/dashboard/approvals">
+                <Button variant="outline" size="sm" className="border-border text-foreground hover:bg-muted text-xs font-bold h-8 rounded-xl cursor-pointer">
+                  <span>عرض كامل سجل القرارات ({activeAlertsList.length})</span>
+                  <ArrowLeft className="h-3.5 w-3.5 mr-1" />
+                </Button>
+              </Link>
+            </div>
           </div>
 
-          <div className="space-y-3">
-            {(currentCompanyOverview?.urgentAlerts || [
-              {
-                id: "alert-default-1",
-                title: `جلسة الفتح المالي للعملية ${selectedCompany !== "ALL" ? selectedCompany : "A"}15 — غداً بمقر الهيئة`,
-                operationCode: `${selectedCompany !== "ALL" ? selectedCompany : "A"}15`,
-                severity: "danger",
-                actionLabel: "تفاصيل الجلسة والأسعار",
-                link: "/dashboard/operations",
-              },
-              {
-                id: "alert-default-2",
-                title: `خطاب الضمان الابتدائي للعملية ${selectedCompany !== "ALL" ? selectedCompany : "A"}12 ينتهي خلال 18 يوماً`,
-                operationCode: `${selectedCompany !== "ALL" ? selectedCompany : "A"}12`,
-                severity: "warning",
-                actionLabel: "طلب مد صلاحية الضمان",
-                link: "/dashboard/operations",
-              },
-              {
-                id: "alert-default-3",
-                title: `طلب اعتماد طباعة تظلم استبعاد فني بانتظار توقيع الإدارة وتوليد الهاش`,
-                operationCode: `${selectedCompany !== "ALL" ? selectedCompany : "A"}15`,
-                severity: "danger",
-                actionLabel: "مراجعة واعتماد الطباعة",
-                link: `/dashboard/approvals${selectedCompany !== "ALL" ? `?company=${selectedCompany}` : ""}`,
-              },
-            ]).map((alert) => {
+          {/* Alert Category Filter Pills */}
+          <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none">
+            {[
+              { id: "ALL", label: `كل التنبيهات (${activeAlertsList.length})` },
+              { id: "SESSION", label: "جلسات وعروض 📅" },
+              { id: "GUARANTEE", label: "خطابات ضمان 🛡️" },
+              { id: "APPROVAL", label: "اعتمادات طباعة 🖨️" },
+              { id: "VISIT", label: "معاينات مواقع 🏗️" },
+            ].map((cat) => (
+              <button
+                key={cat.id}
+                onClick={() => setAlertCategoryFilter(cat.id)}
+                className={`px-3 py-1 rounded-full text-xs font-bold transition-all shrink-0 cursor-pointer ${
+                  alertCategoryFilter === cat.id
+                    ? "bg-amber-500 text-slate-950 font-black shadow-xs"
+                    : "bg-muted/40 hover:bg-muted text-muted-foreground border border-border"
+                }`}
+              >
+                {cat.label}
+              </button>
+            ))}
+          </div>
+
+          {/* Alerts Grid (Clean, readable, 2-column or 1-column responsive layout) */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-3.5">
+            {displayAlerts.map((alert) => {
               const isDanger = alert.severity === "danger";
               const isWarning = alert.severity === "warning";
-              const targetLink = alert.link || "/dashboard/operations";
 
               return (
                 <div
                   key={alert.id}
-                  className={`p-4 rounded-2xl bg-card border transition-all flex flex-col md:flex-row md:items-center justify-between gap-4 ${
+                  className={`p-4 rounded-2xl bg-card border transition-all flex flex-col justify-between space-y-3.5 shadow-2xs hover:shadow-md ${
                     isDanger
-                      ? "border-red-500/40 hover:border-red-500/60 bg-red-500/5 shadow-xs"
+                      ? "border-red-500/40 hover:border-red-500/60 bg-red-500/[0.03]"
                       : isWarning
-                      ? "border-amber-500/40 hover:border-amber-500/60 bg-amber-500/5 shadow-xs"
-                      : "border-blue-500/40 hover:border-blue-500/60 bg-blue-500/5 shadow-xs"
+                      ? "border-amber-500/40 hover:border-amber-500/60 bg-amber-500/[0.03]"
+                      : "border-blue-500/40 hover:border-blue-500/60 bg-blue-500/[0.03]"
                   }`}
                 >
-                  <div className="flex items-start md:items-center gap-3.5">
-                    <span
-                      className={`w-3 h-3 rounded-full shrink-0 mt-1 md:mt-0 ${
-                        isDanger
-                          ? "bg-red-500 animate-ping"
-                          : isWarning
-                          ? "bg-amber-500 animate-pulse"
-                          : "bg-blue-500"
-                      }`}
-                    />
-                    <div>
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <p className="text-sm font-bold text-foreground">{alert.title}</p>
-                        {alert.operationCode && (
-                          <Badge variant="outline" className="font-mono text-[10px] py-0 px-2 h-4.5 font-bold border-blue-500/30 text-blue-600 dark:text-blue-400">
-                            {alert.operationCode}
-                          </Badge>
-                        )}
+                  <div className="space-y-2.5">
+                    {/* Header Row: Company, Category, Deadline */}
+                    <div className="flex items-center justify-between gap-2 flex-wrap">
+                      <div className="flex items-center gap-1.5">
+                        <span
+                          className={`w-2.5 h-2.5 rounded-full shrink-0 ${
+                            isDanger
+                              ? "bg-red-500 animate-ping"
+                              : isWarning
+                              ? "bg-amber-500 animate-pulse"
+                              : "bg-blue-500"
+                          }`}
+                        />
+                        <Badge variant="outline" className="font-mono text-[10px] font-bold py-0.5 px-2 border-border text-foreground">
+                          شركة {alert.companyName} ({alert.companyCode})
+                        </Badge>
                         <Badge
-                          className={`text-[10px] px-2 py-0 h-4.5 border-0 font-bold ${
+                          className={`text-[10px] font-bold py-0.5 px-2 border-0 ${
                             isDanger
                               ? "bg-red-500/15 text-red-600 dark:text-red-400"
                               : isWarning
@@ -1288,30 +1535,48 @@ export default function DashboardPage() {
                               : "bg-blue-500/15 text-blue-600 dark:text-blue-400"
                           }`}
                         >
-                          {isDanger ? "عاجل جداً" : isWarning ? "تنبيه مهم" : "متابعة"}
+                          {alert.categoryLabel}
                         </Badge>
                       </div>
-                      <p className="text-xs text-muted-foreground mt-1">
-                        نطاق العمل: {currentCompany?.fullName || "المجموعة الذهبية"} • كود العملية: {alert.operationCode || "A15"}
-                      </p>
+
+                      <span className="text-[11px] font-bold text-foreground bg-muted/60 px-2.5 py-0.5 rounded-full border border-border/60">
+                        {alert.deadlineText}
+                      </span>
                     </div>
+
+                    {/* Alert Title */}
+                    <h4 className="text-sm font-bold text-foreground leading-snug">
+                      {alert.title}
+                    </h4>
+
+                    {/* Requirement Note Box */}
+                    <p className="text-xs text-muted-foreground bg-muted/30 p-2.5 rounded-xl border border-border/50 leading-relaxed">
+                      <span className="font-bold text-foreground">الإجراء المطلوب: </span>
+                      {alert.requirement}
+                    </p>
                   </div>
 
-                  <Link href={targetLink} className="shrink-0 self-end md:self-center">
-                    <Button
-                      size="sm"
-                      className={`font-bold text-xs h-9 px-4 rounded-xl cursor-pointer shadow-sm ${
-                        isDanger
-                          ? "bg-red-600 hover:bg-red-700 text-white shadow-red-500/20"
-                          : isWarning
-                          ? "bg-amber-500 hover:bg-amber-600 text-slate-950 font-black shadow-amber-500/20"
-                          : "bg-blue-600 hover:bg-blue-700 text-white shadow-blue-500/20"
-                      }`}
-                    >
-                      <span>{alert.actionLabel || "اتخاذ إجراء"}</span>
-                      <ArrowLeft className="h-3.5 w-3.5 mr-1" />
-                    </Button>
-                  </Link>
+                  {/* Bottom Action Button */}
+                  <div className="pt-2 border-t border-border/50 flex items-center justify-between">
+                    <span className="text-[11px] text-muted-foreground font-mono font-bold">
+                      كود العملية: {alert.operationCode}
+                    </span>
+                    <Link href={alert.link}>
+                      <Button
+                        size="sm"
+                        className={`font-bold text-xs h-8 px-4 rounded-xl cursor-pointer shadow-xs ${
+                          isDanger
+                            ? "bg-red-600 hover:bg-red-700 text-white shadow-red-500/20"
+                            : isWarning
+                            ? "bg-amber-500 hover:bg-amber-600 text-slate-950 font-black shadow-amber-500/20"
+                            : "bg-blue-600 hover:bg-blue-700 text-white shadow-blue-500/20"
+                        }`}
+                      >
+                        <span>{alert.actionLabel}</span>
+                        <ArrowLeft className="h-3.5 w-3.5 mr-1" />
+                      </Button>
+                    </Link>
+                  </div>
                 </div>
               );
             })}
@@ -1319,7 +1584,7 @@ export default function DashboardPage() {
         </div>
       )}
 
-      {/* ━━━ SECTION 2: 📊 FINANCIAL BREAKDOWN & OPERATIONS BUDGET PIPELINE ━━━ */}
+      {/* ━━━ SECTION 2: 📊 FINANCIAL OPERATIONS PIPELINE (Cards Grid Instead of Stretched Rows) ━━━ */}
       {(activeSectionFilter === "ALL" || activeSectionFilter === "FINANCE") && (
         <div className="glass-card rounded-3xl p-5 sm:p-6 border border-border shadow-xl space-y-4">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-border">
@@ -1336,18 +1601,26 @@ export default function DashboardPage() {
                 </p>
               </div>
             </div>
-            <div className="flex items-center gap-2 shrink-0">
+
+            <div className="flex items-center gap-2 flex-wrap">
+              <Link href={`/dashboard/operations${selectedCompany !== "ALL" ? `?company=${selectedCompany}` : ""}`}>
+                <Button variant="outline" size="sm" className="border-border text-foreground hover:bg-muted text-xs font-bold h-8 rounded-xl cursor-pointer">
+                  <span>عرض باقي عمليات الشركة ({filteredOperations.length})</span>
+                  <ArrowLeft className="h-3.5 w-3.5 mr-1" />
+                </Button>
+              </Link>
               <Link href="/dashboard/payments">
-                <Button variant="outline" size="sm" className="border-border text-foreground text-xs font-bold h-8.5 rounded-xl cursor-pointer">
-                  فتح المركز المالي التخصصي
+                <Button size="sm" className="bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold h-8 rounded-xl cursor-pointer shadow-sm">
+                  <span>فتح المركز المالي التخصصي</span>
                   <ArrowLeft className="h-3.5 w-3.5 mr-1" />
                 </Button>
               </Link>
             </div>
           </div>
 
-          <div className="space-y-3">
-            {filteredOperations.slice(0, 4).map((op) => {
+          {/* Cards Grid (3 Columns on Desktop, 2 on Tablet, 1 on Mobile — Compact and Beautiful) */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {filteredOperations.slice(0, 6).map((op) => {
               const rev = op.revenue || 2850000;
               const cost = op.cost || 1980000;
               const billed = op.billed || 1720000;
@@ -1359,63 +1632,86 @@ export default function DashboardPage() {
                 <div
                   key={op.id}
                   onClick={() => router.push(`/dashboard/operations/${op.id}`)}
-                  className="p-4 rounded-2xl bg-card border border-border hover:border-purple-500/40 hover:bg-purple-50/10 dark:hover:bg-purple-950/10 transition-all cursor-pointer space-y-3 group"
+                  className="p-4 sm:p-5 rounded-3xl bg-card border border-border hover:border-purple-500/40 hover:bg-purple-50/5 dark:hover:bg-purple-950/10 transition-all cursor-pointer flex flex-col justify-between space-y-4 shadow-sm hover:shadow-md group"
                 >
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-purple-600 to-indigo-700 text-white font-mono font-black text-sm flex items-center justify-center shadow-xs shrink-0 group-hover:scale-105 transition-transform">
-                        {op.code}
+                  {/* Top Bar: Code, Margin, Status */}
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-2">
+                        <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-purple-600 to-indigo-700 text-white font-mono font-black text-sm flex items-center justify-center shadow-xs shrink-0 group-hover:scale-105 transition-transform">
+                          {op.code}
+                        </div>
+                        <Badge variant="outline" className="text-[10px] font-bold border-border text-foreground">
+                          {tenderTypeMap[op.tenderType] || op.tenderType}
+                        </Badge>
                       </div>
-                      <div>
-                        <h4 className="text-sm font-bold text-foreground group-hover:text-purple-600 transition-colors">
-                          {op.name}
-                        </h4>
-                        <p className="text-xs text-muted-foreground">
-                          {op.authority} • {tenderTypeMap[op.tenderType] || op.tenderType}
-                        </p>
+
+                      <div className="flex items-center gap-1.5">
+                        <Badge className="bg-purple-500/15 text-purple-600 dark:text-purple-400 border border-purple-500/30 text-[10px] font-bold">
+                          هامش +{margin}%
+                        </Badge>
+                        <Badge className={statusLabels[op.status]?.color || "bg-muted text-muted-foreground"}>
+                          {statusLabels[op.status]?.label || op.status}
+                        </Badge>
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-2 self-end sm:self-center">
-                      <Badge className="bg-purple-500/15 text-purple-600 dark:text-purple-400 border border-purple-500/30 text-[11px] font-bold">
-                        هامش +{margin}%
-                      </Badge>
-                      <Badge className={statusLabels[op.status]?.color || "bg-muted text-muted-foreground"}>
-                        {statusLabels[op.status]?.label || op.status}
-                      </Badge>
+                    {/* Title & Owning Authority */}
+                    <div>
+                      <h4 className="text-sm font-bold text-foreground line-clamp-2 leading-relaxed group-hover:text-purple-600 dark:group-hover:text-purple-400 transition-colors">
+                        {op.name}
+                      </h4>
+                      <p className="text-xs text-muted-foreground flex items-center gap-1.5 mt-1 line-clamp-1">
+                        <Building2 className="h-3.5 w-3.5 text-purple-500 shrink-0" />
+                        <span>{op.authority}</span>
+                      </p>
                     </div>
                   </div>
 
-                  {/* Financial Micro-Bar & Metrics */}
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-2 border-t border-border/50 text-xs">
+                  {/* Financial 2x2 Clean Metrics Grid */}
+                  <div className="grid grid-cols-2 gap-2 p-2.5 rounded-2xl bg-muted/40 border border-border/60 text-xs">
                     <div>
-                      <span className="text-[10px] text-muted-foreground block">قيمة التعاقد</span>
-                      <span className="font-bold text-foreground">{formatEGP(rev)}</span>
+                      <span className="text-[10px] text-muted-foreground block">قيمة التعاقد:</span>
+                      <span className="font-bold text-foreground truncate block" title={formatEGP(rev)}>
+                        {formatCompactEGP(rev)}
+                      </span>
                     </div>
                     <div>
-                      <span className="text-[10px] text-muted-foreground block">التكلفة الفعلية</span>
-                      <span className="font-bold text-foreground">{formatEGP(cost)}</span>
+                      <span className="text-[10px] text-muted-foreground block">التكلفة الفعلية:</span>
+                      <span className="font-bold text-foreground truncate block" title={formatEGP(cost)}>
+                        {formatCompactEGP(cost)}
+                      </span>
                     </div>
                     <div>
-                      <span className="text-[10px] text-muted-foreground block">المستخلصات المحصلة</span>
-                      <span className="font-bold text-emerald-600 dark:text-emerald-400">{formatEGP(billed)}</span>
+                      <span className="text-[10px] text-muted-foreground block">المستخلصات المحصلة:</span>
+                      <span className="font-bold text-emerald-600 dark:text-emerald-400 truncate block" title={formatEGP(billed)}>
+                        {formatCompactEGP(billed)}
+                      </span>
                     </div>
                     <div>
-                      <span className="text-[10px] text-muted-foreground block">صافي الربح التقديري</span>
-                      <span className="font-bold text-purple-600 dark:text-purple-400">{formatEGP(profit)}</span>
+                      <span className="text-[10px] text-muted-foreground block">صافي الربح:</span>
+                      <span className="font-bold text-purple-600 dark:text-purple-400 truncate block" title={formatEGP(profit)}>
+                        {formatCompactEGP(profit)}
+                      </span>
                     </div>
                   </div>
 
-                  <div className="space-y-1">
-                    <div className="flex items-center justify-between text-[11px] text-muted-foreground">
-                      <span>نسبة التحصيل وإصدار المستخلصات</span>
-                      <span className="font-bold text-foreground">{billedPct}%</span>
+                  {/* Integrated Progress Bar & Footer */}
+                  <div className="space-y-1.5 pt-1">
+                    <div className="flex items-center justify-between text-xs font-semibold">
+                      <span className="text-muted-foreground text-[11px]">نسبة التحصيل:</span>
+                      <span className="font-bold text-foreground text-xs">{billedPct}%</span>
                     </div>
                     <div className="w-full bg-muted/60 rounded-full h-2 overflow-hidden">
                       <div
                         className="bg-gradient-to-r from-purple-600 to-indigo-600 h-full rounded-full transition-all"
                         style={{ width: `${billedPct}%` }}
                       />
+                    </div>
+
+                    <div className="pt-2 flex items-center justify-between text-xs text-purple-600 dark:text-purple-400 font-bold group-hover:translate-x-[-2px] transition-transform">
+                      <span>عرض تفاصيل العملية والملف المالي</span>
+                      <ArrowLeft className="h-3.5 w-3.5" />
                     </div>
                   </div>
                 </div>
@@ -1442,9 +1738,10 @@ export default function DashboardPage() {
                 </p>
               </div>
             </div>
+
             <Link href="/dashboard/radar">
-              <Button variant="outline" size="sm" className="border-border text-foreground text-xs font-bold h-8.5 rounded-xl cursor-pointer">
-                فتح رادار المناقصات بالكامل
+              <Button variant="outline" size="sm" className="border-border text-foreground hover:bg-muted text-xs font-bold h-8 rounded-xl cursor-pointer">
+                <span>عرض كافة المناقصات المرصودة (42)</span>
                 <ArrowLeft className="h-3.5 w-3.5 mr-1" />
               </Button>
             </Link>
@@ -1454,7 +1751,7 @@ export default function DashboardPage() {
             {activeRadarList.map((item) => (
               <div
                 key={item.id}
-                className="p-4 rounded-2xl bg-card border border-border hover:border-indigo-500/40 hover:bg-indigo-50/10 dark:hover:bg-indigo-950/10 transition-all space-y-3 flex flex-col justify-between"
+                className="p-4 rounded-3xl bg-card border border-border hover:border-indigo-500/40 hover:bg-indigo-50/10 dark:hover:bg-indigo-950/10 transition-all space-y-3 flex flex-col justify-between shadow-2xs hover:shadow-md"
               >
                 <div className="space-y-2">
                   <div className="flex items-center justify-between gap-2">
@@ -1516,9 +1813,10 @@ export default function DashboardPage() {
                 </p>
               </div>
             </div>
+
             <Link href="/dashboard/visits">
-              <Button variant="outline" size="sm" className="border-border text-foreground text-xs font-bold h-8.5 rounded-xl cursor-pointer">
-                عرض سجل المعاينات كاملاً
+              <Button variant="outline" size="sm" className="border-border text-foreground hover:bg-muted text-xs font-bold h-8 rounded-xl cursor-pointer">
+                <span>عرض كامل سجل المعاينات ({activeVisitsList.length})</span>
                 <ArrowLeft className="h-3.5 w-3.5 mr-1" />
               </Button>
             </Link>
@@ -1528,13 +1826,12 @@ export default function DashboardPage() {
             {activeVisitsList.map((v) => {
               const isReady = v.siteReadiness === "READY";
               const isConditional = v.siteReadiness === "CONDITIONAL";
-              const isBlocked = v.siteReadiness === "BLOCKED";
 
               return (
                 <div
                   key={v.id}
                   onClick={() => router.push("/dashboard/visits")}
-                  className="p-4 rounded-2xl bg-card border border-border hover:border-cyan-500/40 hover:bg-cyan-50/10 dark:hover:bg-cyan-950/10 transition-all cursor-pointer space-y-3 group"
+                  className="p-4 rounded-3xl bg-card border border-border hover:border-cyan-500/40 hover:bg-cyan-50/10 dark:hover:bg-cyan-950/10 transition-all cursor-pointer space-y-3 group shadow-2xs hover:shadow-md"
                 >
                   <div className="flex items-start justify-between gap-2">
                     <div className="flex items-center gap-2.5">
@@ -1566,7 +1863,7 @@ export default function DashboardPage() {
                     </Badge>
                   </div>
 
-                  <p className="text-xs text-muted-foreground bg-muted/40 p-2.5 rounded-xl border border-border/60 leading-relaxed">
+                  <p className="text-xs text-muted-foreground bg-muted/40 p-2.5 rounded-2xl border border-border/60 leading-relaxed">
                     <span className="font-bold text-foreground">التقرير الميداني: </span>
                     {v.findings}
                   </p>
@@ -1602,9 +1899,10 @@ export default function DashboardPage() {
                 </p>
               </div>
             </div>
+
             <Link href="/dashboard/payments">
-              <Button variant="outline" size="sm" className="border-border text-foreground text-xs font-bold h-8.5 rounded-xl cursor-pointer">
-                إدارة الضمانات في المركز المالي
+              <Button variant="outline" size="sm" className="border-border text-foreground hover:bg-muted text-xs font-bold h-8 rounded-xl cursor-pointer">
+                <span>عرض سجل خطابات الضمان ({activeGuaranteesList.length})</span>
                 <ArrowLeft className="h-3.5 w-3.5 mr-1" />
               </Button>
             </Link>
@@ -1617,7 +1915,7 @@ export default function DashboardPage() {
               return (
                 <div
                   key={g.id}
-                  className={`p-4 rounded-2xl bg-card border transition-all space-y-3 ${
+                  className={`p-4 rounded-3xl bg-card border transition-all space-y-3 shadow-2xs hover:shadow-md ${
                     isUrgent
                       ? "border-amber-500/40 bg-amber-500/5"
                       : "border-border hover:border-blue-500/40"
@@ -1645,7 +1943,7 @@ export default function DashboardPage() {
 
                   <div className="pt-2 border-t border-border flex items-center justify-between text-xs">
                     <span className="text-muted-foreground">قيمة الغطاء:</span>
-                    <span className="font-black text-foreground">{formatEGP(g.amount)}</span>
+                    <span className="font-black text-foreground">{formatCompactEGP(g.amount)}</span>
                   </div>
                 </div>
               );
@@ -1656,7 +1954,7 @@ export default function DashboardPage() {
 
       {/* ━━━ SECTION 6: 🖨️ SECURE PRINT APPROVALS & CRYPTOGRAPHIC LEDGER ━━━ */}
       <div className="glass-card rounded-3xl p-5 sm:p-6 border border-border shadow-xl space-y-4">
-        <div className="flex items-center justify-between pb-3 border-b border-border">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-border">
           <div className="flex items-center gap-2.5">
             <div className="w-9 h-9 rounded-xl bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 flex items-center justify-center font-bold">
               <CheckCircle2 className="h-5 w-5" />
@@ -1670,9 +1968,10 @@ export default function DashboardPage() {
               </p>
             </div>
           </div>
+
           <Link href={`/dashboard/approvals${selectedCompany !== "ALL" ? `?company=${selectedCompany}` : ""}`}>
-            <Button variant="ghost" size="sm" className="text-xs text-blue-600 dark:text-blue-400 font-bold cursor-pointer">
-              عرض سجل الموافقات بالكامل
+            <Button variant="outline" size="sm" className="border-border text-foreground hover:bg-muted text-xs font-bold h-8 rounded-xl cursor-pointer">
+              <span>عرض كامل سجل الاعتمادات (24)</span>
               <ArrowLeft className="h-3.5 w-3.5 mr-1" />
             </Button>
           </Link>
