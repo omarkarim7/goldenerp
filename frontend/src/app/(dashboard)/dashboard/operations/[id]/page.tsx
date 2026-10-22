@@ -1393,36 +1393,38 @@ function OperationDetailContent({ id }: { id: string }) {
           {renderTabContent()}
         </div>
 
-        {/* Floating Read-Only Translucent Overlay when Stage is Locked */}
+        {/* Floating Read-Only Translucent Fixed Overlay when Stage is Locked */}
         {isCurrentStageLocked && (
-          <div className="absolute inset-0 z-30 flex flex-col items-center justify-start pt-16 pb-12 px-4 pointer-events-auto">
-            <div className="sticky top-28 p-6 sm:p-8 rounded-3xl bg-slate-950/85 dark:bg-slate-900/90 backdrop-blur-md border-2 border-amber-500/50 shadow-2xl text-center space-y-4 max-w-lg w-full text-white animate-fade-in">
-              <div className="w-16 h-16 rounded-3xl bg-amber-500/20 border-2 border-amber-500/50 flex items-center justify-center text-amber-400 mx-auto shadow-lg shadow-amber-500/20 animate-pulse">
-                <Lock className="w-8 h-8 stroke-[2.5]" />
-              </div>
-              <div className="space-y-1">
-                <span className="text-xs font-bold font-mono px-2.5 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30">
-                  مرحلة #{currentTabDef.order}: {currentTabDef.label}
-                </span>
-                <h3 className="text-xl font-black text-amber-400 tracking-tight pt-1">
-                  المرحلة مقفولة ومعتمدة رسمياً 🔒
-                </h3>
-              </div>
-              <p className="text-xs sm:text-sm text-slate-300 leading-relaxed">
-                تم قفل هذه المرحلة وتثبيت جميع بياناتها وخاناتها منعاً للتعديل غير المقصود.
-                جميع الحقول محمية من الكتابة والتغيير، ويمكنك معاينة المستندات والبيانات. لتعديل أي خانة اضغط على &quot;فتح التعديلات&quot; أدناه.
-              </p>
-              <div className="pt-2">
-                <Button
-                  onClick={() => unlockStage(currentTabDef.id, currentTabDef.label)}
-                  className="bg-gradient-to-r from-amber-500 via-amber-600 to-amber-500 hover:from-amber-600 hover:to-amber-700 text-slate-950 font-black text-xs sm:text-sm h-11 px-7 rounded-2xl shadow-xl shadow-amber-500/30 cursor-pointer flex items-center justify-center gap-2 mx-auto active:scale-95 transition-all"
-                >
-                  <Unlock className="w-4 h-4 stroke-[2.5] text-slate-950" />
-                  <span>فتح التعديلات على المرحلة 🔓</span>
-                </Button>
+          <Portal>
+            <div className="fixed inset-0 z-[99990] flex items-center justify-center p-4 bg-slate-950/40 backdrop-blur-[2px] animate-fade-in pointer-events-auto">
+              <div className="p-6 sm:p-8 rounded-3xl bg-slate-950/90 dark:bg-slate-900/95 backdrop-blur-xl border-2 border-amber-500/60 shadow-[0_25px_60px_-15px_rgba(245,158,11,0.3)] text-center space-y-4 max-w-lg w-full text-white animate-fade-in scale-100 transition-all">
+                <div className="w-16 h-16 rounded-3xl bg-amber-500/20 border-2 border-amber-500/50 flex items-center justify-center text-amber-400 mx-auto shadow-lg shadow-amber-500/20 animate-pulse">
+                  <Lock className="w-8 h-8 stroke-[2.5]" />
+                </div>
+                <div className="space-y-1">
+                  <span className="text-xs font-bold font-mono px-3 py-1 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30 inline-block">
+                    مرحلة #{currentTabDef.order}: {currentTabDef.label}
+                  </span>
+                  <h3 className="text-xl sm:text-2xl font-black text-amber-400 tracking-tight pt-1">
+                    المرحلة مقفولة ومعتمدة رسمياً 🔒
+                  </h3>
+                </div>
+                <p className="text-xs sm:text-sm text-slate-300 leading-relaxed max-w-md mx-auto">
+                  تم قفل هذه المرحلة وتثبيت جميع بياناتها وخاناتها منعاً للتعديل غير المقصود.
+                  جميع الحقول محمية من الكتابة والتغيير، ويمكنك معاينة المستندات والبيانات. لتعديل أي خانة اضغط على &quot;فتح التعديلات&quot; أدناه.
+                </p>
+                <div className="pt-2">
+                  <Button
+                    onClick={() => unlockStage(currentTabDef.id, currentTabDef.label)}
+                    className="bg-gradient-to-r from-amber-500 via-amber-600 to-amber-500 hover:from-amber-600 hover:to-amber-700 text-slate-950 font-black text-xs sm:text-sm h-12 px-8 rounded-2xl shadow-xl shadow-amber-500/30 cursor-pointer flex items-center justify-center gap-2 mx-auto active:scale-95 transition-all"
+                  >
+                    <Unlock className="w-4 h-4 stroke-[2.5] text-slate-950" />
+                    <span>فتح التعديلات على المرحلة 🔓</span>
+                  </Button>
+                </div>
               </div>
             </div>
-          </div>
+          </Portal>
         )}
       </div>
 
