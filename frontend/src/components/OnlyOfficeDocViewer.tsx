@@ -250,6 +250,8 @@ export const OnlyOfficeDocViewer: React.FC<OnlyOfficeDocViewerProps> = ({
                   ? "⚡ معاينة فورية (نسخة معتمدة محفوظة مسبقاً)"
                   : getLastPdfEngineUsed() === "Adobe PDF"
                   ? "معاينة Adobe PDF Services الرسمية 100%"
+                  : getLastPdfEngineUsed() === "Cloudmersive PDF"
+                  ? "معاينة Cloudmersive API السحابية 100%"
                   : "معاينة Word COM الرسمية 100%"}
               </span>
             </div>

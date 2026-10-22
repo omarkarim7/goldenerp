@@ -26,6 +26,8 @@ import {
   Maximize2,
   KeyRound,
   Loader2,
+  Lock,
+  Unlock,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -40,6 +42,7 @@ import api from "@/lib/api";
 import { useCompany, CompanyCode } from "@/context/company-context";
 import { DocxViewer } from "@/components/docx-viewer";
 import { Portal } from "@/components/ui/portal";
+import { StageLockProvider, useStageLock } from "./StageLockContext";
 import {
   LIFECYCLE_STAGES,
   getStageIndex,
@@ -168,8 +171,19 @@ function SmartCoverModal({ op, onClose }: { op: Operation; onClose: () => void }
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
 export default function OperationDetailPage() {
   const { id } = useParams();
+  const opId = typeof id === "string" ? id : Array.isArray(id) ? id[0] : "";
+
+  return (
+    <StageLockProvider opId={opId}>
+      <OperationDetailContent id={opId} />
+    </StageLockProvider>
+  );
+}
+
+function OperationDetailContent({ id }: { id: string }) {
   const router = useRouter();
   const { userRole, selectedCompany, setSelectedCompany } = useCompany();
+  const { isStageLocked, lockStage, unlockStage } = useStageLock();
 
   // تحميل فوري مباشر من الذاكرة المؤقتة (SWR Pattern) لتفادي أي انتظار أو بطء
   const [op, setOp] = useState<Operation | null>(() => {
@@ -193,6 +207,7 @@ export default function OperationDetailPage() {
   });
 
   const [activeTab, setActiveTab] = useState("overview");
+  const isCurrentStageLocked = isStageLocked(activeTab);
   const [smartCoverOpen, setSmartCoverOpen] = useState(false);
 
   // حالة التحكم في المسار الزمني والمراحل
@@ -813,17 +828,6 @@ export default function OperationDetailPage() {
             </div>
           </div>
         </div>
-        <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" onClick={() => setSmartCoverOpen(true)} className="border-indigo-500/30 text-indigo-600 dark:text-indigo-400 bg-indigo-500/5 hover:bg-indigo-500/10 rounded-xl text-xs h-9 cursor-pointer font-bold">
-            <Sparkles className="h-3.5 w-3.5 ml-1.5" />الغلاف الذكي
-          </Button>
-          <Button variant="outline" size="sm" onClick={fetchOp} className="border-border bg-muted/40 text-foreground hover:bg-muted rounded-xl text-xs h-9 cursor-pointer">
-            <RefreshCw className="h-3.5 w-3.5 ml-1.5" />تحديث
-          </Button>
-          <Button variant="outline" size="sm" onClick={() => window.print()} className="border-border bg-muted/40 text-foreground hover:bg-muted rounded-xl text-xs h-9 cursor-pointer">
-            <Printer className="h-3.5 w-3.5 ml-1.5" />طباعة
-          </Button>
-        </div>
       </div>
 
       {/* ━━━ OPERATION HEADER CARD ━━━ */}
@@ -1048,6 +1052,29 @@ export default function OperationDetailPage() {
               );
             })()}
 
+            {/* 2.5. Stage Lock / Unlock Toggle (فتح التعديلات / قفل المرحلة) */}
+            {isCurrentStageLocked ? (
+              <Button
+                variant="outline"
+                onClick={() => unlockStage(currentTabDef.id, currentTabDef.label)}
+                className="h-9 text-xs font-black rounded-xl border border-amber-500/60 bg-amber-500/20 text-amber-800 dark:text-amber-200 hover:bg-amber-500/30 cursor-pointer flex items-center gap-1.5 shadow-sm transition-all active:scale-95 animate-pulse"
+                title="المرحلة مقفولة ومحمية — انقر هنا لفتح التعديلات"
+              >
+                <Unlock className="h-3.5 w-3.5 text-amber-600 dark:text-amber-400" />
+                <span>فتح التعديلات (المرحلة مقفولة 🔒)</span>
+              </Button>
+            ) : (
+              <Button
+                variant="outline"
+                onClick={() => lockStage(currentTabDef.id, currentTabDef.label)}
+                className="h-9 text-xs font-bold rounded-xl border border-border bg-background hover:bg-amber-500/10 hover:border-amber-500/40 text-foreground cursor-pointer flex items-center gap-1.5 shadow-xs transition-all active:scale-95 group"
+                title="انقر لقفل المرحلة وتثبيت كافة بياناتها لمنع التعديل"
+              >
+                <Lock className="h-3.5 w-3.5 text-muted-foreground group-hover:text-amber-600 transition-colors" />
+                <span>قفل المرحلة 🔒</span>
+              </Button>
+            )}
+
             {/* 3. Code Lock Toggle */}
             <Button
               variant="outline"
@@ -1177,6 +1204,7 @@ export default function OperationDetailPage() {
               const isActive = activeTab === tab.id;
               const TabIcon = tab.icon;
               const isDone = tabStatus === "done";
+              const isLocked = isStageLocked(tab.id);
               return (
                 <div
                   key={tab.id}
@@ -1213,6 +1241,16 @@ export default function OperationDetailPage() {
                         <TabIcon className="h-4.5 w-4.5" />
                       )}
                     </button>
+
+                    {/* علامة القفل للمرحلة إذا كانت مقفولة */}
+                    {isLocked && (
+                      <div
+                        className="absolute -top-1.5 -left-1.5 z-20 w-5 h-5 rounded-full bg-amber-500 text-slate-950 flex items-center justify-center shadow-md border border-white dark:border-slate-800"
+                        title={`المرحلة #${tab.order} (${tab.label}) مقفولة ومعتمدة 🔒`}
+                      >
+                        <Lock className="h-2.5 w-2.5 stroke-[2.5]" />
+                      </div>
+                    )}
 
                     <button
                       type="button"
@@ -1343,9 +1381,49 @@ export default function OperationDetailPage() {
         </Portal>
       )}
 
-      {/* ━━━ ACTIVE TAB CONTENT ━━━ */}
-      <div className="animate-fade-in">
-        {renderTabContent()}
+      {/* ━━━ ACTIVE TAB CONTENT & READ-ONLY OVERLAY ━━━ */}
+      <div className="relative animate-fade-in">
+        <div
+          className={`transition-all duration-300 ${
+            isCurrentStageLocked
+              ? "pointer-events-none select-none opacity-40 filter contrast-90 grayscale-[35%]"
+              : ""
+          }`}
+        >
+          {renderTabContent()}
+        </div>
+
+        {/* Floating Read-Only Translucent Overlay when Stage is Locked */}
+        {isCurrentStageLocked && (
+          <div className="absolute inset-0 z-30 flex flex-col items-center justify-start pt-16 pb-12 px-4 pointer-events-auto">
+            <div className="sticky top-28 p-6 sm:p-8 rounded-3xl bg-slate-950/85 dark:bg-slate-900/90 backdrop-blur-md border-2 border-amber-500/50 shadow-2xl text-center space-y-4 max-w-lg w-full text-white animate-fade-in">
+              <div className="w-16 h-16 rounded-3xl bg-amber-500/20 border-2 border-amber-500/50 flex items-center justify-center text-amber-400 mx-auto shadow-lg shadow-amber-500/20 animate-pulse">
+                <Lock className="w-8 h-8 stroke-[2.5]" />
+              </div>
+              <div className="space-y-1">
+                <span className="text-xs font-bold font-mono px-2.5 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                  مرحلة #{currentTabDef.order}: {currentTabDef.label}
+                </span>
+                <h3 className="text-xl font-black text-amber-400 tracking-tight pt-1">
+                  المرحلة مقفولة ومعتمدة رسمياً 🔒
+                </h3>
+              </div>
+              <p className="text-xs sm:text-sm text-slate-300 leading-relaxed">
+                تم قفل هذه المرحلة وتثبيت جميع بياناتها وخاناتها منعاً للتعديل غير المقصود.
+                جميع الحقول محمية من الكتابة والتغيير، ويمكنك معاينة المستندات والبيانات. لتعديل أي خانة اضغط على &quot;فتح التعديلات&quot; أدناه.
+              </p>
+              <div className="pt-2">
+                <Button
+                  onClick={() => unlockStage(currentTabDef.id, currentTabDef.label)}
+                  className="bg-gradient-to-r from-amber-500 via-amber-600 to-amber-500 hover:from-amber-600 hover:to-amber-700 text-slate-950 font-black text-xs sm:text-sm h-11 px-7 rounded-2xl shadow-xl shadow-amber-500/30 cursor-pointer flex items-center justify-center gap-2 mx-auto active:scale-95 transition-all"
+                >
+                  <Unlock className="w-4 h-4 stroke-[2.5] text-slate-950" />
+                  <span>فتح التعديلات على المرحلة 🔓</span>
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* ━━━ SMART COVER MODAL ━━━ */}

@@ -183,8 +183,43 @@ async function convertViaAdobe(docxBuffer: Buffer, account: AdobeCredential): Pr
 }
 
 /**
- * محرك تحويل مستندات Word (.docx) إلى PDF سحابياً عبر مجمع حسابات Adobe PDF Services API
- * يدعم التبديل التلقائي بين الحسابات لمضاعفة الحصص الشهرية وضمان استمرارية الخدمة 100%
+ * تنفيذ عملية التحويل الاحتياطية عبر Cloudmersive Convert API
+ * يوفر 800 عملية تحويل مجانية شهرياً عند نفاد كوتا Adobe أو حدوث خطأ
+ */
+async function convertViaCloudmersive(docxBuffer: Buffer, apiKey: string): Promise<ArrayBuffer> {
+  const form = new FormData();
+  const blob = new Blob([new Uint8Array(docxBuffer)], {
+    type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  });
+  form.append("inputFile", blob, "document.docx");
+
+  const res = await fetch("https://api.cloudmersive.com/convert/docx/to/pdf", {
+    method: "POST",
+    headers: {
+      Apikey: apiKey.trim(),
+    },
+    body: form,
+    signal: AbortSignal.timeout(35000),
+  });
+
+  if (!res.ok) {
+    const errText = await res.text();
+    throw new Error(`[Cloudmersive API] فشل التحويل: ${res.status} ${errText}`);
+  }
+
+  const pdfArrayBuffer = await res.arrayBuffer();
+  if (pdfArrayBuffer.byteLength < 500) {
+    throw new Error("[Cloudmersive API] تم استلام ملف PDF تالف أو فارغ");
+  }
+
+  return pdfArrayBuffer;
+}
+
+/**
+ * محرك تحويل مستندات Word (.docx) إلى PDF سحابياً عبر:
+ * 1. مجمع حسابات Adobe PDF Services API الرسمي (الأولوية الأولى - 1000 تحويل شهرياً)
+ * 2. محرك Cloudmersive Convert API الاحتياطي (الأولوية الثانية - 800 تحويل شهرياً)
+ * 3. خادم الباك إند المحلي (Word COM على Windows / LibreOffice)
  */
 export async function POST(req: NextRequest) {
   try {
@@ -200,6 +235,7 @@ export async function POST(req: NextRequest) {
     const accounts = getAdobeAccounts();
 
     let lastError: any = null;
+    // ━━━ 1. الأولوية الأولى: مجمع حسابات Adobe PDF Services API (1000 تحويل/شهر) ━━━
     if (accounts.length > 0) {
       for (let i = 0; i < accounts.length; i++) {
         const account = accounts[i];
@@ -211,6 +247,7 @@ export async function POST(req: NextRequest) {
               "Content-Type": "application/pdf",
               "Content-Disposition": 'inline; filename="letter.pdf"',
               "Content-Length": pdfBuffer.byteLength.toString(),
+              "X-PDF-Engine": "adobe",
               "X-Adobe-Account-Used": `account-${i + 1}`,
             },
           });
@@ -221,14 +258,36 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // المحاولة الاحتياطية: إرسال الطلب لخادم الباك إند الخلفي (يدعم LibreOffice و Word COM)
+    // ━━━ 2. الأولوية الثانية: محرك Cloudmersive Convert API الاحتياطي (800 تحويل/شهر) ━━━
+    const cloudmersiveKey =
+      process.env.CLOUDMERSIVE_API_KEY?.trim() || "19e0cab2-c689-4f5c-b3c0-4666d789334c";
+    if (cloudmersiveKey) {
+      try {
+        console.log("التبديل إلى محرك Cloudmersive Convert API السحابي البديل...");
+        const pdfBuffer = await convertViaCloudmersive(docxBuffer, cloudmersiveKey);
+        return new Response(pdfBuffer, {
+          status: 200,
+          headers: {
+            "Content-Type": "application/pdf",
+            "Content-Disposition": 'inline; filename="letter.pdf"',
+            "Content-Length": pdfBuffer.byteLength.toString(),
+            "X-PDF-Engine": "cloudmersive",
+          },
+        });
+      } catch (cmErr: any) {
+        lastError = cmErr;
+        console.warn("فشل التحويل عبر Cloudmersive Convert API:", cmErr?.message);
+      }
+    }
+
+    // ━━━ 3. الأولوية الثالثة: إرسال الطلب لخادم الباك إند الخلفي (Word COM و LibreOffice) ━━━
     try {
       const backendBase =
         process.env.BACKEND_INTERNAL_URL ||
         process.env.NEXT_PUBLIC_API_URL ||
         "http://localhost:4000";
       const forwardForm = new FormData();
-      const docxBlob = new Blob([docxBuffer], {
+      const docxBlob = new Blob([new Uint8Array(docxBuffer)], {
         type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
       });
       forwardForm.append("file", docxBlob, "document.docx");
@@ -261,8 +320,9 @@ export async function POST(req: NextRequest) {
   } catch (err: any) {
     console.error("خطأ تحويل DOCX إلى PDF في Next.js Route:", err);
     return NextResponse.json(
-      { error: err?.message || "فشل تحويل المستند إلى PDF عبر مجمع حسابات Adobe" },
+      { error: err?.message || "فشل تحويل المستند إلى PDF عبر مجمع حسابات Adobe و Cloudmersive" },
       { status: 500 }
     );
   }
 }
+

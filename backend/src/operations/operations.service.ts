@@ -1714,7 +1714,19 @@ export class OperationsService {
       }
     }
 
-    // 3. محاولة التحويل عبر FreeConvert API (إذا تم تزويد FREECONVERT_API_KEY)
+    // 3. الأولوية الثالثة: محرك Cloudmersive Convert API السحابي البديل (800 تحويل شهرياً مجاناً)
+    const cloudmersiveKey =
+      process.env.CLOUDMERSIVE_API_KEY || '19e0cab2-c689-4f5c-b3c0-4666d789334c';
+    if (cloudmersiveKey) {
+      try {
+        this.logger.log('بدء التحويل السحابي البديل عبر Cloudmersive Convert API...');
+        return await this.convertDocxViaCloudmersive(docxBuffer, cloudmersiveKey);
+      } catch (cmErr: any) {
+        this.logger.warn(`فشل التحويل عبر Cloudmersive Convert API: ${cmErr?.message}`);
+      }
+    }
+
+    // 4. محاولة التحويل عبر FreeConvert API (إذا تم تزويد FREECONVERT_API_KEY)
     if (process.env.FREECONVERT_API_KEY) {
       try {
         return await this.convertDocxViaFreeConvert(docxBuffer);
@@ -1723,7 +1735,7 @@ export class OperationsService {
       }
     }
 
-    // 4. محاولة التحويل عبر ONLYOFFICE Document Server (إذا تم إعداده للإنتاج السحابي)
+    // 5. محاولة التحويل عبر ONLYOFFICE Document Server (إذا تم إعداده للإنتاج السحابي)
     if (process.env.ONLYOFFICE_CONVERTER_URL || process.env.ONLYOFFICE_URL) {
       try {
         return await this.convertDocxViaOnlyOffice(docxBuffer);
@@ -1919,6 +1931,41 @@ export class OperationsService {
     }
 
     throw lastError || new Error('فشلت جميع حسابات Adobe المتاحة في التحويل');
+  }
+
+  /**
+   * تحويل مستند DOCX إلى PDF عبر خادم Cloudmersive Convert API السحابي
+   * يوفر 800 عملية تحويل مجانية شهرياً
+   */
+  private async convertDocxViaCloudmersive(docxBuffer: Buffer, apiKey: string): Promise<Buffer> {
+    const form = new FormData();
+    const blob = new Blob([new Uint8Array(docxBuffer)], {
+      type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    });
+    form.append('inputFile', blob, 'document.docx');
+
+    const res = await fetch('https://api.cloudmersive.com/convert/docx/to/pdf', {
+      method: 'POST',
+      headers: {
+        Apikey: apiKey.trim(),
+      },
+      body: form,
+      signal: AbortSignal.timeout(35000),
+    });
+
+    if (!res.ok) {
+      const errText = await res.text();
+      throw new Error(`Cloudmersive error ${res.status}: ${errText}`);
+    }
+
+    const arrayBuf = await res.arrayBuffer();
+    if (arrayBuf.byteLength < 500) {
+      throw new Error('Cloudmersive returned empty or corrupt PDF buffer');
+    }
+
+    const pdfBuf = Buffer.from(arrayBuf);
+    this.logger.log(`تم تحويل المستند بنجاح عبر Cloudmersive Convert API! الحجم: ${pdfBuf.length} بايت`);
+    return pdfBuf;
   }
 
   /**

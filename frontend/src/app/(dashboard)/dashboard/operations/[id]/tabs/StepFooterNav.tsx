@@ -1,9 +1,10 @@
 "use client";
 
 import React from "react";
-import { ChevronLeft, ChevronRight, Sparkles, CheckCircle2 } from "lucide-react";
+import { ChevronLeft, ChevronRight, Sparkles, CheckCircle2, Lock, Unlock } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { LIFECYCLE_TABS, TabDef } from "./types";
+import { useStageLock } from "../StageLockContext";
 
 interface StepFooterNavProps {
   currentTabId: string;
@@ -33,6 +34,9 @@ export function StepFooterNav({
       window.scrollTo({ top: 0, behavior: "smooth" });
     }
   };
+
+  const { isStageLocked, lockStage, unlockStage } = useStageLock();
+  const isLocked = isStageLocked(currentTabId);
 
   return (
     <div className="pt-6 pb-2">
@@ -65,8 +69,33 @@ export function StepFooterNav({
           {extraActions}
         </div>
 
-        {/* Next Step Button (Prominent & Eye-Catching) */}
-        <div className="w-full sm:w-auto flex items-center justify-end">
+        {/* Actions: Stage Lock Button + Next Step Button */}
+        <div className="w-full sm:w-auto flex flex-wrap items-center justify-end gap-2.5">
+          {/* زر قفل / فتح المرحلة */}
+          {isLocked ? (
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => unlockStage(currentTabId, currentTab.label)}
+              className="w-full sm:w-auto h-11 px-4 sm:px-5 rounded-2xl border-amber-500/50 bg-amber-500/15 text-amber-800 dark:text-amber-200 hover:bg-amber-500/25 font-bold text-xs sm:text-sm cursor-pointer flex items-center justify-center gap-2 shadow-sm transition-all active:scale-95"
+              title="المرحلة مقفولة — انقر لفتح التعديلات"
+            >
+              <Unlock className="h-4 w-4 text-amber-600 dark:text-amber-400" />
+              <span>المرحلة مقفولة (فتح التعديلات 🔓)</span>
+            </Button>
+          ) : (
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => lockStage(currentTabId, currentTab.label)}
+              className="w-full sm:w-auto h-11 px-4 sm:px-5 rounded-2xl border-border bg-card hover:bg-amber-500/10 hover:border-amber-500/40 text-foreground font-bold text-xs sm:text-sm cursor-pointer flex items-center justify-center gap-2 shadow-sm transition-all active:scale-95 group"
+              title="قفل المرحلة وتثبيت كافة بياناتها لمنع التعديل"
+            >
+              <Lock className="h-4 w-4 text-muted-foreground group-hover:text-amber-600 transition-colors" />
+              <span>قفل المرحلة 🔒</span>
+            </Button>
+          )}
+
           {nextTab ? (
             <Button
               type="button"

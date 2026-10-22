@@ -137,9 +137,9 @@ export async function convertDocxBlobToPdfBlob(docxBlob: Blob): Promise<Blob> {
 }
 
 const pdfConversionCache = new Map<string, Blob>();
-let lastPdfEngineUsed: "Word COM" | "Adobe PDF" | "Instant Cache" = "Word COM";
+let lastPdfEngineUsed: "Word COM" | "Adobe PDF" | "Cloudmersive PDF" | "Instant Cache" = "Word COM";
 
-export function getLastPdfEngineUsed(): "Word COM" | "Adobe PDF" | "Instant Cache" {
+export function getLastPdfEngineUsed(): "Word COM" | "Adobe PDF" | "Cloudmersive PDF" | "Instant Cache" {
   return lastPdfEngineUsed;
 }
 
@@ -275,9 +275,14 @@ export async function getPdfBlobFromDocx(
       });
 
       if (directRes.ok) {
+        const engineHeader = directRes.headers.get("X-PDF-Engine");
+        if (engineHeader === "cloudmersive") {
+          lastPdfEngineUsed = "Cloudmersive PDF";
+        } else {
+          lastPdfEngineUsed = "Adobe PDF";
+        }
         const blob = await directRes.blob();
         if (blob && blob.size > 1000) {
-          lastPdfEngineUsed = "Adobe PDF";
           return blob.type.includes("pdf")
             ? blob
             : new Blob([await blob.arrayBuffer()], { type: "application/pdf" });
