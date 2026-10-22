@@ -549,7 +549,7 @@ export class OperationsController {
 
   @Patch(':id/documents/:docId')
   @UseGuards(RolesGuard)
-  @Roles(UserRole.GENERAL_MANAGER, UserRole.EMPLOYEE)
+  @Roles(UserRole.GENERAL_MANAGER, UserRole.DEPUTY_MANAGER, UserRole.EMPLOYEE)
   async updateDocument(
     @Param('id') id: string,
     @Param('docId') docId: string,
@@ -563,7 +563,7 @@ export class OperationsController {
 
   @Put(':id/documents/:docId/file')
   @UseGuards(RolesGuard)
-  @Roles(UserRole.GENERAL_MANAGER, UserRole.EMPLOYEE)
+  @Roles(UserRole.GENERAL_MANAGER, UserRole.DEPUTY_MANAGER, UserRole.EMPLOYEE)
   @UseInterceptors(
     FileInterceptor('file', {
       storage: operationDocStorage,
@@ -584,7 +584,7 @@ export class OperationsController {
 
   @Delete(':id/documents/:docId')
   @UseGuards(RolesGuard)
-  @Roles(UserRole.GENERAL_MANAGER, UserRole.EMPLOYEE)
+  @Roles(UserRole.GENERAL_MANAGER, UserRole.DEPUTY_MANAGER, UserRole.EMPLOYEE)
   async deleteDocument(
     @Param('id') id: string,
     @Param('docId') docId: string,

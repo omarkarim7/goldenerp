@@ -1420,15 +1420,33 @@ export class OperationsService {
       finalPath = file.path.replace(/\\/g, '/');
     }
 
-    return this.prisma.operationDocument.update({
-      where: { id: doc.id },
-      data: {
-        fileName: cleanFileName,
-        filePath: finalPath,
-        fileType: rawExt,
-        fileSize: file.size,
-      },
-    });
+    const opDocExists = await this.prisma.operationDocument.findUnique({ where: { id: doc.id } });
+    if (opDocExists) {
+      return this.prisma.operationDocument.update({
+        where: { id: doc.id },
+        data: {
+          fileName: cleanFileName,
+          filePath: finalPath,
+          fileType: rawExt,
+          fileSize: file.size,
+        },
+      });
+    }
+
+    const compDocExists = await this.prisma.companyDocument.findUnique({ where: { id: doc.id } });
+    if (compDocExists) {
+      return this.prisma.companyDocument.update({
+        where: { id: doc.id },
+        data: {
+          fileName: cleanFileName,
+          filePath: finalPath,
+          fileType: rawExt,
+          fileSize: file.size,
+        },
+      });
+    }
+
+    return doc;
   }
 
   async deleteDocument(operationId: string, docId: string) {
@@ -1441,9 +1459,20 @@ export class OperationsService {
         console.error('Error removing file:', err);
       }
     }
-    await this.prisma.operationDocument.delete({
-      where: { id: doc.id },
-    });
+
+    const opDocExists = await this.prisma.operationDocument.findUnique({ where: { id: doc.id } });
+    if (opDocExists) {
+      await this.prisma.operationDocument.delete({
+        where: { id: doc.id },
+      });
+    } else {
+      const compDocExists = await this.prisma.companyDocument.findUnique({ where: { id: doc.id } });
+      if (compDocExists) {
+        await this.prisma.companyDocument.delete({
+          where: { id: doc.id },
+        });
+      }
+    }
     return { success: true, message: 'تم حذف المستند بنجاح' };
   }
 

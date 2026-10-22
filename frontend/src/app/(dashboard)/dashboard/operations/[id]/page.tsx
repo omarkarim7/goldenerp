@@ -41,7 +41,7 @@ import {
   SelectTrigger,
 } from "@/components/ui/select";
 import { toast } from "sonner";
-import api from "@/lib/api";
+import api, { API_BASE_URL } from "@/lib/api";
 import { useCompany, CompanyCode } from "@/context/company-context";
 import { DocxViewer } from "@/components/docx-viewer";
 import { Portal } from "@/components/ui/portal";
@@ -273,8 +273,15 @@ function OperationDetailContent({ id }: { id: string }) {
       if (!blobData && doc.id && currentOpId) {
         try {
           const res = await api.get(`/operations/${currentOpId}/documents/${doc.id}/file`, { responseType: "blob" });
-          blobData = res.data;
-          contentType = String(res.headers?.["content-type"] || "").toLowerCase();
+          if (res.data && res.data.size > 0) {
+            const peek = await res.data.slice(0, 150).text().catch(() => "");
+            if (peek.includes('"statusCode":') && (peek.includes('403') || peek.includes('401') || peek.includes('404') || peek.includes('500'))) {
+              console.warn("Server returned error JSON response instead of file blob:", peek);
+            } else {
+              blobData = res.data;
+              contentType = String(res.headers?.["content-type"] || "").toLowerCase();
+            }
+          }
         } catch (opErr) {
           console.warn("Direct document stream failed, trying fallback URL:", opErr);
         }
@@ -283,11 +290,19 @@ function OperationDetailContent({ id }: { id: string }) {
       // Tier 2: If Tier 1 failed or no doc.id, try direct filePath
       if (!blobData && targetFilePath) {
         if (targetFilePath.startsWith("http://") || targetFilePath.startsWith("https://")) {
+          let fixedUrl = targetFilePath;
+          if (typeof window !== "undefined" && !window.location.hostname.includes("localhost") && fixedUrl.includes("localhost:4000")) {
+            fixedUrl = fixedUrl.replace("http://localhost:4000", API_BASE_URL);
+          }
           try {
-            const res = await fetch(targetFilePath);
+            const res = await fetch(fixedUrl);
             if (res.ok) {
-              blobData = await res.blob();
-              contentType = blobData.type || "";
+              const b = await res.blob();
+              const peek = await b.slice(0, 150).text().catch(() => "");
+              if (!peek.includes('"statusCode":')) {
+                blobData = b;
+                contentType = blobData.type || "";
+              }
             }
           } catch (netErr) {
             console.warn("Direct cloud fetch failed:", netErr);
@@ -296,8 +311,13 @@ function OperationDetailContent({ id }: { id: string }) {
           try {
             const cleanUrl = targetFilePath.startsWith("/") ? targetFilePath : `/${targetFilePath}`;
             const res = await api.get(cleanUrl, { responseType: "blob" });
-            blobData = res.data;
-            contentType = String(res.headers?.["content-type"] || "").toLowerCase();
+            if (res.data && res.data.size > 0) {
+              const peek = await res.data.slice(0, 150).text().catch(() => "");
+              if (!peek.includes('"statusCode":')) {
+                blobData = res.data;
+                contentType = String(res.headers?.["content-type"] || "").toLowerCase();
+              }
+            }
           } catch (urlErr) {
             console.warn("Target URL fetch failed:", urlErr);
           }

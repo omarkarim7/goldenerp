@@ -36,7 +36,9 @@ export async function GET(
     if (!foundBuffer) {
       // Try querying the backend server if running
       try {
-        const backendRes = await fetch(`http://localhost:4000/api/operations/public-doc/${encodeURIComponent(safeName)}`, {
+        const rawApiUrl = process.env.BACKEND_INTERNAL_URL || process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
+        const cleanApiBase = rawApiUrl.replace(/\/api\/?$/, "").replace(/\/+$/, "");
+        const backendRes = await fetch(`${cleanApiBase}/api/operations/public-doc/${encodeURIComponent(safeName)}`, {
           signal: AbortSignal.timeout(3000),
         });
         if (backendRes.ok) {

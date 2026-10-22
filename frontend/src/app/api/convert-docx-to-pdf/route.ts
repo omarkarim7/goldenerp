@@ -282,10 +282,11 @@ export async function POST(req: NextRequest) {
 
     // ━━━ 3. الأولوية الثالثة: إرسال الطلب لخادم الباك إند الخلفي (Word COM و LibreOffice) ━━━
     try {
-      const backendBase =
+      const rawBackendBase =
         process.env.BACKEND_INTERNAL_URL ||
         process.env.NEXT_PUBLIC_API_URL ||
         "http://localhost:4000";
+      const backendBase = rawBackendBase.replace(/\/api\/?$/, "").replace(/\/+$/, "");
       const forwardForm = new FormData();
       const docxBlob = new Blob([new Uint8Array(docxBuffer)], {
         type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",

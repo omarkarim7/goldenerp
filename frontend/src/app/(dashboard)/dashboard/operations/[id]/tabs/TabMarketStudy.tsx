@@ -16,7 +16,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Portal } from "@/components/ui/portal";
 import { toast } from "sonner";
-import api from "@/lib/api";
+import api, { API_BASE_URL } from "@/lib/api";
 import {
   Operation, SectionCard, formatCurrency, formatDate,
   formatDocFileSize, tafqeetArabic
@@ -1025,7 +1025,7 @@ export function TabMarketStudy({
                           title="انقر للمعاينة بحجم الشاشة الكامل"
                         >
                           <img
-                            src={`http://localhost:4000/api/operations/${op.id}/documents/${doc.id}/file`}
+                            src={`${API_BASE_URL}/api/operations/${op.id}/documents/${doc.id}/file`}
                             alt={doc.fileName}
                             className="w-full h-full object-cover group-hover/thumb:scale-105 transition-transform duration-300"
                             onError={(e) => {

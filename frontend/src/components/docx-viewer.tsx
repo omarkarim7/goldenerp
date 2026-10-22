@@ -91,7 +91,21 @@ export function DocxViewer({
     async function renderWordDocument() {
       try {
         if (!containerRef.current || !blob) return;
-        containerRef.current.innerHTML = "";
+        // Verify that the blob is actually a valid ZIP (DOCX) file before feeding it to docx-preview/JSZip
+        const headerBytes = await blob.slice(0, 4).arrayBuffer().catch(() => new ArrayBuffer(0));
+        const uint8 = new Uint8Array(headerBytes);
+        const isZip = uint8[0] === 0x50 && uint8[1] === 0x4b; // 'P', 'K' magic bytes
+
+        if (!isZip) {
+          const sampleText = await blob.slice(0, 500).text().catch(() => "");
+          if (sampleText.includes("statusCode") || sampleText.includes("Forbidden") || sampleText.includes("403")) {
+            setError("تعذر فتح معاينة المستند: حدث خطأ في الخادم أو الصلاحيات أثناء تحميل الملف. يمكنك تجربة إعادة المحاولة أو تنزيل الملف.");
+          } else {
+            setError("الملف المحدد ليس مستند Word (.docx) صالح أو قد يكون تالفاً أو بصيغة أخرى. يمكنك تحميل الملف لفتحه على جهازك.");
+          }
+          setLoading(false);
+          return;
+        }
 
         await renderAsync(blob, containerRef.current, undefined, {
           className: "docx",
