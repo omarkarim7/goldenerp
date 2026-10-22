@@ -132,7 +132,7 @@ export class CompaniesController {
 
   @Post(':id/documents')
   @UseGuards(RolesGuard)
-  @Roles(UserRole.GENERAL_MANAGER)
+  @Roles(UserRole.GENERAL_MANAGER, UserRole.DEPUTY_MANAGER, UserRole.EMPLOYEE)
   @UseInterceptors(
     FileInterceptor('file', {
       storage: companyStorage,
@@ -162,7 +162,7 @@ export class CompaniesController {
 
   @Patch(':id/documents/:docId')
   @UseGuards(RolesGuard)
-  @Roles(UserRole.GENERAL_MANAGER)
+  @Roles(UserRole.GENERAL_MANAGER, UserRole.DEPUTY_MANAGER, UserRole.EMPLOYEE)
   @UseInterceptors(
     FileInterceptor('file', {
       storage: companyStorage,
@@ -181,7 +181,7 @@ export class CompaniesController {
 
   @Delete(':id/documents/:docId')
   @UseGuards(RolesGuard)
-  @Roles(UserRole.GENERAL_MANAGER)
+  @Roles(UserRole.GENERAL_MANAGER, UserRole.DEPUTY_MANAGER, UserRole.EMPLOYEE)
   async deleteDocument(
     @Param('id') id: string,
     @Param('docId') docId: string,

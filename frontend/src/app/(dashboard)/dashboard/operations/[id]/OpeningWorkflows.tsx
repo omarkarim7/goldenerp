@@ -39,6 +39,7 @@ import {
   CornerDownLeft,
   Edit,
   Receipt,
+  Save,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -214,6 +215,8 @@ export function EgyptianOfficialLetterModal({
   company,
   contentHtml,
   onSaveToArchive,
+  onSyncFinancialOffer,
+  syncingOffer,
 }: {
   isOpen: boolean;
   onClose: () => void;
@@ -223,6 +226,8 @@ export function EgyptianOfficialLetterModal({
   company?: any;
   contentHtml: string;
   onSaveToArchive?: () => Promise<void>;
+  onSyncFinancialOffer?: () => Promise<void>;
+  syncingOffer?: boolean;
 }) {
   const [saving, setSaving] = useState(false);
 
@@ -306,6 +311,18 @@ export function EgyptianOfficialLetterModal({
                 <Download className="h-3.5 w-3.5 text-blue-600 dark:text-blue-400" />
                 <span>Word (.doc)</span>
               </Button>
+              {onSyncFinancialOffer && (
+                <Button
+                  size="sm"
+                  onClick={onSyncFinancialOffer}
+                  disabled={syncingOffer}
+                  className="bg-teal-600 hover:bg-teal-700 text-white font-bold text-xs h-8 px-3 rounded-xl flex items-center gap-1.5 cursor-pointer shadow-xs"
+                  title="تحديث بنود العرض المالي في مرحلة العرض المالي لتطابق البنود المقبولة فقط"
+                >
+                  <Save className="h-3.5 w-3.5" />
+                  <span>{syncingOffer ? "جاري التحديث..." : "تحديث العرض المالي بالبنود المقبولة 💾"}</span>
+                </Button>
+              )}
               {onSaveToArchive && (
                 <Button
                   size="sm"
@@ -2487,38 +2504,134 @@ export function TabFinOpening({
     }
   };
 
-  // Partial Award Statement HTML
+  // ━━━ مزامنة وتحديث العرض المالي الأصلي بالبنود المقبولة فقط ━━━
+  const [syncingOffer, setSyncingOffer] = useState(false);
+  const handleSyncFinancialOfferWithAcceptedItems = async () => {
+    setSyncingOffer(true);
+    try {
+      let currentNotesObj: any = {};
+      try {
+        if (op.notes && op.notes.startsWith("{")) {
+          currentNotesObj = JSON.parse(op.notes);
+        }
+      } catch {}
+
+      const acceptedList = partialItems.filter((i: BoqItem) => i.isAccepted);
+      const acceptedItemsList = acceptedList.map((i: BoqItem, idx: number) => ({
+        id: `item-${idx + 1}`,
+        itemNumber: idx + 1,
+        itemName: i.name,
+        unit: i.unit,
+        quantity: String(i.acceptedQty),
+        variants: [
+          {
+            id: `v-${idx + 1}-1`,
+            variantType: "basic",
+            variantLabel: "أساسى",
+            description: i.name,
+            subDescription: "بند معتمد بقرار البت المالي والترسية الجزئية",
+            branch1: "مطابق للمواصفات",
+            unitPrice: i.unitPrice,
+            totalPrice: i.acceptedQty * i.unitPrice,
+            notes: "معتمد ومطابق للبت المالي",
+          },
+        ],
+      }));
+
+      currentNotesObj.financialOfferDocx = {
+        ...(currentNotesObj.financialOfferDocx || {}),
+        items: acceptedItemsList,
+        vatRate: includeVat ? 14 : 0,
+        taxCondition: includeVat ? "الأسعار غير شاملة ضريبة القيمة المضافة (14%)" : "الأسعار شاملة ضريبة القيمة المضافة",
+        updatedAt: new Date().toISOString(),
+        adjudicationDecision: "ACCEPT_PARTIAL",
+      };
+
+      await api.patch(`/operations/${op.id}`, {
+        notes: JSON.stringify(currentNotesObj),
+      });
+
+      toast.success("تم تحديث وحفظ العرض المالي بالبنود المقبولة في المنظومة بنجاح! 💾✨");
+      onRefresh();
+    } catch (err: any) {
+      console.error(err);
+      toast.error("فشل تحديث العرض المالي في المنظومة");
+    } finally {
+      setSyncingOffer(false);
+    }
+  };
+
+  const handleAwardAndAdvance = async () => {
+    await handleSyncFinancialOfferWithAcceptedItems();
+    onGoAward?.();
+  };
+
+  // ━━━ إنشاء قالب العرض المالي الرسمي المعتمد (المعدل بالبنود المقبولة فقط) ━━━
   const partialAwardStatementHtml = useMemo(() => {
-    const acceptedRows = partialItems
-      .filter((i: BoqItem) => i.isAccepted)
-      .map(
-        (i: BoqItem, index: number) => `
-        <tr>
-          <td style="text-align:center;">${index + 1}</td>
-          <td>${i.name}</td>
-          <td style="text-align:center;">${i.unit}</td>
-          <td style="text-align:center; font-weight:bold;">${i.acceptedQty}</td>
-          <td style="text-align:left; font-family:monospace;">${formatCurrency(i.unitPrice)}</td>
-          <td style="text-align:left; font-weight:bold; font-family:monospace;">${formatCurrency(i.acceptedQty * i.unitPrice)}</td>
+    const acceptedList = partialItems.filter((i: BoqItem) => i.isAccepted);
+    const acceptedRows = acceptedList
+      .map((i: BoqItem, index: number) => {
+        const itemTotal = i.acceptedQty * i.unitPrice;
+        const uPounds = Math.floor(i.unitPrice);
+        const uPiasters = Math.round((i.unitPrice - uPounds) * 100);
+        const tPounds = Math.floor(itemTotal);
+        const tPiasters = Math.round((itemTotal - tPounds) * 100);
+
+        return `
+        <tr style="border-bottom: 1px solid #cbd5e1;">
+          <td style="text-align:center; padding:8px; border:1px solid #cbd5e1; font-weight:bold; background:#f8fafc;">${index + 1}</td>
+          <td style="padding:8px; border:1px solid #cbd5e1; text-align:right;">
+            <div style="font-weight:bold; color:#0f172a; font-size:12px;">${i.name}</div>
+            <div style="font-size:10px; color:#64748b; margin-top:2px;">مطابق لكراسة الشروط والمواصفات الفنية المعتمدة للعملية</div>
+          </td>
+          <td style="text-align:center; padding:8px; border:1px solid #cbd5e1; font-size:11px;">${i.unit}</td>
+          <td style="text-align:center; padding:8px; border:1px solid #cbd5e1; font-weight:bold; font-size:13px; color:#0f172a;">${i.acceptedQty}</td>
+          <td style="text-align:center; padding:6px; border:1px solid #cbd5e1; font-family:monospace; background:#fafafa;">
+            <div style="display:flex; justify-content:space-around; font-size:11px;">
+              <span style="color:#0369a1; font-weight:bold;">${uPounds.toLocaleString("ar-EG")} ج</span>
+              <span style="color:#64748b;">${uPiasters > 0 ? (uPiasters < 10 ? '0' + uPiasters : uPiasters) : '00'} ق</span>
+            </div>
+          </td>
+          <td style="text-align:center; padding:6px; border:1px solid #cbd5e1; font-family:monospace; font-weight:bold; background:#f0fdf4;">
+            <div style="display:flex; justify-content:space-around; font-size:12px;">
+              <span style="color:#15803d; font-weight:bold;">${tPounds.toLocaleString("ar-EG")} ج</span>
+              <span style="color:#64748b;">${tPiasters > 0 ? (tPiasters < 10 ? '0' + tPiasters : tPiasters) : '00'} ق</span>
+            </div>
+          </td>
+          <td style="text-align:center; padding:8px; border:1px solid #cbd5e1; font-size:11px;">
+            <span style="display:inline-block; padding:3px 8px; border-radius:6px; background:#dcfce7; color:#15803d; font-weight:bold;">
+              مقبول بالترسية ✓
+            </span>
+          </td>
         </tr>
-      `
-      )
+      `;
+      })
       .join("");
 
     return `
-      <p><strong>بشأن:</strong> قرار لجنة البت المالي والترسية الجزئية لعملية (<strong>${op?.name}</strong>) — رقم رسمي: <strong>${op?.externalNumber || op?.serialNumber}</strong>.</p>
-      
-      <p>استناداً لأحكام القانون 182 لسنة 2018 ولائحته التنفيذية، وإلى محضر جلسة البت المالي المنعقدة بتاريخ <strong>${formatDate(openingDate)}</strong>، تقرر إرساء البنود الموضحة بالجدول أدناه على شركتنا بصفتها العطاء الأفضل شروطاً والأقل سعراً لتلك البنود:</p>
+      <!-- المقدمة الرسمية للعرض المالي المعدل -->
+      <div style="margin-bottom:14px; font-size:13px; line-height:1.7; color:#1e293b;">
+        <p style="margin:0 0 6px 0;"><strong>السيد الأستاذ /</strong> مدير الإدارة العامة للمشتريات والمخازن بـ <strong>${op?.authority || "جهة الإسناد المختصة"}</strong></p>
+        <p style="margin:0 0 8px 0;"><strong>تحية طيبة وبعد ،،،</strong></p>
+        <p style="margin:0 0 8px 0; text-align:justify;">
+          بشأن تقديم العرض المالي وجدول الفئات والأسعار (المعدل) لعملية: <strong>(${op?.name})</strong> — رقم: <strong>(${op?.externalNumber || op?.serialNumber})</strong> — العام المالي: <strong>2025/2026</strong>.
+        </p>
+        <p style="margin:0 0 10px 0; text-align:justify; color:#334155;">
+          نتشرف بأن نرفق لسيادتكم طيه جدول الفئات والأسعار المعتمد لعطائنا المالي المعدل لعملية المذكورة بعاليه، وفقاً لما أسفرت عنه جلسة البت المالي وفض المظاريف والترسية للأصناف المقبولة، وذلك بعد استبعاد الأصناف غير المقبولة، طبقاً للجدول التالي:
+        </p>
+      </div>
 
-      <table style="width:100%; border-collapse:collapse; margin:16px 0; font-size:12px;">
+      <!-- الجدول الرسمي للعرض المالي المعدل -->
+      <table style="width:100%; border-collapse:collapse; margin:10px 0; font-size:12px; border:1px solid #cbd5e1;">
         <thead>
-          <tr style="background:#f1f5f9; font-weight:bold;">
-            <th style="padding:8px; border:1px solid #cbd5e1; width:5%;">م</th>
-            <th style="padding:8px; border:1px solid #cbd5e1; text-align:right;">بيان الصنف والمواصفات</th>
-            <th style="padding:8px; border:1px solid #cbd5e1; width:10%;">الوحدة</th>
-            <th style="padding:8px; border:1px solid #cbd5e1; width:10%;">الكمية المقبولة</th>
-            <th style="padding:8px; border:1px solid #cbd5e1; width:15%;">سعر الوحدة</th>
-            <th style="padding:8px; border:1px solid #cbd5e1; width:18%;">إجمالي القيمة</th>
+          <tr style="background:#0f172a; color:#ffffff; font-weight:bold; text-align:center;">
+            <th style="padding:10px 6px; border:1px solid #334155; width:4%;">م</th>
+            <th style="padding:10px 8px; border:1px solid #334155; text-align:right;">بيان الصنف والمواصفات الفنية</th>
+            <th style="padding:10px 6px; border:1px solid #334155; width:8%;">الوحدة</th>
+            <th style="padding:10px 6px; border:1px solid #334155; width:9%;">الكمية المقبولة</th>
+            <th style="padding:10px 6px; border:1px solid #334155; width:17%;">سعر الوحدة (فئة)</th>
+            <th style="padding:10px 6px; border:1px solid #334155; width:19%;">إجمالي القيمة</th>
+            <th style="padding:10px 6px; border:1px solid #334155; width:12%;">قرار البت</th>
           </tr>
         </thead>
         <tbody>
@@ -2526,30 +2639,63 @@ export function TabFinOpening({
         </tbody>
         <tfoot>
           <tr style="background:#f8fafc; font-weight:bold;">
-            <td colspan="5" style="padding:8px; text-align:left; border:1px solid #cbd5e1;">المجموع قبل الضريبة:</td>
-            <td style="padding:8px; font-family:monospace; border:1px solid #cbd5e1;">${formatCurrency(partialSubtotal)}</td>
+            <td colspan="5" style="padding:8px 12px; text-align:left; border:1px solid #cbd5e1;">المجموع قبل الضريبة:</td>
+            <td colspan="2" style="padding:8px 12px; font-family:monospace; border:1px solid #cbd5e1; font-size:13px; color:#0f172a;">${formatCurrency(partialSubtotal)}</td>
           </tr>
           ${
             includeVat
               ? `
           <tr style="background:#f8fafc;">
-            <td colspan="5" style="padding:8px; text-align:left; border:1px solid #cbd5e1;">ضريبة القيمة المضافة (14%):</td>
-            <td style="padding:8px; font-family:monospace; border:1px solid #cbd5e1;">${formatCurrency(vatAmount)}</td>
+            <td colspan="5" style="padding:8px 12px; text-align:left; border:1px solid #cbd5e1;">ضريبة القيمة المضافة (14%):</td>
+            <td colspan="2" style="padding:8px 12px; font-family:monospace; border:1px solid #cbd5e1; color:#0f172a;">${formatCurrency(vatAmount)}</td>
           </tr>`
               : ""
           }
-          <tr style="background:#eff6ff; font-weight:bold; color:#1e40af; font-size:13px;">
-            <td colspan="5" style="padding:10px; text-align:left; border:1px solid #cbd5e1;">إجمالي أمر التوريد والترسية الجزئية المعتمد:</td>
-            <td style="padding:10px; font-family:monospace; border:1px solid #cbd5e1;">${formatCurrency(partialGrandTotal)}</td>
+          <tr style="background:#eff6ff; font-weight:bold; color:#1e40af; font-size:14px; border-top:2px solid #2563eb;">
+            <td colspan="5" style="padding:10px 12px; text-align:left; border:1px solid #cbd5e1;">الإجمالي العام للعرض المالي المعدل (شامل الضريبة):</td>
+            <td colspan="2" style="padding:10px 12px; font-family:monospace; border:1px solid #cbd5e1; color:#1d4ed8; font-size:15px;">${formatCurrency(partialGrandTotal)}</td>
           </tr>
         </tfoot>
       </table>
 
-      <div style="background:#f1f5f9; padding:10px 14px; border-radius:8px; margin: 12px 0; font-weight:bold; color:#0f172a;">
-        التفقيط المعتمد: ${tafqeetArabic(partialGrandTotal)}
+      <!-- التفقيط المعتمد -->
+      <div style="background:#f1f5f9; padding:10px 14px; border-radius:8px; margin: 10px 0; border:1px solid #e2e8f0; font-weight:bold; color:#0f172a; font-size:12px;">
+        📌 <strong>التفقيط المعتمد:</strong> فقط وقدره ${tafqeetArabic(partialGrandTotal)} لا غير.
       </div>
 
-      <p>يُعتبر هذا المحضر إخطاراً رسمياً تمهيداً لإصدار أمر التوريد النهائي واستيفاء التأمين النهائي المقرر قانوناً بنسبة 5%.</p>
+      <!-- الشروط العامة والأحكام -->
+      <div style="background:#fafafa; border:1px solid #e2e8f0; border-radius:8px; padding:10px 12px; margin: 12px 0; font-size:11px; line-height:1.8; color:#334155;">
+        <strong style="color:#0f172a; display:block; margin-bottom:4px; font-size:11.5px;">الشروط العامة والمحددات الرسمية للعرض المالي المعدل:</strong>
+        <ol style="margin:0; padding-right:18px;">
+          <li>الأسعار الموضحة بالجدول سارية حتى موعد انتهاء العطاءات وإصدار أمر التوريد والترسية النهائي.</li>
+          <li>التوريد والفحص والاستلام مطابق للشروط والمواصفات الفنية المعتمدة بكراسة الشروط وفترة الضمان المقررة.</li>
+          <li>الأسعار المقدمة تشمل كافة مصاريف النقل والشحن والتوريد والتسليم لمخازن جهة الإسناد.</li>
+          <li>يخضع هذا العرض لأحكام قانون تنظيم التعاقدات العامة رقم 182 لسنة 2018 ولائحته التنفيذية.</li>
+        </ol>
+      </div>
+
+      <!-- جدول التوقيعات والاعتماد الرسمي -->
+      <div style="margin-top:16px; padding-top:12px; border-top:1px dashed #cbd5e1;">
+        <table style="width:100%; border:none; text-align:center; font-size:11.5px;">
+          <tr>
+            <td style="width:33%; border:none;">
+              <strong>المختص الفني / إعداد العرض</strong><br/><br/>
+              <span>مهندس التكاليف والمناقصات</span><br/>
+              <span style="font-size:10px; color:#94a3b8;">...................................</span>
+            </td>
+            <td style="width:33%; border:none;">
+              <strong>المدير المالي</strong><br/><br/>
+              <span>إدارة الحسابات العامة</span><br/>
+              <span style="font-size:10px; color:#94a3b8;">...................................</span>
+            </td>
+            <td style="width:33%; border:none;">
+              <strong>رئيس مجلس الإدارة</strong><br/><br/>
+              <span>المفوض بالتعاقد والاعتماد</span><br/>
+              <span style="font-size:10px; color:#94a3b8;">...................................</span>
+            </td>
+          </tr>
+        </table>
+      </div>
     `;
   }, [op, openingDate, partialItems, partialSubtotal, vatAmount, partialGrandTotal, includeVat]);
 
@@ -3092,7 +3238,7 @@ export function TabFinOpening({
                   variant="outline"
                   onClick={() => setPartialModalOpen(true)}
                   className="border-2 border-amber-500/60 hover:bg-amber-500/10 text-amber-900 dark:text-amber-200 font-bold text-xs h-9 px-3.5 rounded-xl flex items-center gap-1.5 cursor-pointer shadow-xs"
-                  title="معاينة خطاب ومحضر الترسية بعد استبعاد وتعديل البنود"
+                  title="معاينة قالب العرض المالي بالبيانات الجديدة والبنود المقبولة"
                 >
                   <Eye className="h-4 w-4 text-amber-600" />
                   <span>معاينة الخطاب الجديد (البنود المقبولة) 📜</span>
@@ -3100,7 +3246,7 @@ export function TabFinOpening({
                 {onGoAward && (
                   <Button
                     size="sm"
-                    onClick={onGoAward}
+                    onClick={handleAwardAndAdvance}
                     className="bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs h-9 px-4 rounded-xl flex items-center gap-1.5 cursor-pointer shadow-md shadow-amber-500/20"
                   >
                     <span>اعتماد والانتقال للترسية</span>
@@ -3668,18 +3814,20 @@ export function TabFinOpening({
         </Portal>
       )}
 
-      {/* Modals: Partial Award Modal */}
+      {/* Modals: Partial Award Modal (قالب العرض المالي المعدل) */}
       <EgyptianOfficialLetterModal
         isOpen={partialModalOpen}
         onClose={() => setPartialModalOpen(false)}
-        title="محضر وقرار لجنة البت المالي والترسية الجزئية المعتمد"
-        subTitle="صادر وموثق وفقاً لأحكام قانون تنظيم التعاقدات العامة رقم 182 لسنة 2018"
+        title="العرض المالي وجدول الفئات والأسعار المعتمد (المعدل)"
+        subTitle="صادر وموثق طبقاً لقرارات لجنة البت المالي للبنود المقبولة واستبعاد البنود المرفوضة"
         op={op}
         company={currentCompany}
         contentHtml={partialAwardStatementHtml}
+        onSyncFinancialOffer={handleSyncFinancialOfferWithAcceptedItems}
+        syncingOffer={syncingOffer}
         onSaveToArchive={async () => {
           await api.post(`/operations/${op.id}/documents`, {
-            fileName: `محضر_ترسية_جزئية_${op.name.replace(/\s+/g, "_")}.pdf`,
+            fileName: `العرض_المالي_المعدل_${op.name.replace(/\s+/g, "_")}.pdf`,
             type: "TECH_SPECS",
           }).catch(() => {});
         }}

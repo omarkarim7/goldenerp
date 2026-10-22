@@ -38,7 +38,7 @@ function getPageTitle(pathname: string): string {
   if (pathname.startsWith("/dashboard/reports")) return "التقارير";
   if (pathname.startsWith("/dashboard/documents")) return "المستندات";
   if (pathname.startsWith("/dashboard/companies")) return "بيانات الشركة";
-  if (pathname.startsWith("/dashboard/archive")) return "الأرشيف";
+  if (pathname.startsWith("/dashboard/archive")) return "أرشيف العمليات";
   if (pathname.startsWith("/dashboard/settings")) return "الإعدادات";
   return "العمليات";
 }
@@ -58,7 +58,7 @@ function getPageBreadcrumb(pathname: string): string {
   if (pathname.startsWith("/dashboard/reports")) return "التقارير";
   if (pathname.startsWith("/dashboard/documents")) return "المستندات";
   if (pathname.startsWith("/dashboard/companies")) return "بيانات الشركة";
-  if (pathname.startsWith("/dashboard/archive")) return "الأرشيف";
+  if (pathname.startsWith("/dashboard/archive")) return "أرشيف العمليات";
   if (pathname.startsWith("/dashboard/settings")) return "الإعدادات";
   return "الرئيسية";
 }
@@ -120,7 +120,7 @@ function getSidebarSections(role?: string): SidebarSection[] {
         bgLight: "bg-purple-500/10 dark:bg-purple-500/20 text-purple-600 dark:text-purple-400",
         items: [
           { label: "التقارير", href: "/dashboard/reports", icon: BarChart3 },
-          { label: "الأرشيف", href: "/dashboard/archive", icon: Archive },
+          { label: "أرشيف العمليات", href: "/dashboard/archive", icon: Archive },
         ],
       },
     ];
@@ -169,7 +169,7 @@ function getSidebarSections(role?: string): SidebarSection[] {
         bgLight: "bg-purple-500/10 dark:bg-purple-500/20 text-purple-600 dark:text-purple-400",
         items: [
           { label: "المستندات", href: "/dashboard/documents", icon: FileText },
-          { label: "الأرشيف", href: "/dashboard/archive", icon: Archive },
+          { label: "أرشيف العمليات", href: "/dashboard/archive", icon: Archive },
           { label: "التكويد", href: "/dashboard/coding-guide", icon: BookOpen },
         ],
       },
@@ -232,7 +232,7 @@ function getSidebarSections(role?: string): SidebarSection[] {
         { label: "بيانات الشركة", href: "/dashboard/companies", icon: Building2 },
         { label: "المستندات", href: "/dashboard/documents", icon: FileText },
         { label: "التقارير", href: "/dashboard/reports", icon: BarChart3 },
-        { label: "الأرشيف", href: "/dashboard/archive", icon: Archive },
+        { label: "أرشيف العمليات", href: "/dashboard/archive", icon: Archive },
         { label: "التكويد", href: "/dashboard/coding-guide", icon: BookOpen },
         { label: "الإعدادات", href: "/dashboard/settings", icon: Settings },
       ],
