@@ -50,6 +50,7 @@ import {
   EmptyState,
   formatCurrency,
   formatDate,
+  tafqeetArabic,
 } from "./types";
 import { StepFooterNav } from "./StepFooterNav";
 
@@ -78,6 +79,19 @@ export interface SupplyBatchRecord {
   totalCost: number;
   totalSupply: number;
   totalMargin: number;
+  createdAt: string;
+}
+
+export interface SavedGoodsReceiptRecord {
+  id: string;
+  receiptNumber: string;
+  receiptDate: string;
+  itemName: string;
+  quantity: number;
+  unitPrice: number;
+  totalPrice: number;
+  unit: string;
+  notes?: string;
   createdAt: string;
 }
 
@@ -194,7 +208,31 @@ export function TabSupply({
   const [activeBatchId, setActiveBatchId] = useState<string | null>(null);
   const [viewingBatch, setViewingBatch] = useState<SupplyBatchRecord | null>(null);
 
-  // Goods Receipts (Existing DB entity)
+  // Goods Receipts (Cards & DB)
+  const [goodsReceiptsList, setGoodsReceiptsList] = useState<SavedGoodsReceiptRecord[]>(() => {
+    if (existingNotes.goodsReceiptsList && Array.isArray(existingNotes.goodsReceiptsList) && existingNotes.goodsReceiptsList.length > 0) {
+      return existingNotes.goodsReceiptsList;
+    }
+    const dbReceipts =
+      op.supplyOrders?.flatMap((so: any) =>
+        (so.goodsReceipts || []).map((r: any) => ({
+          id: r.id,
+          receiptNumber: r.receiptNumber,
+          receiptDate: r.receiptDate?.split("T")[0] || new Date().toISOString().split("T")[0],
+          itemName: r.items?.[0]?.itemName || "توريد دفعة من الأصناف المطلوبة",
+          quantity: Number(r.items?.[0]?.quantity || 1),
+          unitPrice: Number(r.items?.[0]?.unitPrice || 0),
+          totalPrice: Number(r.items?.[0]?.totalPrice || 0),
+          unit: r.items?.[0]?.unit || "وحدة",
+          notes: r.notes || "",
+          createdAt: r.createdAt || new Date().toISOString(),
+        }))
+      ) || [];
+    return dbReceipts;
+  });
+
+  const [activeReceiptId, setActiveReceiptId] = useState<string | null>(null);
+  const [viewingReceipt, setViewingReceipt] = useState<SavedGoodsReceiptRecord | null>(null);
   const [addingReceipt, setAddingReceipt] = useState(false);
   const [receiptNumber, setReceiptNumber] = useState(`إذن-إضافة-${Date.now().toString().slice(-4)}`);
   const [receiptDate, setReceiptDate] = useState(new Date().toISOString().split("T")[0]);
@@ -205,11 +243,6 @@ export function TabSupply({
   const [receiptNotes, setReceiptNotes] = useState("");
   const [savingReceipt, setSavingReceipt] = useState(false);
   const [savingPrep, setSavingPrep] = useState(false);
-
-  const allReceipts =
-    op.supplyOrders?.flatMap((so: any) =>
-      (so.goodsReceipts || []).map((r: any) => ({ ...r, orderNumber: so.orderNumber }))
-    ) || [];
 
   // Summary Metrics
   const totalCost = useMemo(() => {
@@ -327,31 +360,114 @@ export function TabSupply({
     }
   };
 
-  // Save Goods Receipt to DB API
+  // Save Goods Receipt to DB API and as structured Card
   const handleSaveReceipt = async () => {
+    if (!receiptNumber.trim()) {
+      toast.error("يرجى إدخال رقم إذن الإضافة");
+      return;
+    }
+    const qty = Number(receiptQuantity) || 1;
+    const price = Number(receiptUnitPrice) || 0;
+    const total = qty * price;
+
     setSavingReceipt(true);
     try {
-      await api.post(`/operations/${op.id}/supply-receipts`, {
+      const newRecord: SavedGoodsReceiptRecord = {
+        id: activeReceiptId || `gr-${Date.now()}`,
         receiptNumber,
         receiptDate,
+        itemName: receiptItemName,
+        quantity: qty,
+        unitPrice: price,
+        totalPrice: total,
+        unit: receiptUnit || "وحدة",
         notes: receiptNotes,
-        items: [
-          {
-            itemName: receiptItemName,
-            unit: receiptUnit,
-            quantity: Number(receiptQuantity),
-            unitPrice: Number(receiptUnitPrice),
-            totalPrice: Number(receiptQuantity) * Number(receiptUnitPrice),
-          },
-        ],
+        createdAt: new Date().toISOString(),
+      };
+
+      let updatedList = [...goodsReceiptsList];
+      if (activeReceiptId) {
+        updatedList = updatedList.map((r) => (r.id === activeReceiptId ? newRecord : r));
+      } else {
+        updatedList.unshift(newRecord);
+      }
+
+      setGoodsReceiptsList(updatedList);
+
+      const updatedNotes = {
+        ...existingNotes,
+        goodsReceiptsList: updatedList,
+      };
+
+      await api.patch(`/operations/${op.id}`, {
+        notes: JSON.stringify(updatedNotes),
       });
-      toast.success("تم تسجيل إذن الإضافة والتوريد بنجاح بالمخازن 📦");
+
+      try {
+        await api.post(`/operations/${op.id}/supply-receipts`, {
+          receiptNumber,
+          receiptDate,
+          notes: receiptNotes,
+          items: [
+            {
+              itemName: receiptItemName,
+              unit: receiptUnit || "وحدة",
+              quantity: qty,
+              unitPrice: price,
+              totalPrice: total,
+            },
+          ],
+        });
+      } catch (err) {
+        console.warn("Backend supply-receipts optional sync", err);
+      }
+
+      toast.success(
+        activeReceiptId
+          ? "تم تحديث بطاقة إذن الإضافة بنجاح! 📦✓"
+          : "تم تسجيل وإصدار بطاقة إذن الإضافة بنجاح! 📦✓"
+      );
       setAddingReceipt(false);
+      setActiveReceiptId(null);
+      setReceiptNumber(`إذن-إضافة-${Date.now().toString().slice(-4)}`);
+      setReceiptNotes("");
       onRefresh();
     } catch {
-      toast.error("فشل تسجيل إذن الإضافة");
+      toast.error("فشل حفظ إذن الإضافة");
     } finally {
       setSavingReceipt(false);
+    }
+  };
+
+  const handleEditReceipt = (r: SavedGoodsReceiptRecord) => {
+    setActiveReceiptId(r.id);
+    setReceiptNumber(r.receiptNumber);
+    setReceiptDate(r.receiptDate);
+    setReceiptItemName(r.itemName);
+    setReceiptQuantity(r.quantity.toString());
+    setReceiptUnitPrice(r.unitPrice.toString());
+    setReceiptUnit(r.unit);
+    setReceiptNotes(r.notes || "");
+    setAddingReceipt(true);
+    toast.info(`تم تحميل بيانات إذن الإضافة "${r.receiptNumber}" للتعديل ✏️`);
+  };
+
+  const handleDeleteReceipt = async (rId: string) => {
+    if (!confirm("هل أنت متأكد من حذف بطاقة إذن الإضافة هذه؟")) return;
+    try {
+      const updatedList = goodsReceiptsList.filter((r) => r.id !== rId);
+      setGoodsReceiptsList(updatedList);
+      const updatedNotes = {
+        ...existingNotes,
+        goodsReceiptsList: updatedList,
+      };
+      await api.patch(`/operations/${op.id}`, {
+        notes: JSON.stringify(updatedNotes),
+      });
+      toast.success("تم حذف بطاقة إذن الإضافة بنجاح 🗑️");
+      onRefresh();
+    } catch {
+      toast.error("فشل حذف إذن الإضافة");
     }
   };
 
@@ -430,8 +546,8 @@ export function TabSupply({
                 <th className="p-3 w-28 text-center text-blue-600 dark:text-blue-400">سعر دراسة السوق</th>
                 <th className="p-3 w-28 text-center text-emerald-600 dark:text-emerald-400">سعر البت المالي</th>
                 <th className="p-3 w-28 text-center text-amber-600 dark:text-amber-400">إجمالي الهامش</th>
-                <th className="p-3 min-w-[175px] text-center">حالة التجهيز</th>
-                <th className="p-3 min-w-[185px] text-center">الفحص المبدئي</th>
+                <th className="p-3 min-w-[200px] text-center">حالة التجهيز</th>
+                <th className="p-3 min-w-[210px] text-center">الفحص المبدئي</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border/60">
@@ -461,13 +577,23 @@ export function TabSupply({
                     <td className="p-2.5 text-center font-mono font-bold text-amber-600 dark:text-amber-400">
                       {formatCurrency(itemMargin)}
                     </td>
-                    <td className="p-2.5 text-center min-w-[175px]">
+                    <td className="p-2.5 text-center min-w-[200px]">
                       <Select
                         value={item.prepStatus}
                         onValueChange={(val: any) => handleUpdateItemStatus(item.id, "prepStatus", val)}
                       >
-                        <SelectTrigger className="h-9 w-full text-xs font-bold rounded-xl bg-background border-border shadow-2xs">
-                          <SelectValue />
+                        <SelectTrigger className="h-9 w-full text-xs font-bold rounded-xl bg-background border-border shadow-2xs px-3">
+                          <SelectValue>
+                            {item.prepStatus === "PENDING"
+                              ? "1. قيد الحظر والتجهيز"
+                              : item.prepStatus === "PREPARING"
+                              ? "2. جاري التصنيع 🏭"
+                              : item.prepStatus === "SHIPPED"
+                              ? "3. جاري الشحن 🚚"
+                              : item.prepStatus === "DELIVERED"
+                              ? "4. تم التوريد بالمخزن ✓"
+                              : item.prepStatus}
+                          </SelectValue>
                         </SelectTrigger>
                         <SelectContent className="text-xs font-medium">
                           <SelectItem value="PENDING">1. قيد الحظر والتجهيز</SelectItem>
@@ -477,13 +603,21 @@ export function TabSupply({
                         </SelectContent>
                       </Select>
                     </td>
-                    <td className="p-2.5 text-center min-w-[185px]">
+                    <td className="p-2.5 text-center min-w-[210px]">
                       <Select
                         value={item.inspectionStatus}
                         onValueChange={(val: any) => handleUpdateItemStatus(item.id, "inspectionStatus", val)}
                       >
-                        <SelectTrigger className="h-9 w-full text-xs font-bold rounded-xl bg-background border-border shadow-2xs">
-                          <SelectValue />
+                        <SelectTrigger className="h-9 w-full text-xs font-bold rounded-xl bg-background border-border shadow-2xs px-3">
+                          <SelectValue>
+                            {item.inspectionStatus === "MATCHED"
+                              ? "مطابق للمواصفات ✓"
+                              : item.inspectionStatus === "CONDITIONAL"
+                              ? "ملاحظات قيد الاستيفاء ⚠️"
+                              : item.inspectionStatus === "REJECTED"
+                              ? "مرفوض للاستبدال ✕"
+                              : item.inspectionStatus}
+                          </SelectValue>
                         </SelectTrigger>
                         <SelectContent className="text-xs font-medium">
                           <SelectItem value="MATCHED">مطابق للمواصفات ✓</SelectItem>
@@ -725,7 +859,7 @@ export function TabSupply({
         title="أذون الإضافة المخزنية وحركة المخازن"
         icon={Truck}
         iconColor="text-indigo-600"
-        badge={<Badge className="bg-indigo-500/15 text-indigo-700 dark:text-indigo-300 border-indigo-500/30 text-[10px] font-bold">{allReceipts.length} إذن إضافة</Badge>}
+        badge={<Badge className="bg-indigo-500/15 text-indigo-700 dark:text-indigo-300 border-indigo-500/30 text-[10px] font-bold">{goodsReceiptsList.length} إذن إضافة</Badge>}
         actions={
           <Button
             size="sm"
@@ -741,7 +875,7 @@ export function TabSupply({
           <div className="p-4 rounded-xl bg-card border border-indigo-500/30 space-y-3 animate-fade-in shadow-lg">
             <h4 className="text-sm font-bold text-foreground flex items-center gap-2">
               <Package className="h-4 w-4 text-indigo-600" />
-              بيانات إذن إضافة التوريد للمخازن
+              {activeReceiptId ? "تعديل بيانات إذن إضافة التوريد للمخازن" : "بيانات إذن إضافة التوريد للمخازن"}
             </h4>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="space-y-1">
@@ -803,7 +937,10 @@ export function TabSupply({
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => setAddingReceipt(false)}
+                onClick={() => {
+                  setAddingReceipt(false);
+                  setActiveReceiptId(null);
+                }}
                 className="rounded-xl"
               >
                 إلغاء
@@ -812,40 +949,99 @@ export function TabSupply({
                 size="sm"
                 onClick={handleSaveReceipt}
                 disabled={savingReceipt}
-                className="bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold"
+                className="bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold cursor-pointer"
               >
-                {savingReceipt ? <Loader2 className="h-4 w-4 animate-spin" /> : "حفظ إذن الإضافة"}
+                {savingReceipt ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin ml-1" />
+                    <span>جاري الحفظ...</span>
+                  </>
+                ) : (
+                  <span>{activeReceiptId ? "تحديث إذن الإضافة 💾" : "حفظ إذن الإضافة 💾"}</span>
+                )}
               </Button>
             </div>
           </div>
         )}
 
-        {allReceipts.length > 0 ? (
-          <div className="space-y-3">
-            {allReceipts.map((r: any) => (
-              <div key={r.id} className="p-4 rounded-xl bg-card border border-border space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-sm font-bold text-foreground">إذن إضافة رقم {r.receiptNumber}</span>
-                  <Badge className="bg-indigo-500/15 text-indigo-700 dark:text-indigo-300 border-indigo-500/30 text-[10px]">أمر توريد {r.orderNumber}</Badge>
-                </div>
-                <DataRow label="تاريخ الاستلام" value={formatDate(r.receiptDate)} />
-                {r.items?.length > 0 && (
-                  <div className="text-xs space-y-1 pt-1">
-                    {r.items.map((item: any) => (
-                      <div
-                        key={item.id}
-                        className="flex justify-between bg-muted/30 p-2.5 rounded-lg border border-border/40"
-                      >
-                        <span className="text-foreground font-semibold">
-                          {item.itemName} — {Number(item.quantity)} {item.unit}
-                        </span>
-                        <span className="font-mono font-bold text-indigo-600 dark:text-indigo-400">
-                          {formatCurrency(Number(item.totalPrice))}
+        {goodsReceiptsList.length > 0 ? (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {goodsReceiptsList.map((r, index) => (
+              <div
+                key={r.id || index}
+                className="p-4 rounded-3xl border-2 border-border/80 hover:border-indigo-500/50 bg-card hover:bg-muted/10 shadow-sm hover:shadow-md transition-all flex flex-col justify-between gap-3 group"
+              >
+                <div className="space-y-2">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex items-center gap-2">
+                      <div className="w-10 h-10 rounded-2xl bg-indigo-500/15 text-indigo-600 dark:text-indigo-400 border border-indigo-500/30 flex items-center justify-center font-bold">
+                        <Package className="h-5 w-5" />
+                      </div>
+                      <div>
+                        <h4 className="text-xs sm:text-sm font-black text-foreground group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors">
+                          {r.receiptNumber}
+                        </h4>
+                        <span className="text-[10px] text-muted-foreground font-mono">
+                          {formatDate(r.receiptDate)}
                         </span>
                       </div>
-                    ))}
+                    </div>
+                    <Badge className="bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-500/30 text-[10px] font-bold">
+                      تم الاستلام بالمخزن ✓
+                    </Badge>
                   </div>
-                )}
+
+                  <div className="p-2.5 rounded-2xl bg-muted/40 border border-border text-xs space-y-1">
+                    <div className="flex justify-between items-center">
+                      <span className="text-muted-foreground text-[11px]">الصنف:</span>
+                      <strong className="text-foreground truncate max-w-[150px]">{r.itemName}</strong>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-muted-foreground text-[11px]">الكمية المستلمة:</span>
+                      <strong className="font-mono text-foreground font-bold">{r.quantity} {r.unit}</strong>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-muted-foreground text-[11px]">إجمالي القيمة:</span>
+                      <strong className="font-mono text-indigo-600 dark:text-indigo-400 font-black">{formatCurrency(r.totalPrice)}</strong>
+                    </div>
+                    {r.notes && (
+                      <div className="text-[10px] text-muted-foreground truncate pt-0.5 border-t border-border/40">
+                        {r.notes}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-end gap-1.5 pt-2 border-t border-border">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setViewingReceipt(r)}
+                    className="h-8 px-2.5 text-xs font-bold rounded-xl border-indigo-500/30 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 flex items-center gap-1 cursor-pointer"
+                    title="معاينة تفاصيل إذن الإضافة"
+                  >
+                    <Eye className="h-3.5 w-3.5" />
+                    <span>عرض التفاصيل</span>
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => handleEditReceipt(r)}
+                    className="h-8 px-2 text-xs font-bold rounded-xl hover:bg-muted text-muted-foreground hover:text-foreground cursor-pointer"
+                    title="تعديل هذا الإذن"
+                  >
+                    <Edit className="h-3.5 w-3.5" />
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => handleDeleteReceipt(r.id)}
+                    className="h-8 px-2 text-xs font-bold rounded-xl text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 cursor-pointer"
+                    title="حذف هذا الإذن"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
               </div>
             ))}
           </div>
@@ -884,19 +1080,10 @@ export function TabSupply({
 
                 <div className="flex items-center gap-2">
                   <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => window.print()}
-                    className="text-xs font-bold rounded-xl h-8.5 px-3 flex items-center gap-1.5 cursor-pointer"
-                  >
-                    <Printer className="h-3.5 w-3.5" />
-                    <span>طباعة</span>
-                  </Button>
-                  <Button
                     size="icon"
                     variant="ghost"
                     onClick={() => setViewingBatch(null)}
-                    className="h-8.5 w-8.5 rounded-full hover:bg-muted"
+                    className="h-8.5 w-8.5 rounded-full hover:bg-muted cursor-pointer"
                   >
                     <X className="h-4 w-4" />
                   </Button>
@@ -974,7 +1161,96 @@ export function TabSupply({
                 <Button
                   size="sm"
                   onClick={() => setViewingBatch(null)}
-                  className="rounded-xl font-bold px-5"
+                  className="rounded-xl font-bold px-5 cursor-pointer"
+                >
+                  إغلاق النافذة
+                </Button>
+              </div>
+            </div>
+          </div>
+        </Portal>
+      )}
+
+      {/* ━━━ MODAL: عرض تفاصيل إذن الإضافة المعتمد ━━━ */}
+      {viewingReceipt && (
+        <Portal>
+          <div className="fixed inset-0 z-[99999] bg-black/80 backdrop-blur-md flex items-center justify-center p-3 sm:p-5 animate-fade-in">
+            <div className="bg-card border border-border rounded-3xl max-w-2xl w-full p-5 sm:p-6 shadow-2xl max-h-[92vh] flex flex-col overflow-hidden text-foreground">
+              {/* Header */}
+              <div className="flex items-center justify-between pb-3.5 border-b border-border gap-3">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-2xl bg-indigo-500/15 text-indigo-600 dark:text-indigo-400 border border-indigo-500/30 flex items-center justify-center font-bold shrink-0">
+                    <Package className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <h3 className="font-black text-sm sm:text-base text-foreground">
+                      إذن إضافة مخزني رقم ({viewingReceipt.receiptNumber})
+                    </h3>
+                    <p className="text-xs text-muted-foreground font-mono">
+                      تاريخ الاستلام: {formatDate(viewingReceipt.receiptDate)} • الحالة: تم الاستلام المعتمد بالمخزن ✓
+                    </p>
+                  </div>
+                </div>
+
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  onClick={() => setViewingReceipt(null)}
+                  className="h-8.5 w-8.5 rounded-full hover:bg-muted cursor-pointer"
+                >
+                  <X className="h-4 w-4" />
+                </Button>
+              </div>
+
+              {/* Body */}
+              <div className="flex-1 overflow-y-auto space-y-4 py-4 pr-1 text-xs">
+                <div className="p-3.5 rounded-2xl bg-muted/40 border border-border space-y-2">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    <div>
+                      <span className="text-muted-foreground block text-[11px]">الصنف المستلم:</span>
+                      <strong className="text-foreground text-xs">{viewingReceipt.itemName}</strong>
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground block text-[11px]">ملاحظات أمين المخزن:</span>
+                      <strong className="text-foreground text-xs">{viewingReceipt.notes || "تم الفحص الفني والمطابقة بنسبة 100%"}</strong>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="border border-border rounded-2xl overflow-hidden shadow-xs">
+                  <table className="w-full text-right text-xs">
+                    <thead className="bg-muted/70 text-muted-foreground font-bold border-b border-border">
+                      <tr>
+                        <th className="p-2.5">بيان الصنف</th>
+                        <th className="p-2.5 text-center">الكمية</th>
+                        <th className="p-2.5 text-center">الوحدة</th>
+                        <th className="p-2.5 text-center">سعر الوحدة</th>
+                        <th className="p-2.5 text-center text-indigo-600">إجمالي القيمة</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr className="hover:bg-muted/20">
+                        <td className="p-2.5 font-bold text-foreground">{viewingReceipt.itemName}</td>
+                        <td className="p-2.5 text-center font-mono font-bold">{viewingReceipt.quantity}</td>
+                        <td className="p-2.5 text-center text-muted-foreground">{viewingReceipt.unit}</td>
+                        <td className="p-2.5 text-center font-mono font-bold">{formatCurrency(viewingReceipt.unitPrice)}</td>
+                        <td className="p-2.5 text-center font-mono text-indigo-600 font-bold">{formatCurrency(viewingReceipt.totalPrice)}</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+
+                <div className="p-3 rounded-2xl bg-indigo-500/5 border border-indigo-500/20 text-xs font-bold text-foreground">
+                  التفقيط المعتمد: {tafqeetArabic(viewingReceipt.totalPrice)}
+                </div>
+              </div>
+
+              {/* Footer */}
+              <div className="pt-3 border-t border-border flex justify-end">
+                <Button
+                  size="sm"
+                  onClick={() => setViewingReceipt(null)}
+                  className="rounded-xl font-bold px-5 cursor-pointer"
                 >
                   إغلاق النافذة
                 </Button>

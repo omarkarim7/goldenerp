@@ -506,7 +506,9 @@ export function TabInvoicing({
               onValueChange={(val: any) => setInvoiceType(val)}
             >
               <SelectTrigger className="h-9.5 text-xs font-bold rounded-xl">
-                <SelectValue />
+                <SelectValue>
+                  {invoiceType === "ELECTRONIC" ? "فاتورة إلكترونية معتمدة (منظومة ETA)" : "فاتورة ورقية رسمية مختومة"}
+                </SelectValue>
               </SelectTrigger>
               <SelectContent className="text-xs font-medium">
                 <SelectItem value="ELECTRONIC">فاتورة إلكترونية معتمدة (منظومة ETA)</SelectItem>
@@ -1132,15 +1134,6 @@ export function TabInvoicing({
                 </div>
 
                 <div className="flex items-center gap-2">
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => window.print()}
-                    className="text-xs font-bold rounded-xl h-8.5 px-3 flex items-center gap-1.5 cursor-pointer"
-                  >
-                    <Printer className="h-3.5 w-3.5" />
-                    <span>طباعة</span>
-                  </Button>
                   <Button
                     size="icon"
                     variant="ghost"

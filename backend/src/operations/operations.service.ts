@@ -1221,18 +1221,55 @@ export class OperationsService {
   // ━━━ 13. إضافة تأمين (ابتدائي أو نهائي) مباشرة ━━━
   async addGuarantee(id: string, data: any) {
     const operation = await this.findOne(id);
-    const companyId = data.companyId || operation.companies[0]?.companyId;
+    let companyId = data.companyId || operation.companies?.[0]?.companyId;
+    if (!companyId) {
+      const firstCompany = await this.prisma.company.findFirst();
+      companyId = firstCompany?.id;
+    }
+
+    // Sanitize GuaranteeType
+    let safeType: GuaranteeType = GuaranteeType.INITIAL;
+    const rawType = String(data.type || '').toUpperCase();
+    if (rawType === 'FINAL' || rawType.includes('نهائي')) {
+      safeType = GuaranteeType.FINAL;
+    }
+
+    // Sanitize GuaranteePaymentMethod
+    let safePaymentMethod: GuaranteePaymentMethod = GuaranteePaymentMethod.BANK_GUARANTEE;
+    const pm = String(data.paymentMethod || '').toUpperCase();
+    if (pm === 'CASH' || pm.includes('خزينة') || pm.includes('نقد') || pm.includes('CASH')) {
+      safePaymentMethod = GuaranteePaymentMethod.CASH;
+    } else if (pm === 'DEDUCTION_FROM_DUES' || pm.includes('خصم') || pm.includes('DEDUCTION')) {
+      safePaymentMethod = GuaranteePaymentMethod.DEDUCTION_FROM_DUES;
+    } else {
+      safePaymentMethod = GuaranteePaymentMethod.BANK_GUARANTEE;
+    }
+
+    // Safely parse dates
+    let startDate: Date | undefined = undefined;
+    const rawStart = data.startDate || data.issueDate || data.paymentDate;
+    if (rawStart) {
+      const parsed = new Date(rawStart);
+      if (!isNaN(parsed.getTime())) startDate = parsed;
+    }
+
+    let endDate: Date | undefined = undefined;
+    const rawEnd = data.endDate || data.validUntil;
+    if (rawEnd) {
+      const parsed = new Date(rawEnd);
+      if (!isNaN(parsed.getTime())) endDate = parsed;
+    }
 
     return this.prisma.guarantee.create({
       data: {
         operationId: id,
-        companyId,
-        type: data.type || 'INITIAL',
-        paymentMethod: data.paymentMethod || 'BANK_GUARANTEE',
-        amount: Number(data.amount),
+        companyId: companyId || '',
+        type: safeType,
+        paymentMethod: safePaymentMethod,
+        amount: Number(data.amount) || 0,
         percentage: data.percentage ? Number(data.percentage) : undefined,
-        startDate: data.startDate ? new Date(data.startDate) : undefined,
-        endDate: data.endDate ? new Date(data.endDate) : undefined,
+        startDate,
+        endDate,
         duration: data.duration ? Number(data.duration) : undefined,
         bankName: data.bankName,
         bankBranch: data.bankBranch,
@@ -1246,15 +1283,48 @@ export class OperationsService {
 
   async updateGuarantee(id: string, guaranteeId: string, data: any) {
     await this.findOne(id);
+
+    let safeType: GuaranteeType | undefined = undefined;
+    if (data.type) {
+      const rawType = String(data.type).toUpperCase();
+      safeType = (rawType === 'FINAL' || rawType.includes('نهائي')) ? GuaranteeType.FINAL : GuaranteeType.INITIAL;
+    }
+
+    let safePaymentMethod: GuaranteePaymentMethod | undefined = undefined;
+    if (data.paymentMethod) {
+      const pm = String(data.paymentMethod).toUpperCase();
+      if (pm === 'CASH' || pm.includes('خزينة') || pm.includes('نقد')) {
+        safePaymentMethod = GuaranteePaymentMethod.CASH;
+      } else if (pm === 'DEDUCTION_FROM_DUES' || pm.includes('خصم') || pm.includes('DEDUCTION')) {
+        safePaymentMethod = GuaranteePaymentMethod.DEDUCTION_FROM_DUES;
+      } else {
+        safePaymentMethod = GuaranteePaymentMethod.BANK_GUARANTEE;
+      }
+    }
+
+    let startDate: Date | undefined = undefined;
+    const rawStart = data.startDate || data.issueDate || data.paymentDate;
+    if (rawStart) {
+      const parsed = new Date(rawStart);
+      if (!isNaN(parsed.getTime())) startDate = parsed;
+    }
+
+    let endDate: Date | undefined = undefined;
+    const rawEnd = data.endDate || data.validUntil;
+    if (rawEnd) {
+      const parsed = new Date(rawEnd);
+      if (!isNaN(parsed.getTime())) endDate = parsed;
+    }
+
     return this.prisma.guarantee.update({
       where: { id: guaranteeId },
       data: {
-        type: data.type,
-        paymentMethod: data.paymentMethod,
+        type: safeType,
+        paymentMethod: safePaymentMethod,
         amount: data.amount !== undefined ? Number(data.amount) : undefined,
         percentage: data.percentage !== undefined ? Number(data.percentage) : undefined,
-        startDate: data.startDate ? new Date(data.startDate) : undefined,
-        endDate: data.endDate ? new Date(data.endDate) : undefined,
+        startDate,
+        endDate,
         duration: data.duration !== undefined ? Number(data.duration) : undefined,
         bankName: data.bankName,
         bankBranch: data.bankBranch,

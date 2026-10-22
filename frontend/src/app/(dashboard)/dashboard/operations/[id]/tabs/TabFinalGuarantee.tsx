@@ -943,16 +943,23 @@ export function TabFinalGuarantee({
           ? "خصم من مستحقات عملية أخرى"
           : "تحويل ابتدائي لنهائي وسداد الفارق";
 
+      const enumPaymentMethod =
+        receiptPaymentMethod === "CASH"
+          ? "CASH"
+          : receiptPaymentMethod === "DEDUCTION"
+          ? "DEDUCTION_FROM_DUES"
+          : "BANK_GUARANTEE";
+
       await api.post(`/operations/${op.id}/guarantees`, {
         type: "FINAL",
         amount: Number(receiptAmount),
         percentage: 5,
-        paymentMethod: methodLabel,
+        paymentMethod: enumPaymentMethod,
         receiptNumber,
-        issueDate: receiptDate,
-        validUntil: validUntilDate,
+        startDate: receiptDate || new Date().toISOString().split("T")[0],
+        endDate: validUntilDate || undefined,
         bankName: receiptPaymentMethod === "BANK_GUARANTEE" ? bankName : undefined,
-        notes: receiptNotes,
+        notes: `${methodLabel} ${receiptNotes ? `- ${receiptNotes}` : ""}`.trim(),
       });
 
       if (receiptFile) {
@@ -1762,7 +1769,13 @@ export function TabFinalGuarantee({
                         {g.receiptNumber || g.letterNumber ? `رقم الإيصال: ${g.receiptNumber || g.letterNumber}` : "إيصال تأمين نهائي"}
                       </h4>
                       <Badge className="bg-emerald-600 text-white text-[10px] font-bold">
-                        {g.paymentMethod || "سداد معتمد"}
+                        {g.paymentMethod === "BANK_GUARANTEE"
+                          ? "خطاب ضمان بنكي"
+                          : g.paymentMethod === "CASH"
+                          ? "خزينة نقداً"
+                          : g.paymentMethod === "DEDUCTION_FROM_DUES"
+                          ? "خصم من المستحقات"
+                          : (g.paymentMethod || "سداد معتمد")}
                       </Badge>
                       <span className="font-mono text-emerald-600 dark:text-emerald-400 font-extrabold text-sm">
                         {formatCurrency(Number(g.amount))}

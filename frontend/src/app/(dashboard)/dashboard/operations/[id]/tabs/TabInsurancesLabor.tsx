@@ -271,7 +271,9 @@ export function TabInsurancesLabor({
               onValueChange={(val: any) => setSocialInsuranceStatus(val)}
             >
               <SelectTrigger className="h-9.5 text-xs font-bold rounded-xl">
-                <SelectValue />
+                <SelectValue>
+                  {socialInsuranceStatus === "PAID" ? "تم السداد واستلام الإيصال ✓" : "قيد التوريد والتسديد ⏳"}
+                </SelectValue>
               </SelectTrigger>
               <SelectContent className="text-xs font-medium">
                 <SelectItem value="PAID">تم السداد واستلام الإيصال ✓</SelectItem>
@@ -406,7 +408,9 @@ export function TabInsurancesLabor({
               onValueChange={(val: any) => setLaborStatus(val)}
             >
               <SelectTrigger className="h-9.5 text-xs font-bold rounded-xl">
-                <SelectValue />
+                <SelectValue>
+                  {laborStatus === "PAID" ? "تم السداد وإصدار الشهادة ✓" : "قيد التسديد ⏳"}
+                </SelectValue>
               </SelectTrigger>
               <SelectContent className="text-xs font-medium">
                 <SelectItem value="PAID">تم السداد وإصدار الشهادة ✓</SelectItem>
@@ -670,7 +674,13 @@ export function TabInsurancesLabor({
               onValueChange={(val: any) => setPaymentOrderStatus(val)}
             >
               <SelectTrigger className="h-9.5 text-xs font-bold rounded-xl">
-                <SelectValue />
+                <SelectValue>
+                  {paymentOrderStatus === "AUDITING"
+                    ? "1. مراجعة بالحسابات ⏳"
+                    : paymentOrderStatus === "SIGNED"
+                    ? "2. توقيع المراقب المالي ✍️"
+                    : "3. تم صدور أمر الدفع رسمي ✓"}
+                </SelectValue>
               </SelectTrigger>
               <SelectContent className="text-xs font-medium">
                 <SelectItem value="AUDITING">1. مراجعة بالحسابات ⏳</SelectItem>
