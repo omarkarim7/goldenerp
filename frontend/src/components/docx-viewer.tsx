@@ -94,8 +94,8 @@ export function DocxViewer({
         containerRef.current.innerHTML = "";
 
         await renderAsync(blob, containerRef.current, undefined, {
-          className: "docx-preview-root",
-          inWrapper: false,
+          className: "docx",
+          inWrapper: true,
           ignoreWidth: false,
           ignoreHeight: false,
           ignoreFonts: false,
@@ -104,6 +104,14 @@ export function DocxViewer({
           experimental: true,
           useBase64URL: true,
         } as any);
+
+        if (containerRef.current) {
+          const sections = containerRef.current.querySelectorAll("section, article, .docx, [class*='docx']");
+          sections.forEach((s) => {
+            (s as HTMLElement).style.setProperty("background-color", "#ffffff", "important");
+            (s as HTMLElement).style.setProperty("color", "#0f172a", "important");
+          });
+        }
 
         if (isCancelled) return;
         setRenderedWith("docx-preview");
@@ -419,14 +427,14 @@ export function DocxViewer({
             {mammothHtml ? (
               <div
                 dir="rtl"
-                className="bg-white text-slate-900 p-8 sm:p-12 rounded-xl shadow-2xl border border-slate-300 min-h-[800px] docx-mammoth-body"
+                className="bg-white text-slate-900 p-8 sm:p-12 rounded-xl shadow-2xl border border-slate-300 min-h-[800px] w-full docx-mammoth-body"
                 dangerouslySetInnerHTML={{ __html: mammothHtml }}
               />
             ) : (
               <div
                 ref={containerRef}
                 dir="rtl"
-                className="docx-preview-root w-full"
+                className="docx-preview-root w-full flex flex-col items-center"
               />
             )}
           </div>
@@ -434,50 +442,83 @@ export function DocxViewer({
       </div>
 
       <style jsx global>{`
-        .docx-preview-root .docx-wrapper {
+        .docx-wrapper {
           background: transparent !important;
-          padding: 0 !important;
+          padding: 20px 0 !important;
           display: flex !important;
           flex-direction: column !important;
           align-items: center !important;
           gap: 24px !important;
+          width: 100% !important;
         }
-        .docx-preview-root section.docx {
+        .docx-wrapper > section.docx,
+        .docx-wrapper section,
+        section.docx,
+        article.docx,
+        .docx-preview-root section,
+        .docx-preview-root article,
+        .docx-preview-root .docx {
           background: #ffffff !important;
+          background-color: #ffffff !important;
           color: #0f172a !important;
-          box-shadow: 0 10px 30px -5px rgba(0, 0, 0, 0.4), 0 8px 10px -6px rgba(0, 0, 0, 0.3) !important;
-          border-radius: 8px !important;
+          box-shadow: 0 10px 35px -5px rgba(0, 0, 0, 0.45), 0 0 0 1px rgba(0, 0, 0, 0.1) !important;
+          border-radius: 4px !important;
           margin-bottom: 24px !important;
           direction: rtl !important;
           text-align: right !important;
-          padding: 40px !important;
           min-height: 800px !important;
         }
-        .docx-preview-root section.docx table {
+        .docx-wrapper section.docx *,
+        section.docx *,
+        .docx-preview-root * {
+          color: #0f172a;
+        }
+        .docx-wrapper section.docx table,
+        section.docx table,
+        .docx-preview-root table {
           border-collapse: collapse !important;
           width: 100% !important;
           margin: 14px 0 !important;
+          background-color: #ffffff !important;
         }
-        .docx-preview-root section.docx td,
-        .docx-preview-root section.docx th {
-          border: 1px solid #94a3b8 !important;
+        .docx-wrapper section.docx td,
+        .docx-wrapper section.docx th,
+        section.docx td,
+        section.docx th,
+        .docx-preview-root td,
+        .docx-preview-root th {
+          border: 1px solid #475569 !important;
           padding: 8px 10px !important;
           text-align: right !important;
+          color: #0f172a !important;
+          background: transparent !important;
         }
-        .docx-preview-root section.docx th {
+        .docx-wrapper section.docx th,
+        section.docx th,
+        .docx-preview-root th {
           background-color: #f1f5f9 !important;
           font-weight: bold !important;
+        }
+        .docx-mammoth-body {
+          background: #ffffff !important;
+          background-color: #ffffff !important;
+          color: #0f172a !important;
+        }
+        .docx-mammoth-body * {
+          color: #0f172a;
         }
         .docx-mammoth-body table {
           border-collapse: collapse;
           width: 100%;
           margin: 16px 0;
+          background-color: #ffffff;
         }
         .docx-mammoth-body td,
         .docx-mammoth-body th {
-          border: 1px solid #cbd5e1;
+          border: 1px solid #475569;
           padding: 8px 12px;
           text-align: right;
+          color: #0f172a;
         }
         .docx-mammoth-body th {
           background-color: #f8fafc;
@@ -489,9 +530,17 @@ export function DocxViewer({
         }
         .docx-preview-root mark,
         .docx-mammoth-body mark,
+        .docx-wrapper mark,
+        section.docx mark,
         .docx-preview-root [style*="background-color: red"],
         .docx-preview-root [style*="background-color: #ff0000"],
         .docx-preview-root [style*="background-color: rgb(255, 0, 0)"],
+        .docx-wrapper [style*="background-color: red"],
+        .docx-wrapper [style*="background-color: #ff0000"],
+        .docx-wrapper [style*="background-color: rgb(255, 0, 0)"],
+        section.docx [style*="background-color: red"],
+        section.docx [style*="background-color: #ff0000"],
+        section.docx [style*="background-color: rgb(255, 0, 0)"],
         .docx-mammoth-body [style*="background-color: red"],
         .docx-mammoth-body [style*="background-color: #ff0000"],
         .docx-mammoth-body [style*="background-color: rgb(255, 0, 0)"] {
