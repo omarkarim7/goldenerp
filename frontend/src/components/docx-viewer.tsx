@@ -24,6 +24,7 @@ interface DocxViewerProps {
   onDownload?: () => void;
   onDownloadWord?: () => void;
   onDownloadPdf?: () => void;
+  hideHeaderTitle?: boolean;
 }
 
 /**
@@ -38,6 +39,7 @@ export function DocxViewer({
   className = "",
   onDownload,
   onDownloadWord,
+  hideHeaderTitle = false,
 }: DocxViewerProps) {
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
@@ -108,7 +110,7 @@ export function DocxViewer({
         setLoading(false);
       } catch (docxErr) {
         if (isCancelled) return;
-        console.warn("docx-preview failed, attempting mammoth fallback:", docxErr);
+        console.info("docx-preview fallback to high-fidelity Mammoth HTML engine:", (docxErr as any)?.message || docxErr);
 
         try {
           const arrayBuffer = await blob!.arrayBuffer();
@@ -247,27 +249,36 @@ export function DocxViewer({
       } ${className}`}
     >
       {/* ━━━ شريط الأدوات العلوي الموحد ━━━ */}
-      <div className="flex items-center justify-between gap-3 px-4 py-2.5 bg-gradient-to-r from-slate-900 via-[#1e293b] to-slate-900 border-b border-slate-800 text-xs shrink-0 flex-wrap">
-        <div className="flex items-center gap-2.5">
-          <div className="w-8 h-8 rounded-lg bg-blue-600/20 border border-blue-500/30 flex items-center justify-center text-blue-400">
-            <FileText className="h-4 w-4" />
-          </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <span className="font-bold text-slate-200 text-sm truncate max-w-xs sm:max-w-md">
-                {cleanBaseName}
-              </span>
-              <span className="px-2.5 py-0.5 rounded-full bg-blue-500/20 text-blue-300 border border-blue-500/30 font-bold text-[10px] shadow-xs">
-                {isPdf ? "معاينة PDF مباشرة" : "معاينة Word مباشرة (بدون تحويل) ✓"}
+      <div className={`flex items-center justify-between gap-3 px-4 ${hideHeaderTitle ? "py-1.5 bg-slate-900 border-b border-slate-800/80" : "py-2.5 bg-gradient-to-r from-slate-900 via-[#1e293b] to-slate-900 border-b border-slate-800"} text-xs shrink-0 flex-wrap`}>
+        {!hideHeaderTitle ? (
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-lg bg-blue-600/20 border border-blue-500/30 flex items-center justify-center text-blue-400">
+              <FileText className="h-4 w-4" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="font-bold text-slate-200 text-sm truncate max-w-xs sm:max-w-md">
+                  {cleanBaseName}
+                </span>
+                <span className="px-2.5 py-0.5 rounded-full bg-blue-500/20 text-blue-300 border border-blue-500/30 font-bold text-[10px] shadow-xs">
+                  {isPdf ? "معاينة PDF مباشرة" : "معاينة Word مباشرة (بدون تحويل) ✓"}
+                </span>
+              </div>
+              <span className="text-[10px] text-slate-400 hidden sm:inline">
+                {isPdf
+                  ? "عرض ملف الـ PDF الأصلي بكافة الأدوات والطباعة"
+                  : "عرض صفحات وتنسيق مستند الوورد الأصلي مباشرة في المتصفح"}
               </span>
             </div>
-            <span className="text-[10px] text-slate-400 hidden sm:inline">
-              {isPdf
-                ? "عرض ملف الـ PDF الأصلي بكافة الأدوات والطباعة"
-                : "عرض صفحات وتنسيق مستند الوورد الأصلي مباشرة في المتصفح"}
+          </div>
+        ) : (
+          <div className="flex items-center gap-2">
+            <span className="text-[11px] font-semibold text-slate-400 flex items-center gap-1.5">
+              <FileText className="h-3.5 w-3.5 text-blue-400" />
+              <span>أدوات تحكم المستند (Word DOM)</span>
             </span>
           </div>
-        </div>
+        )}
 
         {/* أدوات التحكم بالمعاينة والتحميل */}
         <div className="flex items-center gap-1.5 sm:gap-2">
@@ -279,7 +290,7 @@ export function DocxViewer({
                 size="sm"
                 onClick={handleZoomOut}
                 disabled={loading || !!error || zoom <= 60}
-                className="h-8 w-8 p-0 text-slate-300 hover:text-white hover:bg-slate-800 rounded-lg cursor-pointer"
+                className="h-7 w-7 sm:h-8 sm:w-8 p-0 text-slate-300 hover:text-white hover:bg-slate-800 rounded-lg cursor-pointer"
                 title="تصغير (-15%)"
               >
                 <ZoomOut className="h-3.5 w-3.5" />
@@ -289,7 +300,7 @@ export function DocxViewer({
                 type="button"
                 onClick={handleZoomReset}
                 disabled={loading || !!error}
-                className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-[11px] font-mono font-bold cursor-pointer transition-colors"
+                className="px-2 py-0.5 sm:px-2.5 sm:py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-[11px] font-mono font-bold cursor-pointer transition-colors"
                 title="إعادة التعيين إلى 100%"
               >
                 {zoom}%
@@ -301,7 +312,7 @@ export function DocxViewer({
                 size="sm"
                 onClick={handleZoomIn}
                 disabled={loading || !!error || zoom >= 200}
-                className="h-8 w-8 p-0 text-slate-300 hover:text-white hover:bg-slate-800 rounded-lg cursor-pointer"
+                className="h-7 w-7 sm:h-8 sm:w-8 p-0 text-slate-300 hover:text-white hover:bg-slate-800 rounded-lg cursor-pointer"
                 title="تكبير (+15%)"
               >
                 <ZoomIn className="h-3.5 w-3.5" />
@@ -311,29 +322,33 @@ export function DocxViewer({
             </>
           )}
 
-          {/* ملء الشاشة */}
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            onClick={toggleFullscreen}
-            className="h-8 w-8 p-0 text-slate-300 hover:text-white hover:bg-slate-800 rounded-lg cursor-pointer hidden sm:flex"
-            title={isFullscreen ? "تصغير الشاشة" : "عرض ملء الشاشة"}
-          >
-            {isFullscreen ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
-          </Button>
+          {!hideHeaderTitle && (
+            <>
+              {/* ملء الشاشة */}
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={toggleFullscreen}
+                className="h-8 w-8 p-0 text-slate-300 hover:text-white hover:bg-slate-800 rounded-lg cursor-pointer hidden sm:flex"
+                title={isFullscreen ? "تصغير الشاشة" : "عرض ملء الشاشة"}
+              >
+                {isFullscreen ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
+              </Button>
 
-          {/* تحميل الملف بصيغته الأصلية */}
-          <Button
-            type="button"
-            size="sm"
-            onClick={handleDownloadWordFile}
-            className="h-8 px-3 text-xs bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl cursor-pointer flex items-center gap-1.5 font-bold shadow transition-all active:scale-95"
-            title={isPdf ? "تحميل ملف PDF" : "تحميل ملف Word (.docx)"}
-          >
-            {isPdf ? <Download className="h-3.5 w-3.5" /> : <FileDown className="h-3.5 w-3.5" />}
-            <span>{isPdf ? "تحميل PDF" : "تحميل Word (.docx)"}</span>
-          </Button>
+              {/* تحميل الملف بصيغته الأصلية */}
+              <Button
+                type="button"
+                size="sm"
+                onClick={handleDownloadWordFile}
+                className="h-8 px-3 text-xs bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl cursor-pointer flex items-center gap-1.5 font-bold shadow transition-all active:scale-95"
+                title={isPdf ? "تحميل ملف PDF" : "تحميل ملف Word (.docx)"}
+              >
+                {isPdf ? <Download className="h-3.5 w-3.5" /> : <FileDown className="h-3.5 w-3.5" />}
+                <span>{isPdf ? "تحميل PDF" : "تحميل Word (.docx)"}</span>
+              </Button>
+            </>
+          )}
 
           {/* طباعة مباشرة */}
           <Button
@@ -341,7 +356,7 @@ export function DocxViewer({
             variant="outline"
             size="sm"
             onClick={handleDirectPrint}
-            className="h-8 px-3 text-xs bg-amber-600/20 border-amber-500/40 hover:bg-amber-600/30 text-amber-300 rounded-xl cursor-pointer flex items-center gap-1.5 font-bold transition-all active:scale-95"
+            className="h-7 sm:h-8 px-2.5 sm:px-3 text-xs bg-amber-600/20 border-amber-500/40 hover:bg-amber-600/30 text-amber-300 rounded-lg sm:rounded-xl cursor-pointer flex items-center gap-1.5 font-bold transition-all active:scale-95"
             title="طباعة محتوى المستند مباشرة"
           >
             <Printer className="h-3.5 w-3.5" />

@@ -28,6 +28,9 @@ import {
   Loader2,
   Lock,
   Unlock,
+  Copy,
+  FileCode,
+  WrapText,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -219,28 +222,53 @@ function OperationDetailContent({ id }: { id: string }) {
   }>(null);
   const [actionLoading, setActionLoading] = useState(false);
 
-  // معاينة وتحميل مستندات العملية وكراسة الشروط ودراسة السوق (يدعم PDF و Word والصور)
+  // معاينة وتحميل مستندات العملية وكراسة الشروط ودراسة السوق (يدعم PDF و Word والصور والنصوص والويب)
   const [previewDocUrl, setPreviewDocUrl] = useState<string | null>(null);
   const [previewDocBlob, setPreviewDocBlob] = useState<Blob | null>(null);
-  const [previewDocType, setPreviewDocType] = useState<"pdf" | "docx" | "image" | null>(null);
+  const [previewDocType, setPreviewDocType] = useState<"pdf" | "docx" | "image" | "text" | "html" | "other" | null>(null);
   const [previewDocTitle, setPreviewDocTitle] = useState<string>("");
+  const [previewTextContent, setPreviewTextContent] = useState<string>("");
+  const [isTextWrap, setIsTextWrap] = useState<boolean>(true);
   const [previewDocItem, setPreviewDocItem] = useState<any>(null);
   const [isFullscreenDoc, setIsFullscreenDoc] = useState<boolean>(false);
   const [, setIsProcessingDoc] = useState<boolean>(false);
 
-  const handlePreviewDocument = async (doc: { id?: string; fileName?: string; filePath?: string; title?: string; fileType?: string }) => {
+  const handlePreviewDocument = async (doc: { id?: string; fileName?: string; filePath?: string; title?: string; fileType?: string; size?: number }) => {
     try {
       setIsProcessingDoc(true);
       setPreviewDocItem(doc);
       const title = doc.fileName || doc.title || "مستند العملية";
       setPreviewDocTitle(title);
-      toast.info("جاري تحضير المستند أو الصورة للعرض المباشر...");
+      toast.info("جاري تحضير المستند للعرض المباشر...");
 
       let blobData: Blob | null = (doc as any).blob || null;
       let contentType = blobData?.type || "";
       const currentOpId = op?.id;
 
-      // Tier 1: Try fetching via operation documents endpoint
+      // Tier 0: Direct Data URI decoding if saved internally in DB
+      const targetFilePath = doc.filePath || "";
+      if (!blobData && targetFilePath.startsWith("data:")) {
+        try {
+          const commaIdx = targetFilePath.indexOf(",");
+          if (commaIdx !== -1) {
+            const header = targetFilePath.substring(0, commaIdx);
+            const base64Data = targetFilePath.substring(commaIdx + 1);
+            const mimeMatch = header.match(/data:([^;]+)/);
+            const mime = mimeMatch ? mimeMatch[1] : "application/octet-stream";
+            const byteChars = atob(base64Data);
+            const byteNumbers = new Uint8Array(byteChars.length);
+            for (let i = 0; i < byteChars.length; i++) {
+              byteNumbers[i] = byteChars.charCodeAt(i);
+            }
+            blobData = new Blob([byteNumbers], { type: mime });
+            contentType = mime;
+          }
+        } catch (e) {
+          console.warn("Direct base64 decode failed:", e);
+        }
+      }
+
+      // Tier 1: Try fetching via operation documents endpoint (with Bearer token via api client)
       if (!blobData && doc.id && currentOpId) {
         try {
           const res = await api.get(`/operations/${currentOpId}/documents/${doc.id}/file`, { responseType: "blob" });
@@ -251,33 +279,26 @@ function OperationDetailContent({ id }: { id: string }) {
         }
       }
 
-      // Tier 2: If Tier 1 failed or no doc.id, try direct filePath (Radar or absolute URL)
-      if (!blobData) {
-        const targetUrl = doc.filePath || "";
-        if (targetUrl) {
-          if (targetUrl.startsWith("http://") || targetUrl.startsWith("https://")) {
-            try {
-              const res = await fetch(targetUrl);
-              if (res.ok) {
-                blobData = await res.blob();
-                contentType = blobData.type || "application/pdf";
-              }
-            } catch {
-              // Direct cloud link embedded into viewer
-              setPreviewDocUrl(targetUrl);
-              setPreviewDocType("pdf");
-              toast.success("تم فتح المستند السحابي المعتمد للمعاينة المباشرة! 📄");
-              return;
+      // Tier 2: If Tier 1 failed or no doc.id, try direct filePath
+      if (!blobData && targetFilePath) {
+        if (targetFilePath.startsWith("http://") || targetFilePath.startsWith("https://")) {
+          try {
+            const res = await fetch(targetFilePath);
+            if (res.ok) {
+              blobData = await res.blob();
+              contentType = blobData.type || "";
             }
-          } else {
-            try {
-              const cleanUrl = targetUrl.startsWith("/") ? targetUrl : `/${targetUrl}`;
-              const res = await api.get(cleanUrl, { responseType: "blob" });
-              blobData = res.data;
-              contentType = String(res.headers?.["content-type"] || "").toLowerCase();
-            } catch (urlErr) {
-              console.warn("Target URL fetch failed:", urlErr);
-            }
+          } catch (netErr) {
+            console.warn("Direct cloud fetch failed:", netErr);
+          }
+        } else {
+          try {
+            const cleanUrl = targetFilePath.startsWith("/") ? targetFilePath : `/${targetFilePath}`;
+            const res = await api.get(cleanUrl, { responseType: "blob" });
+            blobData = res.data;
+            contentType = String(res.headers?.["content-type"] || "").toLowerCase();
+          } catch (urlErr) {
+            console.warn("Target URL fetch failed:", urlErr);
           }
         }
       }
@@ -295,10 +316,39 @@ function OperationDetailContent({ id }: { id: string }) {
         throw new Error("لم يتم استلام محتوى صالح للمستند");
       }
 
-      const fileExt = (doc.fileType || "").toLowerCase();
-      const firstBytes = await blobData.slice(0, 100).text().catch(() => "");
+      const fileExt = (doc.fileType || "").toLowerCase() || (title.split(".").pop() || "").toLowerCase();
+      const firstBytes = await blobData.slice(0, 512).text().catch(() => "");
       const isPkZip = firstBytes.startsWith("PK");
+      const isPdfHeader = firstBytes.startsWith("%PDF");
 
+      // 1. Text & Code extensions and formats
+      const textExtensions = ["txt", "log", "csv", "tsv", "json", "xml", "md", "markdown", "sql", "ini", "conf", "env", "yml", "yaml", "sh", "bat"];
+      const isTextByExt = textExtensions.includes(fileExt) || Boolean(title.match(/\.(txt|log|csv|tsv|json|xml|md|sql|ini|conf|env|ya?ml)$/i));
+      const isTextByMime =
+        contentType.startsWith("text/plain") ||
+        contentType.startsWith("text/csv") ||
+        contentType.startsWith("application/json") ||
+        contentType.startsWith("application/xml") ||
+        contentType.startsWith("text/markdown") ||
+        contentType.startsWith("text/tab-separated-values");
+
+      const isPrintableText =
+        !isPkZip &&
+        !isPdfHeader &&
+        !contentType.includes("pdf") &&
+        !contentType.includes("image") &&
+        !contentType.includes("word") &&
+        !contentType.includes("officedocument") &&
+        (isTextByExt || isTextByMime || (firstBytes.length > 0 && !/[\x00-\x08\x0E-\x1F]/.test(firstBytes.slice(0, 64))));
+
+      // 2. Images
+      const isImage =
+        ["png", "jpg", "jpeg", "webp", "gif", "svg", "bmp", "ico"].includes(fileExt) ||
+        Boolean(title.match(/\.(png|jpe?g|webp|gif|svg|bmp|ico)$/i)) ||
+        Boolean(blobData.type?.startsWith("image/")) ||
+        Boolean(contentType.startsWith("image/"));
+
+      // 3. Word documents (.docx / .doc)
       const isWordName =
         title.toLowerCase().endsWith(".docx") ||
         title.toLowerCase().endsWith(".doc") ||
@@ -307,23 +357,29 @@ function OperationDetailContent({ id }: { id: string }) {
 
       const isWordType =
         blobData.type?.includes("word") ||
-        blobData.type?.includes("officedocument") ||
+        blobData.type?.includes("officedocument.wordprocessingml") ||
         contentType.includes("word") ||
-        contentType.includes("officedocument") ||
-        (isPkZip && !firstBytes.startsWith("%PDF"));
+        contentType.includes("officedocument.wordprocessingml") ||
+        (isPkZip && !isPdfHeader && (isWordName || fileExt === "docx" || fileExt === "doc"));
 
-      const isImage =
-        ["png", "jpg", "jpeg", "webp", "gif", "svg"].includes(fileExt) ||
-        Boolean(title.match(/\.(png|jpe?g|webp|gif|svg)$/i)) ||
-        Boolean(blobData.type?.startsWith("image/")) ||
-        Boolean(contentType.startsWith("image/"));
-
+      // 4. HTML
       const isHtml =
         blobData.type?.includes("html") ||
         contentType.includes("html") ||
+        fileExt === "html" ||
+        fileExt === "htm" ||
         title.toLowerCase().endsWith(".html") ||
+        title.toLowerCase().endsWith(".htm") ||
         firstBytes.toLowerCase().includes("<!doctype html") ||
         firstBytes.toLowerCase().includes("<html");
+
+      // 5. PDF
+      const isPdf =
+        fileExt === "pdf" ||
+        title.toLowerCase().endsWith(".pdf") ||
+        blobData.type?.includes("pdf") ||
+        contentType.includes("pdf") ||
+        isPdfHeader;
 
       // 1. Image preview
       if (isImage) {
@@ -345,24 +401,46 @@ function OperationDetailContent({ id }: { id: string }) {
         return;
       }
 
-      // 3. HTML preview (synthesized official specifications)
+      // 3. HTML preview (synthesized official specifications & web pages)
       if (isHtml) {
         const htmlBlob = new Blob([blobData], { type: "text/html;charset=utf-8" });
         const blobUrl = URL.createObjectURL(htmlBlob);
         setPreviewDocBlob(htmlBlob);
-        setPreviewDocType("pdf");
+        setPreviewDocType("html");
         setPreviewDocUrl(blobUrl);
         toast.success("تم فتح كراسة الشروط والمواصفات الرسمية للمعاينة! 📜");
         return;
       }
 
-      // 4. Default PDF preview
-      const pdfBlob = new Blob([blobData], { type: "application/pdf" });
-      const blobUrl = URL.createObjectURL(pdfBlob);
-      setPreviewDocBlob(pdfBlob);
-      setPreviewDocType("pdf");
+      // 4. Text preview (.txt, .log, .csv, .json, .xml, .md, etc.)
+      if (isTextByExt || (isPrintableText && !isPdf)) {
+        const text = await blobData.text();
+        setPreviewTextContent(text);
+        setPreviewDocBlob(blobData);
+        setPreviewDocType("text");
+        setPreviewDocUrl("text_viewer_active");
+        toast.success("تم فتح المستند النصي للمعاينة المباشرة! 📝");
+        return;
+      }
+
+      // 5. PDF preview
+      if (isPdf) {
+        const pdfBlob = new Blob([blobData], { type: "application/pdf" });
+        const blobUrl = URL.createObjectURL(pdfBlob);
+        setPreviewDocBlob(pdfBlob);
+        setPreviewDocType("pdf");
+        setPreviewDocUrl(blobUrl);
+        toast.success("تم فتح ملف PDF للمعاينة المباشرة! 📄");
+        return;
+      }
+
+      // 6. Other / binary fallback
+      const fallbackBlob = new Blob([blobData], { type: blobData.type || "application/octet-stream" });
+      const blobUrl = URL.createObjectURL(fallbackBlob);
+      setPreviewDocBlob(fallbackBlob);
+      setPreviewDocType("other");
       setPreviewDocUrl(blobUrl);
-      toast.success("تم فتح كراسة الشروط للمعاينة المباشرة! 📄");
+      toast.info("تم تحضير الملف — يمكنك استعراض تفاصيله وتحميله مباشرة");
     } catch (err: any) {
       console.error("Preview error:", err);
       toast.error("تعذر فتح معاينة الملف — جاري المحاولة بتحميله مباشرة إلى جهازك...");
@@ -451,12 +529,15 @@ function OperationDetailContent({ id }: { id: string }) {
   };
 
   const closeDocViewer = () => {
-    if (previewDocUrl && previewDocUrl !== "docx_viewer_active") {
+    if (previewDocUrl && previewDocUrl !== "docx_viewer_active" && previewDocUrl !== "text_viewer_active") {
       URL.revokeObjectURL(previewDocUrl);
     }
     setPreviewDocUrl(null);
     setPreviewDocBlob(null);
     setPreviewDocType(null);
+    setPreviewDocTitle("");
+    setPreviewTextContent("");
+    setPreviewDocItem(null);
     setIsFullscreenDoc(false);
   };
 
@@ -1455,10 +1536,26 @@ function OperationDetailContent({ id }: { id: string }) {
                         ? "bg-blue-500/20 text-blue-400 border-blue-500/30 font-black font-mono"
                         : previewDocType === "image"
                         ? "bg-purple-500/20 text-purple-400 border-purple-500/30 font-black font-mono"
-                        : "bg-red-500/20 text-red-400 border-red-500/30 font-black font-mono"
+                        : previewDocType === "text"
+                        ? "bg-emerald-500/20 text-emerald-400 border-emerald-500/30 font-black font-mono"
+                        : previewDocType === "html"
+                        ? "bg-amber-500/20 text-amber-400 border-amber-500/30 font-black font-mono"
+                        : previewDocType === "pdf"
+                        ? "bg-red-500/20 text-red-400 border-red-500/30 font-black font-mono"
+                        : "bg-slate-500/20 text-slate-300 border-slate-500/30 font-black font-mono"
                     }`}
                   >
-                    {previewDocType === "docx" ? "DOCX" : previewDocType === "image" ? "IMG" : "PDF"}
+                    {previewDocType === "docx"
+                      ? "DOCX"
+                      : previewDocType === "image"
+                      ? "IMG"
+                      : previewDocType === "text"
+                      ? "TXT"
+                      : previewDocType === "html"
+                      ? "HTML"
+                      : previewDocType === "pdf"
+                      ? "PDF"
+                      : "FILE"}
                   </div>
                   <div className="min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
@@ -1487,18 +1584,20 @@ function OperationDetailContent({ id }: { id: string }) {
                     <span>تحميل للجهاز</span>
                   </Button>
 
-                  {(previewDocType === "pdf" || previewDocType === "image") && previewDocUrl && previewDocUrl !== "docx_viewer_active" && (
-                    <a
-                      href={previewDocUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="h-8 sm:h-9 px-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold flex items-center gap-1 transition-all"
-                      title="فتح في علامة تبويب مستقلة"
-                    >
-                      <ExternalLink className="h-3.5 w-3.5" />
-                      <span className="hidden md:inline">نافذة مستقلة</span>
-                    </a>
-                  )}
+                  {(previewDocType === "pdf" || previewDocType === "image" || previewDocType === "html") &&
+                    previewDocUrl &&
+                    previewDocUrl.startsWith("blob:") && (
+                      <a
+                        href={previewDocUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="h-8 sm:h-9 px-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold flex items-center gap-1 transition-all"
+                        title="فتح في علامة تبويب مستقلة"
+                      >
+                        <ExternalLink className="h-3.5 w-3.5" />
+                        <span className="hidden md:inline">نافذة مستقلة</span>
+                      </a>
+                    )}
 
                   <button
                     type="button"
@@ -1521,11 +1620,12 @@ function OperationDetailContent({ id }: { id: string }) {
               </div>
 
               {/* Embedded Viewer */}
-              <div className="flex-1 w-full bg-slate-900 overflow-hidden relative">
+              <div className="flex-1 w-full bg-slate-900 overflow-hidden relative flex flex-col">
                 {previewDocType === "docx" ? (
                   <DocxViewer
                     blob={previewDocBlob}
                     fileName={previewDocTitle}
+                    hideHeaderTitle={true}
                     onDownload={() => handleDownloadDocument(previewDocItem || { fileName: previewDocTitle, filePath: previewDocUrl || undefined })}
                   />
                 ) : previewDocType === "image" ? (
@@ -1536,12 +1636,95 @@ function OperationDetailContent({ id }: { id: string }) {
                       className="max-w-full max-h-full object-contain rounded-2xl shadow-2xl border border-slate-800"
                     />
                   </div>
-                ) : (
+                ) : previewDocType === "text" ? (
+                  <div className="w-full h-full flex flex-col bg-slate-950 text-slate-100 overflow-hidden">
+                    {/* شريط أدوات معاينة النصوص */}
+                    <div className="flex items-center justify-between gap-3 px-4 py-2 bg-slate-900 border-b border-slate-800 text-xs shrink-0 flex-wrap">
+                      <div className="flex items-center gap-3 text-slate-400 text-[11px] font-mono">
+                        <span className="flex items-center gap-1.5 text-emerald-400 font-bold">
+                          <FileCode className="h-3.5 w-3.5" />
+                          <span>معاينة نصية مباشرة</span>
+                        </span>
+                        <span className="text-slate-600">•</span>
+                        <span>{previewTextContent.split("\n").length.toLocaleString("ar-EG")} سطر</span>
+                        <span className="text-slate-600">•</span>
+                        <span>{previewTextContent.length.toLocaleString("ar-EG")} حرف</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => setIsTextWrap(!isTextWrap)}
+                          className={`h-7 px-2.5 rounded-lg text-xs font-semibold cursor-pointer transition-colors ${
+                            isTextWrap ? "bg-slate-800 text-blue-300" : "text-slate-400 hover:text-white"
+                          }`}
+                          title="تبديل التفاف الأسطر"
+                        >
+                          <WrapText className="h-3.5 w-3.5 ml-1" />
+                          <span>التفاف الأسطر</span>
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => {
+                            if (typeof navigator !== "undefined" && navigator.clipboard) {
+                              navigator.clipboard.writeText(previewTextContent);
+                              toast.success("تم نسخ محتوى النص كاملاً بنجاح! 📋");
+                            }
+                          }}
+                          className="h-7 px-2.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold cursor-pointer transition-colors flex items-center gap-1"
+                          title="نسخ محتوى النص كاملاً"
+                        >
+                          <Copy className="h-3.5 w-3.5 ml-1" />
+                          <span>نسخ النص</span>
+                        </Button>
+                      </div>
+                    </div>
+
+                    {/* مساحة النص المحمي مع ترقيم وتنسيق الخط */}
+                    <div className="flex-1 overflow-auto p-4 sm:p-6 font-mono text-xs sm:text-[13px] text-slate-200 bg-slate-950 select-text leading-relaxed custom-scrollbar">
+                      <pre
+                        dir="auto"
+                        className={`font-mono text-xs sm:text-[13px] leading-6 text-slate-200 ${
+                          isTextWrap ? "whitespace-pre-wrap break-words" : "whitespace-pre overflow-x-auto"
+                        }`}
+                      >
+                        {previewTextContent || "(ملف نصي فارغ)"}
+                      </pre>
+                    </div>
+                  </div>
+                ) : previewDocType === "html" ? (
+                  <iframe
+                    src={previewDocUrl!}
+                    className="w-full h-full border-0 bg-white"
+                    title={previewDocTitle}
+                  />
+                ) : previewDocType === "pdf" ? (
                   <iframe
                     src={`${previewDocUrl}#toolbar=1&navpanes=1&view=FitH`}
                     className="w-full h-full border-0"
                     title={previewDocTitle}
                   />
+                ) : (
+                  <div className="w-full h-full flex flex-col items-center justify-center p-8 bg-slate-950 text-center">
+                    <div className="w-16 h-16 rounded-2xl bg-slate-800 border border-slate-700 flex items-center justify-center text-slate-400 mb-4 shadow-xl">
+                      <FileText className="h-8 w-8" />
+                    </div>
+                    <h4 className="text-base font-bold text-white mb-1.5">{previewDocTitle}</h4>
+                    <p className="text-xs text-slate-400 max-w-sm mb-6 leading-relaxed">
+                      هذا الملف لا يتوفر له محرك عرض رسومي مباشر داخل المتصفح، ولكن يمكنك تنزيله فوراً وفتحه عبر البرنامج المخصص على جهازك.
+                    </p>
+                    <Button
+                      size="sm"
+                      onClick={() => handleDownloadDocument(previewDocItem || { fileName: previewDocTitle, filePath: previewDocUrl || undefined })}
+                      className="bg-blue-600 hover:bg-blue-700 text-white font-bold px-5 py-2 rounded-xl flex items-center gap-2 cursor-pointer shadow-lg active:scale-95 transition-all"
+                    >
+                      <Download className="h-4 w-4" />
+                      <span>تحميل الملف إلى جهازك</span>
+                    </Button>
+                  </div>
                 )}
               </div>
 

@@ -107,7 +107,7 @@ model CompanyDocument {
   type             CompanyDocType @default(OTHER)
   fileName         String         // Custom display title / renamed file
   originalFileName String?        // Original file name on client
-  filePath         String         @db.Text
+  filePath         String         @db.LongText
   fileType         String         // pdf, docx, doc, jpg, png, etc.
   fileSize         Int?
   uploadedBy       String?
@@ -286,7 +286,7 @@ model OperationDocument {
   companyId   String?
   type        OpDocType
   fileName    String
-  filePath    String    @db.Text
+  filePath    String    @db.LongText
   fileType    String
   fileSize    Int?
   uploadedBy  String?

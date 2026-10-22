@@ -1322,7 +1322,15 @@ export class OperationsService {
       safeType = OpDocType.MARKET_STUDY;
     }
 
-    const finalPath = file.path ? file.path.replace(/\\/g, '/') : `uploads/operations/${file.originalname}`;
+    // تخزين محتوى الملف بصيغة Data URI آمنة داخل قاعدة البيانات لضمان عدم ضياع الملف في بيئات السيرفرليس
+    let finalPath = '';
+    const fileBuffer = file.buffer || (file.path && existsSync(file.path) ? readFileSync(file.path) : null);
+    if (fileBuffer && fileBuffer.length <= 15 * 1024 * 1024) {
+      const mime = file.mimetype || 'application/octet-stream';
+      finalPath = `data:${mime};base64,${fileBuffer.toString('base64')}`;
+    } else {
+      finalPath = file.path ? file.path.replace(/\\/g, '/') : `uploads/operations/${file.originalname}`;
+    }
 
     return this.prisma.operationDocument.create({
       data: {
@@ -1403,11 +1411,20 @@ export class OperationsService {
 
     const cleanFileName = customName?.trim() || decodedOriginalName.replace(/\.[^/.]+$/, '');
 
+    let finalPath = doc.filePath;
+    const fileBuffer = file.buffer || (file.path && existsSync(file.path) ? readFileSync(file.path) : null);
+    if (fileBuffer && fileBuffer.length <= 15 * 1024 * 1024) {
+      const mime = file.mimetype || 'application/octet-stream';
+      finalPath = `data:${mime};base64,${fileBuffer.toString('base64')}`;
+    } else if (file.path) {
+      finalPath = file.path.replace(/\\/g, '/');
+    }
+
     return this.prisma.operationDocument.update({
       where: { id: doc.id },
       data: {
         fileName: cleanFileName,
-        filePath: file.path ? file.path.replace(/\\/g, '/') : doc.filePath,
+        filePath: finalPath,
         fileType: rawExt,
         fileSize: file.size,
       },
@@ -1589,7 +1606,27 @@ export class OperationsService {
       html: 'text/html; charset=utf-8',
     };
 
-    // 0. If remote cloud link (Cloudflare R2, Gofile, or any https URL)
+    // 0. إذا كان الملف مخزناً كـ Data URI آمن داخل قاعدة البيانات (تخزين داخلي فوري)
+    if (doc.filePath && doc.filePath.startsWith('data:')) {
+      const commaIdx = doc.filePath.indexOf(',');
+      if (commaIdx !== -1) {
+        const header = doc.filePath.substring(0, commaIdx);
+        const base64Data = doc.filePath.substring(commaIdx + 1);
+        const mimeMatch = header.match(/data:([^;]+)/);
+        const ext = (doc.fileType || 'bin').toLowerCase();
+        const contentType = mimeMatch ? mimeMatch[1] : (mimeMap[ext] || 'application/octet-stream');
+        const buffer = Buffer.from(base64Data, 'base64');
+        return {
+          buffer,
+          fileName: doc.fileName,
+          fileType: ext,
+          contentType,
+          size: buffer.length,
+        };
+      }
+    }
+
+    // 1. If remote cloud link (Cloudflare R2, Gofile, or any https URL)
     if (doc.filePath && (doc.filePath.startsWith('http://') || doc.filePath.startsWith('https://'))) {
       try {
         const remoteRes = await fetch(doc.filePath);

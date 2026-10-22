@@ -196,10 +196,6 @@ export class CompaniesController {
     @Res() res: Response,
   ) {
     const doc = await this.companiesService.getDocument(id, docId);
-    if (!existsSync(doc.filePath)) {
-      throw new NotFoundException('ملف المستند غير موجود على الخادم');
-    }
-
     const mimeMap: Record<string, string> = {
       pdf: 'application/pdf',
       docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
@@ -210,7 +206,34 @@ export class CompaniesController {
       webp: 'image/webp',
       xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
       xls: 'application/vnd.ms-excel',
+      txt: 'text/plain',
+      html: 'text/html; charset=utf-8',
     };
+
+    if (doc.filePath && doc.filePath.startsWith('data:')) {
+      const commaIdx = doc.filePath.indexOf(',');
+      if (commaIdx !== -1) {
+        const header = doc.filePath.substring(0, commaIdx);
+        const base64Data = doc.filePath.substring(commaIdx + 1);
+        const mimeMatch = header.match(/data:([^;]+)/);
+        const contentType = mimeMatch ? mimeMatch[1] : (mimeMap[doc.fileType.toLowerCase()] || 'application/octet-stream');
+        const buffer = Buffer.from(base64Data, 'base64');
+        res.setHeader('Content-Type', contentType);
+        res.setHeader('Content-Disposition', `inline; filename="${encodeURIComponent(doc.fileName)}.${doc.fileType}"`);
+        res.setHeader('Content-Length', buffer.length);
+        return res.end(buffer);
+      }
+    }
+
+    let resolvedPath = doc.filePath;
+    if (!existsSync(resolvedPath)) {
+      const tmpCandidate = path.join(os.tmpdir(), 'goldenerp-uploads', 'companies', path.basename(doc.filePath));
+      if (existsSync(tmpCandidate)) resolvedPath = tmpCandidate;
+    }
+
+    if (!existsSync(resolvedPath)) {
+      throw new NotFoundException('ملف المستند غير موجود على الخادم');
+    }
 
     const contentType = mimeMap[doc.fileType.toLowerCase()] || 'application/octet-stream';
     res.setHeader('Content-Type', contentType);
@@ -218,7 +241,7 @@ export class CompaniesController {
       'Content-Disposition',
       `inline; filename="${encodeURIComponent(doc.fileName)}.${doc.fileType}"`,
     );
-    createReadStream(doc.filePath).pipe(res);
+    createReadStream(resolvedPath).pipe(res);
   }
 
   @Get(':id/documents/:docId/download')
@@ -228,14 +251,51 @@ export class CompaniesController {
     @Res() res: Response,
   ) {
     const doc = await this.companiesService.getDocument(id, docId);
-    if (!existsSync(doc.filePath)) {
+    const mimeMap: Record<string, string> = {
+      pdf: 'application/pdf',
+      docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      doc: 'application/msword',
+      png: 'image/png',
+      jpg: 'image/jpeg',
+      jpeg: 'image/jpeg',
+      webp: 'image/webp',
+      xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      xls: 'application/vnd.ms-excel',
+      txt: 'text/plain',
+      html: 'text/html; charset=utf-8',
+    };
+
+    if (doc.filePath && doc.filePath.startsWith('data:')) {
+      const commaIdx = doc.filePath.indexOf(',');
+      if (commaIdx !== -1) {
+        const header = doc.filePath.substring(0, commaIdx);
+        const base64Data = doc.filePath.substring(commaIdx + 1);
+        const mimeMatch = header.match(/data:([^;]+)/);
+        const contentType = mimeMatch ? mimeMatch[1] : (mimeMap[doc.fileType.toLowerCase()] || 'application/octet-stream');
+        const buffer = Buffer.from(base64Data, 'base64');
+        res.setHeader('Content-Type', contentType);
+        res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(doc.fileName)}.${doc.fileType}"`);
+        res.setHeader('Content-Length', buffer.length);
+        return res.end(buffer);
+      }
+    }
+
+    let resolvedPath = doc.filePath;
+    if (!existsSync(resolvedPath)) {
+      const tmpCandidate = path.join(os.tmpdir(), 'goldenerp-uploads', 'companies', path.basename(doc.filePath));
+      if (existsSync(tmpCandidate)) resolvedPath = tmpCandidate;
+    }
+
+    if (!existsSync(resolvedPath)) {
       throw new NotFoundException('ملف المستند غير موجود على الخادم');
     }
 
+    const contentType = mimeMap[doc.fileType.toLowerCase()] || 'application/octet-stream';
+    res.setHeader('Content-Type', contentType);
     res.setHeader(
       'Content-Disposition',
       `attachment; filename="${encodeURIComponent(doc.fileName)}.${doc.fileType}"`,
     );
-    createReadStream(doc.filePath).pipe(res);
+    createReadStream(resolvedPath).pipe(res);
   }
 }

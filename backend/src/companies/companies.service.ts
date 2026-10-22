@@ -4,7 +4,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { extname } from 'path';
-import { existsSync, unlinkSync } from 'fs';
+import { existsSync, unlinkSync, readFileSync } from 'fs';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { CreateCompanyDto } from './dto/create-company.dto.js';
 import { UpdateCompanyDto } from './dto/update-company.dto.js';
@@ -456,12 +456,21 @@ export class CompaniesService {
       decodedOriginalName = file.originalname;
     }
 
+    let finalPath = '';
+    const fileBuffer = file.buffer || (file.path && existsSync(file.path) ? readFileSync(file.path) : null);
+    if (fileBuffer && fileBuffer.length <= 15 * 1024 * 1024) {
+      const mime = file.mimetype || 'application/octet-stream';
+      finalPath = `data:${mime};base64,${fileBuffer.toString('base64')}`;
+    } else {
+      finalPath = file.path ? file.path.replace(/\\/g, '/') : `uploads/companies/${file.originalname}`;
+    }
+
     return this.prisma.companyDocument.create({
       data: {
         companyId: company.id,
         fileName: title || decodedOriginalName,
         originalFileName: decodedOriginalName,
-        filePath: file.path.replace(/\\/g, '/'),
+        filePath: finalPath,
         fileType: ext,
         fileSize: file.size,
         type: docType,
@@ -524,7 +533,16 @@ export class CompaniesService {
 
       const ext = extname(newFile.originalname).replace('.', '').toLowerCase() || 'bin';
 
-      dataToUpdate.filePath = newFile.path.replace(/\\/g, '/');
+      let finalPath = '';
+      const newFileBuffer = newFile.buffer || (newFile.path && existsSync(newFile.path) ? readFileSync(newFile.path) : null);
+      if (newFileBuffer && newFileBuffer.length <= 15 * 1024 * 1024) {
+        const mime = newFile.mimetype || 'application/octet-stream';
+        finalPath = `data:${mime};base64,${newFileBuffer.toString('base64')}`;
+      } else {
+        finalPath = newFile.path ? newFile.path.replace(/\\/g, '/') : `uploads/companies/${newFile.originalname}`;
+      }
+
+      dataToUpdate.filePath = finalPath;
       dataToUpdate.originalFileName = decodedOriginalName;
       dataToUpdate.fileType = ext;
       dataToUpdate.fileSize = newFile.size;
