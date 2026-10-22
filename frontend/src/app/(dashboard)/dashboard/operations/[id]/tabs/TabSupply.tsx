@@ -19,6 +19,14 @@ import {
   ShieldCheck,
   Search,
   Filter,
+  Eye,
+  Edit,
+  Trash2,
+  X,
+  Printer,
+  Calendar,
+  Building2,
+  ExternalLink,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -32,6 +40,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Portal } from "@/components/ui/portal";
 import { toast } from "sonner";
 import api from "@/lib/api";
 import {
@@ -55,6 +64,21 @@ export interface SupplyItemRow {
   prepStatus: "PENDING" | "PREPARING" | "SHIPPED" | "DELIVERED";
   inspectionStatus: "MATCHED" | "CONDITIONAL" | "REJECTED";
   notes?: string;
+}
+
+export interface SupplyBatchRecord {
+  id: string;
+  batchNumber: string;
+  inspectionNumber: string;
+  inspectionDate: string;
+  committeeMembers: string;
+  inspectionResult: "PASSED" | "NOTES";
+  inspectionNotes: string;
+  items: SupplyItemRow[];
+  totalCost: number;
+  totalSupply: number;
+  totalMargin: number;
+  createdAt: string;
 }
 
 export function TabSupply({
@@ -88,15 +112,14 @@ export function TabSupply({
     const foItems = op.financialOffers?.[0]?.items || [];
     if (foItems.length > 0) {
       return foItems.map((fi: any, idx: number) => {
-        // match with market study quote if available
         const matchedMarket = marketQuotes.find(
           (mq: any) => mq.itemName?.trim().toLowerCase() === fi.itemName?.trim().toLowerCase()
         );
         const costPrice = matchedMarket ? Number(matchedMarket.unitPrice) : Math.round(Number(fi.unitPrice) * 0.75);
         return {
           id: fi.id || String(idx + 1),
-          itemCode: `ITM-0${idx + 1}`,
-          itemName: fi.itemName || "صنف توريد",
+          itemCode: `بند-${idx + 1}`,
+          itemName: fi.itemName || "صنف توريد معتمد",
           unit: fi.unit || "وحدة",
           quantity: Number(fi.quantity) || 1,
           costPrice,
@@ -112,7 +135,7 @@ export function TabSupply({
     return [
       {
         id: "1",
-        itemCode: "ITM-01",
+        itemCode: "بند-1",
         itemName: op.name || "توريد أصناف ومهمات مطابقة للمواصفات",
         unit: "دفعة",
         quantity: 1,
@@ -127,7 +150,7 @@ export function TabSupply({
 
   // Initial Inspection Report State
   const [initialInspectionNumber, setInitialInspectionNumber] = useState(
-    () => supplyData.initialInspectionNumber || `INSP-INIT-${op.serialNumber || "1"}`
+    () => supplyData.initialInspectionNumber || `محضر-فحص-مبدئي-${op.serialNumber || "1"}`
   );
   const [initialInspectionDate, setInitialInspectionDate] = useState(
     () => supplyData.initialInspectionDate || new Date().toISOString().split("T")[0]
@@ -142,9 +165,38 @@ export function TabSupply({
     () => supplyData.inspectionNotes || "تم الفحص الظاهري والمطابقة المبدئية للشحنة مع كراسة الشروط والمواصفات المعتمدة"
   );
 
+  // Supply Batches (Cards list)
+  const [supplyBatches, setSupplyBatches] = useState<SupplyBatchRecord[]>(() => {
+    if (existingNotes.supplyBatches && Array.isArray(existingNotes.supplyBatches) && existingNotes.supplyBatches.length > 0) {
+      return existingNotes.supplyBatches;
+    }
+    if (supplyData.items && Array.isArray(supplyData.items) && supplyData.items.length > 0) {
+      return [
+        {
+          id: "batch-1",
+          batchNumber: "سجل التوريد والفحص المبدئي الأول",
+          inspectionNumber: supplyData.initialInspectionNumber || `محضر-فحص-مبدئي-${op.serialNumber || "1"}`,
+          inspectionDate: supplyData.initialInspectionDate || new Date().toISOString().split("T")[0],
+          committeeMembers: supplyData.committeeMembers || "لجنة الفحص والاستلام المشكلة بالقرار الإداري من الجهة",
+          inspectionResult: supplyData.inspectionResult || "PASSED",
+          inspectionNotes: supplyData.inspectionNotes || "تم الفحص الظاهري والمطابقة المبدئية للشحنة مع كراسة الشروط والمواصفات المعتمدة",
+          items: supplyData.items,
+          totalCost: supplyData.totalCost || 0,
+          totalSupply: supplyData.totalSupply || 0,
+          totalMargin: supplyData.totalMargin || 0,
+          createdAt: supplyData.updatedAt || new Date().toISOString(),
+        },
+      ];
+    }
+    return [];
+  });
+
+  const [activeBatchId, setActiveBatchId] = useState<string | null>(null);
+  const [viewingBatch, setViewingBatch] = useState<SupplyBatchRecord | null>(null);
+
   // Goods Receipts (Existing DB entity)
   const [addingReceipt, setAddingReceipt] = useState(false);
-  const [receiptNumber, setReceiptNumber] = useState(`REC-${Date.now().toString().slice(-4)}`);
+  const [receiptNumber, setReceiptNumber] = useState(`إذن-إضافة-${Date.now().toString().slice(-4)}`);
   const [receiptDate, setReceiptDate] = useState(new Date().toISOString().split("T")[0]);
   const [receiptItemName, setReceiptItemName] = useState("توريد دفعة من الأصناف المطلوبة");
   const [receiptQuantity, setReceiptQuantity] = useState("100");
@@ -184,10 +236,32 @@ export function TabSupply({
     setSupplyItems(supplyItems.map((it) => (it.id === id ? { ...it, [field]: value } : it)));
   };
 
-  // Save Supply Prep Data into op.notes
+  // Save Supply Prep Data into op.notes and record as Card
   const handleSaveSupplyPrep = async () => {
     setSavingPrep(true);
     try {
+      const recordId = activeBatchId || `batch-${Date.now()}`;
+      const newRecord: SupplyBatchRecord = {
+        id: recordId,
+        batchNumber: `سجل توريد (${initialInspectionNumber})`,
+        inspectionNumber: initialInspectionNumber,
+        inspectionDate: initialInspectionDate,
+        committeeMembers,
+        inspectionResult,
+        inspectionNotes,
+        items: supplyItems,
+        totalCost,
+        totalSupply,
+        totalMargin,
+        createdAt: new Date().toISOString(),
+      };
+
+      const updatedBatches = activeBatchId
+        ? supplyBatches.map((b) => (b.id === activeBatchId ? newRecord : b))
+        : [newRecord, ...supplyBatches];
+
+      setSupplyBatches(updatedBatches);
+
       const updatedNotes = {
         ...existingNotes,
         supplyPreparationData: {
@@ -202,6 +276,7 @@ export function TabSupply({
           totalMargin,
           updatedAt: new Date().toISOString(),
         },
+        supplyBatches: updatedBatches,
         supplyItemsPrepared: true,
       };
 
@@ -209,12 +284,46 @@ export function TabSupply({
         notes: JSON.stringify(updatedNotes),
       });
 
-      toast.success("تم حفظ حالة التوريد وتجهيز الأصناف بنجاح! 📦✨");
+      toast.success("تم حفظ حالة التوريد وتوثيق البطاقة بالسجلات بنجاح! 📦✨");
+      setActiveBatchId(null);
       onRefresh();
     } catch (err: any) {
       toast.error("فشل حفظ حالة التوريد: " + (err?.message || ""));
     } finally {
       setSavingPrep(false);
+    }
+  };
+
+  const handleEditBatch = (batch: SupplyBatchRecord) => {
+    setActiveBatchId(batch.id);
+    setSupplyItems(batch.items || []);
+    setInitialInspectionNumber(batch.inspectionNumber);
+    setInitialInspectionDate(batch.inspectionDate);
+    setCommitteeMembers(batch.committeeMembers);
+    setInspectionResult(batch.inspectionResult);
+    setInspectionNotes(batch.inspectionNotes);
+    toast.info(`تم تحميل بيانات "${batch.batchNumber}" في الجدول للتعديل ✏️`);
+  };
+
+  const handleDeleteBatch = async (batchId: string) => {
+    if (!confirm("هل أنت متأكد من حذف بطاقة سجل التوريد هذه؟")) return;
+    try {
+      const updatedBatches = supplyBatches.filter((b) => b.id !== batchId);
+      setSupplyBatches(updatedBatches);
+      const updatedNotes = {
+        ...existingNotes,
+        supplyBatches: updatedBatches,
+      };
+      await api.patch(`/operations/${op.id}`, {
+        notes: JSON.stringify(updatedNotes),
+      });
+      toast.success("تم حذف بطاقة سجل التوريد بنجاح 🗑️");
+      if (activeBatchId === batchId) {
+        setActiveBatchId(null);
+      }
+      onRefresh();
+    } catch {
+      toast.error("فشل حذف بطاقة التوريد");
     }
   };
 
@@ -321,8 +430,8 @@ export function TabSupply({
                 <th className="p-3 w-28 text-center text-blue-600 dark:text-blue-400">سعر دراسة السوق</th>
                 <th className="p-3 w-28 text-center text-emerald-600 dark:text-emerald-400">سعر البت المالي</th>
                 <th className="p-3 w-28 text-center text-amber-600 dark:text-amber-400">إجمالي الهامش</th>
-                <th className="p-3 w-36 text-center">حالة التجهيز</th>
-                <th className="p-3 w-36 text-center">الفحص المبدئي</th>
+                <th className="p-3 min-w-[175px] text-center">حالة التجهيز</th>
+                <th className="p-3 min-w-[185px] text-center">الفحص المبدئي</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border/60">
@@ -352,12 +461,12 @@ export function TabSupply({
                     <td className="p-2.5 text-center font-mono font-bold text-amber-600 dark:text-amber-400">
                       {formatCurrency(itemMargin)}
                     </td>
-                    <td className="p-2.5 text-center">
+                    <td className="p-2.5 text-center min-w-[175px]">
                       <Select
                         value={item.prepStatus}
                         onValueChange={(val: any) => handleUpdateItemStatus(item.id, "prepStatus", val)}
                       >
-                        <SelectTrigger className="h-8 text-[11px] font-bold rounded-lg">
+                        <SelectTrigger className="h-9 w-full text-xs font-bold rounded-xl bg-background border-border shadow-2xs">
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent className="text-xs font-medium">
@@ -368,12 +477,12 @@ export function TabSupply({
                         </SelectContent>
                       </Select>
                     </td>
-                    <td className="p-2.5 text-center">
+                    <td className="p-2.5 text-center min-w-[185px]">
                       <Select
                         value={item.inspectionStatus}
                         onValueChange={(val: any) => handleUpdateItemStatus(item.id, "inspectionStatus", val)}
                       >
-                        <SelectTrigger className="h-8 text-[11px] font-bold rounded-lg">
+                        <SelectTrigger className="h-9 w-full text-xs font-bold rounded-xl bg-background border-border shadow-2xs">
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent className="text-xs font-medium">
@@ -393,9 +502,16 @@ export function TabSupply({
 
       {/* ━━━ SECTION 3: محضر الفحص والاستلام المبدئي ━━━ */}
       <SectionCard
-        title="محضر الفحص الظاهري والاستلام المبدئي للشحنات"
+        title={activeBatchId ? "تعديل محضر الفحص والاستلام المبدئي للشحنات" : "محضر الفحص الظاهري والاستلام المبدئي للشحنات"}
         icon={ClipboardCheck}
         iconColor="text-emerald-600"
+        badge={
+          activeBatchId ? (
+            <Badge className="bg-amber-500/20 text-amber-800 dark:text-amber-300 border border-amber-500/30 text-xs font-bold">
+              وضع التعديل النشط ✏️
+            </Badge>
+          ) : undefined
+        }
       >
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3.5">
           <div className="space-y-1.5">
@@ -454,7 +570,19 @@ export function TabSupply({
           </div>
         </div>
 
-        <div className="flex justify-end pt-3 border-t border-border">
+        <div className="flex items-center justify-between pt-3 border-t border-border flex-wrap gap-2">
+          {activeBatchId ? (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => setActiveBatchId(null)}
+              className="text-xs font-bold rounded-xl h-9"
+            >
+              إلغاء وضع التعديل
+            </Button>
+          ) : <div />}
+
           <Button
             size="lg"
             onClick={handleSaveSupplyPrep}
@@ -469,24 +597,140 @@ export function TabSupply({
             ) : (
               <>
                 <Check className="h-4 w-4 ml-2" />
-                <span>حفظ حالة التوريد ومحضر الفحص المبدئي 💾</span>
+                <span>{activeBatchId ? "تحديث بطاقة حالة التوريد 💾" : "حفظ حالة التوريد وإصدار بطاقة السجل 💾"}</span>
               </>
             )}
           </Button>
         </div>
       </SectionCard>
 
-      {/* ━━━ SECTION 4: أذون الإضافة المخزنية (Goods Receipts) ━━━ */}
+      {/* ━━━ SECTION 4: بطاقات سجلات التوريد والفحص المعتمدة (Cards) ━━━ */}
+      <SectionCard
+        title="بطاقات سجلات التوريد والفحص المعتمدة"
+        icon={ClipboardCheck}
+        iconColor="text-emerald-600"
+        badge={
+          <Badge className="bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-500/30 text-xs font-bold">
+            {supplyBatches.length} بطاقة مسجلة
+          </Badge>
+        }
+      >
+        {supplyBatches.length > 0 ? (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {supplyBatches.map((batch, index) => (
+              <div
+                key={batch.id || index}
+                className="p-4 rounded-3xl border-2 border-border/80 hover:border-emerald-500/50 bg-card hover:bg-muted/10 shadow-sm hover:shadow-md transition-all flex flex-col justify-between gap-3 group"
+              >
+                <div className="space-y-2">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex items-center gap-2">
+                      <div className="w-10 h-10 rounded-2xl bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30 flex items-center justify-center font-bold">
+                        <Truck className="h-5 w-5" />
+                      </div>
+                      <div>
+                        <h4 className="text-xs sm:text-sm font-black text-foreground group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition-colors">
+                          {batch.inspectionNumber}
+                        </h4>
+                        <span className="text-[10px] text-muted-foreground font-mono">
+                          {formatDate(batch.inspectionDate)}
+                        </span>
+                      </div>
+                    </div>
+
+                    <Badge
+                      className={
+                        batch.inspectionResult === "PASSED"
+                          ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-500/30 text-[10px] font-bold"
+                          : "bg-amber-500/15 text-amber-700 dark:text-amber-300 border-amber-500/30 text-[10px] font-bold"
+                      }
+                    >
+                      {batch.inspectionResult === "PASSED" ? "مطابق 100% ✓" : "بملاحظات ⚠️"}
+                    </Badge>
+                  </div>
+
+                  <div className="p-3 rounded-2xl bg-muted/40 border border-border/60 space-y-1.5 text-xs">
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">عدد الأصناف:</span>
+                      <span className="font-bold text-foreground">{(batch.items || []).length} أصناف</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">إجمالي التوريد:</span>
+                      <span className="font-bold text-emerald-600 dark:text-emerald-400 font-mono">
+                        {formatCurrency(batch.totalSupply || 0)}
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">صافي الهامش المتوقع:</span>
+                      <span className="font-bold text-amber-600 dark:text-amber-400 font-mono">
+                        {formatCurrency(batch.totalMargin || 0)}
+                      </span>
+                    </div>
+                  </div>
+
+                  <p className="text-[11px] text-muted-foreground line-clamp-2 leading-relaxed">
+                    <strong>اللجنة:</strong> {batch.committeeMembers}
+                  </p>
+                </div>
+
+                {/* Card Action Tools */}
+                <div className="pt-2 border-t border-border/70 flex items-center justify-between gap-1.5">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setViewingBatch(batch)}
+                    className="h-8 px-3 text-xs font-bold rounded-xl border-emerald-500/40 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 flex items-center gap-1.5 cursor-pointer shadow-xs"
+                    title="عرض تفاصيل محضر الفحص والأصناف"
+                  >
+                    <Eye className="h-3.5 w-3.5" />
+                    <span>عرض التفاصيل</span>
+                  </Button>
+
+                  <div className="flex items-center gap-1">
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => handleEditBatch(batch)}
+                      className="h-8 w-8 p-0 rounded-xl hover:bg-muted text-muted-foreground hover:text-blue-600 cursor-pointer"
+                      title="تعديل هذا السجل"
+                    >
+                      <Edit className="h-3.5 w-3.5" />
+                    </Button>
+
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => handleDeleteBatch(batch.id)}
+                      className="h-8 w-8 p-0 rounded-xl hover:bg-rose-500/15 text-muted-foreground hover:text-rose-600 cursor-pointer"
+                      title="حذف هذا السجل"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <EmptyState
+            icon={Package}
+            text="لم يتم توثيق أي بطاقة سجل توريد بعد"
+            subtext="عند الضغط على (حفظ حالة التوريد) بالأعلى سيتم حفظ السجل هنا كبطاقة معتمدة مع أدوات العرض والتعديل والحذف."
+          />
+        )}
+      </SectionCard>
+
+      {/* ━━━ SECTION 5: أذون الإضافة المخزنية (Goods Receipts) ━━━ */}
       <SectionCard
         title="أذون الإضافة المخزنية وحركة المخازن"
         icon={Truck}
         iconColor="text-indigo-600"
-        badge={<Badge className="badge-blue text-[10px] font-bold">{allReceipts.length} إذن إضافة</Badge>}
+        badge={<Badge className="bg-indigo-500/15 text-indigo-700 dark:text-indigo-300 border-indigo-500/30 text-[10px] font-bold">{allReceipts.length} إذن إضافة</Badge>}
         actions={
           <Button
             size="sm"
             onClick={() => setAddingReceipt(!addingReceipt)}
-            className="bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs h-8 rounded-xl cursor-pointer"
+            className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs h-8 rounded-xl cursor-pointer"
           >
             <Plus className="h-3.5 w-3.5 ml-1" />
             <span>تسجيل إذن إضافة جديد</span>
@@ -494,9 +738,9 @@ export function TabSupply({
         }
       >
         {addingReceipt && (
-          <div className="p-4 rounded-xl bg-card border border-blue-500/30 space-y-3 animate-fade-in shadow-lg">
+          <div className="p-4 rounded-xl bg-card border border-indigo-500/30 space-y-3 animate-fade-in shadow-lg">
             <h4 className="text-sm font-bold text-foreground flex items-center gap-2">
-              <Package className="h-4 w-4 text-blue-600" />
+              <Package className="h-4 w-4 text-indigo-600" />
               بيانات إذن إضافة التوريد للمخازن
             </h4>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -568,7 +812,7 @@ export function TabSupply({
                 size="sm"
                 onClick={handleSaveReceipt}
                 disabled={savingReceipt}
-                className="bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold"
+                className="bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold"
               >
                 {savingReceipt ? <Loader2 className="h-4 w-4 animate-spin" /> : "حفظ إذن الإضافة"}
               </Button>
@@ -582,7 +826,7 @@ export function TabSupply({
               <div key={r.id} className="p-4 rounded-xl bg-card border border-border space-y-2">
                 <div className="flex items-center justify-between">
                   <span className="text-sm font-bold text-foreground">إذن إضافة رقم {r.receiptNumber}</span>
-                  <Badge className="badge-blue text-[10px]">أمر توريد {r.orderNumber}</Badge>
+                  <Badge className="bg-indigo-500/15 text-indigo-700 dark:text-indigo-300 border-indigo-500/30 text-[10px]">أمر توريد {r.orderNumber}</Badge>
                 </div>
                 <DataRow label="تاريخ الاستلام" value={formatDate(r.receiptDate)} />
                 {r.items?.length > 0 && (
@@ -595,7 +839,7 @@ export function TabSupply({
                         <span className="text-foreground font-semibold">
                           {item.itemName} — {Number(item.quantity)} {item.unit}
                         </span>
-                        <span className="font-mono font-bold text-blue-600 dark:text-blue-400">
+                        <span className="font-mono font-bold text-indigo-600 dark:text-indigo-400">
                           {formatCurrency(Number(item.totalPrice))}
                         </span>
                       </div>
@@ -615,6 +859,130 @@ export function TabSupply({
           )
         )}
       </SectionCard>
+
+      {/* ━━━ MODAL: عرض تفاصيل بطاقة سجل التوريد المعتمدة ━━━ */}
+      {viewingBatch && (
+        <Portal>
+          <div className="fixed inset-0 z-[99999] bg-black/80 backdrop-blur-md flex items-center justify-center p-3 sm:p-5 animate-fade-in">
+            <div className="bg-card border border-border rounded-3xl max-w-4xl w-full p-5 sm:p-6 shadow-2xl max-h-[92vh] flex flex-col overflow-hidden text-foreground">
+              {/* Header */}
+              <div className="flex items-center justify-between pb-3.5 border-b border-border gap-3">
+                <div className="flex items-center gap-3">
+                  <div className="w-11 h-11 rounded-2xl bg-emerald-500/15 text-emerald-600 flex items-center justify-center font-bold">
+                    <ClipboardCheck className="h-6 w-6" />
+                  </div>
+                  <div>
+                    <h3 className="font-black text-foreground text-base sm:text-lg">
+                      {viewingBatch.batchNumber}
+                    </h3>
+                    <p className="text-xs text-muted-foreground font-mono">
+                      تاريخ الفحص: {formatDate(viewingBatch.inspectionDate)} • النتيجة:{" "}
+                      {viewingBatch.inspectionResult === "PASSED" ? "مطابق ومقبول 100% ✓" : "مقبول بملاحظات ⚠️"}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => window.print()}
+                    className="text-xs font-bold rounded-xl h-8.5 px-3 flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <Printer className="h-3.5 w-3.5" />
+                    <span>طباعة</span>
+                  </Button>
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    onClick={() => setViewingBatch(null)}
+                    className="h-8.5 w-8.5 rounded-full hover:bg-muted"
+                  >
+                    <X className="h-4 w-4" />
+                  </Button>
+                </div>
+              </div>
+
+              {/* Body */}
+              <div className="flex-1 overflow-y-auto space-y-4 py-4 pr-1 text-xs">
+                <div className="p-3.5 rounded-2xl bg-muted/40 border border-border space-y-2">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    <div>
+                      <span className="text-muted-foreground block text-[11px]">أعضاء لجنة الفحص والاستلام:</span>
+                      <strong className="text-foreground text-xs">{viewingBatch.committeeMembers}</strong>
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground block text-[11px]">ملاحظات الفحص الظاهري:</span>
+                      <strong className="text-foreground text-xs">{viewingBatch.inspectionNotes}</strong>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="border border-border rounded-2xl overflow-hidden shadow-xs">
+                  <table className="w-full text-right text-xs">
+                    <thead className="bg-muted/70 text-muted-foreground font-bold border-b border-border">
+                      <tr>
+                        <th className="p-2.5 text-center w-12">#</th>
+                        <th className="p-2.5">بيان الصنف</th>
+                        <th className="p-2.5 text-center">الكمية</th>
+                        <th className="p-2.5 text-center">الوحدة</th>
+                        <th className="p-2.5 text-center text-blue-600">سعر التكلفة</th>
+                        <th className="p-2.5 text-center text-emerald-600">سعر التوريد</th>
+                        <th className="p-2.5 text-center text-amber-600">الهامش</th>
+                        <th className="p-2.5 text-center">حالة التجهيز</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-border/60">
+                      {(viewingBatch.items || []).map((it, i) => (
+                        <tr key={it.id || i} className="hover:bg-muted/20">
+                          <td className="p-2.5 text-center font-mono font-bold text-muted-foreground">{i + 1}</td>
+                          <td className="p-2.5 font-bold text-foreground">{it.itemName}</td>
+                          <td className="p-2.5 text-center font-mono font-bold">{it.quantity}</td>
+                          <td className="p-2.5 text-center text-muted-foreground">{it.unit}</td>
+                          <td className="p-2.5 text-center font-mono text-blue-600 font-bold">{formatCurrency(it.costPrice)}</td>
+                          <td className="p-2.5 text-center font-mono text-emerald-600 font-bold">{formatCurrency(it.supplyPrice)}</td>
+                          <td className="p-2.5 text-center font-mono text-amber-600 font-bold">{formatCurrency((it.supplyPrice - it.costPrice) * it.quantity)}</td>
+                          <td className="p-2.5 text-center">
+                            <Badge variant="outline" className="text-[10px] font-bold">
+                              {it.prepStatus === "DELIVERED"
+                                ? "تم التوريد بالمخزن ✓"
+                                : it.prepStatus === "SHIPPED"
+                                ? "جاري الشحن 🚚"
+                                : it.prepStatus === "PREPARING"
+                                ? "جاري التصنيع 🏭"
+                                : "قيد التجهيز"}
+                            </Badge>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                    <tfoot className="bg-muted/50 font-bold border-t border-border">
+                      <tr>
+                        <td colSpan={4} className="p-3 text-left">الإجماليات:</td>
+                        <td className="p-3 text-center font-mono text-blue-600 font-black">{formatCurrency(viewingBatch.totalCost)}</td>
+                        <td className="p-3 text-center font-mono text-emerald-600 font-black">{formatCurrency(viewingBatch.totalSupply)}</td>
+                        <td className="p-3 text-center font-mono text-amber-600 font-black">{formatCurrency(viewingBatch.totalMargin)}</td>
+                        <td />
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+              </div>
+
+              {/* Footer */}
+              <div className="pt-3 border-t border-border flex justify-end">
+                <Button
+                  size="sm"
+                  onClick={() => setViewingBatch(null)}
+                  className="rounded-xl font-bold px-5"
+                >
+                  إغلاق النافذة
+                </Button>
+              </div>
+            </div>
+          </div>
+        </Portal>
+      )}
 
       {/* Continuity Action Footer */}
       <StepFooterNav currentTabId="supply" onNavigate={onNavigate} />

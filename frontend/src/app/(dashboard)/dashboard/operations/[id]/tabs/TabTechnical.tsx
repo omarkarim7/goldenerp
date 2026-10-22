@@ -856,6 +856,7 @@ export function TabTechnical({
 
   // تحميل المعاينة الرسمية من محرك Word الأصيل
   const loadOfficialPreview = async (forceRefresh = false) => {
+    setPreviewModalOpen(true);
     if (!forceRefresh && previewPdfBlob && currentSnapshot === lastGeneratedSnapshot) {
       return;
     }
@@ -1993,7 +1994,10 @@ export function TabTechnical({
         registrationNumber={registrationNumber}
         isDirty={isDirty}
         printInfo={printHistory["technical"]}
-        onPreview={() => loadOfficialPreview()}
+        onPreview={() => {
+          setPreviewModalOpen(true);
+          loadOfficialPreview();
+        }}
         onSave={handleSaveToSystem}
         onCancelEdits={handleCancelEdits}
         saving={savingOffer}

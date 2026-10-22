@@ -314,7 +314,7 @@ export function EgyptianOfficialLetterModal({
                   className="bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs h-8 px-3 rounded-xl flex items-center gap-1.5 cursor-pointer shadow-xs"
                 >
                   <FolderArchive className="h-3.5 w-3.5" />
-                  <span>{saving ? "جاري الحفظ..." : "حفظ بالأرشيف"}</span>
+                  <span>{saving ? "جاري الحفظ..." : "إضافة للأرشيف 📥"}</span>
                 </Button>
               )}
               <Button
@@ -2889,11 +2889,20 @@ export function TabFinOpening({
                           <Button
                             size="sm"
                             variant="ghost"
-                            onClick={() => onDownloadDoc?.(doc)}
-                            className="h-7 w-7 p-0 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-950/50"
-                            title="تحميل الملف للجهاز"
+                            onClick={async () => {
+                              if (!confirm(`هل أنت متأكد من حذف مستند "${doc.fileName}"؟`)) return;
+                              try {
+                                await api.delete(`/operations/${op.id}/documents/${doc.id}`);
+                                toast.success("تم حذف المستند بنجاح 🗑️");
+                                onRefresh();
+                              } catch {
+                                toast.error("فشل حذف المستند");
+                              }
+                            }}
+                            className="h-7 w-7 p-0 text-rose-500 hover:text-rose-700 hover:bg-rose-50 dark:hover:bg-rose-950/50 cursor-pointer"
+                            title="حذف المستند"
                           >
-                            <Download className="h-3.5 w-3.5" />
+                            <Trash2 className="h-3.5 w-3.5" />
                           </Button>
                         </div>
                       </div>
@@ -3071,13 +3080,23 @@ export function TabFinOpening({
                 </div>
               </div>
 
-              <div className="flex items-center gap-3 shrink-0">
+              <div className="flex items-center gap-3 shrink-0 flex-wrap">
                 <div className="text-right">
                   <span className="text-[10px] text-muted-foreground block font-bold">إجمالي الترسية الجزئية</span>
                   <span className="text-xl font-black text-amber-700 dark:text-amber-400 font-mono">
                     {formatCurrency(partialGrandTotal)}
                   </span>
                 </div>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setPartialModalOpen(true)}
+                  className="border-2 border-amber-500/60 hover:bg-amber-500/10 text-amber-900 dark:text-amber-200 font-bold text-xs h-9 px-3.5 rounded-xl flex items-center gap-1.5 cursor-pointer shadow-xs"
+                  title="معاينة خطاب ومحضر الترسية بعد استبعاد وتعديل البنود"
+                >
+                  <Eye className="h-4 w-4 text-amber-600" />
+                  <span>معاينة الخطاب الجديد (البنود المقبولة) 📜</span>
+                </Button>
                 {onGoAward && (
                   <Button
                     size="sm"

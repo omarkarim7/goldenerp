@@ -757,6 +757,81 @@ export function TabFinalGuarantee({
     setPreviewModalOpen(true);
   };
 
+  // ━━━ حالة وإجراء الإضافة المباشرة للأرشيف ━━━
+  const [addingToArchive, setAddingToArchive] = useState(false);
+  const isArchived = useMemo(() => {
+    try {
+      if (op.notes && op.notes.startsWith("{")) {
+        const parsed = JSON.parse(op.notes);
+        const list = parsed.archivedDocIds || [];
+        return (
+          list.includes(`letter-final-guarantee-${activeLetterType}`) ||
+          list.includes("letter-final-guarantee") ||
+          list.includes("letter-guarantee")
+        );
+      }
+    } catch {}
+    return false;
+  }, [op.notes, activeLetterType]);
+
+  const handleToggleArchive = async () => {
+    setAddingToArchive(true);
+    let notesObj: any = {};
+    try {
+      if (op.notes && op.notes.startsWith("{")) {
+        notesObj = JSON.parse(op.notes);
+      }
+    } catch {}
+
+    const docKey = `letter-final-guarantee-${activeLetterType}`;
+    const current: string[] = notesObj.archivedDocIds || [];
+    const exists =
+      current.includes(docKey) ||
+      current.includes("letter-final-guarantee") ||
+      current.includes("letter-guarantee");
+    const updated = exists
+      ? current.filter(
+          (id: string) =>
+            id !== docKey &&
+            id !== "letter-final-guarantee" &&
+            id !== "letter-guarantee"
+        )
+      : [...current, docKey];
+
+    notesObj.archivedDocIds = updated;
+
+    try {
+      await api.patch(`/operations/${op.id}`, {
+        notes: JSON.stringify(notesObj),
+      });
+      toast.success(
+        exists
+          ? "تمت إزالة خطاب التأمين النهائي من مستندات الأرشيف وحزمة التقديم 📂"
+          : "تمت إضافة خطاب التأمين النهائي إلى مستندات الأرشيف وحزمة التقديم بنجاح! 📦✨"
+      );
+      onRefresh();
+    } catch (err: any) {
+      toast.error("فشل تحديث حالة الأرشيف للتأمين النهائي: " + (err?.message || ""));
+    } finally {
+      setAddingToArchive(false);
+    }
+  };
+
+  const [deletingDocId, setDeletingDocId] = useState<string | null>(null);
+  const handleDeleteDoc = async (docId: string) => {
+    if (!confirm("هل أنت متأكد من حذف هذا المستند من أرشيف التأمين النهائي؟")) return;
+    setDeletingDocId(docId);
+    try {
+      await api.delete(`/operations/${op.id}/documents/${docId}`);
+      toast.success("تم حذف المستند بنجاح من أرشيف العملية 🗑️");
+      onRefresh();
+    } catch (err: any) {
+      toast.error("فشل حذف المستند: " + (err?.message || ""));
+    } finally {
+      setDeletingDocId(null);
+    }
+  };
+
   const handleDownloadDocx = async (type: FinalGuaranteeLetterType = activeLetterType) => {
     setDownloadingDocx(true);
     try {
@@ -1736,48 +1811,111 @@ export function TabFinalGuarantee({
             </Badge>
           }
         >
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            {finalDocs.map((doc: any) => (
-              <div
-                key={doc.id}
-                className="p-3.5 rounded-2xl bg-card border border-border flex items-center justify-between gap-2 text-xs"
-              >
-                <div className="flex items-center gap-2.5 min-w-0">
-                  <FileText className="h-4 w-4 text-emerald-600 shrink-0" />
-                  <div className="truncate">
-                    <p className="font-bold text-foreground truncate">{doc.fileName}</p>
-                    <p className="text-[10px] text-muted-foreground">
-                      {formatDocFileSize(doc.fileSize)} • {formatDate(doc.createdAt)}
-                    </p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5">
+            {finalDocs.map((doc: any) => {
+              const ext = (doc.fileName || "").split(".").pop()?.toLowerCase() || "";
+              const isPdf = ext === "pdf";
+              const isWord = ext === "docx" || ext === "doc";
+              const isImg = ["png", "jpg", "jpeg", "webp"].includes(ext);
+
+              return (
+                <div
+                  key={doc.id}
+                  className="p-4 rounded-2xl border-2 border-border/80 hover:border-emerald-500/50 bg-card hover:bg-muted/10 flex flex-col justify-between gap-3 shadow-sm hover:shadow-md transition-all group"
+                >
+                  <div className="flex items-start gap-3">
+                    <div
+                      className={`w-11 h-11 rounded-2xl flex items-center justify-center font-black text-xs shrink-0 shadow-xs border ${
+                        isPdf
+                          ? "bg-red-500/15 text-red-600 dark:text-red-400 border-red-500/30"
+                          : isWord
+                          ? "bg-blue-500/15 text-blue-600 dark:text-blue-400 border-blue-500/30"
+                          : isImg
+                          ? "bg-purple-500/15 text-purple-600 dark:text-purple-400 border-purple-500/30"
+                          : "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/30"
+                      }`}
+                    >
+                      {isPdf ? "PDF" : isWord ? "DOCX" : isImg ? "IMG" : "ملف"}
+                    </div>
+
+                    <div className="min-w-0 flex-1">
+                      <h5
+                        className="text-xs sm:text-sm font-black text-foreground truncate block leading-snug group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition-colors"
+                        title={doc.fileName}
+                      >
+                        {doc.fileName}
+                      </h5>
+                      <div className="flex items-center gap-2 mt-1 text-[11px] text-muted-foreground flex-wrap font-mono">
+                        <span className="font-bold text-foreground/80">{formatDocFileSize(doc.fileSize)}</span>
+                        <span>•</span>
+                        <span>{formatDate(doc.createdAt)}</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* شريط الأدوات: معاينة أصيلة دون تعديل، نافذة مستقلة، تنزيل، حذف */}
+                  <div className="pt-2 border-t border-border/70 flex items-center justify-between gap-1.5 flex-wrap">
+                    <div className="flex items-center gap-1.5">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => onPreviewDoc?.(doc)}
+                        className="h-8 px-2.5 text-xs font-bold rounded-xl border-emerald-500/40 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 flex items-center gap-1 cursor-pointer shadow-xs"
+                        title="معاينة المستند كما هو داخل المتصفح"
+                      >
+                        <Eye className="h-3.5 w-3.5" />
+                        <span>معاينة</span>
+                      </Button>
+
+                      {doc.filePath && (
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => {
+                            const url = doc.filePath.startsWith("http")
+                              ? doc.filePath
+                              : `/api/operations/${op.id}/documents/${doc.id}/file`;
+                            window.open(url, "_blank");
+                          }}
+                          className="h-8 px-2 text-xs font-semibold rounded-xl text-muted-foreground hover:text-foreground flex items-center gap-1 cursor-pointer"
+                          title="فتح الملف الأصلي كما هو في نافذة مستقلة"
+                        >
+                          <ExternalLink className="h-3.5 w-3.5" />
+                          <span className="hidden sm:inline">نافذة جديدة</span>
+                        </Button>
+                      )}
+                    </div>
+
+                    <div className="flex items-center gap-1">
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => onDownloadDoc?.(doc)}
+                        className="h-8 w-8 p-0 rounded-xl hover:bg-muted text-muted-foreground hover:text-foreground cursor-pointer"
+                        title="تنزيل الملف للجهاز"
+                      >
+                        <Download className="h-4 w-4" />
+                      </Button>
+
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => handleDeleteDoc(doc.id)}
+                        disabled={deletingDocId === doc.id}
+                        className="h-8 w-8 p-0 rounded-xl hover:bg-red-500/15 text-muted-foreground hover:text-red-600 cursor-pointer"
+                        title="حذف هذا المستند نهائياً من الأرشيف"
+                      >
+                        {deletingDocId === doc.id ? (
+                          <Loader2 className="h-4 w-4 animate-spin text-red-500" />
+                        ) : (
+                          <Trash2 className="h-4 w-4" />
+                        )}
+                      </Button>
+                    </div>
                   </div>
                 </div>
-
-                <div className="flex items-center gap-1 shrink-0">
-                  {onPreviewDoc && (
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      onClick={() => onPreviewDoc(doc)}
-                      className="h-7 w-7 p-0 text-blue-600 hover:bg-blue-50 rounded-lg cursor-pointer"
-                      title="معاينة الملف"
-                    >
-                      <Eye className="h-3.5 w-3.5" />
-                    </Button>
-                  )}
-                  {onDownloadDoc && (
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      onClick={() => onDownloadDoc(doc)}
-                      className="h-7 w-7 p-0 text-emerald-600 hover:bg-emerald-50 rounded-lg cursor-pointer"
-                      title="تحميل الملف"
-                    >
-                      <Download className="h-3.5 w-3.5" />
-                    </Button>
-                  )}
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </SectionCard>
       )}
@@ -1895,6 +2033,9 @@ export function TabFinalGuarantee({
         onCancelEdits={handleCancelEdits}
         saving={savingState}
         onViewArchive={handleViewArchive}
+        onAddToArchive={handleToggleArchive}
+        isArchived={isArchived}
+        addingToArchive={addingToArchive}
         icon={ShieldCheck}
         iconColor="text-emerald-700 dark:text-emerald-400"
         iconBg="bg-emerald-500/15 border-emerald-500/30"

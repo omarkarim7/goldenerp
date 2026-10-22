@@ -729,6 +729,57 @@ export function FinalInsuranceRefundSection({
     setPreviewModalOpen(true);
   };
 
+  // ━━━ حالة وإجراء الإضافة المباشرة للأرشيف ━━━
+  const [addingToArchive, setAddingToArchive] = useState(false);
+  const isArchived = useMemo(() => {
+    try {
+      if (op.notes && op.notes.startsWith("{")) {
+        const parsed = JSON.parse(op.notes);
+        const list = parsed.archivedDocIds || [];
+        return (
+          list.includes("letter-final-refund") ||
+          list.includes("letter-refund")
+        );
+      }
+    } catch {}
+    return false;
+  }, [op.notes]);
+
+  const handleToggleArchive = async () => {
+    setAddingToArchive(true);
+    let notesObj: any = {};
+    try {
+      if (op.notes && op.notes.startsWith("{")) {
+        notesObj = JSON.parse(op.notes);
+      }
+    } catch {}
+
+    const docKey = "letter-final-refund";
+    const current: string[] = notesObj.archivedDocIds || [];
+    const exists = current.includes(docKey) || current.includes("letter-refund");
+    const updated = exists
+      ? current.filter((id: string) => id !== docKey && id !== "letter-refund")
+      : [...current, docKey];
+
+    notesObj.archivedDocIds = updated;
+
+    try {
+      await api.patch(`/operations/${op.id}`, {
+        notes: JSON.stringify(notesObj),
+      });
+      toast.success(
+        exists
+          ? "تمت إزالة خطاب استرداد التأمين النهائي من مستندات الأرشيف وحزمة التقديم 📂"
+          : "تمت إضافة خطاب استرداد التأمين النهائي إلى مستندات الأرشيف وحزمة التقديم بنجاح! 📦✨"
+      );
+      onRefresh();
+    } catch (err: any) {
+      toast.error("فشل تحديث حالة الأرشيف لخطاب الاسترداد: " + (err?.message || ""));
+    } finally {
+      setAddingToArchive(false);
+    }
+  };
+
   const handleDownloadDocx = async () => {
     try {
       const blob = previewDocxBlob || (await generateRefundDocxBlob());
@@ -1581,6 +1632,9 @@ export function FinalInsuranceRefundSection({
         }}
         saving={savingLetter}
         onViewArchive={handleViewArchive}
+        onAddToArchive={handleToggleArchive}
+        isArchived={isArchived}
+        addingToArchive={addingToArchive}
         customSubtitle="وفقاً للمادة (38) من القانون 182 لسنة 2018. اضغط على زر المعاينة للاطلاع على المستند وتنزيله أو طباعته."
       />
 

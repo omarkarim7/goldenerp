@@ -828,6 +828,7 @@ export function TabClarification({
 
   // ━━━ دالة تحميل المعاينة الرسمية الحية من محرك Word الأصيل ━━━
   const loadOfficialPreview = async (forceRefresh = false) => {
+    setPreviewModalOpen(true);
     // إذا كان المستند مولداً ومطابقاً لآخر تعديل بدون أي تغيير في الخانات -> فتح فوري
     if (previewPdfBlob && currentSnapshot === lastGeneratedSnapshot && !forceRefresh) {
       return;
@@ -1830,7 +1831,10 @@ export function TabClarification({
         title="خطاب التوضيح والاستفسارات الفنية والقانونية الرسمية"
         registrationNumber={registrationNumber}
         isDirty={isDirty}
-        onPreview={() => loadOfficialPreview()}
+        onPreview={() => {
+          setPreviewModalOpen(true);
+          loadOfficialPreview();
+        }}
         onSave={handleSaveToSystem}
         onCancelEdits={handleCancelEdits}
         saving={savingLetter}

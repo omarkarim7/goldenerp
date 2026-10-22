@@ -2138,7 +2138,11 @@ export function TabFinancial({
         title="العرض المالي وجدول الأسعار والكميات"
         registrationNumber={registrationNumber}
         isDirty={isDirty}
-        onPreview={() => loadOfficialPreview()}
+        printInfo={printHistory["financial"] || printHistory["financialOffer"]}
+        onPreview={() => {
+          setPreviewModalOpen(true);
+          loadOfficialPreview();
+        }}
         onSave={handleSaveOffer}
         onCancelEdits={handleCancelEdits}
         saving={savingOffer}

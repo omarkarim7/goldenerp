@@ -2,6 +2,8 @@
 
 import React, { useState, useMemo } from "react";
 import {
+  Eye,
+  ExternalLink,
   ShieldCheck,
   Building2,
   Calendar,
@@ -292,13 +294,55 @@ export function TabInsurancesLabor({
           <div className="space-y-1.5">
             <Label className="text-xs font-bold">ملف إيصال السداد / شهادة التأمينات</Label>
             {socialReceiptFile ? (
-              <div className="p-2.5 rounded-xl bg-muted/40 border border-border flex items-center justify-between text-xs">
-                <span className="font-mono font-bold text-blue-600 truncate">إيصال_تأمينات_{socialInsuranceReceiptNo}.pdf</span>
-                <div className="flex items-center gap-1.5">
-                  <a href={socialReceiptFile} download={`تأمينات_${socialInsuranceReceiptNo}.pdf`} className="p-1 text-blue-600 hover:bg-blue-500/10 rounded">
+              <div className="p-3 rounded-2xl bg-muted/40 border border-blue-500/20 flex items-center justify-between gap-2 text-xs hover:border-blue-500/40 transition-colors">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <div className="w-8 h-8 rounded-xl bg-blue-500/15 text-blue-600 border border-blue-500/30 flex items-center justify-center font-black text-[11px] shrink-0">
+                    PDF
+                  </div>
+                  <div className="truncate">
+                    <span className="font-mono font-bold text-blue-700 dark:text-blue-300 truncate block">إيصال_تأمينات_{socialInsuranceReceiptNo}.pdf</span>
+                    <span className="text-[10px] text-muted-foreground block">مستند إيصال سداد التأمينات</span>
+                  </div>
+                </div>
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() =>
+                      onPreviewDoc?.({
+                        fileName: `إيصال_تأمينات_${socialInsuranceReceiptNo}.pdf`,
+                        filePath: socialReceiptFile,
+                        title: `إيصال سداد التأمينات الاجتماعية رقم ${socialInsuranceReceiptNo}`,
+                      })
+                    }
+                    className="h-8 px-2.5 text-xs font-bold rounded-xl border-blue-500/40 text-blue-700 dark:text-blue-300 hover:bg-blue-50 dark:hover:bg-blue-950/40 flex items-center gap-1 cursor-pointer shadow-xs"
+                    title="معاينة إيصال التأمينات كما هو"
+                  >
+                    <Eye className="h-3.5 w-3.5" />
+                    <span>معاينة</span>
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => window.open(socialReceiptFile, "_blank")}
+                    className="h-8 px-2 text-xs font-semibold rounded-xl text-muted-foreground hover:text-foreground cursor-pointer"
+                    title="فتح في نافذة مستقلة"
+                  >
+                    <ExternalLink className="h-3.5 w-3.5" />
+                  </Button>
+                  <a
+                    href={socialReceiptFile}
+                    download={`تأمينات_${socialInsuranceReceiptNo}.pdf`}
+                    className="p-1.5 text-blue-600 hover:bg-blue-500/10 rounded-xl cursor-pointer"
+                    title="تحميل"
+                  >
                     <Download className="h-4 w-4" />
                   </a>
-                  <button onClick={() => setSocialReceiptFile("")} className="p-1 text-rose-500 hover:bg-rose-500/10 rounded">
+                  <button
+                    onClick={() => setSocialReceiptFile("")}
+                    className="p-1.5 text-rose-500 hover:bg-rose-500/10 rounded-xl cursor-pointer"
+                    title="حذف المستند"
+                  >
                     <Trash2 className="h-4 w-4" />
                   </button>
                 </div>
@@ -385,13 +429,55 @@ export function TabInsurancesLabor({
           <div className="space-y-1.5">
             <Label className="text-xs font-bold">ملف إيصال القوى العاملة</Label>
             {laborReceiptFile ? (
-              <div className="p-2.5 rounded-xl bg-muted/40 border border-border flex items-center justify-between text-xs">
-                <span className="font-mono font-bold text-amber-600 truncate">إيصال_قوى_عاملة_{laborReceiptNo}.pdf</span>
-                <div className="flex items-center gap-1.5">
-                  <a href={laborReceiptFile} download={`قوى_عاملة_${laborReceiptNo}.pdf`} className="p-1 text-blue-600 hover:bg-blue-500/10 rounded">
+              <div className="p-3 rounded-2xl bg-muted/40 border border-amber-500/20 flex items-center justify-between gap-2 text-xs hover:border-amber-500/40 transition-colors">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <div className="w-8 h-8 rounded-xl bg-amber-500/15 text-amber-600 border border-amber-500/30 flex items-center justify-center font-black text-[11px] shrink-0">
+                    PDF
+                  </div>
+                  <div className="truncate">
+                    <span className="font-mono font-bold text-amber-700 dark:text-amber-300 truncate block">إيصال_قوى_عاملة_{laborReceiptNo}.pdf</span>
+                    <span className="text-[10px] text-muted-foreground block">مستند سداد القوى العاملة</span>
+                  </div>
+                </div>
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() =>
+                      onPreviewDoc?.({
+                        fileName: `إيصال_قوى_عاملة_${laborReceiptNo}.pdf`,
+                        filePath: laborReceiptFile,
+                        title: `إيصال سداد القوى العاملة رقم ${laborReceiptNo}`,
+                      })
+                    }
+                    className="h-8 px-2.5 text-xs font-bold rounded-xl border-amber-500/40 text-amber-700 dark:text-amber-300 hover:bg-amber-50 dark:hover:bg-amber-950/40 flex items-center gap-1 cursor-pointer shadow-xs"
+                    title="معاينة إيصال القوى العاملة كما هو"
+                  >
+                    <Eye className="h-3.5 w-3.5" />
+                    <span>معاينة</span>
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => window.open(laborReceiptFile, "_blank")}
+                    className="h-8 px-2 text-xs font-semibold rounded-xl text-muted-foreground hover:text-foreground cursor-pointer"
+                    title="فتح في نافذة مستقلة"
+                  >
+                    <ExternalLink className="h-3.5 w-3.5" />
+                  </Button>
+                  <a
+                    href={laborReceiptFile}
+                    download={`قوى_عاملة_${laborReceiptNo}.pdf`}
+                    className="p-1.5 text-blue-600 hover:bg-blue-500/10 rounded-xl cursor-pointer"
+                    title="تحميل"
+                  >
                     <Download className="h-4 w-4" />
                   </a>
-                  <button onClick={() => setLaborReceiptFile("")} className="p-1 text-rose-500 hover:bg-rose-500/10 rounded">
+                  <button
+                    onClick={() => setLaborReceiptFile("")}
+                    className="p-1.5 text-rose-500 hover:bg-rose-500/10 rounded-xl cursor-pointer"
+                    title="حذف المستند"
+                  >
                     <Trash2 className="h-4 w-4" />
                   </button>
                 </div>
@@ -458,13 +544,55 @@ export function TabInsurancesLabor({
           <div className="space-y-1.5">
             <Label className="text-xs font-bold">صورة حافظة الاستلام الموقعة</Label>
             {handoverProofFile ? (
-              <div className="p-2.5 rounded-xl bg-muted/40 border border-border flex items-center justify-between text-xs">
-                <span className="font-mono font-bold text-indigo-600 truncate">حافظة_تسليم_{handoverReceiptNumber}.pdf</span>
-                <div className="flex items-center gap-1.5">
-                  <a href={handoverProofFile} download={`حافظة_تسليم_${handoverReceiptNumber}.pdf`} className="p-1 text-blue-600 hover:bg-blue-500/10 rounded">
+              <div className="p-3 rounded-2xl bg-muted/40 border border-indigo-500/20 flex items-center justify-between gap-2 text-xs hover:border-indigo-500/40 transition-colors">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <div className="w-8 h-8 rounded-xl bg-indigo-500/15 text-indigo-600 border border-indigo-500/30 flex items-center justify-center font-black text-[11px] shrink-0">
+                    PDF
+                  </div>
+                  <div className="truncate">
+                    <span className="font-mono font-bold text-indigo-700 dark:text-indigo-300 truncate block">حافظة_تسليم_{handoverReceiptNumber}.pdf</span>
+                    <span className="text-[10px] text-muted-foreground block">مستند حافظة الاستلام المعتمدة</span>
+                  </div>
+                </div>
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() =>
+                      onPreviewDoc?.({
+                        fileName: `حافظة_تسليم_${handoverReceiptNumber}.pdf`,
+                        filePath: handoverProofFile,
+                        title: `حافظة تسليم الشهادات رقم ${handoverReceiptNumber}`,
+                      })
+                    }
+                    className="h-8 px-2.5 text-xs font-bold rounded-xl border-indigo-500/40 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 flex items-center gap-1 cursor-pointer shadow-xs"
+                    title="معاينة حافظة التسليم كما هي"
+                  >
+                    <Eye className="h-3.5 w-3.5" />
+                    <span>معاينة</span>
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => window.open(handoverProofFile, "_blank")}
+                    className="h-8 px-2 text-xs font-semibold rounded-xl text-muted-foreground hover:text-foreground cursor-pointer"
+                    title="فتح في نافذة مستقلة"
+                  >
+                    <ExternalLink className="h-3.5 w-3.5" />
+                  </Button>
+                  <a
+                    href={handoverProofFile}
+                    download={`حافظة_تسليم_${handoverReceiptNumber}.pdf`}
+                    className="p-1.5 text-blue-600 hover:bg-blue-500/10 rounded-xl cursor-pointer"
+                    title="تحميل"
+                  >
                     <Download className="h-4 w-4" />
                   </a>
-                  <button onClick={() => setHandoverProofFile("")} className="p-1 text-rose-500 hover:bg-rose-500/10 rounded">
+                  <button
+                    onClick={() => setHandoverProofFile("")}
+                    className="p-1.5 text-rose-500 hover:bg-rose-500/10 rounded-xl cursor-pointer"
+                    title="حذف المستند"
+                  >
                     <Trash2 className="h-4 w-4" />
                   </button>
                 </div>
