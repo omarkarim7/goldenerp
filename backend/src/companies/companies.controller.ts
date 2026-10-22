@@ -20,7 +20,7 @@ import { diskStorage } from 'multer';
 import * as path from 'path';
 import * as os from 'os';
 import { extname } from 'path';
-import { existsSync, mkdirSync, createReadStream } from 'fs';
+import { existsSync, mkdirSync, createReadStream, writeFileSync, unlinkSync } from 'fs';
 import type { Response } from 'express';
 import { CompaniesService } from './companies.service.js';
 import { CreateCompanyDto } from './dto/create-company.dto.js';
@@ -31,7 +31,13 @@ import { Roles } from '../common/decorators/roles.decorator.js';
 import { UserRole } from '@prisma/client';
 
 const getSafeCompanyUploadDir = (): string => {
-  if (process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME) {
+  const isServerless =
+    Boolean(process.env.VERCEL) ||
+    Boolean(process.env.VERCEL_ENV) ||
+    Boolean(process.env.AWS_LAMBDA_FUNCTION_NAME) ||
+    Boolean(process.env.LAMBDA_TASK_ROOT);
+
+  if (isServerless) {
     const tmpDir = path.join(os.tmpdir(), 'goldenerp-uploads', 'companies');
     if (!existsSync(tmpDir)) {
       try { mkdirSync(tmpDir, { recursive: true }); } catch {}
@@ -43,6 +49,9 @@ const getSafeCompanyUploadDir = (): string => {
     if (!existsSync(localDir)) {
       mkdirSync(localDir, { recursive: true });
     }
+    const testFile = path.join(localDir, `.write_test_${Date.now()}`);
+    writeFileSync(testFile, 'ok');
+    unlinkSync(testFile);
     return localDir;
   } catch {
     const tmpDir = path.join(os.tmpdir(), 'goldenerp-uploads', 'companies');

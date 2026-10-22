@@ -1322,23 +1322,7 @@ export class OperationsService {
       safeType = OpDocType.MARKET_STUDY;
     }
 
-    let finalPath = file.path ? file.path.replace(/\\/g, '/') : '';
-    try {
-      const fileBuffer = file.buffer || (file.path && existsSync(file.path) ? readFileSync(file.path) : null);
-      if (fileBuffer) {
-        const r2Upload = await this.uploadBufferToR2(
-          fileBuffer,
-          `operations/${operationId}/${Date.now()}-${file.originalname}`,
-          file.mimetype || 'application/octet-stream'
-        );
-        if (r2Upload && r2Upload.url) {
-          finalPath = r2Upload.url;
-          this.logger.log(`تم رفع مستند العملية بنجاح إلى Cloudflare R2: ${finalPath}`);
-        }
-      }
-    } catch (r2Err: any) {
-      this.logger.warn(`تعذر الرفع إلى Cloudflare R2، تم الاعتماد على المسار المحلي: ${r2Err?.message}`);
-    }
+    const finalPath = file.path ? file.path.replace(/\\/g, '/') : `uploads/operations/${file.originalname}`;
 
     return this.prisma.operationDocument.create({
       data: {
@@ -1423,7 +1407,7 @@ export class OperationsService {
       where: { id: doc.id },
       data: {
         fileName: cleanFileName,
-        filePath: file.path.replace(/\\/g, '/'),
+        filePath: file.path ? file.path.replace(/\\/g, '/') : doc.filePath,
         fileType: rawExt,
         fileSize: file.size,
       },
@@ -1458,6 +1442,7 @@ export class OperationsService {
       return null;
     }
     const cleanPath = filePath.replace(/^[/\\]+/, '');
+    const fileNameOnly = path.basename(filePath);
     const candidates = [
       filePath,
       cleanPath,
@@ -1466,6 +1451,11 @@ export class OperationsService {
       path.resolve(process.cwd(), 'uploads', cleanPath.replace(/^uploads[/\\]?/, '')),
       path.resolve(process.cwd(), '..', cleanPath),
       path.resolve(process.cwd(), '..', 'uploads', cleanPath.replace(/^uploads[/\\]?/, '')),
+      path.join(os.tmpdir(), 'goldenerp-uploads', cleanPath),
+      path.join(os.tmpdir(), 'goldenerp-uploads', 'operations', fileNameOnly),
+      path.join(os.tmpdir(), 'goldenerp-uploads', 'companies', fileNameOnly),
+      path.join(os.tmpdir(), cleanPath),
+      path.join(os.tmpdir(), fileNameOnly),
     ];
     for (const c of candidates) {
       try {

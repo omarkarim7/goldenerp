@@ -21,7 +21,7 @@ import { diskStorage } from 'multer';
 import * as path from 'path';
 import * as os from 'os';
 import { extname } from 'path';
-import { existsSync, mkdirSync, createReadStream } from 'fs';
+import { existsSync, mkdirSync, createReadStream, writeFileSync, unlinkSync } from 'fs';
 import type { Response } from 'express';
 import { OperationsService } from './operations.service.js';
 import { CreateOperationDto } from './dto/create-operation.dto.js';
@@ -32,8 +32,14 @@ import { Roles } from '../common/decorators/roles.decorator.js';
 import { OperationStatus, UserRole, OpDocType } from '@prisma/client';
 
 const getSafeUploadDir = (subDir: string): string => {
-  // If running on Vercel or read-only serverless environment
-  if (process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME) {
+  // Check if running on Vercel or read-only serverless environment
+  const isServerless =
+    Boolean(process.env.VERCEL) ||
+    Boolean(process.env.VERCEL_ENV) ||
+    Boolean(process.env.AWS_LAMBDA_FUNCTION_NAME) ||
+    Boolean(process.env.LAMBDA_TASK_ROOT);
+
+  if (isServerless) {
     const tmpDir = path.join(os.tmpdir(), 'goldenerp-uploads', subDir);
     if (!existsSync(tmpDir)) {
       try {
@@ -43,12 +49,15 @@ const getSafeUploadDir = (subDir: string): string => {
     return tmpDir;
   }
 
-  // Try standard local ./uploads/subDir
+  // Try standard local ./uploads/subDir and ensure it is actually writable
   const localDir = path.resolve(process.cwd(), 'uploads', subDir);
   try {
     if (!existsSync(localDir)) {
       mkdirSync(localDir, { recursive: true });
     }
+    const testFile = path.join(localDir, `.write_test_${Date.now()}`);
+    writeFileSync(testFile, 'ok');
+    unlinkSync(testFile);
     return localDir;
   } catch {
     // Fallback to os.tmpdir() if filesystem is read-only
