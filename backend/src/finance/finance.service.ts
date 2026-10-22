@@ -54,8 +54,21 @@ export class FinanceService {
     return { totalCost, totalRevenue, netProfit };
   }
 
-  async getOperationsOverview() {
+  async getOperationsOverview(company?: string) {
+    const where: any = {};
+    if (company && company !== 'ALL') {
+      where.companies = {
+        some: {
+          OR: [
+            { displayCode: { startsWith: company.toUpperCase() } },
+            { company: { code: company.toUpperCase() } },
+          ],
+        },
+      };
+    }
+
     const operations = await this.prisma.operation.findMany({
+      where,
       include: {
         companies: {
           include: {

@@ -80,10 +80,16 @@ export class EmployeesService {
     });
   }
 
-  async getVisits(filters?: { employeeId?: string; operationId?: string }) {
+  async getVisits(filters?: { employeeId?: string; operationId?: string; company?: string }) {
     const where: Record<string, unknown> = {};
     if (filters?.employeeId) where.employeeId = filters.employeeId;
     if (filters?.operationId) where.operationId = filters.operationId;
+    if (filters?.company && filters.company !== 'ALL') {
+      where.OR = [
+        { operationId: { startsWith: filters.company } },
+        { notes: { contains: `company:${filters.company}` } },
+      ];
+    }
 
     return this.prisma.visit.findMany({
       where,

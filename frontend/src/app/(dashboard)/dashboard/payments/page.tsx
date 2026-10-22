@@ -17,6 +17,7 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
 import api from "@/lib/api";
+import { useCompany } from "@/context/company-context";
 
 export interface OperationFinancialRecord {
   id: string;
@@ -64,7 +65,7 @@ const INITIAL_DEMO_OPERATIONS: OperationFinancialRecord[] = [
     code: "A15",
     name: "توريد وتركيب شبكة كابلات محولات الجهد المتوسط",
     authority: "هيئة المجتمعات العمرانية الجديدة",
-    companyName: "الشركة الدولية للكهرباء والمقاولات",
+    companyName: "المجموعة الذهبية للتوريدات والمقاولات (A)",
     companyCode: "A",
     totalRevenue: 2850000,
     totalCost: 1980000,
@@ -85,7 +86,7 @@ const INITIAL_DEMO_OPERATIONS: OperationFinancialRecord[] = [
     code: "B08",
     name: "إحلال وتجديد كابلات الفايبر والسنترالات المركزية",
     authority: "وزارة الاتصالات وتكنولوجيا المعلومات",
-    companyName: "المتحدة للشبكات والألياف الضوئية",
+    companyName: "العالمية للتوريدات والتجارة العمومية (B)",
     companyCode: "B",
     totalRevenue: 1450000,
     totalCost: 1120000,
@@ -106,7 +107,7 @@ const INITIAL_DEMO_OPERATIONS: OperationFinancialRecord[] = [
     code: "C04",
     name: "تجهيز وتأثيث معامل الحاسب الآلي وغرف الخوادم",
     authority: "الهيئة العامة للأبنية التعليمية",
-    companyName: "المصرية للأجهزة والحلول المكتبية",
+    companyName: "المتحدة للمقاولات العامة والتجارة (C)",
     companyCode: "C",
     totalRevenue: 920000,
     totalCost: 680000,
@@ -127,7 +128,7 @@ const INITIAL_DEMO_OPERATIONS: OperationFinancialRecord[] = [
     code: "A12",
     name: "توريد وتركيب منظومة كاميرات المراقبة وغرفة التحكم",
     authority: "مديرية أمن الجيزة",
-    companyName: "الشركة الدولية للكهرباء والمقاولات",
+    companyName: "المجموعة الذهبية للتوريدات والمقاولات (A)",
     companyCode: "A",
     totalRevenue: 1800000,
     totalCost: 1490000,
@@ -148,7 +149,7 @@ const INITIAL_DEMO_OPERATIONS: OperationFinancialRecord[] = [
     code: "D05",
     name: "أعمال العزل الحراري والمائي لمباني الخدمات المركزية",
     authority: "جهاز مدينة 6 أكتوبر",
-    companyName: "الأهرام للمقاولات والمواد العازلة",
+    companyName: "الحديثة للتجارة العامة والتوريدات (D)",
     companyCode: "D",
     totalRevenue: 640000,
     totalCost: 690000,
@@ -163,6 +164,27 @@ const INITIAL_DEMO_OPERATIONS: OperationFinancialRecord[] = [
     status: "DEFICIT",
     lastUpdated: "2026-10-15",
     notes: "تجاوز طفيف في ميزانية بنود الخامات نتيجة تغير أسعار التوريد، يلزم مراجعة ملحق العقد",
+  },
+  {
+    id: "op-6",
+    code: "A09",
+    name: "أعمال الإحلال والتجديد لمحطات الرفع والضخ",
+    authority: "شركة مياه الشرب والصرف الصحي بالجيزة",
+    companyName: "المجموعة الذهبية للتوريدات والمقاولات (A)",
+    companyCode: "A",
+    totalRevenue: 1250000,
+    totalCost: 910000,
+    netProfit: 340000,
+    profitMargin: 27.2,
+    certificatesCount: 2,
+    certificatesTotal: 850000,
+    guaranteesCount: 1,
+    guaranteesTotal: 62500,
+    purchasesCount: 3,
+    purchasesTotal: 430000,
+    status: "ACTIVE",
+    lastUpdated: "2026-10-08",
+    notes: "تم توريد الطلمبات والمحابس وجاري تنفيذ التركيبات الميدانية",
   },
 ];
 
@@ -246,9 +268,26 @@ const INITIAL_PAYMENTS: PaymentRecord[] = [
     notes: "بانتظار اعتماد محضر الاستلام الميداني للموقع من الاستشاري",
     approvedBy: "قيد الاعتماد",
   },
+  {
+    id: "p6",
+    referenceNumber: "PAY-8416",
+    supplierName: "السويدي للكابلات والأنظمة المتكاملة",
+    operationCode: "A15",
+    operationName: "توريد وتركيب شبكة كابلات محولات الجهد المتوسط",
+    amount: 240000,
+    paymentMethod: "BANK_TRANSFER",
+    bankName: "البنك الأهلي المصري",
+    status: "COMPLETED",
+    date: "2026-09-18",
+    dueDate: "2026-09-18",
+    notes: "سداد قيمة شحنة الكابلات النحاسية 3×150 مم2 المعتمدة بالموقع",
+    approvedBy: "الشؤون المالية",
+    receiptNumber: "BNK-SW-4412",
+  },
 ];
 
 export default function MasterFinancePage() {
+  const { selectedCompany, setSelectedCompany, currentCompany, companies } = useCompany();
   const [mounted, setMounted] = useState(false);
   const [loading, setLoading] = useState(false);
 
@@ -296,11 +335,12 @@ export default function MasterFinancePage() {
     setMounted(true);
   }, []);
 
-  // Fetch Live Data from Backend
+  // Fetch Live Data from Backend (Scoped to selected company)
   const fetchOperationsFinance = async () => {
     try {
       setLoading(true);
-      const res = await api.get("/finance/operations-overview");
+      const compParam = selectedCompany && selectedCompany !== "ALL" ? `?company=${selectedCompany}` : "";
+      const res = await api.get(`/finance/operations-overview${compParam}`);
       if (res.data && Array.isArray(res.data) && res.data.length > 0) {
         const mapped: OperationFinancialRecord[] = res.data.map((op: any) => {
           const fin = op.operationFinance;
@@ -349,11 +389,10 @@ export default function MasterFinancePage() {
           };
         });
 
-        // Merge live data with initial demo data if live data has operations
         setOperations(mapped);
       }
     } catch {
-      // Keep rich demo operations if network / fresh database
+      // Keep rich demo operations
     } finally {
       setLoading(false);
     }
@@ -361,19 +400,35 @@ export default function MasterFinancePage() {
 
   useEffect(() => {
     fetchOperationsFinance();
-  }, []);
+  }, [selectedCompany]);
 
   const formatCurrency = (n: number) =>
     new Intl.NumberFormat("ar-EG", { style: "currency", currency: "EGP", maximumFractionDigits: 0 }).format(n);
 
-  // Master Portfolio Aggregates
+  // 1. Strict Company Scoping for Operations
+  const companyScopedOperations = useMemo(() => {
+    if (!selectedCompany || selectedCompany === "ALL") return operations;
+    return operations.filter(
+      (op) => op.companyCode === selectedCompany || op.code.toUpperCase().startsWith(selectedCompany)
+    );
+  }, [operations, selectedCompany]);
+
+  // 2. Strict Company Scoping for Payments
+  const companyScopedPayments = useMemo(() => {
+    if (!selectedCompany || selectedCompany === "ALL") return payments;
+    return payments.filter(
+      (p) => p.operationCode.toUpperCase().startsWith(selectedCompany)
+    );
+  }, [payments, selectedCompany]);
+
+  // 3. Master Portfolio Aggregates (Strictly Scoped to Active Company)
   const portfolioStats = useMemo(() => {
-    const totalRev = operations.reduce((s, o) => s + o.totalRevenue, 0);
-    const totalCost = operations.reduce((s, o) => s + o.totalCost, 0);
-    const totalProfit = operations.reduce((s, o) => s + o.netProfit, 0);
+    const totalRev = companyScopedOperations.reduce((s, o) => s + o.totalRevenue, 0);
+    const totalCost = companyScopedOperations.reduce((s, o) => s + o.totalCost, 0);
+    const totalProfit = companyScopedOperations.reduce((s, o) => s + o.netProfit, 0);
     const overallMargin = totalRev > 0 ? (totalProfit / totalRev) * 100 : 0;
-    const totalCerts = operations.reduce((s, o) => s + o.certificatesTotal, 0);
-    const totalGuarantees = operations.reduce((s, o) => s + o.guaranteesTotal, 0);
+    const totalCerts = companyScopedOperations.reduce((s, o) => s + o.certificatesTotal, 0);
+    const totalGuarantees = companyScopedOperations.reduce((s, o) => s + o.guaranteesTotal, 0);
     const receivables = Math.max(0, totalRev - totalCerts);
 
     return {
@@ -384,13 +439,13 @@ export default function MasterFinancePage() {
       totalCerts,
       totalGuarantees,
       receivables,
-      operationsCount: operations.length,
+      operationsCount: companyScopedOperations.length,
     };
-  }, [operations]);
+  }, [companyScopedOperations]);
 
   // Filtered Operations
   const filteredOperations = useMemo(() => {
-    return operations.filter((op) => {
+    return companyScopedOperations.filter((op) => {
       const matchSearch =
         op.code.toLowerCase().includes(opSearch.toLowerCase()) ||
         op.name.toLowerCase().includes(opSearch.toLowerCase()) ||
@@ -407,11 +462,11 @@ export default function MasterFinancePage() {
 
       return matchSearch && matchCompany && matchStatus;
     });
-  }, [operations, opSearch, opFilterCompany, opFilterStatus]);
+  }, [companyScopedOperations, opSearch, opFilterCompany, opFilterStatus]);
 
   // Filtered Supplier Payments
   const filteredPayments = useMemo(() => {
-    return payments.filter((p) => {
+    return companyScopedPayments.filter((p) => {
       const matchSearch =
         p.supplierName.includes(paySearch) ||
         p.referenceNumber.includes(paySearch) ||
@@ -424,23 +479,24 @@ export default function MasterFinancePage() {
 
       return matchSearch && matchMethod && matchStatus;
     });
-  }, [payments, paySearch, payFilterMethod, payFilterStatus]);
+  }, [companyScopedPayments, paySearch, payFilterMethod, payFilterStatus]);
 
   // Payments aggregates
-  const totalPaid = payments
+  const totalPaid = companyScopedPayments
     .filter((p) => p.status === "COMPLETED")
     .reduce((acc, p) => acc + p.amount, 0);
 
-  const totalPending = payments
+  const totalPending = companyScopedPayments
     .filter((p) => p.status === "PENDING" || p.status === "PROCESSING")
     .reduce((acc, p) => acc + p.amount, 0);
 
   // Open Create Payment Modal
   const handleOpenCreatePayment = () => {
+    const defaultOp = companyScopedOperations[0] || operations[0];
     setFormRef("PAY-" + Math.floor(1000 + Math.random() * 9000));
     setFormSupplier("");
-    setFormOpCode(operations[0]?.code || "A15");
-    setFormOpName(operations[0]?.name || "");
+    setFormOpCode(defaultOp?.code || `${selectedCompany === "ALL" ? "A" : selectedCompany}15`);
+    setFormOpName(defaultOp?.name || "");
     setFormAmount("");
     setFormMethod("BANK_TRANSFER");
     setFormBankName("البنك الأهلي المصري");
@@ -606,10 +662,10 @@ export default function MasterFinancePage() {
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.href = url;
-      link.download = `المركز_المالي_للعمليات_${new Date().toISOString().split("T")[0]}.csv`;
+      link.download = `المركز_المالي_${selectedCompany !== "ALL" ? `شركة_${selectedCompany}_` : ""}${new Date().toISOString().split("T")[0]}.csv`;
       link.click();
       URL.revokeObjectURL(url);
-      toast.success("تم تصدير المركز المالي للعمليات بنجاح (CSV)");
+      toast.success("تم تصدير المركز المالي بنجاح (CSV)");
     } else {
       const headers = [
         "الرقم المرجعي",
@@ -638,7 +694,7 @@ export default function MasterFinancePage() {
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.href = url;
-      link.download = `سجل_المدفوعات_المالية_${new Date().toISOString().split("T")[0]}.csv`;
+      link.download = `سجل_المدفوعات_${selectedCompany !== "ALL" ? `شركة_${selectedCompany}_` : ""}${new Date().toISOString().split("T")[0]}.csv`;
       link.click();
       URL.revokeObjectURL(url);
       toast.success("تم تصدير سجل المدفوعات بنجاح (CSV)");
@@ -660,7 +716,7 @@ export default function MasterFinancePage() {
                   المركز المالي العام وإدارة المدفوعات
                 </h1>
                 <Badge className="bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30 text-xs px-2.5 py-0.5 font-bold">
-                  شامل كافة العمليات 🏛️
+                  {selectedCompany === "ALL" ? "شامل كافة الشركات 🏛️" : `شركة ${currentCompany?.name || selectedCompany} فقط`}
                 </Badge>
               </div>
               <p className="text-muted-foreground text-xs sm:text-sm mt-0.5">
@@ -702,6 +758,76 @@ export default function MasterFinancePage() {
         </div>
       </div>
 
+      {/* ━━━ Active Company Scope Banner & Immediate Switcher ━━━ */}
+      <div className="p-4 sm:p-5 rounded-3xl glass-card border border-border shadow-md space-y-3">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <div
+              className={`w-11 h-11 rounded-2xl flex items-center justify-center font-mono font-black text-xl text-white shadow-md shrink-0 ${
+                currentCompany ? `bg-gradient-to-br ${currentCompany.gradient}` : "bg-gradient-to-br from-emerald-600 to-teal-700"
+              }`}
+            >
+              {selectedCompany === "ALL" ? "🏛️" : selectedCompany}
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h2 className="text-base sm:text-lg font-black text-foreground">
+                  {selectedCompany === "ALL"
+                    ? "المركز المالي الموحد — بوابة الـ 4 شركات"
+                    : `المركز المالي لـ ${currentCompany?.fullName || `شركة ${selectedCompany}`}`}
+                </h2>
+                <Badge
+                  className={`text-[10px] font-bold ${
+                    selectedCompany === "ALL"
+                      ? "bg-purple-500/15 text-purple-600 border border-purple-500/30"
+                      : "bg-emerald-500/15 text-emerald-600 border border-emerald-500/30"
+                  }`}
+                >
+                  {selectedCompany === "ALL" ? "كافة الشركات" : `نطاق شركة ${selectedCompany} حصراً`}
+                </Badge>
+              </div>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                {selectedCompany === "ALL"
+                  ? "عرض مالي مجمع لكافة العمليات والمدفوعات والمستخلصات المسجلة عبر منظومة الشركات الأربعة."
+                  : `جميع أرقام التعاقدات والمصروفات والمستخلصات وسندات الصرف والضمانات المعروضة أدناه تخص شركة (${currentCompany?.name}) حصراً وبشكل مستقل تماماً.`}
+              </p>
+            </div>
+          </div>
+        </div>
+
+        {/* Company Switcher Tabs */}
+        <div className="pt-3 border-t border-border flex flex-wrap items-center gap-2">
+          <span className="text-xs font-semibold text-muted-foreground ml-1">التبديل الفوري لنطاق الشركة:</span>
+          {companies.map((c) => (
+            <button
+              key={c.code}
+              type="button"
+              onClick={() => setSelectedCompany(c.code)}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                selectedCompany === c.code
+                  ? "bg-emerald-600 text-white shadow-md shadow-emerald-500/20"
+                  : "bg-muted/50 text-muted-foreground hover:bg-muted hover:text-foreground border border-border"
+              }`}
+            >
+              <span className="font-mono">{c.code}</span>
+              <span>شركة {c.name}</span>
+            </button>
+          ))}
+          <button
+            type="button"
+            onClick={() => setSelectedCompany("ALL")}
+            className={`mr-auto px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+              selectedCompany === "ALL"
+                ? "bg-purple-600 text-white shadow-md shadow-purple-500/20"
+                : "bg-muted/50 text-muted-foreground hover:bg-muted hover:text-foreground border border-border"
+            }`}
+          >
+            <Building2 className="h-3.5 w-3.5" />
+            <span>بوابة الـ 4 شركات (عرض مجمع)</span>
+          </button>
+        </div>
+      </div>
+
       {/* ━━━ Master Enterprise Portfolio KPIs ━━━ */}
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 sm:gap-4">
         {/* Total Revenues / Contract Values */}
@@ -716,7 +842,7 @@ export default function MasterFinancePage() {
             {formatCurrency(portfolioStats.totalRev)}
           </p>
           <span className="text-[11px] text-muted-foreground mt-1 block">
-            {portfolioStats.operationsCount} عمليات معتمدة
+            {portfolioStats.operationsCount} عمليات {selectedCompany !== "ALL" ? `لشركة ${selectedCompany}` : "معتمدة"}
           </span>
         </div>
 
@@ -732,7 +858,7 @@ export default function MasterFinancePage() {
             {formatCurrency(portfolioStats.totalCost)}
           </p>
           <span className="text-[11px] text-muted-foreground mt-1 block">
-            مصروفات وتوريدات
+            مصروفات وتوريدات فعلية
           </span>
         </div>
 
@@ -755,7 +881,7 @@ export default function MasterFinancePage() {
             {formatCurrency(portfolioStats.totalProfit)}
           </p>
           <span className="text-[11px] text-muted-foreground mt-1 block">
-            هامش ربح إجمالي
+            هامش ربح محقق
           </span>
         </div>
 
@@ -787,7 +913,7 @@ export default function MasterFinancePage() {
             {formatCurrency(portfolioStats.receivables)}
           </p>
           <span className="text-[11px] text-muted-foreground mt-1 block">
-            مستحقات لدى الجهات
+            مستحقات لدى جهات الإسناد
           </span>
         </div>
 
@@ -821,7 +947,7 @@ export default function MasterFinancePage() {
             }`}
           >
             <Briefcase className="h-4 w-4" />
-            <span>المركز المالي الشامل للعمليات</span>
+            <span>المركز المالي للعمليات {selectedCompany !== "ALL" ? `(شركة ${selectedCompany})` : ""}</span>
             <Badge className="bg-white/20 text-white text-[11px] px-2 py-0 border-none font-mono">
               {filteredOperations.length}
             </Badge>
@@ -837,9 +963,9 @@ export default function MasterFinancePage() {
             }`}
           >
             <Wallet className="h-4 w-4" />
-            <span>سجل سندات ومستحقات الموردين</span>
+            <span>سندات ومستحقات الموردين {selectedCompany !== "ALL" ? `(${selectedCompany})` : ""}</span>
             <Badge className="bg-white/20 text-white text-[11px] px-2 py-0 border-none font-mono">
-              {payments.length}
+              {filteredPayments.length}
             </Badge>
           </button>
 
@@ -882,7 +1008,7 @@ export default function MasterFinancePage() {
       </div>
 
       {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-          TAB 1: المركز المالي الشامل للعمليات
+          TAB 1: المركز المالي للعمليات (الشركة المحددة أو الكل)
       ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
       {masterTab === "OPERATIONS" && (
         <div className="space-y-6">
@@ -891,7 +1017,7 @@ export default function MasterFinancePage() {
             <div className="relative flex-1 w-full">
               <Search className="absolute right-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input
-                placeholder="بحث برمز العملية A15، اسم المناقصة، الجهة الحكومية، أو الشركة المنفذة..."
+                placeholder="بحث برمز العملية A15، اسم المناقصة، الجهة الحكومية، أو الشركة..."
                 value={opSearch}
                 onChange={(e) => setOpSearch(e.target.value)}
                 className="pr-10 bg-muted/40 border-border text-foreground placeholder:text-muted-foreground focus:border-emerald-500 rounded-xl text-xs sm:text-sm h-10 w-full"
@@ -911,19 +1037,6 @@ export default function MasterFinancePage() {
                 <option value="COMPLETED">مكتملة ومستخلصة 100% ✨</option>
                 <option value="DEFICIT">تجاوز في الميزانية 🔴</option>
               </select>
-
-              {/* Company Filter */}
-              <select
-                value={opFilterCompany}
-                onChange={(e) => setOpFilterCompany(e.target.value)}
-                className="h-10 px-3 bg-muted/40 border border-border rounded-xl text-xs font-semibold text-foreground focus:outline-hidden focus:border-emerald-500 cursor-pointer"
-              >
-                <option value="ALL">كافة الشركات الشقيقة</option>
-                <option value="A">الشركة (A)</option>
-                <option value="B">الشركة (B)</option>
-                <option value="C">الشركة (C)</option>
-                <option value="D">الشركة (D)</option>
-              </select>
             </div>
           </div>
 
@@ -933,7 +1046,7 @@ export default function MasterFinancePage() {
               {filteredOperations.length === 0 ? (
                 <div className="col-span-full glass-card rounded-2xl p-12 text-center text-muted-foreground border border-border">
                   <AlertCircle className="h-8 w-8 mx-auto mb-2 text-muted-foreground" />
-                  <p>لا توجد عمليات مطابقة لمعايير البحث الحالية.</p>
+                  <p>لا توجد عمليات مالية مسجلة لشركة ({currentCompany?.name || selectedCompany}) مطابقة لمعايير البحث.</p>
                 </div>
               ) : (
                 filteredOperations.map((op) => {
@@ -1099,7 +1212,7 @@ export default function MasterFinancePage() {
                     {filteredOperations.length === 0 ? (
                       <tr>
                         <td colSpan={10} className="p-10 text-center text-muted-foreground">
-                          لا توجد عمليات مطابقة للبحث.
+                          لا توجد عمليات مطابقة لمعايير البحث في نطاق شركة ({currentCompany?.name || selectedCompany}).
                         </td>
                       </tr>
                     ) : (
@@ -1172,7 +1285,7 @@ export default function MasterFinancePage() {
       )}
 
       {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-          TAB 2: سجل سندات ومستحقات الموردين
+          TAB 2: سجل سندات ومستحقات الموردين (للشركة المحددة أو الكل)
       ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
       {masterTab === "PAYMENTS" && (
         <div className="space-y-6">
@@ -1234,7 +1347,7 @@ export default function MasterFinancePage() {
                   {filteredPayments.length === 0 ? (
                     <tr>
                       <td colSpan={8} className="p-12 text-center text-muted-foreground">
-                        لا توجد سندات أو معاملات مالية مطابقة لمعايير البحث.
+                        لا توجد سندات أو معاملات مالية مسجلة لشركة ({currentCompany?.name || selectedCompany}).
                       </td>
                     </tr>
                   ) : (
@@ -1410,7 +1523,7 @@ export default function MasterFinancePage() {
                   <span>توزيع التدفقات المالية للشركات</span>
                 </h3>
                 <Badge variant="outline" className="text-xs">
-                  مؤشر الربحية
+                  {selectedCompany === "ALL" ? "مقارنة الشركات" : `الشركة ${selectedCompany} محددة`}
                 </Badge>
               </div>
 
@@ -1420,21 +1533,42 @@ export default function MasterFinancePage() {
                   const rev = compOps.reduce((s, o) => s + o.totalRevenue, 0);
                   const cost = compOps.reduce((s, o) => s + o.totalCost, 0);
                   const profit = rev - cost;
-                  const ratio = portfolioStats.totalRev > 0 ? (rev / portfolioStats.totalRev) * 100 : 0;
+                  const totalEnterpriseRev = operations.reduce((s, o) => s + o.totalRevenue, 0);
+                  const ratio = totalEnterpriseRev > 0 ? (rev / totalEnterpriseRev) * 100 : 0;
+                  const isCurrentActive = selectedCompany === compCode;
 
                   return (
-                    <div key={compCode} className="p-3 bg-muted/30 rounded-xl border border-border/50 space-y-2">
+                    <div
+                      key={compCode}
+                      onClick={() => setSelectedCompany(compCode as any)}
+                      className={`p-3 rounded-xl border transition-all cursor-pointer ${
+                        isCurrentActive
+                          ? "bg-emerald-500/10 border-emerald-500/40 shadow-xs"
+                          : "bg-muted/30 border-border/50 hover:bg-muted/60"
+                      }`}
+                    >
                       <div className="flex items-center justify-between text-xs font-bold">
                         <span className="flex items-center gap-2">
-                          <span className="w-6 h-6 rounded-lg bg-emerald-500/15 text-emerald-600 flex items-center justify-center font-mono">
+                          <span
+                            className={`w-6 h-6 rounded-lg flex items-center justify-center font-mono ${
+                              isCurrentActive
+                                ? "bg-emerald-600 text-white font-bold"
+                                : "bg-emerald-500/15 text-emerald-600"
+                            }`}
+                          >
                             {compCode}
                           </span>
                           <span>الشركة {compCode} ({compOps.length} عمليات)</span>
+                          {isCurrentActive && (
+                            <Badge className="bg-emerald-600 text-white text-[9px] py-0 px-1.5">
+                              النشطة حالياً
+                            </Badge>
+                          )}
                         </span>
                         <span className="font-mono text-emerald-600">{formatCurrency(rev)}</span>
                       </div>
 
-                      <div className="w-full bg-muted rounded-full h-2 overflow-hidden">
+                      <div className="w-full bg-muted rounded-full h-2 overflow-hidden my-2">
                         <div
                           className="bg-emerald-500 h-full rounded-full transition-all duration-500"
                           style={{ width: `${Math.min(100, ratio)}%` }}
@@ -1461,7 +1595,7 @@ export default function MasterFinancePage() {
                   <span>مؤشرات السيولة والضمانات البنكية</span>
                 </h3>
                 <Badge variant="outline" className="text-xs text-teal-600 border-teal-500/30">
-                  آمن ومستقر
+                  {selectedCompany !== "ALL" ? `شركة ${selectedCompany}` : "المجموعة بالكامل"}
                 </Badge>
               </div>
 
@@ -1490,7 +1624,7 @@ export default function MasterFinancePage() {
 
                 <div className="p-4 bg-muted/30 rounded-xl border border-border/50 space-y-2">
                   <div className="flex justify-between font-bold">
-                    <span>معدل هامش الربح المحقق لمحفظة المشروعات</span>
+                    <span>معدل هامش الربح المحقق للعمليات</span>
                     <span className="font-mono text-emerald-600">%{portfolioStats.overallMargin}</span>
                   </div>
                   <div className="w-full bg-muted rounded-full h-2.5 overflow-hidden">
@@ -1500,7 +1634,7 @@ export default function MasterFinancePage() {
                     />
                   </div>
                   <p className="text-[11px] text-muted-foreground">
-                    متوسط الهامش يتجاوز المستهدف المالي للشركة المقدر بـ 20%
+                    متوسط الهامش يتجاوز المستهدف المالي المقدر بـ 20%
                   </p>
                 </div>
 

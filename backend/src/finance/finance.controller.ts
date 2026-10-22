@@ -17,7 +17,7 @@ export class FinanceController {
   getSummary() { return this.service.getSummary(); }
 
   @Get('operations-overview')
-  getOperationsOverview() { return this.service.getOperationsOverview(); }
+  getOperationsOverview(@Query('company') company?: string) { return this.service.getOperationsOverview(company); }
 
   @Get(':id')
   findOne(@Param('id') id: string) { return this.service.findOne(id); }

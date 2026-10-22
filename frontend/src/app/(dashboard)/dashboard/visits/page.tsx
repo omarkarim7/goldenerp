@@ -14,6 +14,7 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
 import api from "@/lib/api";
+import { useCompany } from "@/context/company-context";
 
 export interface SiteVisitRecord {
   id: string;
@@ -144,9 +145,31 @@ const INITIAL_VISITS: SiteVisitRecord[] = [
     reportNumber: "VIS-2026-082",
     notes: "تم إخطار جهاز المدينة رسمياً بضرورة إزالة المعوقات قبل بدء توريد الخامات",
   },
+  {
+    id: "v6",
+    title: "معاينة محطة رفع الصرف الصحي وتحديد مواقع الطلمبات البديلة",
+    authority: "شركة مياه الشرب والصرف الصحي بالجيزة",
+    location: "محطة رفع الصرف الصحي الرئيسية — الحوامدية",
+    employeeName: "م. أحمد الشريف",
+    operationCode: "A09",
+    operationName: "أعمال الإحلال والتجديد لمحطات الرفع والضخ",
+    visitDate: "2026-10-14",
+    status: "COMPLETED",
+    siteReadiness: "READY",
+    committeeMembers: "م. أحمد الشريف (مهندس ميكانيكا)، مدير تشغيل المحطة، ومسؤول السلامة والصحة المهنية",
+    purpose: "معاينة قواعد الطلمبات القديمة وفحص خطوط الطرد والمحابس",
+    findings: "القواعد الخرسانية بحالة جيدة جداً، وتم اعتماد نقاط التثبيت للطلمبات الجديدة ومطابقتها مع المخططات.",
+    obstacles: "لا توجد معوقات جوهرية، يتطلب التنسيق أثناء التركيب لتشغيل الخط التبادلي دون انقطاع الخدمة.",
+    safetyPermits: "تصريح دخول موقع المحطة مستوفى مع اعتماد شهادات أجهزة قياس الغازات السامة.",
+    expenses: 400,
+    isPaid: true,
+    reportNumber: "VIS-2026-083",
+    notes: "تم تسليم محضر المعاينة لإدارة المشروعات بالشركة",
+  },
 ];
 
 export default function VisitsPage() {
+  const { selectedCompany, setSelectedCompany, currentCompany, companies } = useCompany();
   const [mounted, setMounted] = useState(false);
   const [visits, setVisits] = useState<SiteVisitRecord[]>(INITIAL_VISITS);
   const [loading, setLoading] = useState(false);
@@ -187,11 +210,12 @@ export default function VisitsPage() {
     setMounted(true);
   }, []);
 
-  // Fetch from backend
+  // Fetch from backend (scoped to selected company)
   const fetchVisits = async () => {
     try {
       setLoading(true);
-      const res = await api.get("/employees/visits");
+      const compParam = selectedCompany && selectedCompany !== "ALL" ? `?company=${selectedCompany}` : "";
+      const res = await api.get(`/employees/visits${compParam}`);
       if (res.data && Array.isArray(res.data) && res.data.length > 0) {
         const mapped: SiteVisitRecord[] = res.data.map((v: any) => {
           let extra: any = {};
@@ -235,27 +259,35 @@ export default function VisitsPage() {
 
   useEffect(() => {
     fetchVisits();
-  }, []);
+  }, [selectedCompany]);
 
   // Format currency
   const formatCurrency = (n: number) =>
     new Intl.NumberFormat("ar-EG", { style: "currency", currency: "EGP", maximumFractionDigits: 0 }).format(n);
 
-  // KPIs
+  // 1. Strict Company Scoping for Site Visits
+  const companyScopedVisits = useMemo(() => {
+    if (!selectedCompany || selectedCompany === "ALL") return visits;
+    return visits.filter(
+      (v) => v.operationCode.toUpperCase().startsWith(selectedCompany)
+    );
+  }, [visits, selectedCompany]);
+
+  // 2. KPIs calculated strictly on companyScopedVisits
   const stats = useMemo(() => {
-    const total = visits.length;
-    const ready = visits.filter((v) => v.siteReadiness === "READY").length;
+    const total = companyScopedVisits.length;
+    const ready = companyScopedVisits.filter((v) => v.siteReadiness === "READY").length;
     const readyPercent = total > 0 ? Math.round((ready / total) * 100) : 0;
-    const scheduled = visits.filter((v) => v.status === "SCHEDULED" || v.status === "IN_PROGRESS").length;
-    const totalExpenses = visits.reduce((acc, v) => acc + (v.expenses || 0), 0);
-    const paidExpenses = visits.filter((v) => v.isPaid).reduce((acc, v) => acc + (v.expenses || 0), 0);
+    const scheduled = companyScopedVisits.filter((v) => v.status === "SCHEDULED" || v.status === "IN_PROGRESS").length;
+    const totalExpenses = companyScopedVisits.reduce((acc, v) => acc + (v.expenses || 0), 0);
+    const paidExpenses = companyScopedVisits.filter((v) => v.isPaid).reduce((acc, v) => acc + (v.expenses || 0), 0);
 
     return { total, ready, readyPercent, scheduled, totalExpenses, paidExpenses };
-  }, [visits]);
+  }, [companyScopedVisits]);
 
-  // Filtered visits
+  // 3. Filtered visits
   const filtered = useMemo(() => {
-    return visits.filter((v) => {
+    return companyScopedVisits.filter((v) => {
       const matchSearch =
         v.title.toLowerCase().includes(search.toLowerCase()) ||
         v.authority.toLowerCase().includes(search.toLowerCase()) ||
@@ -269,15 +301,16 @@ export default function VisitsPage() {
 
       return matchSearch && matchStatus && matchReadiness;
     });
-  }, [visits, search, filterStatus, filterReadiness]);
+  }, [companyScopedVisits, search, filterStatus, filterReadiness]);
 
   // Reset form
   const resetForm = () => {
+    const defaultOp = selectedCompany !== "ALL" ? `${selectedCompany}15` : "A15";
     setFormTitle("");
     setFormAuthority("");
     setFormLocation("");
     setFormEmployee("");
-    setFormOpCode("A15");
+    setFormOpCode(defaultOp);
     setFormOpName("");
     setFormDate(new Date().toISOString().split("T")[0]);
     setFormStatus("SCHEDULED");
@@ -324,7 +357,7 @@ export default function VisitsPage() {
     setEditModalOpen(true);
   };
 
-  // Open Dossier / View Details (NO PRINT BUTTON)
+  // Open Dossier / View Details (STRICTLY NO PRINT BUTTON)
   const handleOpenDossier = (v: SiteVisitRecord) => {
     setActiveVisit(v);
     setDossierModalOpen(true);
@@ -471,7 +504,7 @@ export default function VisitsPage() {
                   المعاينات الميدانية ومحاضر المواقع
                 </h1>
                 <Badge className="bg-blue-500/15 text-blue-600 dark:text-blue-400 border border-blue-500/30 text-xs px-2.5 py-0.5 font-bold">
-                  مركز الرقابة الهندسية 🏗️
+                  {selectedCompany === "ALL" ? "شامل كافة الشركات 🏗️" : `شركة ${currentCompany?.name || selectedCompany} فقط`}
                 </Badge>
               </div>
               <p className="text-muted-foreground text-xs sm:text-sm mt-0.5">
@@ -503,7 +536,77 @@ export default function VisitsPage() {
         </div>
       </div>
 
-      {/* ━━━ KPI Cards ━━━ */}
+      {/* ━━━ Active Company Scope Banner & Immediate Switcher ━━━ */}
+      <div className="p-4 sm:p-5 rounded-3xl glass-card border border-border shadow-md space-y-3">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <div
+              className={`w-11 h-11 rounded-2xl flex items-center justify-center font-mono font-black text-xl text-white shadow-md shrink-0 ${
+                currentCompany ? `bg-gradient-to-br ${currentCompany.gradient}` : "bg-gradient-to-br from-blue-600 to-indigo-700"
+              }`}
+            >
+              {selectedCompany === "ALL" ? "🏗️" : selectedCompany}
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h2 className="text-base sm:text-lg font-black text-foreground">
+                  {selectedCompany === "ALL"
+                    ? "سجل المعاينات الموحد — بوابة الـ 4 شركات"
+                    : `المعاينات الميدانية لـ ${currentCompany?.fullName || `شركة ${selectedCompany}`}`}
+                </h2>
+                <Badge
+                  className={`text-[10px] font-bold ${
+                    selectedCompany === "ALL"
+                      ? "bg-purple-500/15 text-purple-600 border border-purple-500/30"
+                      : "bg-blue-500/15 text-blue-600 border border-blue-500/30"
+                  }`}
+                >
+                  {selectedCompany === "ALL" ? "كافة الشركات" : `نطاق شركة ${selectedCompany} حصراً`}
+                </Badge>
+              </div>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                {selectedCompany === "ALL"
+                  ? "عرض مجمع لكافة المعاينات الميدانية ولجان الفحص وجاهزية المواقع المسجلة عبر منظومة الشركات الأربعة."
+                  : `جميع محاضر المعاينات ولجان المهندسين وبدلات الفحص المعروضة أدناه تخص عمليات شركة (${currentCompany?.name}) حصراً وبشكل مستقل تماماً.`}
+              </p>
+            </div>
+          </div>
+        </div>
+
+        {/* Company Switcher Tabs */}
+        <div className="pt-3 border-t border-border flex flex-wrap items-center gap-2">
+          <span className="text-xs font-semibold text-muted-foreground ml-1">التبديل الفوري لنطاق الشركة:</span>
+          {companies.map((c) => (
+            <button
+              key={c.code}
+              type="button"
+              onClick={() => setSelectedCompany(c.code)}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                selectedCompany === c.code
+                  ? "bg-blue-600 text-white shadow-md shadow-blue-500/20"
+                  : "bg-muted/50 text-muted-foreground hover:bg-muted hover:text-foreground border border-border"
+              }`}
+            >
+              <span className="font-mono">{c.code}</span>
+              <span>شركة {c.name}</span>
+            </button>
+          ))}
+          <button
+            type="button"
+            onClick={() => setSelectedCompany("ALL")}
+            className={`mr-auto px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+              selectedCompany === "ALL"
+                ? "bg-purple-600 text-white shadow-md shadow-purple-500/20"
+                : "bg-muted/50 text-muted-foreground hover:bg-muted hover:text-foreground border border-border"
+            }`}
+          >
+            <Building2 className="h-3.5 w-3.5" />
+            <span>بوابة الـ 4 شركات (عرض مجمع)</span>
+          </button>
+        </div>
+      </div>
+
+      {/* ━━━ KPI Cards (Scoped to selected company) ━━━ */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
         <div className="glass-card rounded-2xl p-4 sm:p-5 border border-border hover:border-blue-500/40 transition-all shadow-xs">
           <div className="flex items-center justify-between text-muted-foreground text-xs font-bold">
@@ -516,7 +619,7 @@ export default function VisitsPage() {
             {stats.total}
           </p>
           <span className="text-[11px] text-muted-foreground mt-1 block font-mono">
-            محاضر فحص ميداني معتمدة
+            محاضر فحص {selectedCompany !== "ALL" ? `لشركة ${selectedCompany}` : "معتمدة"}
           </span>
         </div>
 
@@ -631,7 +734,7 @@ export default function VisitsPage() {
           {filtered.length === 0 ? (
             <div className="col-span-full glass-card rounded-2xl p-12 text-center text-muted-foreground border border-border">
               <ClipboardCheck className="h-8 w-8 mx-auto mb-2 text-muted-foreground" />
-              <p>لا توجد معاينات ميدانية مطابقة لبحثك.</p>
+              <p>لا توجد معاينات ميدانية مسجلة لشركة ({currentCompany?.name || selectedCompany}) مطابقة لمعايير البحث.</p>
             </div>
           ) : (
             filtered.map((v) => {
@@ -772,7 +875,7 @@ export default function VisitsPage() {
                 {filtered.length === 0 ? (
                   <tr>
                     <td colSpan={9} className="p-10 text-center text-muted-foreground">
-                      لا توجد محاضر معاينات مطابقة لمعايير البحث.
+                      لا توجد محاضر معاينات مسجلة لشركة ({currentCompany?.name || selectedCompany}) مطابقة لمعايير البحث.
                     </td>
                   </tr>
                 ) : (

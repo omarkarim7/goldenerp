@@ -27,7 +27,8 @@ export class EmployeesController {
   getVisits(
     @Query('employeeId') employeeId?: string,
     @Query('operationId') operationId?: string,
-  ) { return this.service.getVisits({ employeeId, operationId }); }
+    @Query('company') company?: string,
+  ) { return this.service.getVisits({ employeeId, operationId, company }); }
 
   @Get(':id')
   findOne(@Param('id') id: string) { return this.service.findOne(id); }
