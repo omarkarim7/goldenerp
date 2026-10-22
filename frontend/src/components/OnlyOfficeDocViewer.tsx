@@ -324,13 +324,13 @@ export const OnlyOfficeDocViewer: React.FC<OnlyOfficeDocViewerProps> = ({
       {/* ━━━ نافذة العرض الرئيسية للمستند الرسمي المعتمد (PDF فقط) ━━━ */}
       <div className="flex-1 min-h-0 w-full bg-slate-950 relative flex overflow-hidden">
         {/* حالة التحميل والتوليد */}
-        {isGeneratingPdf && !pdfObjectUrl && (
+        {!pdfObjectUrl && !pdfError && (
           <div className="absolute inset-0 w-full h-full flex flex-col items-center justify-center gap-4 text-slate-300 p-8 text-center bg-slate-950 z-20">
-            <div className="w-16 h-16 rounded-2xl bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center shadow-lg">
-              <RefreshCw className="w-8 h-8 animate-spin text-emerald-400" />
+            <div className="w-16 h-16 rounded-2xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-center shadow-lg">
+              <RefreshCw className="w-8 h-8 animate-spin text-amber-500" />
             </div>
             <div className="space-y-1">
-              <h4 className="text-base font-bold text-white">جاري معالجة وتجهيز معاينة الـ PDF الرسمية المعتمدة...</h4>
+              <h4 className="text-base font-bold text-white">جاري معالجة وتجهيز معاينة المستند المعتمد...</h4>
               <p className="text-xs text-slate-400">تطبيق الباركود الرقمي والهيدر وتنسيقات القالب المعتمد بدقة 100%</p>
             </div>
           </div>

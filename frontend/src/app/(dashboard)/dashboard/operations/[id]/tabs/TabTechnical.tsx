@@ -1112,6 +1112,53 @@ export function TabTechnical({
     }
   };
 
+  // ━━━ حالة إضافة العرض الفني إلى مستندات الأرشيف ━━━
+  const [addingToArchive, setAddingToArchive] = useState(false);
+  const isArchived = useMemo(() => {
+    try {
+      if (op.notes && op.notes.startsWith("{")) {
+        const parsed = JSON.parse(op.notes);
+        const list = parsed.archivedDocIds || [];
+        return list.includes("letter-technical");
+      }
+    } catch {}
+    return false;
+  }, [op.notes]);
+
+  const handleToggleArchive = async () => {
+    setAddingToArchive(true);
+    let notesObj: any = {};
+    try {
+      if (op.notes && op.notes.startsWith("{")) {
+        notesObj = JSON.parse(op.notes);
+      }
+    } catch {}
+
+    const current: string[] = notesObj.archivedDocIds || [];
+    const exists = current.includes("letter-technical");
+    const updated = exists
+      ? current.filter((id: string) => id !== "letter-technical")
+      : [...current, "letter-technical"];
+
+    notesObj.archivedDocIds = updated;
+
+    try {
+      await api.patch(`/operations/${op.id}`, {
+        notes: JSON.stringify(notesObj),
+      });
+      toast.success(
+        exists
+          ? "تمت إزالة العرض الفني من مستندات الأرشيف وحزمة التقديم 📂"
+          : "تمت إضافة العرض الفني إلى مستندات الأرشيف وحزمة التقديم بنجاح! 📦✨"
+      );
+      onRefresh();
+    } catch (err: any) {
+      toast.error("فشل تحديث حالة الأرشيف للعرض الفني: " + (err?.message || ""));
+    } finally {
+      setAddingToArchive(false);
+    }
+  };
+
   useEffect(() => {
     if (previewModalOpen) {
       loadOfficialPreview();
@@ -1946,11 +1993,14 @@ export function TabTechnical({
         registrationNumber={registrationNumber}
         isDirty={isDirty}
         printInfo={printHistory["technical"]}
-        onPreview={() => setPreviewModalOpen(true)}
+        onPreview={() => loadOfficialPreview()}
         onSave={handleSaveToSystem}
         onCancelEdits={handleCancelEdits}
         saving={savingOffer}
         onViewArchive={handleViewArchive}
+        onAddToArchive={handleToggleArchive}
+        isArchived={isArchived}
+        addingToArchive={addingToArchive}
         icon={ClipboardCheck}
         iconColor="text-blue-700 dark:text-blue-400"
         iconBg="bg-blue-500/15 border-blue-500/30"

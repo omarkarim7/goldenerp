@@ -1126,6 +1126,9 @@ export function LetterBottomActionWidget({
   onCancelEdits,
   saving = false,
   onViewArchive,
+  onAddToArchive,
+  isArchived = false,
+  addingToArchive = false,
   customSubtitle,
   icon: Icon = HelpCircle,
   iconColor = "text-amber-700 dark:text-amber-400",
@@ -1141,6 +1144,9 @@ export function LetterBottomActionWidget({
   onCancelEdits?: () => void;
   saving?: boolean;
   onViewArchive?: () => void;
+  onAddToArchive?: () => void;
+  isArchived?: boolean;
+  addingToArchive?: boolean;
   customSubtitle?: string;
   icon?: any;
   iconColor?: string;
@@ -1261,6 +1267,32 @@ export function LetterBottomActionWidget({
             >
               <Archive className="h-4 w-4 ml-1 text-blue-600 dark:text-blue-400" />
               <span>عرض الملف المؤرشف</span>
+            </Button>
+          )}
+          {/* زر إضافة للأرشيف المباشر */}
+          {onAddToArchive && (
+            <Button
+              size="sm"
+              variant={isArchived ? "secondary" : "outline"}
+              onClick={onAddToArchive}
+              disabled={addingToArchive || isDirty}
+              title={
+                isArchived
+                  ? "المستند مضاف حالياً إلى مستندات الأرشيف وحزمة التقديم (انقر للإلغاء)"
+                  : "إضافة هذا المستند مباشرة إلى مستندات الأرشيف وحزمة التقديم"
+              }
+              className={`h-10 px-4 text-xs font-bold rounded-xl border-2 transition-all cursor-pointer flex items-center gap-1.5 shadow-xs ${
+                isArchived
+                  ? "bg-purple-500/15 text-purple-700 dark:text-purple-300 border-purple-500/30 hover:bg-purple-500/25"
+                  : "border-purple-500/40 text-purple-700 dark:text-purple-300 hover:bg-purple-50 dark:hover:bg-purple-950/40 hover:border-purple-600"
+              } ${isDirty ? "opacity-50 cursor-not-allowed" : ""}`}
+            >
+              {addingToArchive ? (
+                <RefreshCw className="h-4 w-4 animate-spin text-purple-600" />
+              ) : (
+                <Archive className="h-4 w-4 text-purple-600" />
+              )}
+              <span>{isArchived ? "مضاف للأرشيف ✓" : "إضافة للأرشيف 📥"}</span>
             </Button>
           )}
 

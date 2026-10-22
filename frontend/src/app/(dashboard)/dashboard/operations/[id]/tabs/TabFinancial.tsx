@@ -1327,6 +1327,53 @@ export function TabFinancial({
     }
   };
 
+  // ━━━ حالة إضافة العرض المالي إلى مستندات الأرشيف ━━━
+  const [addingToArchive, setAddingToArchive] = useState(false);
+  const isArchived = useMemo(() => {
+    try {
+      if (op.notes && op.notes.startsWith("{")) {
+        const parsed = JSON.parse(op.notes);
+        const list = parsed.archivedDocIds || [];
+        return list.includes("letter-financial");
+      }
+    } catch {}
+    return false;
+  }, [op.notes]);
+
+  const handleToggleArchive = async () => {
+    setAddingToArchive(true);
+    let notesObj: any = {};
+    try {
+      if (op.notes && op.notes.startsWith("{")) {
+        notesObj = JSON.parse(op.notes);
+      }
+    } catch {}
+
+    const current: string[] = notesObj.archivedDocIds || [];
+    const exists = current.includes("letter-financial");
+    const updated = exists
+      ? current.filter((id: string) => id !== "letter-financial")
+      : [...current, "letter-financial"];
+
+    notesObj.archivedDocIds = updated;
+
+    try {
+      await api.patch(`/operations/${op.id}`, {
+        notes: JSON.stringify(notesObj),
+      });
+      toast.success(
+        exists
+          ? "تمت إزالة العرض المالي من مستندات الأرشيف وحزمة التقديم 📂"
+          : "تمت إضافة العرض المالي إلى مستندات الأرشيف وحزمة التقديم بنجاح! 📦✨"
+      );
+      onRefresh();
+    } catch (err: any) {
+      toast.error("فشل تحديث حالة الأرشيف للعرض المالي: " + (err?.message || ""));
+    } finally {
+      setAddingToArchive(false);
+    }
+  };
+
   useEffect(() => {
     if (previewModalOpen) {
       loadOfficialPreview();
@@ -2091,12 +2138,14 @@ export function TabFinancial({
         title="العرض المالي وجدول الأسعار والكميات"
         registrationNumber={registrationNumber}
         isDirty={isDirty}
-        printInfo={printHistory["financial"]}
-        onPreview={() => setPreviewModalOpen(true)}
+        onPreview={() => loadOfficialPreview()}
         onSave={handleSaveOffer}
         onCancelEdits={handleCancelEdits}
         saving={savingOffer}
         onViewArchive={handleViewArchive}
+        onAddToArchive={handleToggleArchive}
+        isArchived={isArchived}
+        addingToArchive={addingToArchive}
         icon={Coins}
         iconColor="text-teal-700 dark:text-teal-400"
         iconBg="bg-teal-500/15 border-teal-500/30"

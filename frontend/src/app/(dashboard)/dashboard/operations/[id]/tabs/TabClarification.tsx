@@ -987,6 +987,53 @@ export function TabClarification({
     setPreviewModalOpen(true);
   };
 
+  // ━━━ حالة إضافة خطاب التوضيح إلى مستندات الأرشيف ━━━
+  const [addingToArchive, setAddingToArchive] = useState(false);
+  const isArchived = useMemo(() => {
+    try {
+      if (op.notes && op.notes.startsWith("{")) {
+        const parsed = JSON.parse(op.notes);
+        const list = parsed.archivedDocIds || [];
+        return list.includes("letter-clarification");
+      }
+    } catch {}
+    return false;
+  }, [op.notes]);
+
+  const handleToggleArchive = async () => {
+    setAddingToArchive(true);
+    let notesObj: any = {};
+    try {
+      if (op.notes && op.notes.startsWith("{")) {
+        notesObj = JSON.parse(op.notes);
+      }
+    } catch {}
+
+    const current: string[] = notesObj.archivedDocIds || [];
+    const exists = current.includes("letter-clarification");
+    const updated = exists
+      ? current.filter((id: string) => id !== "letter-clarification")
+      : [...current, "letter-clarification"];
+
+    notesObj.archivedDocIds = updated;
+
+    try {
+      await api.patch(`/operations/${op.id}`, {
+        notes: JSON.stringify(notesObj),
+      });
+      toast.success(
+        exists
+          ? "تمت إزالة خطاب التوضيح من مستندات الأرشيف وحزمة التقديم 📂"
+          : "تمت إضافة خطاب التوضيح إلى مستندات الأرشيف وحزمة التقديم بنجاح! 📦✨"
+      );
+      onRefresh();
+    } catch (err: any) {
+      toast.error("فشل تحديث حالة الأرشيف لخطاب التوضيح: " + (err?.message || ""));
+    } finally {
+      setAddingToArchive(false);
+    }
+  };
+
   // تحميل المعاينة الرسمية بمجرد فتح نافذة المعاينة
   useEffect(() => {
     if (previewModalOpen) {
@@ -1783,12 +1830,14 @@ export function TabClarification({
         title="خطاب التوضيح والاستفسارات الفنية والقانونية الرسمية"
         registrationNumber={registrationNumber}
         isDirty={isDirty}
-        printInfo={printHistory["clarification"]}
-        onPreview={() => setPreviewModalOpen(true)}
+        onPreview={() => loadOfficialPreview()}
         onSave={handleSaveToSystem}
         onCancelEdits={handleCancelEdits}
         saving={savingLetter}
         onViewArchive={handleViewArchive}
+        onAddToArchive={handleToggleArchive}
+        isArchived={isArchived}
+        addingToArchive={addingToArchive}
         customSubtitle="مطابق 100% لقالب الوورد المعتمد للشركة. اضغط على زر المعاينة للاطلاع على المستند وتنزيله أو طباعته."
       />
 

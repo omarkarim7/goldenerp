@@ -543,6 +543,15 @@ export function WarrantyCertificateSection({
         );
         docXml = docXml.replace(originalTable, newTable);
       }
+    } else {
+      // حقن الجدول كبديل أمان في حال عدم وجوده بالقالب الأصلي
+      const fullTableXml =
+        `<w:tbl><w:tblPr><w:bidiVisual/><w:tblW w:w="10147" w:type="dxa"/><w:jc w:val="center"/><w:tblBorders><w:top w:val="thinThickSmallGap" w:sz="24" w:space="0" w:color="auto"/><w:left w:val="thinThickSmallGap" w:sz="24" w:space="0" w:color="auto"/><w:bottom w:val="thinThickSmallGap" w:sz="24" w:space="0" w:color="auto"/><w:right w:val="thinThickSmallGap" w:sz="24" w:space="0" w:color="auto"/><w:insideH w:val="thinThickSmallGap" w:sz="18" w:space="0" w:color="auto"/><w:insideV w:val="thinThickSmallGap" w:sz="18" w:space="0" w:color="auto"/></w:tblBorders><w:tblLook w:val="0000" w:firstRow="0" w:lastRow="0" w:firstColumn="0" w:lastColumn="0" w:noHBand="0" w:noVBand="0"/></w:tblPr><w:tblGrid><w:gridCol w:w="561"/><w:gridCol w:w="3593"/><w:gridCol w:w="977"/><w:gridCol w:w="977"/><w:gridCol w:w="2798"/><w:gridCol w:w="1241"/></w:tblGrid><w:tr><w:trPr><w:trHeight w:val="330"/><w:jc w:val="center"/></w:trPr><w:tc><w:tcPr><w:tcW w:w="561" w:type="dxa"/><w:tcBorders><w:top w:val="thinThickSmallGap" w:sz="24" w:space="0" w:color="auto"/><w:left w:val="thinThickSmallGap" w:sz="24" w:space="0" w:color="auto"/><w:bottom w:val="thinThickSmallGap" w:sz="24" w:space="0" w:color="auto"/><w:right w:val="thinThickSmallGap" w:sz="24" w:space="0" w:color="auto"/></w:tcBorders></w:tcPr><w:p><w:pPr><w:spacing w:after="0" w:line="240" w:lineRule="auto"/><w:jc w:val="center"/><w:rPr><w:b/><w:bCs/><w:sz w:val="30"/><w:szCs w:val="30"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr></w:pPr><w:r><w:rPr><w:b/><w:bCs/><w:sz w:val="30"/><w:szCs w:val="30"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t>م</w:t></w:r></w:p></w:tc><w:tc><w:tcPr><w:tcW w:w="3593" w:type="dxa"/><w:tcBorders><w:top w:val="thinThickSmallGap" w:sz="24" w:space="0" w:color="auto"/><w:left w:val="thinThickSmallGap" w:sz="24" w:space="0" w:color="auto"/><w:bottom w:val="thinThickSmallGap" w:sz="24" w:space="0" w:color="auto"/><w:right w:val="thinThickSmallGap" w:sz="24" w:space="0" w:color="auto"/></w:tcBorders></w:tcPr><w:p><w:pPr><w:spacing w:after="0" w:line="240" w:lineRule="auto"/><w:jc w:val="center"/><w:rPr><w:b/><w:bCs/><w:sz w:val="30"/><w:szCs w:val="30"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr></w:pPr><w:r><w:rPr><w:b/><w:bCs/><w:sz w:val="30"/><w:szCs w:val="30"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t>إســــم الصــــــنف والمواصفات</w:t></w:r></w:p></w:tc><w:tc><w:tcPr><w:tcW w:w="977" w:type="dxa"/><w:tcBorders><w:top w:val="thinThickSmallGap" w:sz="24" w:space="0" w:color="auto"/><w:left w:val="thinThickSmallGap" w:sz="24" w:space="0" w:color="auto"/><w:bottom w:val="thinThickSmallGap" w:sz="24" w:space="0" w:color="auto"/><w:right w:val="thinThickSmallGap" w:sz="24" w:space="0" w:color="auto"/></w:tcBorders></w:tcPr><w:p><w:pPr><w:spacing w:after="0" w:line="240" w:lineRule="auto"/><w:jc w:val="center"/><w:rPr><w:b/><w:bCs/><w:sz w:val="30"/><w:szCs w:val="30"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr></w:pPr><w:r><w:rPr><w:b/><w:bCs/><w:sz w:val="30"/><w:szCs w:val="30"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t>الوحدة</w:t></w:r></w:p></w:tc><w:tc><w:tcPr><w:tcW w:w="977" w:type="dxa"/><w:tcBorders><w:top w:val="thinThickSmallGap" w:sz="24" w:space="0" w:color="auto"/><w:left w:val="thinThickSmallGap" w:sz="24" w:space="0" w:color="auto"/><w:bottom w:val="thinThickSmallGap" w:sz="24" w:space="0" w:color="auto"/><w:right w:val="thinThickSmallGap" w:sz="24" w:space="0" w:color="auto"/></w:tcBorders></w:tcPr><w:p><w:pPr><w:spacing w:after="0" w:line="240" w:lineRule="auto"/><w:jc w:val="center"/><w:rPr><w:b/><w:bCs/><w:sz w:val="30"/><w:szCs w:val="30"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr></w:pPr><w:r><w:rPr><w:b/><w:bCs/><w:sz w:val="30"/><w:szCs w:val="30"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t>الكميه</w:t></w:r></w:p></w:tc><w:tc><w:tcPr><w:tcW w:w="2798" w:type="dxa"/><w:tcBorders><w:top w:val="thinThickSmallGap" w:sz="24" w:space="0" w:color="auto"/><w:left w:val="thinThickSmallGap" w:sz="24" w:space="0" w:color="auto"/><w:bottom w:val="thinThickSmallGap" w:sz="24" w:space="0" w:color="auto"/><w:right w:val="thinThickSmallGap" w:sz="24" w:space="0" w:color="auto"/></w:tcBorders></w:tcPr><w:p><w:pPr><w:spacing w:after="0" w:line="240" w:lineRule="auto"/><w:jc w:val="center"/><w:rPr><w:b/><w:bCs/><w:sz w:val="30"/><w:szCs w:val="30"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr></w:pPr><w:r><w:rPr><w:b/><w:bCs/><w:sz w:val="30"/><w:szCs w:val="30"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t>بيان وتغطية الضمان</w:t></w:r></w:p></w:tc><w:tc><w:tcPr><w:tcW w:w="1241" w:type="dxa"/><w:tcBorders><w:top w:val="thinThickSmallGap" w:sz="24" w:space="0" w:color="auto"/><w:left w:val="thinThickSmallGap" w:sz="24" w:space="0" w:color="auto"/><w:bottom w:val="thinThickSmallGap" w:sz="24" w:space="0" w:color="auto"/><w:right w:val="thinThickSmallGap" w:sz="24" w:space="0" w:color="auto"/></w:tcBorders></w:tcPr><w:p><w:pPr><w:spacing w:after="0" w:line="240" w:lineRule="auto"/><w:jc w:val="center"/><w:rPr><w:b/><w:bCs/><w:sz w:val="30"/><w:szCs w:val="30"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr></w:pPr><w:r><w:rPr><w:b/><w:bCs/><w:sz w:val="30"/><w:szCs w:val="30"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t>ملاحظات الضمان</w:t></w:r></w:p></w:tc></w:tr>${buildWarrantyTableRowsXml(items)}</w:tbl><w:p><w:pPr><w:spacing w:before="120" w:after="120" w:line="240" w:lineRule="auto"/></w:pPr></w:p>`;
+
+      const warrantyParaMatch = docXml.match(/<w:p[\s\S]*?مدة الضمان[\s\S]*?<\/w:p>/);
+      if (warrantyParaMatch) {
+        docXml = docXml.replace(warrantyParaMatch[0], fullTableXml + warrantyParaMatch[0]);
+      }
     }
 
     // فقرة بيان الضمان الشاملة
@@ -807,12 +816,61 @@ export function WarrantyCertificateSection({
       window.open(cloudPdfUrl, "_blank");
       return;
     }
-    if (previewPdfBlob) {
-      setPreviewModalOpen(true);
-      return;
-    }
-    setPreviewModalOpen(true);
+    loadOfficialPreview();
   };
+
+  // ━━━ حالة إضافة شهادة الضمان للأرشيف ━━━
+  const [addingToArchive, setAddingToArchive] = useState(false);
+  const isArchived = useMemo(() => {
+    try {
+      if (op.notes && op.notes.startsWith("{")) {
+        const parsed = JSON.parse(op.notes);
+        const list = parsed.archivedDocIds || [];
+        return list.includes("letter-warranty");
+      }
+    } catch {}
+    return false;
+  }, [op.notes]);
+
+  const handleToggleArchive = async () => {
+    setAddingToArchive(true);
+    let notesObj: any = {};
+    try {
+      if (op.notes && op.notes.startsWith("{")) {
+        notesObj = JSON.parse(op.notes);
+      }
+    } catch {}
+
+    const current: string[] = notesObj.archivedDocIds || [];
+    const exists = current.includes("letter-warranty");
+    const updated = exists
+      ? current.filter((id: string) => id !== "letter-warranty")
+      : [...current, "letter-warranty"];
+
+    notesObj.archivedDocIds = updated;
+
+    try {
+      await api.patch(`/operations/${op.id}`, {
+        notes: JSON.stringify(notesObj),
+      });
+      toast.success(
+        exists
+          ? "تمت إزالة شهادة الضمان من مستندات الأرشيف وحزمة التقديم 📂"
+          : "تمت إضافة شهادة الضمان إلى مستندات الأرشيف وحزمة التقديم بنجاح! 📦✨"
+      );
+      onRefresh();
+    } catch (err: any) {
+      toast.error("فشل تحديث حالة الأرشيف لشهادة الضمان: " + (err?.message || ""));
+    } finally {
+      setAddingToArchive(false);
+    }
+  };
+
+  useEffect(() => {
+    if (previewModalOpen && !previewPdfBlob && !renderingDocx) {
+      loadOfficialPreview();
+    }
+  }, [previewModalOpen]);
 
   const handleDownloadDocx = async () => {
     try {
@@ -1345,7 +1403,7 @@ export function WarrantyCertificateSection({
         registrationNumber={registrationNumber}
         isDirty={isDirty}
         printInfo={printHistory["warranty"]}
-        onPreview={() => setPreviewModalOpen(true)}
+        onPreview={() => loadOfficialPreview()}
         onSave={handleSaveToSystem}
         onCancelEdits={() => {
           try {
@@ -1357,6 +1415,9 @@ export function WarrantyCertificateSection({
         }}
         saving={savingWarranty}
         onViewArchive={handleViewArchive}
+        onAddToArchive={handleToggleArchive}
+        isArchived={isArchived}
+        addingToArchive={addingToArchive}
         customSubtitle="مطابق 100% لقالب الوورد الرسمي لشهادة الضمان. اضغط على زر المعاينة للاطلاع على المستند وتنزيله أو طباعته."
       />
 

@@ -482,45 +482,13 @@ export function DocxViewer({
           text-align: right !important;
           min-height: 800px !important;
         }
-        .docx-wrapper section.docx *,
-        section.docx *,
-        .docx-preview-root * {
-          color: #0f172a;
-        }
-        .docx-wrapper section.docx table,
-        section.docx table,
-        .docx-preview-root table {
-          border-collapse: collapse !important;
-          width: 100% !important;
-          margin: 14px 0 !important;
-          background-color: #ffffff !important;
-        }
-        .docx-wrapper section.docx td,
-        .docx-wrapper section.docx th,
-        section.docx td,
-        section.docx th,
-        .docx-preview-root td,
-        .docx-preview-root th {
-          border: 1px solid #475569 !important;
-          padding: 8px 10px !important;
-          text-align: right !important;
-          color: #0f172a !important;
-          background: transparent !important;
-        }
-        .docx-wrapper section.docx th,
-        section.docx th,
-        .docx-preview-root th {
-          background-color: #f1f5f9 !important;
-          font-weight: bold !important;
-        }
+        /* لا يتم فرض أي ألوان أو حدود إجبارية على محتوى الوورد لضمان عرضه الأصيل كما هو مصمم تماماً داخل Microsoft Word */
         .docx-mammoth-body {
           background: #ffffff !important;
           background-color: #ffffff !important;
-          color: #0f172a !important;
-        }
-        .docx-mammoth-body * {
           color: #0f172a;
         }
+
         .docx-mammoth-body table {
           border-collapse: collapse;
           width: 100%;

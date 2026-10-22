@@ -183,6 +183,26 @@ export function TabSubmissionPackage({
   const specsCloudUrl = savedNotes?.declarationsDocx?.cloudPdfUrlSpecs || "";
   const insCloudUrl = savedNotes?.declarationsDocx?.cloudPdfUrlInsurance || "";
   const finCloudUrl = savedNotes?.financialOfferDocx?.cloudPdfUrl || "";
+  const warrantyCloudUrl = savedNotes?.warrantyCertificate?.cloudPdfUrl || "";
+  const generalCloudUrl = savedNotes?.declarationsDocx?.cloudPdfUrlGeneral || "";
+
+  // ━━━ جلب مستندات الشركة القانونية المعتمدة تلقائياً لضمان المزامنة 100% ━━━
+  const [fetchedCompDocs, setFetchedCompDocs] = useState<any[]>([]);
+
+  useEffect(() => {
+    const compId = selectedCompanyRel?.companyId || selectedCompanyRel?.company?.id || selectedCompanyId;
+    if (!compId) return;
+
+    api.get(`/companies/${compId}/documents`)
+      .then((res) => {
+        if (Array.isArray(res.data)) {
+          setFetchedCompDocs(res.data);
+        }
+      })
+      .catch((err) => {
+        console.warn("Could not fetch company documents:", err);
+      });
+  }, [selectedCompanyId, selectedCompanyRel]);
 
   // ━━━ قائمة الملفات الفعلية المتاحة بالعملية (الملفات الحقيقية فقط بدون عناصر وهمية) ━━━
   const packageFiles: DossierItem[] = useMemo(() => {
@@ -242,20 +262,46 @@ export function TabSubmissionPackage({
     });
 
     // ─────────────────────────────────────────────────────────────
-    // 2. مستندات الشركة المشاركة المرفوعة فعلياً (compDocs)
+    // 2. مستندات الشركة المشاركة المعتمدة من صفحة بيانات الشركة (compDocs)
     // ─────────────────────────────────────────────────────────────
-    const compDocs = selectedCompanyRel?.company?.documents || [];
-    compDocs.forEach((cd: any) => {
+    const initialCompDocs = selectedCompanyRel?.company?.documents || [];
+    const compDocsMap = new Map<string, any>();
+    initialCompDocs.forEach((d: any) => compDocsMap.set(d.id, d));
+    fetchedCompDocs.forEach((d: any) => compDocsMap.set(d.id, d));
+    const allCompDocs = Array.from(compDocsMap.values());
+
+    allCompDocs.forEach((cd: any) => {
       const rawExt = (cd.fileType || "").toLowerCase();
       const isImg = ["png", "jpg", "jpeg", "webp", "gif"].includes(rawExt);
       const isDocx = ["docx", "doc"].includes(rawExt);
       const isXls = ["xlsx", "xls", "csv"].includes(rawExt);
       const fType: DossierItem["fileType"] = isDocx ? "docx" : isXls ? "xlsx" : isImg ? "image" : "pdf";
 
+      const docTypeLabel =
+        cd.type === "COMMERCIAL_REGISTER"
+          ? "السجل التجاري المعتمد"
+          : cd.type === "TAX_CARD"
+          ? "البطاقة الضريبية الرسمية"
+          : cd.type === "LICENSE"
+          ? "رخصة مزاولة النشاط"
+          : cd.type === "CERTIFICATE"
+          ? "شهادة التسجيل والقيمة المضافة"
+          : cd.type === "CONTRACT"
+          ? "عقد التأسيس والاتفاقية"
+          : cd.type === "TAX_EXEMPTION"
+          ? "شهادة الإعفاء الضريبي"
+          : cd.type === "STAMP"
+          ? "خاتم الشركة المعتمد"
+          : cd.type === "SIGNATURE"
+          ? "نموذج التوقيع البنكي المعتمد"
+          : "مستند رسمي للشركة";
+
+      const displayName = cd.fileName || docTypeLabel || cd.originalFileName || "مستند رسمي للشركة";
+
       list.push({
         id: `comp-doc-${cd.id}`,
-        name: cd.originalFileName || cd.fileName || "مستند رسمي للشركة",
-        description: `مستند قانوني معتمد لشركة ${selectedCompanyRel?.company?.name || "المشاركة"} • ${cd.fileSize ? formatDocFileSize(cd.fileSize) : ""}`,
+        name: displayName,
+        description: `مستند قانوني معتمد (${docTypeLabel}) لشركة ${selectedCompanyRel?.company?.name || "المشاركة"} • ${cd.fileSize ? formatDocFileSize(cd.fileSize) : ""}`,
         category: "COMPANY_DOCS",
         sourceTab: "مستندات الشركة الرسمية",
         envelope: "المظروف الفني",
@@ -268,7 +314,7 @@ export function TabSubmissionPackage({
     });
 
     // ─────────────────────────────────────────────────────────────
-    // 3. نماذج وخطابات العطاء الرسمية المعتمدة (نسخة PDF رسمية واحدة فقط بدون قوالب وورد أولية)
+    // 3. نماذج وخطابات العطاء الرسمية المعتمدة
     // ─────────────────────────────────────────────────────────────
     list.push({
       id: "letter-clarification",
@@ -294,6 +340,19 @@ export function TabSubmissionPackage({
       templateKey: "technical",
       cloudUrl: techCloudUrl,
       isArchived: archivedDocIds.includes("letter-technical"),
+    });
+
+    list.push({
+      id: "letter-warranty",
+      name: "شهادة الضمان المعتمدة للأصناف الموردة",
+      description: "النسخة الرقمية المعتمدة لشهادة الضمان للأصناف مع رمز QR والبنود المستثناة وفترة السريان",
+      category: "LETTERS",
+      sourceTab: "خطابات ومخرجات العطاء",
+      envelope: "المظروف الفني",
+      fileType: "pdf",
+      templateKey: "technical",
+      cloudUrl: warrantyCloudUrl,
+      isArchived: archivedDocIds.includes("letter-warranty"),
     });
 
     list.push({
@@ -335,16 +394,32 @@ export function TabSubmissionPackage({
       isArchived: archivedDocIds.includes("decl-insurance"),
     });
 
+    list.push({
+      id: "decl-general",
+      name: "الخطاب الرسمي العام الموجه لجهة الإسناد",
+      description: "النسخة الرقمية المعتمدة للخطاب العام مع رمز QR الموثق",
+      category: "LETTERS",
+      sourceTab: "خطابات ومخرجات العطاء",
+      envelope: "المظروف الفني",
+      fileType: "pdf",
+      templateKey: "clarification",
+      cloudUrl: generalCloudUrl,
+      isArchived: archivedDocIds.includes("decl-general"),
+    });
+
     return list;
   }, [
     op.documents,
     selectedCompanyRel?.company?.documents,
+    fetchedCompDocs,
     selectedCompanyRel?.company?.name,
     techCloudUrl,
     clrCloudUrl,
     specsCloudUrl,
     insCloudUrl,
     finCloudUrl,
+    warrantyCloudUrl,
+    generalCloudUrl,
     archivedDocIds,
   ]);
 
