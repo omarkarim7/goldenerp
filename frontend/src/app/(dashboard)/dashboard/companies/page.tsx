@@ -742,7 +742,6 @@ export default function CompaniesPage() {
                   <input
                     ref={fileInputRef}
                     type="file"
-                    accept=".pdf,.docx,.doc,.png,.jpg,.jpeg,.webp"
                     onChange={handleFileChange}
                     className="hidden"
                   />
@@ -1479,7 +1478,6 @@ export default function CompaniesPage() {
                       setEditFile(file);
                     }
                   }}
-                  accept=".pdf,.docx,.doc,.png,.jpg,.jpeg,.webp,.xlsx,.xls"
                   className="hidden"
                 />
 

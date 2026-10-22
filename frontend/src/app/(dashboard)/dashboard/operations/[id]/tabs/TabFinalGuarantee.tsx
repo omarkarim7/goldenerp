@@ -1624,7 +1624,6 @@ export function TabFinalGuarantee({
                   type="file"
                   id="final-guar-file"
                   className="hidden"
-                  accept=".pdf,.png,.jpg,.jpeg,.docx"
                   onChange={(e) => setReceiptFile(e.target.files?.[0] || null)}
                 />
                 <label

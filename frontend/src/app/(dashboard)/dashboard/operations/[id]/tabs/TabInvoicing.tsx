@@ -673,7 +673,6 @@ export function TabInvoicing({
                   <span className="text-xs font-bold text-muted-foreground">اضغط لرفع ملف الفاتورة المعتمدة</span>
                   <input
                     type="file"
-                    accept=".pdf,image/*"
                     onChange={(e) => handleFileUpload(e, "INVOICE")}
                     disabled={uploadingInvoice}
                     className="hidden"
@@ -730,7 +729,6 @@ export function TabInvoicing({
                   <span className="text-xs font-bold text-muted-foreground">اضغط لرفع إذن ومحضر التسليم المختوم</span>
                   <input
                     type="file"
-                    accept=".pdf,image/*"
                     onChange={(e) => handleFileUpload(e, "DELIVERY")}
                     disabled={uploadingDelivery}
                     className="hidden"

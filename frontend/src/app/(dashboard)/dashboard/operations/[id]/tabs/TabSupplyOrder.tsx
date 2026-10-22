@@ -393,7 +393,6 @@ export function TabSupplyOrder({
                   type="file"
                   id="supply-file-input"
                   className="hidden"
-                  accept=".pdf,.png,.jpg,.jpeg,.docx"
                   onChange={(e) => setSupplyOrderFile(e.target.files?.[0] || null)}
                 />
                 <label

@@ -1716,7 +1716,6 @@ export function OperationDocArchiveCard({
       <input
         ref={replaceFileInputRef}
         type="file"
-        accept=".pdf,.docx,.doc,.xlsx,.xls,image/*"
         onChange={handleFileReplaced}
         className="hidden"
       />

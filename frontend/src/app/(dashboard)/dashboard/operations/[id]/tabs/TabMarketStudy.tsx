@@ -1331,7 +1331,6 @@ export function TabMarketStudy({
                     id="market-file-picker"
                     type="file"
                     className="hidden"
-                    accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.csv"
                     onChange={(e) => {
                       if (e.target.files && e.target.files[0]) {
                         handleSelectFile(e.target.files[0]);

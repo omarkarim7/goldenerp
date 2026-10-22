@@ -1633,7 +1633,6 @@ export function TabClarification({
               <input
                 ref={responseFileInputRef}
                 type="file"
-                accept=".pdf,image/*,.docx,.doc"
                 onChange={(e) => setResponseFile(e.target.files?.[0] || null)}
                 className="hidden"
               />

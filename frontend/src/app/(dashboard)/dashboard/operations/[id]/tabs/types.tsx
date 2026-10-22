@@ -367,7 +367,7 @@ export function EmptyState({
 export function FileUploadZone({
   file,
   onFileSelect,
-  accept = "*/*",
+  accept,
   placeholder = "اضغط لاختيار ملف من جهازك أو اسحب الملف هنا",
   icon: Icon = Upload,
   badgeText,
@@ -406,7 +406,7 @@ export function FileUploadZone({
       <input
         ref={inputRef}
         type="file"
-        accept={accept}
+        {...(accept && accept !== "*/*" && accept !== "*" ? { accept } : {})}
         required={required && !file}
         onChange={(e) => onFileSelect(e.target.files?.[0] || null)}
         className="hidden"

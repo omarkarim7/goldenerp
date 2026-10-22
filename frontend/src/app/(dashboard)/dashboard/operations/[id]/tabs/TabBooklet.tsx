@@ -2184,7 +2184,6 @@ export function TabBooklet({
                 <input
                   type="file"
                   ref={bookletFileInputRef}
-                  accept="image/*,.pdf"
                   onChange={(e) => setBookletReceiptFile(e.target.files?.[0] || null)}
                   className="hidden"
                 />
@@ -2387,7 +2386,6 @@ export function TabBooklet({
                 <input
                   type="file"
                   ref={insuranceFileInputRef}
-                  accept="image/*,.pdf"
                   onChange={(e) => setInsuranceReceiptFile(e.target.files?.[0] || null)}
                   className="hidden"
                 />
@@ -2554,7 +2552,6 @@ export function TabBooklet({
                   <input
                     type="file"
                     ref={singleBookletInputRef}
-                    accept=".pdf,.docx,.doc"
                     onChange={(e) => setSingleBookletFile(e.target.files?.[0] || null)}
                     className="hidden"
                   />

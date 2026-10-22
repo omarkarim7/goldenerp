@@ -307,7 +307,7 @@ export function TabInsurancesLabor({
               <label className="border border-dashed border-border hover:border-blue-500/50 rounded-xl p-2 flex items-center justify-center gap-2 cursor-pointer bg-muted/20 hover:bg-blue-500/5 transition-colors">
                 <Upload className="h-4 w-4 text-blue-500" />
                 <span className="text-xs font-bold text-muted-foreground">رفع إيصال التأمينات (PDF / صورة)</span>
-                <input type="file" accept=".pdf,image/*" onChange={(e) => handleFileUpload(e, "social")} className="hidden" />
+                <input type="file" onChange={(e) => handleFileUpload(e, "social")} className="hidden" />
               </label>
             )}
           </div>
@@ -400,7 +400,7 @@ export function TabInsurancesLabor({
               <label className="border border-dashed border-border hover:border-amber-500/50 rounded-xl p-2 flex items-center justify-center gap-2 cursor-pointer bg-muted/20 hover:bg-amber-500/5 transition-colors">
                 <Upload className="h-4 w-4 text-amber-500" />
                 <span className="text-xs font-bold text-muted-foreground">رفع إيصال القوى العاملة (PDF / صورة)</span>
-                <input type="file" accept=".pdf,image/*" onChange={(e) => handleFileUpload(e, "labor")} className="hidden" />
+                <input type="file" onChange={(e) => handleFileUpload(e, "labor")} className="hidden" />
               </label>
             )}
           </div>
@@ -473,7 +473,7 @@ export function TabInsurancesLabor({
               <label className="border border-dashed border-border hover:border-indigo-500/50 rounded-xl p-2 flex items-center justify-center gap-2 cursor-pointer bg-muted/20 hover:bg-indigo-500/5 transition-colors">
                 <Upload className="h-4 w-4 text-indigo-500" />
                 <span className="text-xs font-bold text-muted-foreground">رفع صورة الحافظة المعتمدة</span>
-                <input type="file" accept=".pdf,image/*" onChange={(e) => handleFileUpload(e, "handover")} className="hidden" />
+                <input type="file" onChange={(e) => handleFileUpload(e, "handover")} className="hidden" />
               </label>
             )}
           </div>

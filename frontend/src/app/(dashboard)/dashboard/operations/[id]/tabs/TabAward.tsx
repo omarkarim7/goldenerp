@@ -378,7 +378,6 @@ export function TabAward({
             <FileUploadZone
               file={awardLetterFile}
               onFileSelect={setAwardLetterFile}
-              accept="application/pdf,image/*"
               placeholder="اضغط لاختيار صورة أو ملف PDF لإخطار الترسية الرسمي من جهة الإسناد"
             />
           </div>
