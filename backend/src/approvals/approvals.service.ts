@@ -47,6 +47,23 @@ export class ApprovalsService {
       approvedAt = new Date();
       finalNotes = `[HASH: ${securityHash}] — ${finalNotes || 'أمر طباعة معتمد صادر فورياً من الإدارة العليا'}`;
     } else {
+      // Prevent duplicate pending approval request for the same document and operation
+      if (data.documentTitle) {
+        const existingPending = await this.prisma.approval.findFirst({
+          where: {
+            status: ApprovalStatus.PENDING,
+            documentTitle: data.documentTitle.trim(),
+            ...(data.operationCode ? { operationCode: data.operationCode.toUpperCase().trim() } : {}),
+          },
+        });
+
+        if (existingPending) {
+          throw new ForbiddenException(
+            'يوجد طلب قيد المراجعة حالياً لهذا المستند/العملية بانتظار قرار المدير أو النائب. لا يمكن إرسال طلب مكرر حتى يتم البت في الطلب القائم.'
+          );
+        }
+      }
+
       // Deputy Manager or Employee: always submitted as PENDING to administration
       finalStatus = ApprovalStatus.PENDING;
       approvedBy = null;

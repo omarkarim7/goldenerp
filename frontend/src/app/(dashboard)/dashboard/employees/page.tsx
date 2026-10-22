@@ -7,7 +7,7 @@ import {
   ShieldCheck, ShieldAlert, KeyRound, Lock, Unlock, Mail,
   Shield, Crown, Building2, Check, AlertCircle, Edit3,
   UserCheck, UserX, Clock, Sparkles, Filter, RefreshCw,
-  Eye, EyeOff, Trash2, Key, Copy, CheckCheck
+  Eye, EyeOff, Trash2, Key, Copy, CheckCheck, Save
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -144,6 +144,14 @@ export default function EmployeesPage() {
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
   const [userToDelete, setUserToDelete] = useState<SystemUser | null>(null);
   const [deletingUser, setDeletingUser] = useState(false);
+
+  // Permissions Customization Modal State
+  const [permissionsModalOpen, setPermissionsModalOpen] = useState(false);
+  const [userForPermissions, setUserForPermissions] = useState<SystemUser | null>(null);
+  const [allPermissions, setAllPermissions] = useState<any[]>([]);
+  const [selectedPermissions, setSelectedPermissions] = useState<string[]>([]);
+  const [loadingPermissions, setLoadingPermissions] = useState(false);
+  const [savingPermissions, setSavingPermissions] = useState(false);
 
   // Field Employees State
   const [fieldEmployees, setFieldEmployees] = useState<FieldEmployee[]>([]);
@@ -398,6 +406,97 @@ export default function EmployeesPage() {
       toast.error(err.response?.data?.message || "فشل حذف الحساب");
     } finally {
       setDeletingUser(false);
+    }
+  };
+
+  // Open Permissions Modal
+  const openPermissionsModal = async (u: SystemUser) => {
+    setUserForPermissions(u);
+    setPermissionsModalOpen(true);
+    setLoadingPermissions(true);
+
+    const fallbackList = [
+      // Radar
+      { code: "radar.scan", name: "سحب وفحص الرادار", module: "radar", description: "البحث وسحب المناقصات والعمليات من بوابة المشتريات" },
+      { code: "radar.analyze", name: "التحليل الذكي لكراسات الشروط", module: "radar", description: "تحليل المتطلبات الفنية والبنود باستخدام الذكاء الاصطناعي" },
+      { code: "radar.export", name: "تصدير فرص الرادار", module: "radar", description: "تصدير نتائج وفحص المناقصات بصيغ خارجية" },
+      // Operations
+      { code: "operation.create", name: "إنشاء عملية ومناقصة جديدة", module: "operations", description: "إضافة وتأسيس عمليات ومناقصات جديدة بالنظام" },
+      { code: "operation.data_entry", name: "إدخال وحفظ بيانات المراحل", module: "operations", description: "إدخال بيانات مراحل مسار العملية وحفظ المسودات" },
+      { code: "operation.stage_approve", name: "اعتماد وقفل المراحل", module: "operations", description: "مراجعة واعتماد المراحل للموظفين وقفلها رسمياً" },
+      { code: "operation.edit", name: "تعديل العمليات", module: "operations", description: "تعديل البيانات الأساسية للعمليات والمشاريع" },
+      { code: "operation.view", name: "عرض العمليات", module: "operations", description: "استعراض تفاصيل مسار العمليات" },
+      { code: "operation.delete", name: "حذف وأرشفة العمليات", module: "operations", description: "حذف أو أرشفة ملفات العمليات" },
+      // Approvals & Print
+      { code: "approval.request", name: "تقديم طلبات اعتماد الطباعة", module: "approvals", description: "إرسال طلبات اعتماد طباعة الخطابات للإدارة" },
+      { code: "approval.approve", name: "اعتماد الطباعة وتوليد الهاش", module: "approvals", description: "الموافقة على طباعة المستندات وتوليد رمز الحوكمة 32 خانة" },
+      { code: "approval.instant", name: "إصدار أمر طباعة معتمد فوري", module: "approvals", description: "إصدار أوامر طباعة فورية للمدير العام" },
+      { code: "document.print", name: "طباعة المستندات المعتمدة", module: "documents", description: "طباعة الخطابات والقوالب التي تم اعتمادها رسمياً" },
+      { code: "document.view", name: "معاينة المستندات", module: "documents", description: "معاينة القوالب والمستندات الرسمية المعتمدة" },
+      // Finance & Guarantees
+      { code: "finance.entry", name: "إدخال الدفعات والمصروفات", module: "finance", description: "تسجيل الدفعات والمستخلصات والمصروفات" },
+      { code: "finance.approve", name: "اعتماد الميزانيات وتدقيق النفقات", module: "finance", description: "اعتماد الموازنات وتدقيق النفقات ونسب الاستهلاك" },
+      { code: "finance.view", name: "عرض البيانات المالية", module: "finance", description: "استعراض التدفقات النقدية وميزانيات المشاريع" },
+      { code: "finance.export", name: "تصدير التقارير المالية CSV", module: "finance", description: "تصدير كشوف الحسابات بصيغة CSV" },
+      { code: "guarantee.manage", name: "إدارة خطابات الضمان البنكية", module: "guarantees", description: "إصدار ومتابعة وتجديد واسترداد الضمانات الابتدائية والنهائية" },
+      // Visits
+      { code: "visit.create", name: "تسجيل زيارات المعاينات الميدانية", module: "visits", description: "إدخال تقارير معاينات المواقع" },
+      { code: "visit.view", name: "عرض تقارير المعاينات", module: "visits", description: "الاطلاع على تقارير المعاينات الميدانية" },
+      // Users & Administration
+      { code: "user.manage", name: "إدارة وتعديل المستخدمين", module: "users", description: "إنشاء وتعديل وإلغاء قفل حسابات الموظفين" },
+      { code: "permission.assign", name: "تخصيص وتعديل الصلاحيات", module: "users", description: "تحديد صلاحيات دقيقة لكل مستخدم" },
+      { code: "audit.view", name: "عرض سجل التدقيق والرقابة", module: "audit", description: "متابعة سجل حركات النظام والأمان والحوكمة" },
+      { code: "settings.manage", name: "إدارة إعدادات المنظومة", module: "settings", description: "تعديل بيانات الشركات والإعدادات العامة" },
+    ];
+
+    try {
+      const [allRes, userRes] = await Promise.all([
+        api.get("/users/permissions/all"),
+        api.get(`/users/${u.id}/permissions`),
+      ]);
+      setAllPermissions(allRes.data && allRes.data.length > 0 ? allRes.data : fallbackList);
+      setSelectedPermissions(Array.isArray(userRes.data) ? userRes.data : []);
+    } catch {
+      setAllPermissions(fallbackList);
+      if (u.role === "GENERAL_MANAGER") {
+        setSelectedPermissions(fallbackList.map((x) => x.code));
+      } else if (u.role === "DEPUTY_MANAGER") {
+        setSelectedPermissions(
+          fallbackList
+            .filter((x) => !["user.manage", "permission.assign", "approval.instant"].includes(x.code))
+            .map((x) => x.code)
+        );
+      } else {
+        setSelectedPermissions([
+          "operation.data_entry",
+          "operation.view",
+          "approval.request",
+          "document.view",
+          "finance.entry",
+          "finance.view",
+          "visit.create",
+          "visit.view",
+        ]);
+      }
+    } finally {
+      setLoadingPermissions(false);
+    }
+  };
+
+  // Save Permissions
+  const handleSavePermissions = async () => {
+    if (!userForPermissions) return;
+    setSavingPermissions(true);
+    try {
+      await api.post(`/users/${userForPermissions.id}/permissions`, {
+        permissions: selectedPermissions,
+      });
+      toast.success(`تم حفظ وتطبيق مصفوفة الصلاحيات لحساب "${userForPermissions.fullName}" بنجاح! 🛡️`);
+      setPermissionsModalOpen(false);
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || "فشل حفظ وتطبيق الصلاحيات");
+    } finally {
+      setSavingPermissions(false);
     }
   };
 
@@ -964,6 +1063,17 @@ export default function EmployeesPage() {
                         </Button>
                       )}
                     </div>
+
+                    {/* زر إدارة وتخصيص الصلاحيات المتقدمة */}
+                    <Button
+                      size="sm"
+                      onClick={() => openPermissionsModal(u)}
+                      className="w-full mt-2.5 bg-gradient-to-r from-blue-700 via-indigo-600 to-blue-700 hover:from-blue-800 hover:to-indigo-700 text-white font-black rounded-xl text-xs h-9 shadow-sm cursor-pointer flex items-center justify-center gap-1.5 active:scale-98 transition-all"
+                      title="تخصيص وتحديد صلاحيات الحساب التفصيلية"
+                    >
+                      <Shield className="h-4 w-4" />
+                      <span>تخصيص الصلاحيات المتقدمة 🛡️</span>
+                    </Button>
                   </div>
                 );
               })}
@@ -1675,6 +1785,320 @@ export default function EmployeesPage() {
                 </Button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* ============================================================= */}
+      {/* MODAL 4: ADVANCED PERMISSIONS MANAGEMENT (مصفوفة الصلاحيات)   */}
+      {/* ============================================================= */}
+      {permissionsModalOpen && userForPermissions && (
+        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-3 sm:p-5 overflow-y-auto animate-fade-in">
+          <div className="bg-card border border-border rounded-3xl max-w-4xl w-full p-5 sm:p-7 shadow-2xl space-y-5 animate-scale-up my-auto max-h-[92vh] flex flex-col">
+            {/* Modal Header */}
+            <div className="flex items-start justify-between pb-3 border-b border-border">
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-600 text-white flex items-center justify-center shadow-md shrink-0">
+                  <ShieldCheck className="h-6 w-6" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <h3 className="text-base sm:text-lg font-black text-foreground">
+                      إدارة وتخصيص الصلاحيات المتقدمة
+                    </h3>
+                    <Badge
+                      className={
+                        userForPermissions.role === "GENERAL_MANAGER"
+                          ? "bg-amber-500/15 text-amber-700 dark:text-amber-300 border-amber-500/30 text-xs font-bold"
+                          : userForPermissions.role === "DEPUTY_MANAGER"
+                          ? "bg-indigo-500/15 text-indigo-700 dark:text-indigo-300 border-indigo-500/30 text-xs font-bold"
+                          : "bg-muted text-muted-foreground border-border text-xs font-bold"
+                      }
+                    >
+                      {userForPermissions.role === "GENERAL_MANAGER"
+                        ? "👑 مدير عام"
+                        : userForPermissions.role === "DEPUTY_MANAGER"
+                        ? "نائب مدير"
+                        : "موظف مسؤول"}
+                    </Badge>
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    تحديد الصلاحيات الدقيقة لحساب: <strong className="text-foreground">{userForPermissions.fullName}</strong> (@{userForPermissions.username})
+                  </p>
+                </div>
+              </div>
+
+              <button
+                onClick={() => setPermissionsModalOpen(false)}
+                className="w-8 h-8 rounded-xl hover:bg-muted flex items-center justify-center text-muted-foreground hover:text-foreground cursor-pointer"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            {/* General Manager Full Permission Banner */}
+            {userForPermissions.role === "GENERAL_MANAGER" && (
+              <div className="p-3.5 rounded-2xl bg-amber-500/10 border-2 border-amber-500/30 flex items-center gap-2.5 text-xs text-amber-900 dark:text-amber-200 shadow-xs">
+                <Crown className="h-5 w-5 text-amber-500 shrink-0" />
+                <span>
+                  <strong>حساب المدير العام:</strong> يمتلك بطبيعته الإدارية كافة صلاحيات المنظومة الكاملة وغير المقيدة (إدخال، تعديل، ضبط، سحب من الرادار، اعتماد المراحل، إصدار وتوليد الهاش، والتحكم الشامل).
+                </span>
+              </div>
+            )}
+
+            {/* Quick Preset Buttons */}
+            <div className="flex flex-wrap items-center justify-between gap-2 p-3 rounded-2xl bg-muted/40 border border-border">
+              <span className="text-xs font-bold text-muted-foreground">قوالب وتعيينات جاهزة:</span>
+              <div className="flex flex-wrap items-center gap-1.5 text-xs">
+                <button
+                  type="button"
+                  onClick={() =>
+                    setSelectedPermissions([
+                      "operation.data_entry",
+                      "operation.view",
+                      "approval.request",
+                      "document.view",
+                      "finance.entry",
+                      "finance.view",
+                      "visit.create",
+                      "visit.view",
+                    ])
+                  }
+                  className="px-2.5 py-1 rounded-lg bg-card hover:bg-blue-600 hover:text-white border border-border text-foreground font-bold transition-colors cursor-pointer"
+                >
+                  صلاحيات الموظف (إدخال وطلب فقط) 📋
+                </button>
+                <button
+                  type="button"
+                  onClick={() =>
+                    setSelectedPermissions(
+                      allPermissions
+                        .filter((p) => !["user.manage", "permission.assign", "approval.instant"].includes(p.code))
+                        .map((p) => p.code)
+                    )
+                  }
+                  className="px-2.5 py-1 rounded-lg bg-card hover:bg-indigo-600 hover:text-white border border-border text-foreground font-bold transition-colors cursor-pointer"
+                >
+                  صلاحيات نائب المدير (اعتماد وإشراف) ⚖️
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSelectedPermissions(allPermissions.map((p) => p.code))}
+                  className="px-2.5 py-1 rounded-lg bg-card hover:bg-emerald-600 hover:text-white border border-border text-foreground font-bold transition-colors cursor-pointer"
+                >
+                  تحديد الكل (كامل الصلاحيات) 🌟
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSelectedPermissions([])}
+                  className="px-2.5 py-1 rounded-lg bg-card hover:bg-rose-600 hover:text-white border border-border text-foreground font-bold transition-colors cursor-pointer"
+                >
+                  إلغاء التحديد ✕
+                </button>
+              </div>
+            </div>
+
+            {/* Permissions List Grouped by Modules */}
+            <div className="space-y-4 overflow-y-auto pr-1 max-h-[50vh] scrollbar-thin">
+              {loadingPermissions ? (
+                <div className="py-12 text-center text-muted-foreground space-y-2">
+                  <RefreshCw className="h-6 w-6 animate-spin mx-auto text-blue-600" />
+                  <p className="text-xs">جاري تحميل مصفوفة الصلاحيات المحدثة...</p>
+                </div>
+              ) : (
+                [
+                  {
+                    id: "radar",
+                    title: "رادار المناقصات والفرص الحكومية",
+                    icon: "📡",
+                    codes: ["radar.scan", "radar.analyze", "radar.export"],
+                  },
+                  {
+                    id: "operations",
+                    title: "العمليات ومسار المراحل",
+                    icon: "📂",
+                    codes: [
+                      "operation.create",
+                      "operation.data_entry",
+                      "operation.stage_approve",
+                      "operation.edit",
+                      "operation.view",
+                      "operation.delete",
+                      "operation.archive",
+                    ],
+                  },
+                  {
+                    id: "approvals",
+                    title: "القوالب والطباعة والاعتمادات الرسمية (الحوكمة)",
+                    icon: "🖨️",
+                    codes: [
+                      "approval.request",
+                      "approval.approve",
+                      "approval.instant",
+                      "document.print",
+                      "document.view",
+                      "document.upload",
+                      "approval.manage",
+                      "approval.print",
+                    ],
+                  },
+                  {
+                    id: "finance",
+                    title: "المالية والمستخلصات وخطابات الضمان",
+                    icon: "💰",
+                    codes: [
+                      "finance.entry",
+                      "finance.approve",
+                      "finance.view",
+                      "finance.export",
+                      "guarantee.manage",
+                      "guarantee.create",
+                      "guarantee.edit",
+                      "guarantee.view",
+                      "report.view",
+                      "report.export",
+                    ],
+                  },
+                  {
+                    id: "visits",
+                    title: "المعاينات الميدانية والمواقع",
+                    icon: "📍",
+                    codes: ["visit.create", "visit.view"],
+                  },
+                  {
+                    id: "admin",
+                    title: "إدارة النظام والرقابة والحسابات",
+                    icon: "⚙️",
+                    codes: [
+                      "user.manage",
+                      "permission.assign",
+                      "user.create",
+                      "user.edit",
+                      "user.view",
+                      "company.create",
+                      "company.edit",
+                      "company.view",
+                      "audit.view",
+                      "settings.manage",
+                    ],
+                  },
+                ].map((group) => {
+                  const groupPerms = allPermissions.filter((p) => group.codes.includes(p.code));
+                  if (groupPerms.length === 0) return null;
+
+                  const allGroupSelected = groupPerms.every((p) => selectedPermissions.includes(p.code));
+
+                  const toggleGroup = () => {
+                    if (allGroupSelected) {
+                      setSelectedPermissions((prev) => prev.filter((c) => !group.codes.includes(c)));
+                    } else {
+                      const newCodes = groupPerms.map((p) => p.code);
+                      setSelectedPermissions((prev) => Array.from(new Set([...prev, ...newCodes])));
+                    }
+                  };
+
+                  return (
+                    <div
+                      key={group.id}
+                      className="p-4 rounded-2xl bg-muted/20 border border-border/80 space-y-3"
+                    >
+                      <div className="flex items-center justify-between pb-2 border-b border-border/60">
+                        <div className="flex items-center gap-2">
+                          <span className="text-base">{group.icon}</span>
+                          <h4 className="text-xs sm:text-sm font-black text-foreground">
+                            {group.title}
+                          </h4>
+                          <span className="text-[10px] text-muted-foreground font-mono">
+                            ({groupPerms.filter((p) => selectedPermissions.includes(p.code)).length} من {groupPerms.length})
+                          </span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={toggleGroup}
+                          className="text-[11px] font-bold text-blue-600 dark:text-blue-400 hover:underline cursor-pointer"
+                        >
+                          {allGroupSelected ? "إلغاء تحديد القسم" : "تحديد كامل القسم"}
+                        </button>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
+                        {groupPerms.map((perm) => {
+                          const isChecked = selectedPermissions.includes(perm.code);
+                          return (
+                            <label
+                              key={perm.code}
+                              className={`p-3 rounded-xl border flex items-start gap-2.5 transition-all cursor-pointer select-none ${
+                                isChecked
+                                  ? "bg-blue-500/10 border-blue-500/40 text-foreground"
+                                  : "bg-card hover:bg-muted/40 border-border text-muted-foreground"
+                              }`}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={isChecked}
+                                onChange={(e) => {
+                                  if (e.target.checked) {
+                                    setSelectedPermissions((prev) => [...prev, perm.code]);
+                                  } else {
+                                    setSelectedPermissions((prev) => prev.filter((c) => c !== perm.code));
+                                  }
+                                }}
+                                className="mt-1 h-4 w-4 rounded text-blue-600 cursor-pointer"
+                              />
+                              <div className="space-y-0.5 text-right flex-1">
+                                <div className="flex items-center justify-between gap-1 flex-wrap">
+                                  <span className="text-xs font-bold text-foreground">
+                                    {perm.name}
+                                  </span>
+                                  <span className="text-[10px] font-mono text-muted-foreground/80 bg-muted px-1.5 py-0.2 rounded">
+                                    {perm.code}
+                                  </span>
+                                </div>
+                                {perm.description && (
+                                  <p className="text-[11px] text-muted-foreground leading-relaxed">
+                                    {perm.description}
+                                  </p>
+                                )}
+                              </div>
+                            </label>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+
+            {/* Modal Footer */}
+            <div className="pt-3 border-t border-border flex flex-col sm:flex-row items-center justify-between gap-3">
+              <div className="flex items-center gap-2 text-xs font-bold">
+                <span className="text-muted-foreground">الملخص:</span>
+                <span className="text-blue-600 dark:text-blue-400 font-mono">
+                  تم تحديد {selectedPermissions.length} من أصل {allPermissions.length} صلاحية
+                </span>
+              </div>
+
+              <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setPermissionsModalOpen(false)}
+                  className="border-border text-foreground hover:bg-muted rounded-xl text-xs font-bold cursor-pointer"
+                >
+                  إلغاء
+                </Button>
+                <Button
+                  type="button"
+                  onClick={handleSavePermissions}
+                  disabled={savingPermissions}
+                  className="bg-gradient-to-r from-blue-700 to-indigo-700 hover:from-blue-800 hover:to-indigo-800 text-white font-black rounded-xl text-xs shadow-md cursor-pointer flex items-center gap-2"
+                >
+                  <Save className="h-4 w-4" />
+                  <span>{savingPermissions ? "جاري الحفظ والتطبيق..." : "حفظ وتطبيق الصلاحيات في النظام 💾"}</span>
+                </Button>
+              </div>
+            </div>
           </div>
         </div>
       )}

@@ -5,7 +5,7 @@ import { useSearchParams } from "next/navigation";
 import {
   Printer, ShieldCheck, Clock, CheckCircle2, XCircle,
   Plus, Search, Hash, FileText, Check, X, ShieldAlert,
-  RefreshCw, KeyRound, Eye, Edit3, Briefcase, User, Calendar, Copy, Sparkles
+  RefreshCw, KeyRound, Eye, EyeOff, Briefcase, User, Calendar, Copy, Sparkles, CheckCheck, FileCheck, ExternalLink, Lock
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -297,6 +297,8 @@ function ApprovalsContent() {
   // Details and Edit states
   const [detailsItem, setDetailsItem] = useState<ApprovalItem | null>(null);
   const [editingItem, setEditingItem] = useState<ApprovalItem | null>(null);
+  const [previewDocumentItem, setPreviewDocumentItem] = useState<ApprovalItem | null>(null);
+  const [showHash, setShowHash] = useState<Record<string, boolean>>({});
 
   // New Request Form
   const [formType, setFormType] = useState<string>("PRINT_GRIEVANCE");
@@ -541,6 +543,21 @@ function ApprovalsContent() {
 
     setSubmitting(true);
     const code = formOpCode.toUpperCase().trim() || `${activeCompanyCode}15`;
+
+    // منع تكرار الطلبات المعلقة لنفس المستند والعملية
+    if (!isGeneralManager) {
+      const isDuplicate = companyApprovals.some(
+        (a) =>
+          a.status === "PENDING" &&
+          a.documentTitle?.trim().toLowerCase() === formDocTitle.trim().toLowerCase() &&
+          (a.operationCode || "").toUpperCase().trim() === code
+      );
+      if (isDuplicate) {
+        toast.error("يوجد طلب قيد المراجعة حالياً لهذا المستند بانتظار قرار المدير أو النائب. لا يمكن إرسال طلب مكرر حتى يتم البت في الطلب القائم.");
+        setSubmitting(false);
+        return;
+      }
+    }
 
     try {
       const res = await api.post("/approvals", {
@@ -882,19 +899,6 @@ function ApprovalsContent() {
                         <span>عرض التفاصيل</span>
                       </Button>
 
-                      {/* Edit Button for Manager & Deputy Manager */}
-                      {isApprover && (
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => handleOpenEdit(item)}
-                          className="border-blue-500/30 text-blue-700 dark:text-blue-300 hover:bg-blue-500/10 text-xs h-9 rounded-xl flex items-center gap-1.5 cursor-pointer font-bold"
-                        >
-                          <Edit3 className="h-3.5 w-3.5" />
-                          <span>تعديل</span>
-                        </Button>
-                      )}
-
                       {/* Approve Button (Accessible by General Manager and Deputy Manager) */}
                       {isPending && isApprover && (
                         <Button
@@ -920,18 +924,15 @@ function ApprovalsContent() {
                         </Button>
                       )}
 
-                      {/* Print Approved Document */}
+                      {/* Preview Approved Document */}
                       {isApproved && (
                         <Button
                           size="sm"
-                          onClick={() => {
-                            toast.success(`جاري طباعة المستند برقم التشفير الحكومي: ${extractedHash || "APPROVED"}`);
-                            window.print();
-                          }}
-                          className="bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs h-9 rounded-xl flex items-center gap-1.5 shadow-sm cursor-pointer"
+                          onClick={() => setPreviewDocumentItem(item)}
+                          className="bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs h-9 rounded-xl flex items-center gap-1.5 shadow-sm cursor-pointer active:scale-95 transition-all"
                         >
-                          <Printer className="h-4 w-4" />
-                          <span>طباعة المستند المعتمد</span>
+                          <Eye className="h-4 w-4" />
+                          <span>معاينة المستند</span>
                         </Button>
                       )}
 
@@ -980,7 +981,7 @@ function ApprovalsContent() {
                     </div>
                   )}
 
-                  {/* Hash code badge if approved */}
+                  {/* Hash code badge if approved (Masked by default with copy tool) */}
                   {extractedHash && (
                     <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
                       <div className="flex items-center gap-2">
@@ -988,11 +989,35 @@ function ApprovalsContent() {
                           <Hash className="h-4 w-4" />
                         </div>
                         <div>
-                          <span className="text-[11px] font-bold text-emerald-800 dark:text-emerald-300 block">
-                            كود التشفير الحكومي المعتمد (الهاش الرقمي 32 خانة):
-                          </span>
-                          <span className="font-mono font-black text-xs sm:text-sm text-emerald-700 dark:text-emerald-300 select-all tracking-wider">
-                            {extractedHash}
+                          <div className="flex items-center gap-2">
+                            <span className="text-[11px] font-bold text-emerald-800 dark:text-emerald-300 block">
+                              كود التشفير الحكومي المعتمد (الهاش الرقمي 32 خانة):
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setShowHash((prev) => ({ ...prev, [item.id]: !prev[item.id] }))
+                              }
+                              className="text-[10px] text-emerald-700 dark:text-emerald-300 hover:underline flex items-center gap-1 font-bold px-1.5 py-0.5 rounded hover:bg-emerald-500/20 cursor-pointer transition-colors"
+                              title={showHash[item.id] ? "إخفاء كود الهاش" : "إظهار كود الهاش"}
+                            >
+                              {showHash[item.id] ? (
+                                <>
+                                  <EyeOff className="h-3 w-3" />
+                                  <span>إخفاء</span>
+                                </>
+                              ) : (
+                                <>
+                                  <Eye className="h-3 w-3" />
+                                  <span>إظهار</span>
+                                </>
+                              )}
+                            </button>
+                          </div>
+                          <span className="font-mono font-black text-xs sm:text-sm text-emerald-700 dark:text-emerald-300 tracking-widest">
+                            {showHash[item.id]
+                              ? extractedHash
+                              : `${extractedHash.slice(0, 4)} •••••••• •••••••• ${extractedHash.slice(-4)}`}
                           </span>
                         </div>
                       </div>
@@ -1002,9 +1027,9 @@ function ApprovalsContent() {
                           variant="ghost"
                           onClick={() => {
                             navigator.clipboard.writeText(extractedHash);
-                            toast.success("تم نسخ كود الهاش التشفيري بنجاح!");
+                            toast.success("تم نسخ كود الهاش التشفيري الحكومي بنجاح! 📋");
                           }}
-                          className="h-8 text-xs text-emerald-700 dark:text-emerald-300 hover:bg-emerald-500/20 rounded-lg flex items-center gap-1 font-bold"
+                          className="h-8 text-xs text-emerald-700 dark:text-emerald-300 hover:bg-emerald-500/20 rounded-lg flex items-center gap-1 font-bold cursor-pointer"
                         >
                           <Copy className="h-3 w-3" />
                           <span>نسخ الهاش</span>
@@ -1177,22 +1202,6 @@ function ApprovalsContent() {
                 إغلاق
               </Button>
 
-              {/* Edit Request (Manager & Deputy Manager can edit) */}
-              {isApprover && (
-                <Button
-                  variant="outline"
-                  onClick={() => {
-                    const itemToEdit = { ...detailsItem };
-                    setDetailsItem(null);
-                    handleOpenEdit(itemToEdit);
-                  }}
-                  className="border-blue-500/30 text-blue-700 dark:text-blue-300 hover:bg-blue-500/10 text-xs rounded-xl flex items-center gap-1.5 cursor-pointer font-bold"
-                >
-                  <Edit3 className="h-3.5 w-3.5" />
-                  <span>تعديل الطلب</span>
-                </Button>
-              )}
-
               {/* Approve & Reject for Approver */}
               {detailsItem.status === "PENDING" && isApprover && (
                 <>
@@ -1220,111 +1229,225 @@ function ApprovalsContent() {
                 </>
               )}
 
-              {detailsItem.status === "APPROVED" && (
+              {/* Preview Document Button in Details Modal */}
+              <Button
+                onClick={() => {
+                  const it = { ...detailsItem };
+                  setDetailsItem(null);
+                  setPreviewDocumentItem(it);
+                }}
+                className="bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-xl flex items-center gap-1.5 shadow-sm cursor-pointer"
+              >
+                <Eye className="h-4 w-4" />
+                <span>معاينة المستند الرسمي</span>
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ━━━ DOCUMENT PREVIEW MODAL (معاينة المستند المعتمد والطباعة) ━━━ */}
+      {previewDocumentItem && (
+        <div className="fixed inset-0 z-[99999] bg-black/80 backdrop-blur-md flex items-center justify-center p-3 sm:p-5 overflow-y-auto animate-fade-in">
+          <div className="bg-card border border-border rounded-3xl max-w-4xl w-full p-4 sm:p-6 space-y-4 shadow-2xl relative my-auto">
+            {/* Modal Controls Bar */}
+            <div className="flex items-center justify-between pb-3 border-b border-border">
+              <div className="flex items-center gap-2.5">
+                <div className="w-10 h-10 rounded-2xl bg-blue-600/15 text-blue-600 flex items-center justify-center font-bold">
+                  <FileText className="h-5 w-5" />
+                </div>
+                <div>
+                  <h3 className="text-base sm:text-lg font-black text-foreground">
+                    معاينة المستند الرسمي المعتمد
+                  </h3>
+                  <p className="text-xs text-muted-foreground">
+                    {previewDocumentItem.operationCode} • {previewDocumentItem.operationName}
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2">
                 <Button
                   onClick={() => {
                     toast.success("جاري إرسال المستند للطباعة الرسمية...");
                     window.print();
                   }}
-                  className="bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-xl flex items-center gap-1.5 shadow-sm cursor-pointer"
+                  className="bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs h-9 px-4 rounded-xl flex items-center gap-1.5 shadow-md cursor-pointer"
                 >
                   <Printer className="h-4 w-4" />
-                  <span>طباعة المستند المعتمد</span>
+                  <span>طباعة المستند 🖨️</span>
                 </Button>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => setPreviewDocumentItem(null)}
+                  className="rounded-full cursor-pointer hover:bg-muted"
+                >
+                  <X className="h-5 w-5" />
+                </Button>
+              </div>
+            </div>
+
+            {/* A4 Sheet Preview */}
+            <div className="bg-white text-slate-900 border-2 border-slate-300 rounded-2xl p-6 sm:p-10 shadow-lg space-y-6 text-right max-h-[72vh] overflow-y-auto font-sans leading-relaxed">
+              {/* Sheet Header */}
+              <div className="border-b-2 border-slate-900 pb-4 flex items-center justify-between text-xs font-bold text-slate-800">
+                <div className="space-y-0.5">
+                  <p className="text-sm font-black text-slate-950">جمهورية مصر العربية</p>
+                  <p className="text-slate-700">{activeCompanyInfo?.fullName || "مجموعة شركات التوريدات المعتمدة"}</p>
+                  <p className="text-[11px] text-slate-500 font-mono">سجل تجاري: {(activeCompanyInfo as any)?.commercialRegister || "102948"} • بطاقة ضريبية سارية</p>
+                </div>
+
+                <div className="text-center space-y-1">
+                  <div className="w-12 h-12 mx-auto rounded-xl bg-blue-900 text-white flex items-center justify-center font-mono font-black text-lg shadow-sm">
+                    {previewDocumentItem.operationCode?.slice(0, 1) || activeCompanyCode}
+                  </div>
+                  <span className="text-[10px] font-mono font-bold px-2 py-0.5 bg-slate-100 border border-slate-300 rounded-md block">
+                    {previewDocumentItem.operationCode || `${activeCompanyCode}15`}
+                  </span>
+                </div>
+
+                <div className="text-left space-y-0.5 font-mono text-[11px]">
+                  <p>تاريخ الطلب: {new Date(previewDocumentItem.requestedAt).toLocaleDateString("ar-EG")}</p>
+                  <p>كود المستند: #{previewDocumentItem.id.toUpperCase()}</p>
+                  <p className="text-emerald-700 font-bold">الحالة: {previewDocumentItem.status === "APPROVED" ? "معتمد رسمياً ✓" : "قيد المراجعة"}</p>
+                </div>
+              </div>
+
+              {/* Title Banner */}
+              <div className="text-center py-2 space-y-2">
+                <Badge className="bg-slate-900 text-white text-xs px-3 py-1 font-bold">
+                  {getApprovalLabel(previewDocumentItem.type)}
+                </Badge>
+                <h2 className="text-xl sm:text-2xl font-black text-slate-950 leading-snug">
+                  {previewDocumentItem.documentTitle}
+                </h2>
+                <p className="text-xs sm:text-sm font-semibold text-slate-600">
+                  بشأن: {previewDocumentItem.operationName}
+                </p>
+              </div>
+
+              {/* Addressee */}
+              <div className="text-xs sm:text-sm font-bold text-slate-900 pt-2 space-y-1">
+                <p>السيد الأستاذ / رئيس لجنة البت والتعاقدات المختصة</p>
+                <p className="text-slate-600">تحية طيبة وبعد ،،،</p>
+              </div>
+
+              {/* Document Formal Content */}
+              <div className="text-xs sm:text-sm text-slate-800 leading-relaxed space-y-3 bg-slate-50 p-4 sm:p-5 rounded-xl border border-slate-200">
+                <p>
+                  بالإشارة إلى العملية رقم (<span className="font-mono font-bold text-blue-800">{previewDocumentItem.operationCode}</span>) والخاصة بـ (<span className="font-bold text-slate-900">{previewDocumentItem.operationName}</span>)، نتشرف بإحاطة سيادتكم علماً بأن شركتنا (<span className="font-bold">{activeCompanyInfo?.fullName}</span>) قد استوفت كافة الشروط الفنية والمالية والقانونية المقررة طبقاً لأحكام القانون رقم 182 لسنة 2018 ولائحته التنفيذية.
+                </p>
+                {getCleanNotes(previewDocumentItem.notes) && (
+                  <div className="p-3 bg-white rounded-lg border border-slate-300 space-y-1">
+                    <p className="font-black text-blue-900 text-xs">بيان وتفاصيل الطلب الرسمية:</p>
+                    <p className="text-slate-700 text-xs sm:text-sm leading-relaxed">
+                      {getCleanNotes(previewDocumentItem.notes)}
+                    </p>
+                  </div>
+                )}
+                <p className="text-xs text-slate-600">
+                  ونرجو التكرم باتخاذ اللازم نحو اعتماد وقبول المستند المرفق وموافاتنا بما يفيد الاستلام.
+                </p>
+              </div>
+
+              {/* Government Hash & Security Seal */}
+              {previewDocumentItem.notes?.match(/\[HASH:\s*([A-F0-9]{32})\]/) ? (
+                <div className="p-4 rounded-xl bg-emerald-50 border-2 border-emerald-600/40 text-emerald-950 space-y-2">
+                  <div className="flex items-center justify-between text-xs font-black">
+                    <span className="flex items-center gap-1.5 text-emerald-900">
+                      <ShieldCheck className="h-4 w-4 text-emerald-700" />
+                      رمز الحوكمة والختم الرقمي الحكومي المعتمد (المادة 76):
+                    </span>
+                    <span className="text-[11px] font-mono text-emerald-800">
+                      مصادقة إلكترونية موثقة
+                    </span>
+                  </div>
+                  <div className="p-2.5 rounded-lg bg-white border border-emerald-400 font-mono font-black text-center text-xs sm:text-sm text-emerald-800 tracking-wider select-all shadow-inner">
+                    [HASH: {previewDocumentItem.notes.match(/\[HASH:\s*([A-F0-9]{32})\]/)?.[1]}]
+                  </div>
+                  <div className="flex items-center justify-between text-[11px] text-emerald-800 pt-1">
+                    <span>جهة الاعتماد: <strong>{previewDocumentItem.approvedBy || "المدير العام"}</strong></span>
+                    <span>تاريخ وساعة الاعتماد: {previewDocumentItem.approvedAt ? new Date(previewDocumentItem.approvedAt).toLocaleString("ar-EG") : "معتمد"}</span>
+                  </div>
+                </div>
+              ) : (
+                <div className="p-3.5 rounded-xl bg-amber-50 border border-amber-300 text-amber-900 text-xs font-bold text-center flex items-center justify-center gap-2">
+                  <Clock className="h-4 w-4 text-amber-600" />
+                  <span>مستند قيد مراجعة واعتماد الإدارة — بانتظار الموافقة وتوليد كود الهاش التشفيري</span>
+                </div>
               )}
-            </div>
-          </div>
-        </div>
-      )}
 
-      {/* Edit Request Modal (For Approver) */}
-      {editingItem && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in">
-          <div className="glass-panel rounded-3xl p-6 border border-border max-w-lg w-full shadow-2xl space-y-4 animate-scale-up">
-            <div className="flex items-center justify-between pb-3 border-b border-border">
-              <h3 className="text-lg font-bold text-foreground flex items-center gap-2">
-                <Edit3 className="h-5 w-5 text-blue-600 dark:text-blue-400" />
-                تعديل بيانات طلب الطباعة (الإدارة العليا)
-              </h3>
-              <button onClick={() => setEditingItem(null)} className="text-muted-foreground hover:text-foreground cursor-pointer">
-                <X className="h-5 w-5" />
-              </button>
-            </div>
-
-            <form onSubmit={handleSaveEdit} className="space-y-3.5">
-              <div>
-                <label className="block text-xs font-semibold text-foreground mb-1">نوع المستند</label>
-                <select
-                  value={editingItem.type}
-                  onChange={(e) => setEditingItem({ ...editingItem, type: e.target.value })}
-                  className="w-full h-10 bg-muted/40 border border-border text-foreground rounded-xl px-3 text-sm focus:border-blue-500"
-                >
-                  <option value="PRINT_GRIEVANCE">تظلم رسمي وقانوني (مادة 76)</option>
-                  <option value="PRINT_GUARANTEE">خطاب استرداد أو تمديد تأمين بنكي</option>
-                  <option value="PRINT_DOCUMENT">عطاء فني / مالي معتمد</option>
-                  <option value="DELETE_OPERATION">طلب حذف عملية ومناقصة</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-foreground mb-1">عنوان ووصف المستند *</label>
-                <Input
-                  required
-                  value={editingItem.documentTitle || ""}
-                  onChange={(e) => setEditingItem({ ...editingItem, documentTitle: e.target.value })}
-                  className="bg-muted/40 border-border text-foreground placeholder:text-muted-foreground focus:border-blue-500 rounded-xl text-sm"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-semibold text-foreground mb-1">كود العملية</label>
-                  <Input
-                    value={editingItem.operationCode || ""}
-                    onChange={(e) => setEditingItem({ ...editingItem, operationCode: e.target.value.toUpperCase() })}
-                    className="bg-muted/40 border-border text-foreground placeholder:text-muted-foreground focus:border-blue-500 rounded-xl text-sm font-mono"
-                  />
+              {/* Signatures & Stamp Footer */}
+              <div className="pt-6 border-t-2 border-slate-900 flex items-center justify-between text-xs font-bold text-slate-900 px-2 sm:px-6">
+                <div className="text-center space-y-2">
+                  <p>مقدم ومجهز الطلب</p>
+                  <p className="font-semibold text-slate-700">{previewDocumentItem.requestedBy}</p>
+                  <p className="text-[10px] text-slate-500 font-mono">توقيع الموظف المسؤول</p>
                 </div>
-                <div>
-                  <label className="block text-xs font-semibold text-foreground mb-1">اسم العملية والمشروع</label>
-                  <Input
-                    value={editingItem.operationName || ""}
-                    onChange={(e) => setEditingItem({ ...editingItem, operationName: e.target.value })}
-                    className="bg-muted/40 border-border text-foreground placeholder:text-muted-foreground focus:border-blue-500 rounded-xl text-sm"
-                  />
+
+                <div className="w-20 h-20 rounded-full border-2 border-dashed border-slate-400 flex flex-col items-center justify-center text-[10px] text-slate-500 font-bold rotate-[-12deg]">
+                  <span>خاتم الشركة</span>
+                  <span>الرسمي المعتمد</span>
+                </div>
+
+                <div className="text-center space-y-2">
+                  <p>اعتماد رئيس مجلس الإدارة / المفوض</p>
+                  <p className="font-black text-slate-950">
+                    {previewDocumentItem.approvedBy || "المدير العام"}
+                  </p>
+                  <p className="text-[10px] text-emerald-700 font-mono">تم التصديق الرقمي ✓</p>
                 </div>
               </div>
+            </div>
 
-              <div>
-                <label className="block text-xs font-semibold text-foreground mb-1">الملاحظات والتفاصيل</label>
-                <textarea
-                  rows={3}
-                  value={editingItem.notes || ""}
-                  onChange={(e) => setEditingItem({ ...editingItem, notes: e.target.value })}
-                  className="w-full bg-muted/40 border border-border text-foreground placeholder:text-muted-foreground focus:border-blue-500 rounded-xl p-3 text-sm focus:outline-none"
-                />
+            {/* Modal Actions Footer */}
+            <div className="pt-3 border-t border-border flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                {previewDocumentItem.notes?.match(/\[HASH:\s*([A-F0-9]{32})\]/) && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => {
+                      const match = previewDocumentItem.notes?.match(/\[HASH:\s*([A-F0-9]{32})\]/);
+                      if (match) {
+                        navigator.clipboard.writeText(match[1]);
+                        toast.success("تم نسخ كود الهاش التشفيري بنجاح! 📋");
+                      }
+                    }}
+                    className="border-border text-xs font-bold rounded-xl flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <Copy className="h-3.5 w-3.5" />
+                    <span>نسخ الهاش التشفيري</span>
+                  </Button>
+                )}
               </div>
 
-              <div className="pt-3 border-t border-border flex items-center justify-end gap-2.5">
+              <div className="flex items-center gap-2">
                 <Button
-                  type="button"
+                  onClick={() => {
+                    toast.success("جاري طباعة المستند المعتمد...");
+                    window.print();
+                  }}
+                  className="bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs h-9 px-4 rounded-xl flex items-center gap-1.5 shadow-md cursor-pointer"
+                >
+                  <Printer className="h-4 w-4" />
+                  <span>طباعة 🖨️</span>
+                </Button>
+                <Button
                   variant="outline"
-                  onClick={() => setEditingItem(null)}
-                  className="border-border text-foreground hover:bg-muted rounded-xl text-xs cursor-pointer"
+                  onClick={() => setPreviewDocumentItem(null)}
+                  className="rounded-xl text-xs font-bold cursor-pointer"
                 >
-                  إلغاء
-                </Button>
-                <Button
-                  type="submit"
-                  className="bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl text-xs cursor-pointer shadow-sm"
-                >
-                  حفظ التعديلات في قاعدة البيانات
+                  إغلاق
                 </Button>
               </div>
-            </form>
+            </div>
           </div>
         </div>
       )}
+
+
 
       {/* Create / Direct Issue Modal */}
       {modalOpen && (

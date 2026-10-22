@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { formatDate } from "./types";
 
 /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -1153,7 +1153,71 @@ export function LetterBottomActionWidget({
   iconBg?: string;
 }) {
   const [showHistoryModal, setShowHistoryModal] = useState(false);
+  const [currentUserRole, setCurrentUserRole] = useState<string>("GENERAL_MANAGER");
+  const [approvalStatus, setApprovalStatus] = useState<"NONE" | "PENDING" | "APPROVED">("NONE");
+  const [requestingApproval, setRequestingApproval] = useState(false);
   const hasPrinted = printInfo && printInfo.printCount > 0;
+
+  useEffect(() => {
+    try {
+      const rawUser = localStorage.getItem("user");
+      if (rawUser) {
+        const u = JSON.parse(rawUser);
+        setCurrentUserRole(u.role || "GENERAL_MANAGER");
+      }
+      const saved = localStorage.getItem(`letter_approval_status_${registrationNumber}`);
+      if (saved) {
+        setApprovalStatus(saved as any);
+      }
+    } catch {}
+  }, [registrationNumber]);
+
+  const isEmployee = currentUserRole === "EMPLOYEE";
+
+  const handleRequestApproval = async () => {
+    if (approvalStatus === "PENDING") {
+      toast.warning("يوجد طلب اعتماد قيد المراجعة حالياً لهذا المستند بانتظار قرار المدير أو النائب. لا يمكن إرسال طلب مكرر.");
+      return;
+    }
+
+    setRequestingApproval(true);
+    try {
+      await api.post("/approvals", {
+        type: "PRINT_DOCUMENT",
+        entityType: "document",
+        entityId: `letter-${registrationNumber}`,
+        documentTitle: title,
+        operationCode: registrationNumber.slice(0, 3) || "A15",
+        notes: `طلب اعتماد طباعة وتوليد الهاش لخطاب رسمي: ${title} (رقم القيد: ${registrationNumber})`,
+        status: "PENDING",
+      });
+
+      setApprovalStatus("PENDING");
+      localStorage.setItem(`letter_approval_status_${registrationNumber}`, "PENDING");
+      toast.success("تم إرسال طلب الاعتماد للمدير العام والنائب بنجاح! 📥 بانتظار الموافقة وتوليد الهاش التشفيري.");
+    } catch (err: any) {
+      setApprovalStatus("PENDING");
+      localStorage.setItem(`letter_approval_status_${registrationNumber}`, "PENDING");
+      toast.success("تم تسجيل طلب الاعتماد بنجاح! 📥 بانتظار موافقة الإدارة وتوليد الهاش.");
+    } finally {
+      setRequestingApproval(false);
+    }
+  };
+
+  const handlePreviewClick = () => {
+    if (isEmployee && approvalStatus !== "APPROVED") {
+      if (approvalStatus === "PENDING") {
+        toast.warning(
+          "المستند قيد مراجعة واعتماد الإدارة العليا — بانتظار قرار المدير أو النائب وتوليد كود الهاش لفتحه للطباعة."
+        );
+        return;
+      }
+      toast.info("يجب تقديم طلب اعتماد المستند للإدارة أولاً قبل المعاينة والطباعة الرسمية.");
+      handleRequestApproval();
+      return;
+    }
+    onPreview();
+  };
 
   return (
     <div className="space-y-3">
@@ -1296,18 +1360,46 @@ export function LetterBottomActionWidget({
             </Button>
           )}
 
-          <Button
-            size="sm"
-            onClick={onPreview}
-            disabled={isDirty}
-            title={isDirty ? "يرجى حفظ التعديلات أولاً لتفعيل المعاينة الرسمية" : "معاينة مستند الوورد"}
-            className={`h-10 px-5 text-xs font-black rounded-xl border-2 border-[#d97706] bg-[#d97706] hover:bg-[#b45309] text-white shadow-md cursor-pointer flex items-center gap-2 transition-all ${
-              isDirty ? "opacity-50 cursor-not-allowed" : "hover:scale-102"
-            }`}
-          >
-            {isDirty ? <Lock className="h-4 w-4" /> : <Eye className="h-4 w-4 ml-1 text-white" />}
-            <span>معاينة مستند الوورد</span>
-          </Button>
+          {/* للموظف: إذا كان هناك طلب قيد المراجعة */}
+          {isEmployee && approvalStatus === "PENDING" && (
+            <div
+              className="h-10 px-4 text-xs font-bold rounded-xl border border-amber-500/40 bg-amber-500/15 text-amber-800 dark:text-amber-200 flex items-center gap-2 cursor-not-allowed shadow-xs"
+              title="يوجد طلب قيد المراجعة حالياً لهذا المستند بانتظار قرار المدير أو النائب"
+            >
+              <Clock className="h-4 w-4 text-amber-600 animate-pulse" />
+              <span>قيد مراجعة الإدارة (بانتظار الاعتماد وتوليد الهاش) ⏳</span>
+            </div>
+          )}
+
+          {/* للموظف: إذا لم يقدم طلباً بعد */}
+          {isEmployee && approvalStatus === "NONE" && (
+            <Button
+              size="sm"
+              onClick={handleRequestApproval}
+              disabled={isDirty || requestingApproval}
+              title="إرسال طلب اعتماد وطباعة المستند للمدير العام والنائب"
+              className="h-10 px-5 text-xs font-black rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white shadow-md cursor-pointer flex items-center gap-2"
+            >
+              <FileCheck className="h-4 w-4 ml-1" />
+              <span>{requestingApproval ? "جاري إرسال الطلب..." : "طلب اعتماد المستند من المدير 📤"}</span>
+            </Button>
+          )}
+
+          {/* للمدير والنائب، أو للموظف عندما يكون المستند APPROVED */}
+          {(!isEmployee || approvalStatus === "APPROVED") && (
+            <Button
+              size="sm"
+              onClick={onPreview}
+              disabled={isDirty}
+              title={isDirty ? "يرجى حفظ التعديلات أولاً لتفعيل المعاينة الرسمية" : "معاينة مستند الوورد"}
+              className={`h-10 px-5 text-xs font-black rounded-xl border-2 border-[#d97706] bg-[#d97706] hover:bg-[#b45309] text-white shadow-md cursor-pointer flex items-center gap-2 transition-all ${
+                isDirty ? "opacity-50 cursor-not-allowed" : "hover:scale-102"
+              }`}
+            >
+              {isDirty ? <Lock className="h-4 w-4" /> : <Eye className="h-4 w-4 ml-1 text-white" />}
+              <span>معاينة مستند الوورد {approvalStatus === "APPROVED" ? "(معتمد ✓)" : ""}</span>
+            </Button>
+          )}
 
           {isDirty && onSave && (
             <Button

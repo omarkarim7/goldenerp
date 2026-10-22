@@ -27,6 +27,12 @@ export class UsersController {
     return this.usersService.findAll();
   }
 
+  @Get('permissions/all')
+  @Roles(UserRole.GENERAL_MANAGER, UserRole.DEPUTY_MANAGER)
+  getAllPermissions() {
+    return this.usersService.getAllPermissions();
+  }
+
   @Get(':id')
   @Roles(UserRole.GENERAL_MANAGER)
   findOne(@Param('id') id: string) {
@@ -61,5 +67,24 @@ export class UsersController {
   @Roles(UserRole.GENERAL_MANAGER)
   remove(@Param('id') id: string) {
     return this.usersService.delete(id);
+  }
+
+  // =========================================================================
+  // نظام الصلاحيات المتقدم والتخصيص
+  // =========================================================================
+
+  @Get(':id/permissions')
+  @Roles(UserRole.GENERAL_MANAGER, UserRole.DEPUTY_MANAGER)
+  getUserPermissions(@Param('id') id: string) {
+    return this.usersService.getUserPermissions(id);
+  }
+
+  @Post(':id/permissions')
+  @Roles(UserRole.GENERAL_MANAGER)
+  updateUserPermissions(
+    @Param('id') id: string,
+    @Body('permissions') permissions: string[],
+  ) {
+    return this.usersService.updateUserPermissions(id, permissions || []);
   }
 }

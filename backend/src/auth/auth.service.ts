@@ -20,6 +20,11 @@ export class AuthService {
   async login(dto: LoginDto, ip?: string, userAgent?: string) {
     const user = await this.prisma.user.findUnique({
       where: { username: dto.username },
+      include: {
+        permissions: {
+          include: { permission: true },
+        },
+      },
     });
 
     if (!user) {
@@ -67,6 +72,11 @@ export class AuthService {
 
     const tokens = await this.generateTokens(user.id, user.username, user.role);
 
+    const permCodes =
+      user.role === 'GENERAL_MANAGER' || user.username === 'admin'
+        ? ['*']
+        : user.permissions.map((p) => p.permission.code);
+
     return {
       user: {
         id: user.id,
@@ -75,6 +85,7 @@ export class AuthService {
         fullName: user.fullName,
         role: user.role,
         allowedCompanies: user.allowedCompanies || 'ALL',
+        permissions: permCodes,
       },
       ...tokens,
     };
