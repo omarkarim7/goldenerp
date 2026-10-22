@@ -7,7 +7,6 @@ import { UserRole } from '@prisma/client';
 
 @Controller('finance')
 @UseGuards(JwtAuthGuard, RolesGuard)
-@Roles(UserRole.GENERAL_MANAGER)
 export class FinanceController {
   constructor(private readonly service: FinanceService) {}
 
@@ -17,18 +16,24 @@ export class FinanceController {
   @Get('summary')
   getSummary() { return this.service.getSummary(); }
 
+  @Get('operations-overview')
+  getOperationsOverview() { return this.service.getOperationsOverview(); }
+
   @Get(':id')
   findOne(@Param('id') id: string) { return this.service.findOne(id); }
 
   @Post()
+  @Roles(UserRole.GENERAL_MANAGER)
   create(@Body() data: {
     operationId: string; totalCost?: number; totalRevenue?: number;
     netProfit?: number; notes?: string;
   }) { return this.service.create(data); }
 
   @Patch(':id')
+  @Roles(UserRole.GENERAL_MANAGER)
   update(@Param('id') id: string, @Body() data: any) { return this.service.update(id, data); }
 
   @Delete(':id')
+  @Roles(UserRole.GENERAL_MANAGER)
   delete(@Param('id') id: string) { return this.service.delete(id); }
 }

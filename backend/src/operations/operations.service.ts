@@ -1121,19 +1121,23 @@ export class OperationsService {
   // ━━━ 10. المستخلصات (مع حساب الخصومات: 1% أ.ت.ص، 14% ضريبة، 5% ضمان) ━━━
   async addCertificate(id: string, data: { companyId?: string; certificateNo: number; grossAmount: number; certificateDate?: string; taxDeduction?: number; vatAmount?: number; performanceBond?: number; netAmount?: number; notes?: string }) {
     const operation = await this.findOne(id);
-    const companyId = data.companyId || operation.companies[0]?.companyId;
+    let companyId = data.companyId || operation.companies?.[0]?.companyId;
+    if (!companyId) {
+      const firstCompany = await this.prisma.company.findFirst();
+      companyId = firstCompany?.id;
+    }
 
-    const gross = Number(data.grossAmount);
+    const gross = Number(data.grossAmount) || 0;
     const tax = data.taxDeduction !== undefined ? Number(data.taxDeduction) : Math.round(gross * 0.01 * 100) / 100;
     const vat = data.vatAmount !== undefined ? Number(data.vatAmount) : Math.round(gross * 0.14 * 100) / 100;
     const bond = data.performanceBond !== undefined ? Number(data.performanceBond) : Math.round(gross * 0.05 * 100) / 100;
-    const net = data.netAmount !== undefined ? Number(data.netAmount) : Math.round((gross - tax - vat - bond) * 100) / 100;
+    const net = data.netAmount !== undefined ? Number(data.netAmount) : Math.round((gross + vat - (tax + bond)) * 100) / 100;
 
-    return this.prisma.certificate.create({
+    const cert = await this.prisma.certificate.create({
       data: {
         operationId: id,
-        companyId,
-        certificateNo: Number(data.certificateNo),
+        companyId: companyId!,
+        certificateNo: Number(data.certificateNo) || 1,
         grossAmount: gross,
         taxDeduction: tax,
         vatAmount: vat,
@@ -1143,6 +1147,18 @@ export class OperationsService {
         notes: data.notes,
       },
     });
+
+    this.invalidateOpCache(id);
+    return cert;
+  }
+
+  async deleteCertificate(id: string, certId: string) {
+    await this.findOne(id);
+    const deleted = await this.prisma.certificate.delete({
+      where: { id: certId },
+    });
+    this.invalidateOpCache(id);
+    return deleted;
   }
 
   // ━━━ 11. حساب التكلفة الفعلية والربح ━━━

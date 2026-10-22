@@ -2,17 +2,43 @@
 
 import { useState, useMemo, useEffect } from "react";
 import { createPortal } from "react-dom";
+import Link from "next/link";
 import {
   Wallet, Plus, Search, Filter, CheckCircle2, Clock,
   ArrowUpRight, ArrowDownLeft, Building2, Calendar, FileText,
   CreditCard, Landmark, X, Edit, Trash2, Printer, Download,
   Eye, Check, AlertCircle, RefreshCw, Layers, DollarSign,
-  TrendingUp, TrendingDown, Receipt, ArrowRight, ShieldCheck
+  TrendingUp, TrendingDown, Receipt, ArrowRight, ShieldCheck,
+  Briefcase, BarChart3, PieChart, ShieldAlert, ChevronLeft,
+  SlidersHorizontal, CheckSquare, Sparkles, AlertTriangle
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
+import api from "@/lib/api";
+
+export interface OperationFinancialRecord {
+  id: string;
+  code: string;
+  name: string;
+  authority: string;
+  companyName: string;
+  companyCode: string;
+  totalRevenue: number;
+  totalCost: number;
+  netProfit: number;
+  profitMargin: number;
+  certificatesCount: number;
+  certificatesTotal: number;
+  guaranteesCount: number;
+  guaranteesTotal: number;
+  purchasesCount: number;
+  purchasesTotal: number;
+  status: "ACTIVE" | "COMPLETED" | "UNDER_REVIEW" | "DEFICIT";
+  lastUpdated?: string;
+  notes?: string;
+}
 
 export interface PaymentRecord {
   id: string;
@@ -31,6 +57,114 @@ export interface PaymentRecord {
   approvedBy?: string;
   receiptNumber?: string;
 }
+
+const INITIAL_DEMO_OPERATIONS: OperationFinancialRecord[] = [
+  {
+    id: "op-1",
+    code: "A15",
+    name: "توريد وتركيب شبكة كابلات محولات الجهد المتوسط",
+    authority: "هيئة المجتمعات العمرانية الجديدة",
+    companyName: "الشركة الدولية للكهرباء والمقاولات",
+    companyCode: "A",
+    totalRevenue: 2850000,
+    totalCost: 1980000,
+    netProfit: 870000,
+    profitMargin: 30.5,
+    certificatesCount: 3,
+    certificatesTotal: 1720000,
+    guaranteesCount: 2,
+    guaranteesTotal: 142500,
+    purchasesCount: 6,
+    purchasesTotal: 840000,
+    status: "ACTIVE",
+    lastUpdated: "2026-10-18",
+    notes: "نسبة الإنجاز المالي 60.3%، تم صرف الدفعة المقدمة وجاري تحصيل المستخلص الثاني",
+  },
+  {
+    id: "op-2",
+    code: "B08",
+    name: "إحلال وتجديد كابلات الفايبر والسنترالات المركزية",
+    authority: "وزارة الاتصالات وتكنولوجيا المعلومات",
+    companyName: "المتحدة للشبكات والألياف الضوئية",
+    companyCode: "B",
+    totalRevenue: 1450000,
+    totalCost: 1120000,
+    netProfit: 330000,
+    profitMargin: 22.8,
+    certificatesCount: 2,
+    certificatesTotal: 980000,
+    guaranteesCount: 1,
+    guaranteesTotal: 72500,
+    purchasesCount: 4,
+    purchasesTotal: 510000,
+    status: "ACTIVE",
+    lastUpdated: "2026-10-12",
+    notes: "التوريدات مكتملة بنسبة 85%، جاهز لتقديم المستخلص الختامي",
+  },
+  {
+    id: "op-3",
+    code: "C04",
+    name: "تجهيز وتأثيث معامل الحاسب الآلي وغرف الخوادم",
+    authority: "الهيئة العامة للأبنية التعليمية",
+    companyName: "المصرية للأجهزة والحلول المكتبية",
+    companyCode: "C",
+    totalRevenue: 920000,
+    totalCost: 680000,
+    netProfit: 240000,
+    profitMargin: 26.1,
+    certificatesCount: 2,
+    certificatesTotal: 920000,
+    guaranteesCount: 1,
+    guaranteesTotal: 46000,
+    purchasesCount: 3,
+    purchasesTotal: 420000,
+    status: "COMPLETED",
+    lastUpdated: "2026-09-30",
+    notes: "تم استلام الموقع ابتدائي واكتمال تحصيل 100% من المستخلصات المعتمدة",
+  },
+  {
+    id: "op-4",
+    code: "A12",
+    name: "توريد وتركيب منظومة كاميرات المراقبة وغرفة التحكم",
+    authority: "مديرية أمن الجيزة",
+    companyName: "الشركة الدولية للكهرباء والمقاولات",
+    companyCode: "A",
+    totalRevenue: 1800000,
+    totalCost: 1490000,
+    netProfit: 310000,
+    profitMargin: 17.2,
+    certificatesCount: 1,
+    certificatesTotal: 650000,
+    guaranteesCount: 2,
+    guaranteesTotal: 90000,
+    purchasesCount: 5,
+    purchasesTotal: 890000,
+    status: "ACTIVE",
+    lastUpdated: "2026-10-05",
+    notes: "توريد الأجهزة بنجاح، جاري إنهاء الأعمال التخصصية وبرمجة السيرفرات",
+  },
+  {
+    id: "op-5",
+    code: "D05",
+    name: "أعمال العزل الحراري والمائي لمباني الخدمات المركزية",
+    authority: "جهاز مدينة 6 أكتوبر",
+    companyName: "الأهرام للمقاولات والمواد العازلة",
+    companyCode: "D",
+    totalRevenue: 640000,
+    totalCost: 690000,
+    netProfit: -50000,
+    profitMargin: -7.8,
+    certificatesCount: 1,
+    certificatesTotal: 300000,
+    guaranteesCount: 1,
+    guaranteesTotal: 32000,
+    purchasesCount: 4,
+    purchasesTotal: 480000,
+    status: "DEFICIT",
+    lastUpdated: "2026-10-15",
+    notes: "تجاوز طفيف في ميزانية بنود الخامات نتيجة تغير أسعار التوريد، يلزم مراجعة ملحق العقد",
+  },
+];
 
 const INITIAL_PAYMENTS: PaymentRecord[] = [
   {
@@ -85,7 +219,7 @@ const INITIAL_PAYMENTS: PaymentRecord[] = [
     id: "p4",
     referenceNumber: "PAY-8418",
     supplierName: "المصرية للأجهزة والحلول المكتبية",
-    operationCode: "C03",
+    operationCode: "C04",
     operationName: "تجهيز وتأثيث معامل الحاسب الآلي",
     amount: 16500,
     paymentMethod: "CASH",
@@ -114,25 +248,36 @@ const INITIAL_PAYMENTS: PaymentRecord[] = [
   },
 ];
 
-export default function PaymentsPage() {
+export default function MasterFinancePage() {
+  const [mounted, setMounted] = useState(false);
+  const [loading, setLoading] = useState(false);
+
+  // Master View Navigation Tab
+  const [masterTab, setMasterTab] = useState<"OPERATIONS" | "PAYMENTS" | "ANALYTICS">("OPERATIONS");
+
+  // Operations Financial Matrix State
+  const [operations, setOperations] = useState<OperationFinancialRecord[]>(INITIAL_DEMO_OPERATIONS);
+  const [opSearch, setOpSearch] = useState("");
+  const [opFilterStatus, setOpFilterStatus] = useState("ALL");
+  const [opFilterCompany, setOpFilterCompany] = useState("ALL");
+  const [opViewMode, setOpViewMode] = useState<"CARDS" | "TABLE">("CARDS");
+  const [selectedOp, setSelectedOp] = useState<OperationFinancialRecord | null>(null);
+  const [opDossierModalOpen, setOpDossierModalOpen] = useState(false);
+
+  // Supplier Payments Records State
   const [payments, setPayments] = useState<PaymentRecord[]>(INITIAL_PAYMENTS);
-  const [search, setSearch] = useState("");
-  const [filterMethod, setFilterMethod] = useState("ALL");
-  const [filterStatus, setFilterStatus] = useState("ALL");
-  const [activeTab, setActiveTab] = useState<"ALL" | "PENDING" | "ANALYTICS">("ALL");
+  const [paySearch, setPaySearch] = useState("");
+  const [payFilterMethod, setPayFilterMethod] = useState("ALL");
+  const [payFilterStatus, setPayFilterStatus] = useState("ALL");
+  const [selectedPayment, setSelectedPayment] = useState<PaymentRecord | null>(null);
 
   // Modals state
-  const [mounted, setMounted] = useState(false);
-  useEffect(() => {
-    setMounted(true);
-  }, []);
   const [createModalOpen, setCreateModalOpen] = useState(false);
   const [editModalOpen, setEditModalOpen] = useState(false);
   const [voucherModalOpen, setVoucherModalOpen] = useState(false);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
-  const [selectedPayment, setSelectedPayment] = useState<PaymentRecord | null>(null);
 
-  // Form states
+  // Payment Form states
   const [formRef, setFormRef] = useState("");
   const [formSupplier, setFormSupplier] = useState("");
   const [formOpCode, setFormOpCode] = useState("A15");
@@ -147,34 +292,141 @@ export default function PaymentsPage() {
   const [formNotes, setFormNotes] = useState("");
   const [formReceiptNumber, setFormReceiptNumber] = useState("");
 
-  const formatCurrency = (n: number) =>
-    new Intl.NumberFormat("ar-EG", { style: "currency", currency: "EGP" }).format(n);
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
-  // Filtered payments
-  const filtered = useMemo(() => {
+  // Fetch Live Data from Backend
+  const fetchOperationsFinance = async () => {
+    try {
+      setLoading(true);
+      const res = await api.get("/finance/operations-overview");
+      if (res.data && Array.isArray(res.data) && res.data.length > 0) {
+        const mapped: OperationFinancialRecord[] = res.data.map((op: any) => {
+          const fin = op.operationFinance;
+          const rev = fin ? Number(fin.totalRevenue) : 0;
+          const cost = fin ? Number(fin.totalCost) : 0;
+          const profit = fin ? Number(fin.netProfit) : (rev - cost);
+          const margin = rev > 0 ? (profit / rev) * 100 : 0;
+
+          const certs = op.certificates || [];
+          const certTotal = certs.reduce((acc: number, c: any) => acc + (Number(c.netAmount) || Number(c.grossAmount) || 0), 0);
+
+          const guar = op.guarantees || [];
+          const guarTotal = guar.reduce((acc: number, g: any) => acc + (Number(g.amount) || 0), 0);
+
+          const purch = op.purchases || [];
+          const purchTotal = purch.reduce((acc: number, p: any) => acc + (Number(p.totalAmount) || 0), 0);
+
+          const comp = op.companies?.[0]?.company;
+          const displayCode = op.companies?.[0]?.displayCode || comp?.code || "A";
+
+          let opStatus: OperationFinancialRecord["status"] = "ACTIVE";
+          if (profit < 0) opStatus = "DEFICIT";
+          else if (rev > 0 && certTotal >= rev) opStatus = "COMPLETED";
+          else if (rev === 0 && cost === 0) opStatus = "UNDER_REVIEW";
+
+          return {
+            id: op.id,
+            code: displayCode,
+            name: op.name,
+            authority: op.authority || "جهة غير محددة",
+            companyName: comp?.name || "الشركة المنفذة",
+            companyCode: comp?.code || displayCode.charAt(0),
+            totalRevenue: rev,
+            totalCost: cost,
+            netProfit: profit,
+            profitMargin: Math.round(margin * 10) / 10,
+            certificatesCount: certs.length,
+            certificatesTotal: certTotal,
+            guaranteesCount: guar.length,
+            guaranteesTotal: guarTotal,
+            purchasesCount: purch.length,
+            purchasesTotal: purchTotal,
+            status: opStatus,
+            lastUpdated: op.updatedAt ? op.updatedAt.split("T")[0] : undefined,
+            notes: op.notes || undefined,
+          };
+        });
+
+        // Merge live data with initial demo data if live data has operations
+        setOperations(mapped);
+      }
+    } catch {
+      // Keep rich demo operations if network / fresh database
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchOperationsFinance();
+  }, []);
+
+  const formatCurrency = (n: number) =>
+    new Intl.NumberFormat("ar-EG", { style: "currency", currency: "EGP", maximumFractionDigits: 0 }).format(n);
+
+  // Master Portfolio Aggregates
+  const portfolioStats = useMemo(() => {
+    const totalRev = operations.reduce((s, o) => s + o.totalRevenue, 0);
+    const totalCost = operations.reduce((s, o) => s + o.totalCost, 0);
+    const totalProfit = operations.reduce((s, o) => s + o.netProfit, 0);
+    const overallMargin = totalRev > 0 ? (totalProfit / totalRev) * 100 : 0;
+    const totalCerts = operations.reduce((s, o) => s + o.certificatesTotal, 0);
+    const totalGuarantees = operations.reduce((s, o) => s + o.guaranteesTotal, 0);
+    const receivables = Math.max(0, totalRev - totalCerts);
+
+    return {
+      totalRev,
+      totalCost,
+      totalProfit,
+      overallMargin: Math.round(overallMargin * 10) / 10,
+      totalCerts,
+      totalGuarantees,
+      receivables,
+      operationsCount: operations.length,
+    };
+  }, [operations]);
+
+  // Filtered Operations
+  const filteredOperations = useMemo(() => {
+    return operations.filter((op) => {
+      const matchSearch =
+        op.code.toLowerCase().includes(opSearch.toLowerCase()) ||
+        op.name.toLowerCase().includes(opSearch.toLowerCase()) ||
+        op.authority.toLowerCase().includes(opSearch.toLowerCase()) ||
+        op.companyName.toLowerCase().includes(opSearch.toLowerCase());
+
+      const matchCompany = opFilterCompany === "ALL" || op.companyCode === opFilterCompany;
+
+      let matchStatus = true;
+      if (opFilterStatus === "PROFITABLE") matchStatus = op.netProfit > 0;
+      else if (opFilterStatus === "DEFICIT") matchStatus = op.netProfit < 0;
+      else if (opFilterStatus === "COMPLETED") matchStatus = op.status === "COMPLETED";
+      else if (opFilterStatus === "ACTIVE") matchStatus = op.status === "ACTIVE";
+
+      return matchSearch && matchCompany && matchStatus;
+    });
+  }, [operations, opSearch, opFilterCompany, opFilterStatus]);
+
+  // Filtered Supplier Payments
+  const filteredPayments = useMemo(() => {
     return payments.filter((p) => {
       const matchSearch =
-        p.supplierName.includes(search) ||
-        p.referenceNumber.includes(search) ||
-        p.operationCode.includes(search) ||
-        (p.operationName && p.operationName.includes(search)) ||
-        (p.checkNumber && p.checkNumber.includes(search));
+        p.supplierName.includes(paySearch) ||
+        p.referenceNumber.includes(paySearch) ||
+        p.operationCode.includes(paySearch) ||
+        (p.operationName && p.operationName.includes(paySearch)) ||
+        (p.checkNumber && p.checkNumber.includes(paySearch));
 
-      const matchMethod = filterMethod === "ALL" || p.paymentMethod === filterMethod;
-      const matchStatus = filterStatus === "ALL" || p.status === filterStatus;
+      const matchMethod = payFilterMethod === "ALL" || p.paymentMethod === payFilterMethod;
+      const matchStatus = payFilterStatus === "ALL" || p.status === payFilterStatus;
 
-      const matchTab =
-        activeTab === "ALL"
-          ? true
-          : activeTab === "PENDING"
-          ? p.status === "PENDING" || p.status === "PROCESSING"
-          : true;
-
-      return matchSearch && matchMethod && matchStatus && matchTab;
+      return matchSearch && matchMethod && matchStatus;
     });
-  }, [payments, search, filterMethod, filterStatus, activeTab]);
+  }, [payments, paySearch, payFilterMethod, payFilterStatus]);
 
-  // Statistics
+  // Payments aggregates
   const totalPaid = payments
     .filter((p) => p.status === "COMPLETED")
     .reduce((acc, p) => acc + p.amount, 0);
@@ -183,16 +435,12 @@ export default function PaymentsPage() {
     .filter((p) => p.status === "PENDING" || p.status === "PROCESSING")
     .reduce((acc, p) => acc + p.amount, 0);
 
-  const completedCount = payments.filter((p) => p.status === "COMPLETED").length;
-  const pendingCount = payments.filter((p) => p.status === "PENDING").length;
-  const processingCount = payments.filter((p) => p.status === "PROCESSING").length;
-
-  // Open Create Modal
-  const handleOpenCreate = () => {
+  // Open Create Payment Modal
+  const handleOpenCreatePayment = () => {
     setFormRef("PAY-" + Math.floor(1000 + Math.random() * 9000));
     setFormSupplier("");
-    setFormOpCode("A15");
-    setFormOpName("");
+    setFormOpCode(operations[0]?.code || "A15");
+    setFormOpName(operations[0]?.name || "");
     setFormAmount("");
     setFormMethod("BANK_TRANSFER");
     setFormBankName("البنك الأهلي المصري");
@@ -205,8 +453,8 @@ export default function PaymentsPage() {
     setCreateModalOpen(true);
   };
 
-  // Open Edit Modal
-  const handleOpenEdit = (p: PaymentRecord) => {
+  // Open Edit Payment Modal
+  const handleOpenEditPayment = (p: PaymentRecord) => {
     setSelectedPayment(p);
     setFormRef(p.referenceNumber);
     setFormSupplier(p.supplierName);
@@ -230,13 +478,19 @@ export default function PaymentsPage() {
     setVoucherModalOpen(true);
   };
 
-  // Open Delete Confirm
-  const handleOpenDelete = (p: PaymentRecord) => {
+  // Open Delete Payment
+  const handleOpenDeletePayment = (p: PaymentRecord) => {
     setSelectedPayment(p);
     setDeleteConfirmOpen(true);
   };
 
-  // Submit Create
+  // Open Operation Dossier Modal
+  const handleOpenOpDossier = (op: OperationFinancialRecord) => {
+    setSelectedOp(op);
+    setOpDossierModalOpen(true);
+  };
+
+  // Submit Create Payment
   const handleCreatePayment = (e: React.FormEvent) => {
     e.preventDefault();
     if (!formSupplier.trim() || !formAmount || Number(formAmount) <= 0) {
@@ -267,7 +521,7 @@ export default function PaymentsPage() {
     setCreateModalOpen(false);
   };
 
-  // Submit Update
+  // Submit Update Payment
   const handleUpdatePayment = (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedPayment) return;
@@ -303,7 +557,7 @@ export default function PaymentsPage() {
     setEditModalOpen(false);
   };
 
-  // Quick Toggle Status
+  // Quick Toggle Payment Status
   const handleQuickStatusChange = (id: string, newStatus: "COMPLETED" | "PENDING" | "PROCESSING") => {
     setPayments(
       payments.map((p) => (p.id === id ? { ...p, status: newStatus } : p))
@@ -322,56 +576,95 @@ export default function PaymentsPage() {
 
   // Export to CSV
   const handleExportCSV = () => {
-    const headers = [
-      "الرقم المرجعي",
-      "المورد المستحق",
-      "كود العملية",
-      "المبلغ (ج.م)",
-      "طريقة الدفع",
-      "البنك / الشيك",
-      "تاريخ السداد",
-      "الحالة",
-      "الملاحظات",
-    ];
-
-    const rows = filtered.map((p) => [
-      p.referenceNumber,
-      `"${p.supplierName.replace(/"/g, '""')}"`,
-      p.operationCode,
-      p.amount,
-      p.paymentMethod,
-      `"${(p.bankName ? p.bankName + " " : "") + (p.checkNumber || "")}"`,
-      p.date,
-      p.status,
-      `"${(p.notes || "").replace(/"/g, '""')}"`,
-    ]);
-
-    const csvContent = "\uFEFF" + [headers.join(","), ...rows.map((r) => r.join(","))].join("\r\n");
-    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = `كشف_المدفوعات_المالية_${new Date().toISOString().split("T")[0]}.csv`;
-    link.click();
-    URL.revokeObjectURL(url);
-    toast.success("تم تصدير سجل المدفوعات بنجاح (CSV)");
+    if (masterTab === "OPERATIONS") {
+      const headers = [
+        "كود العملية",
+        "اسم العملية",
+        "الجهة المالكة",
+        "الشركة التابعة",
+        "قيمة التعاقد (ج.م)",
+        "التكلفة الفعلية (ج.م)",
+        "صافي الربح (ج.م)",
+        "هامش الربح %",
+        "المستخلصات المصدرة",
+        "إجمالي خطابات الضمان",
+      ];
+      const rows = filteredOperations.map((o) => [
+        o.code,
+        `"${o.name.replace(/"/g, '""')}"`,
+        `"${o.authority.replace(/"/g, '""')}"`,
+        `"${o.companyName.replace(/"/g, '""')}"`,
+        o.totalRevenue,
+        o.totalCost,
+        o.netProfit,
+        `${o.profitMargin}%`,
+        o.certificatesTotal,
+        o.guaranteesTotal,
+      ]);
+      const csvContent = "\uFEFF" + [headers.join(","), ...rows.map((r) => r.join(","))].join("\r\n");
+      const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `المركز_المالي_للعمليات_${new Date().toISOString().split("T")[0]}.csv`;
+      link.click();
+      URL.revokeObjectURL(url);
+      toast.success("تم تصدير المركز المالي للعمليات بنجاح (CSV)");
+    } else {
+      const headers = [
+        "الرقم المرجعي",
+        "المورد المستحق",
+        "كود العملية",
+        "المبلغ (ج.م)",
+        "طريقة الدفع",
+        "البنك / الشيك",
+        "تاريخ السداد",
+        "الحالة",
+        "الملاحظات",
+      ];
+      const rows = filteredPayments.map((p) => [
+        p.referenceNumber,
+        `"${p.supplierName.replace(/"/g, '""')}"`,
+        p.operationCode,
+        p.amount,
+        p.paymentMethod,
+        `"${(p.bankName ? p.bankName + " " : "") + (p.checkNumber || "")}"`,
+        p.date,
+        p.status,
+        `"${(p.notes || "").replace(/"/g, '""')}"`,
+      ]);
+      const csvContent = "\uFEFF" + [headers.join(","), ...rows.map((r) => r.join(","))].join("\r\n");
+      const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `سجل_المدفوعات_المالية_${new Date().toISOString().split("T")[0]}.csv`;
+      link.click();
+      URL.revokeObjectURL(url);
+      toast.success("تم تصدير سجل المدفوعات بنجاح (CSV)");
+    }
   };
 
   return (
-    <div className="space-y-6 sm:space-y-8 animate-fade-in pb-12">
+    <div className="space-y-6 sm:space-y-8 animate-fade-in pb-16">
       {/* ━━━ Header ━━━ */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <div className="flex items-center gap-2.5">
-            <div className="w-10 h-10 rounded-2xl bg-emerald-600/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 flex items-center justify-center shadow-xs">
-              <Wallet className="h-5 w-5" />
+          <div className="flex items-center gap-3">
+            <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-emerald-600 to-teal-700 text-white flex items-center justify-center shadow-lg shadow-emerald-500/20 royal-glow">
+              <Landmark className="h-6 w-6" />
             </div>
             <div>
-              <h1 className="text-2xl sm:text-3xl font-extrabold text-foreground tracking-tight">
-                المدفوعات والمستحقات المالية
-              </h1>
+              <div className="flex items-center gap-2">
+                <h1 className="text-2xl sm:text-3xl font-black text-foreground tracking-tight">
+                  المركز المالي العام وإدارة المدفوعات
+                </h1>
+                <Badge className="bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30 text-xs px-2.5 py-0.5 font-bold">
+                  شامل كافة العمليات 🏛️
+                </Badge>
+              </div>
               <p className="text-muted-foreground text-xs sm:text-sm mt-0.5">
-                إدارة مستحقات الموردين، التدفقات النقدية، الشيكات البنكية، وسندات الصرف الرسمية
+                متابعة ميزانيات العمليات، الإيرادات المعتمدة، التكاليف الفعلية، مستحقات الموردين، وخطابات الضمان
               </p>
             </div>
           </div>
@@ -380,15 +673,27 @@ export default function PaymentsPage() {
         <div className="flex items-center gap-2 flex-wrap">
           <Button
             variant="outline"
+            size="sm"
+            onClick={fetchOperationsFinance}
+            disabled={loading}
+            className="border-border text-foreground hover:bg-muted text-xs h-9 px-3 rounded-xl cursor-pointer"
+          >
+            <RefreshCw className={`h-3.5 w-3.5 ml-1.5 text-emerald-600 ${loading ? "animate-spin" : ""}`} />
+            <span>تحديث البيانات</span>
+          </Button>
+
+          <Button
+            variant="outline"
+            size="sm"
             onClick={handleExportCSV}
             className="border-border text-foreground hover:bg-muted text-xs h-9 px-3 rounded-xl cursor-pointer"
           >
             <Download className="h-3.5 w-3.5 ml-1.5 text-emerald-600" />
-            <span>تصدير الكشف</span>
+            <span>تصدير تقرير (CSV)</span>
           </Button>
 
           <Button
-            onClick={handleOpenCreate}
+            onClick={handleOpenCreatePayment}
             className="bg-gradient-to-r from-emerald-600 via-emerald-500 to-emerald-600 hover:from-emerald-700 hover:to-emerald-600 text-white font-bold px-4 h-9 rounded-xl shadow-lg shadow-emerald-500/20 royal-glow flex items-center gap-2 text-xs sm:text-sm active:scale-95 transition-all cursor-pointer"
           >
             <Plus className="h-4 w-4" />
@@ -397,308 +702,1006 @@ export default function PaymentsPage() {
         </div>
       </div>
 
-      {/* ━━━ KPI Stats Cards ━━━ */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
-        <div className="glass-card rounded-2xl p-4 sm:p-5 border border-border">
+      {/* ━━━ Master Enterprise Portfolio KPIs ━━━ */}
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 sm:gap-4">
+        {/* Total Revenues / Contract Values */}
+        <div className="glass-card rounded-2xl p-4 border border-border hover:border-emerald-500/40 transition-all shadow-xs">
           <div className="flex items-center justify-between text-muted-foreground text-xs font-bold">
-            <span>إجمالي المسدد فعلياً</span>
+            <span>محفظة التعاقدات</span>
             <div className="w-8 h-8 rounded-xl bg-emerald-500/10 text-emerald-600 flex items-center justify-center">
               <TrendingUp className="h-4 w-4" />
             </div>
           </div>
-          <p className="text-xl sm:text-2xl font-black text-emerald-600 dark:text-emerald-400 mt-2 font-mono">
-            {formatCurrency(totalPaid)}
+          <p className="text-lg sm:text-xl font-black text-emerald-600 dark:text-emerald-400 mt-2 font-mono">
+            {formatCurrency(portfolioStats.totalRev)}
           </p>
-          <span className="text-[11px] text-muted-foreground mt-1 block font-mono">
-            {completedCount} سندات مسددة
+          <span className="text-[11px] text-muted-foreground mt-1 block">
+            {portfolioStats.operationsCount} عمليات معتمدة
           </span>
         </div>
 
-        <div className="glass-card rounded-2xl p-4 sm:p-5 border border-border">
+        {/* Total Actual Costs */}
+        <div className="glass-card rounded-2xl p-4 border border-border hover:border-rose-500/40 transition-all shadow-xs">
           <div className="flex items-center justify-between text-muted-foreground text-xs font-bold">
-            <span>التزامات ومستحقات معلقة</span>
+            <span>التكاليف الفعلية</span>
+            <div className="w-8 h-8 rounded-xl bg-rose-500/10 text-rose-600 flex items-center justify-center">
+              <TrendingDown className="h-4 w-4" />
+            </div>
+          </div>
+          <p className="text-lg sm:text-xl font-black text-rose-600 dark:text-rose-400 mt-2 font-mono">
+            {formatCurrency(portfolioStats.totalCost)}
+          </p>
+          <span className="text-[11px] text-muted-foreground mt-1 block">
+            مصروفات وتوريدات
+          </span>
+        </div>
+
+        {/* Net Profit & Margin */}
+        <div className="glass-card rounded-2xl p-4 border border-border hover:border-teal-500/40 transition-all shadow-xs">
+          <div className="flex items-center justify-between text-muted-foreground text-xs font-bold">
+            <span>صافي الأرباح</span>
+            <Badge
+              variant="outline"
+              className={`text-[10px] px-1.5 py-0 font-bold ${
+                portfolioStats.totalProfit >= 0
+                  ? "border-emerald-500/30 text-emerald-600 bg-emerald-500/10"
+                  : "border-rose-500/30 text-rose-600 bg-rose-500/10"
+              }`}
+            >
+              %{portfolioStats.overallMargin}
+            </Badge>
+          </div>
+          <p className="text-lg sm:text-xl font-black text-teal-600 dark:text-teal-400 mt-2 font-mono">
+            {formatCurrency(portfolioStats.totalProfit)}
+          </p>
+          <span className="text-[11px] text-muted-foreground mt-1 block">
+            هامش ربح إجمالي
+          </span>
+        </div>
+
+        {/* Certified Invoices / Certificates */}
+        <div className="glass-card rounded-2xl p-4 border border-border hover:border-blue-500/40 transition-all shadow-xs">
+          <div className="flex items-center justify-between text-muted-foreground text-xs font-bold">
+            <span>المستخلصات المعتمدة</span>
+            <div className="w-8 h-8 rounded-xl bg-blue-500/10 text-blue-600 flex items-center justify-center">
+              <FileText className="h-4 w-4" />
+            </div>
+          </div>
+          <p className="text-lg sm:text-xl font-black text-blue-600 dark:text-blue-400 mt-2 font-mono">
+            {formatCurrency(portfolioStats.totalCerts)}
+          </p>
+          <span className="text-[11px] text-muted-foreground mt-1 block">
+            معتمدة من الجهات
+          </span>
+        </div>
+
+        {/* Outstanding Receivables */}
+        <div className="glass-card rounded-2xl p-4 border border-border hover:border-amber-500/40 transition-all shadow-xs">
+          <div className="flex items-center justify-between text-muted-foreground text-xs font-bold">
+            <span>مستحقات قيد التحصيل</span>
             <div className="w-8 h-8 rounded-xl bg-amber-500/10 text-amber-600 flex items-center justify-center">
               <Clock className="h-4 w-4" />
             </div>
           </div>
-          <p className="text-xl sm:text-2xl font-black text-amber-600 dark:text-amber-400 mt-2 font-mono">
-            {formatCurrency(totalPending)}
+          <p className="text-lg sm:text-xl font-black text-amber-600 dark:text-amber-400 mt-2 font-mono">
+            {formatCurrency(portfolioStats.receivables)}
           </p>
-          <span className="text-[11px] text-muted-foreground mt-1 block font-mono">
-            {pendingCount + processingCount} سندات قيد الصرف
+          <span className="text-[11px] text-muted-foreground mt-1 block">
+            مستحقات لدى الجهات
           </span>
         </div>
 
-        <div className="glass-card rounded-2xl p-4 sm:p-5 border border-border">
+        {/* Blocked Bank Guarantees */}
+        <div className="glass-card rounded-2xl p-4 border border-border hover:border-purple-500/40 transition-all shadow-xs">
           <div className="flex items-center justify-between text-muted-foreground text-xs font-bold">
-            <span>التحويلات البنكية والشيكات</span>
-            <div className="w-8 h-8 rounded-xl bg-blue-500/10 text-blue-600 flex items-center justify-center">
-              <Landmark className="h-4 w-4" />
-            </div>
-          </div>
-          <p className="text-xl sm:text-2xl font-black text-blue-600 dark:text-blue-400 mt-2 font-mono">
-            {payments.filter((p) => p.paymentMethod === "BANK_TRANSFER" || p.paymentMethod === "CHECK").length}
-          </p>
-          <span className="text-[11px] text-muted-foreground mt-1 block">معاملات بنكية معتمدة</span>
-        </div>
-
-        <div className="glass-card rounded-2xl p-4 sm:p-5 border border-border">
-          <div className="flex items-center justify-between text-muted-foreground text-xs font-bold">
-            <span>متوسط قيمة السند</span>
+            <span>خطابات الضمان</span>
             <div className="w-8 h-8 rounded-xl bg-purple-500/10 text-purple-600 flex items-center justify-center">
-              <DollarSign className="h-4 w-4" />
+              <ShieldCheck className="h-4 w-4" />
             </div>
           </div>
-          <p className="text-xl sm:text-2xl font-black text-purple-600 dark:text-purple-400 mt-2 font-mono">
-            {formatCurrency(payments.length > 0 ? Math.round((totalPaid + totalPending) / payments.length) : 0)}
+          <p className="text-lg sm:text-xl font-black text-purple-600 dark:text-purple-400 mt-2 font-mono">
+            {formatCurrency(portfolioStats.totalGuarantees)}
           </p>
-          <span className="text-[11px] text-muted-foreground mt-1 block">لكل أمر توريد</span>
+          <span className="text-[11px] text-muted-foreground mt-1 block">
+            محتجزة لدى البنوك
+          </span>
         </div>
       </div>
 
-      {/* ━━━ Nav Tabs ━━━ */}
-      <div className="flex items-center gap-2 border-b border-border pb-2 text-xs font-bold">
-        <button
-          type="button"
-          onClick={() => setActiveTab("ALL")}
-          className={`px-4 py-2 rounded-xl transition-all cursor-pointer ${
-            activeTab === "ALL"
-              ? "bg-emerald-600 text-white shadow-xs"
-              : "text-muted-foreground hover:text-foreground hover:bg-muted"
-          }`}
-        >
-          سجل المدفوعات الكامل ({payments.length})
-        </button>
-        <button
-          type="button"
-          onClick={() => setActiveTab("PENDING")}
-          className={`px-4 py-2 rounded-xl transition-all cursor-pointer ${
-            activeTab === "PENDING"
-              ? "bg-amber-600 text-white shadow-xs"
-              : "text-muted-foreground hover:text-foreground hover:bg-muted"
-          }`}
-        >
-          المستحقات المعلقة والتزامات التوريد ({pendingCount + processingCount})
-        </button>
-      </div>
-
-      {/* ━━━ Search and Filter Toolbar ━━━ */}
-      <div className="glass-card rounded-2xl p-4 border border-border flex flex-col md:flex-row items-center gap-3">
-        <div className="relative flex-1 w-full">
-          <Search className="absolute right-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <Input
-            placeholder="بحث برقم السند PAY-XXXX، اسم المورد، كود العملية، أو رقم الشيك..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="pr-10 bg-muted/40 border-border text-foreground placeholder:text-muted-foreground focus:border-emerald-500 rounded-xl text-xs sm:text-sm h-10 w-full"
-          />
-        </div>
-
-        <div className="flex items-center gap-2 w-full md:w-auto">
-          {/* Method Filter */}
-          <select
-            value={filterMethod}
-            onChange={(e) => setFilterMethod(e.target.value)}
-            className="h-10 px-3 bg-muted/40 border border-border rounded-xl text-xs font-semibold text-foreground focus:outline-hidden focus:border-emerald-500"
+      {/* ━━━ Master Tabs Navigation ━━━ */}
+      <div className="flex items-center justify-between border-b border-border pb-3 flex-wrap gap-3">
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setMasterTab("OPERATIONS")}
+            className={`flex items-center gap-2 px-4 py-2.5 rounded-2xl text-xs sm:text-sm font-bold transition-all cursor-pointer ${
+              masterTab === "OPERATIONS"
+                ? "bg-gradient-to-r from-emerald-600 to-teal-600 text-white shadow-md shadow-emerald-500/20"
+                : "text-muted-foreground hover:text-foreground hover:bg-muted/60"
+            }`}
           >
-            <option value="ALL">كافة طرق السداد</option>
-            <option value="BANK_TRANSFER">تحويل بنكي</option>
-            <option value="CHECK">شيك مصرفي</option>
-            <option value="CASH">نقدي من الخزينة</option>
-            <option value="ELECTRONIC">سداد إلكتروني</option>
-          </select>
+            <Briefcase className="h-4 w-4" />
+            <span>المركز المالي الشامل للعمليات</span>
+            <Badge className="bg-white/20 text-white text-[11px] px-2 py-0 border-none font-mono">
+              {filteredOperations.length}
+            </Badge>
+          </button>
 
-          {/* Status Filter */}
-          <select
-            value={filterStatus}
-            onChange={(e) => setFilterStatus(e.target.value)}
-            className="h-10 px-3 bg-muted/40 border border-border rounded-xl text-xs font-semibold text-foreground focus:outline-hidden focus:border-emerald-500"
+          <button
+            type="button"
+            onClick={() => setMasterTab("PAYMENTS")}
+            className={`flex items-center gap-2 px-4 py-2.5 rounded-2xl text-xs sm:text-sm font-bold transition-all cursor-pointer ${
+              masterTab === "PAYMENTS"
+                ? "bg-gradient-to-r from-emerald-600 to-teal-600 text-white shadow-md shadow-emerald-500/20"
+                : "text-muted-foreground hover:text-foreground hover:bg-muted/60"
+            }`}
           >
-            <option value="ALL">كافة الحالات</option>
-            <option value="COMPLETED">مسدد ومكتمل</option>
-            <option value="PROCESSING">قيد المراجعة والتحويل</option>
-            <option value="PENDING">معلق بانتظار الاعتماد</option>
-          </select>
+            <Wallet className="h-4 w-4" />
+            <span>سجل سندات ومستحقات الموردين</span>
+            <Badge className="bg-white/20 text-white text-[11px] px-2 py-0 border-none font-mono">
+              {payments.length}
+            </Badge>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setMasterTab("ANALYTICS")}
+            className={`flex items-center gap-2 px-4 py-2.5 rounded-2xl text-xs sm:text-sm font-bold transition-all cursor-pointer ${
+              masterTab === "ANALYTICS"
+                ? "bg-gradient-to-r from-emerald-600 to-teal-600 text-white shadow-md shadow-emerald-500/20"
+                : "text-muted-foreground hover:text-foreground hover:bg-muted/60"
+            }`}
+          >
+            <BarChart3 className="h-4 w-4" />
+            <span>تحليل التدفق النقدي ومراكز التكلفة</span>
+          </button>
         </div>
-      </div>
 
-      {/* ━━━ Table of Payments ━━━ */}
-      <div className="glass-card rounded-2xl border border-border overflow-hidden shadow-xs">
-        <div className="overflow-x-auto">
-          <table className="w-full text-right text-xs">
-            <thead className="bg-muted/50 border-b border-border text-muted-foreground font-bold">
-              <tr>
-                <th className="p-3.5">الرقم المرجعي</th>
-                <th className="p-3.5">المورد المستحق</th>
-                <th className="p-3.5">العملية المرتبطة</th>
-                <th className="p-3.5">المبلغ</th>
-                <th className="p-3.5">طريقة السداد</th>
-                <th className="p-3.5">تاريخ الاستحقاق</th>
-                <th className="p-3.5">الحالة</th>
-                <th className="p-3.5 text-center">الإجراءات</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border">
-              {filtered.length === 0 ? (
-                <tr>
-                  <td colSpan={8} className="p-12 text-center text-muted-foreground">
-                    لا توجد سندات أو معاملات مالية مطابقة لمعايير البحث.
-                  </td>
-                </tr>
-              ) : (
-                filtered.map((p) => (
-                  <tr key={p.id} className="hover:bg-muted/30 transition-colors">
-                    <td className="p-3.5 font-mono font-bold text-foreground">
-                      <div className="flex items-center gap-1.5">
-                        <Receipt className="h-3.5 w-3.5 text-emerald-600" />
-                        <span>{p.referenceNumber}</span>
-                      </div>
-                    </td>
-
-                    <td className="p-3.5 font-bold text-foreground">
-                      <div className="truncate max-w-[200px]" title={p.supplierName}>
-                        {p.supplierName}
-                      </div>
-                      {p.notes && (
-                        <p className="text-[10px] text-muted-foreground font-normal truncate max-w-[200px]">
-                          {p.notes}
-                        </p>
-                      )}
-                    </td>
-
-                    <td className="p-3.5">
-                      <div className="flex items-center gap-1.5">
-                        <Badge
-                          variant="outline"
-                          className="border-blue-500/30 text-blue-600 dark:text-blue-400 font-mono text-[11px]"
-                        >
-                          {p.operationCode}
-                        </Badge>
-                        {p.operationName && (
-                          <span className="text-[11px] text-muted-foreground truncate max-w-[150px] hidden sm:inline">
-                            {p.operationName}
-                          </span>
-                        )}
-                      </div>
-                    </td>
-
-                    <td className="p-3.5 font-mono font-black text-foreground text-sm">
-                      {formatCurrency(p.amount)}
-                    </td>
-
-                    <td className="p-3.5">
-                      <div className="flex items-center gap-1 text-[11px] font-semibold text-muted-foreground">
-                        {p.paymentMethod === "BANK_TRANSFER" ? (
-                          <>
-                            <Landmark className="h-3.5 w-3.5 text-blue-600" />
-                            <span>تحويل ({p.bankName || "بنكي"})</span>
-                          </>
-                        ) : p.paymentMethod === "CHECK" ? (
-                          <>
-                            <FileText className="h-3.5 w-3.5 text-purple-600" />
-                            <span>شيك {p.checkNumber ? `#${p.checkNumber}` : ""}</span>
-                          </>
-                        ) : (
-                          <>
-                            <Wallet className="h-3.5 w-3.5 text-amber-600" />
-                            <span>نقدي (خزينة)</span>
-                          </>
-                        )}
-                      </div>
-                    </td>
-
-                    <td className="p-3.5 font-mono text-[11px] text-muted-foreground">
-                      <div>{p.date}</div>
-                      {p.dueDate && p.dueDate !== p.date && (
-                        <div className="text-[10px] text-amber-600">مهلة: {p.dueDate}</div>
-                      )}
-                    </td>
-
-                    <td className="p-3.5">
-                      <div className="flex items-center gap-1.5">
-                        <Badge
-                          className={
-                            p.status === "COMPLETED"
-                              ? "badge-emerald text-[10px]"
-                              : p.status === "PROCESSING"
-                              ? "badge-blue text-[10px]"
-                              : "badge-amber text-[10px]"
-                          }
-                        >
-                          {p.status === "COMPLETED"
-                            ? "مسدد ✓"
-                            : p.status === "PROCESSING"
-                            ? "قيد التحويل"
-                            : "معلق"}
-                        </Badge>
-
-                        {/* Quick Action Button to Complete */}
-                        {p.status !== "COMPLETED" && (
-                          <button
-                            type="button"
-                            onClick={() => handleQuickStatusChange(p.id, "COMPLETED")}
-                            className="p-1 rounded-md text-emerald-600 hover:bg-emerald-500/10 cursor-pointer"
-                            title="تحديد كمسدد ومكتمل"
-                          >
-                            <Check className="h-3.5 w-3.5" />
-                          </button>
-                        )}
-                      </div>
-                    </td>
-
-                    <td className="p-3.5">
-                      <div className="flex items-center justify-center gap-1">
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => handleOpenVoucher(p)}
-                          className="h-7 w-7 p-0 text-emerald-600 hover:bg-emerald-500/10 rounded-md cursor-pointer"
-                          title="عرض وطباعة سند الصرف"
-                        >
-                          <Printer className="h-3.5 w-3.5" />
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => handleOpenEdit(p)}
-                          className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground hover:bg-muted rounded-md cursor-pointer"
-                          title="تعديل"
-                        >
-                          <Edit className="h-3.5 w-3.5" />
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => handleOpenDelete(p)}
-                          className="h-7 w-7 p-0 text-rose-500 hover:text-rose-600 hover:bg-rose-500/10 rounded-md cursor-pointer"
-                          title="حذف"
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </Button>
-                      </div>
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
+        {masterTab === "OPERATIONS" && (
+          <div className="flex items-center gap-1.5 bg-muted/50 p-1 rounded-xl border border-border">
+            <button
+              type="button"
+              onClick={() => setOpViewMode("CARDS")}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                opViewMode === "CARDS" ? "bg-background text-foreground shadow-xs" : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              عرض الكروت 🗂️
+            </button>
+            <button
+              type="button"
+              onClick={() => setOpViewMode("TABLE")}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                opViewMode === "TABLE" ? "bg-background text-foreground shadow-xs" : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              عرض الجدول 📊
+            </button>
+          </div>
+        )}
       </div>
 
       {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-          MODAL: تسجيل سند صرف جديد (Create Payment)
+          TAB 1: المركز المالي الشامل للعمليات
+      ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
+      {masterTab === "OPERATIONS" && (
+        <div className="space-y-6">
+          {/* Operations Search & Filters Bar */}
+          <div className="glass-card rounded-2xl p-4 border border-border flex flex-col md:flex-row items-center gap-3">
+            <div className="relative flex-1 w-full">
+              <Search className="absolute right-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder="بحث برمز العملية A15، اسم المناقصة، الجهة الحكومية، أو الشركة المنفذة..."
+                value={opSearch}
+                onChange={(e) => setOpSearch(e.target.value)}
+                className="pr-10 bg-muted/40 border-border text-foreground placeholder:text-muted-foreground focus:border-emerald-500 rounded-xl text-xs sm:text-sm h-10 w-full"
+              />
+            </div>
+
+            <div className="flex items-center gap-2 w-full md:w-auto flex-wrap">
+              {/* Financial Status Filter */}
+              <select
+                value={opFilterStatus}
+                onChange={(e) => setOpFilterStatus(e.target.value)}
+                className="h-10 px-3 bg-muted/40 border border-border rounded-xl text-xs font-semibold text-foreground focus:outline-hidden focus:border-emerald-500 cursor-pointer"
+              >
+                <option value="ALL">كافة الحالات المالية</option>
+                <option value="PROFITABLE">العمليات الرابحة 🟢</option>
+                <option value="ACTIVE">قيد التنفيذ والتشغيل 🔵</option>
+                <option value="COMPLETED">مكتملة ومستخلصة 100% ✨</option>
+                <option value="DEFICIT">تجاوز في الميزانية 🔴</option>
+              </select>
+
+              {/* Company Filter */}
+              <select
+                value={opFilterCompany}
+                onChange={(e) => setOpFilterCompany(e.target.value)}
+                className="h-10 px-3 bg-muted/40 border border-border rounded-xl text-xs font-semibold text-foreground focus:outline-hidden focus:border-emerald-500 cursor-pointer"
+              >
+                <option value="ALL">كافة الشركات الشقيقة</option>
+                <option value="A">الشركة (A)</option>
+                <option value="B">الشركة (B)</option>
+                <option value="C">الشركة (C)</option>
+                <option value="D">الشركة (D)</option>
+              </select>
+            </div>
+          </div>
+
+          {/* Cards View */}
+          {opViewMode === "CARDS" && (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {filteredOperations.length === 0 ? (
+                <div className="col-span-full glass-card rounded-2xl p-12 text-center text-muted-foreground border border-border">
+                  <AlertCircle className="h-8 w-8 mx-auto mb-2 text-muted-foreground" />
+                  <p>لا توجد عمليات مطابقة لمعايير البحث الحالية.</p>
+                </div>
+              ) : (
+                filteredOperations.map((op) => {
+                  const costRatio = op.totalRevenue > 0 ? Math.min(100, (op.totalCost / op.totalRevenue) * 100) : 0;
+                  const isProfitable = op.netProfit >= 0;
+
+                  return (
+                    <div
+                      key={op.id}
+                      className="glass-card rounded-2xl border border-border hover:border-emerald-500/50 transition-all p-5 flex flex-col justify-between space-y-4 hover:shadow-lg group"
+                    >
+                      {/* Card Top: Code, Badges, Title */}
+                      <div className="space-y-3">
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-2">
+                            <span className="font-mono text-sm font-extrabold px-2.5 py-1 rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30">
+                              {op.code}
+                            </span>
+                            <Badge variant="outline" className="text-[11px] border-border text-muted-foreground font-semibold">
+                              {op.companyName}
+                            </Badge>
+                          </div>
+
+                          <Badge
+                            className={`text-[10px] font-bold px-2 py-0.5 ${
+                              op.status === "DEFICIT"
+                                ? "bg-rose-500/15 text-rose-600 border border-rose-500/30"
+                                : op.status === "COMPLETED"
+                                ? "bg-blue-500/15 text-blue-600 border border-blue-500/30"
+                                : isProfitable
+                                ? "bg-emerald-500/15 text-emerald-600 border border-emerald-500/30"
+                                : "bg-muted text-muted-foreground"
+                            }`}
+                          >
+                            {op.status === "DEFICIT"
+                              ? "عجز مالي 🔴"
+                              : op.status === "COMPLETED"
+                              ? "مكتملة 100% ✨"
+                              : isProfitable
+                              ? `ربح +${op.profitMargin}% 🟢`
+                              : "قيد التشغيل 🔵"}
+                          </Badge>
+                        </div>
+
+                        <div>
+                          <h3 className="font-extrabold text-foreground text-sm line-clamp-2 group-hover:text-emerald-600 transition-colors">
+                            {op.name}
+                          </h3>
+                          <div className="flex items-center gap-1.5 text-xs text-muted-foreground mt-1">
+                            <Building2 className="h-3.5 w-3.5 shrink-0" />
+                            <span className="truncate">{op.authority}</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Card Middle: Key Figures Matrix */}
+                      <div className="grid grid-cols-2 gap-2 p-3 bg-muted/30 rounded-xl border border-border/60 text-xs">
+                        <div>
+                          <span className="text-[10px] text-muted-foreground block font-bold">قيمة التعاقد</span>
+                          <span className="font-mono font-black text-foreground text-sm">
+                            {formatCurrency(op.totalRevenue)}
+                          </span>
+                        </div>
+                        <div>
+                          <span className="text-[10px] text-muted-foreground block font-bold">التكلفة الفعلية</span>
+                          <span className="font-mono font-bold text-rose-600 dark:text-rose-400 text-sm">
+                            {formatCurrency(op.totalCost)}
+                          </span>
+                        </div>
+                        <div className="pt-1 border-t border-border/40">
+                          <span className="text-[10px] text-muted-foreground block font-bold">صافي الربح</span>
+                          <span className={`font-mono font-black text-sm ${isProfitable ? "text-emerald-600" : "text-rose-600"}`}>
+                            {formatCurrency(op.netProfit)}
+                          </span>
+                        </div>
+                        <div className="pt-1 border-t border-border/40">
+                          <span className="text-[10px] text-muted-foreground block font-bold">المستخلصات</span>
+                          <span className="font-mono font-bold text-blue-600 text-sm">
+                            {formatCurrency(op.certificatesTotal)}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Financial Health Progress Bar */}
+                      <div className="space-y-1">
+                        <div className="flex items-center justify-between text-[11px] font-bold text-muted-foreground">
+                          <span>نسبة استهلاك الميزانية:</span>
+                          <span className="font-mono">{Math.round(costRatio)}%</span>
+                        </div>
+                        <div className="w-full bg-muted rounded-full h-2.5 overflow-hidden border border-border/50">
+                          <div
+                            className={`h-full rounded-full transition-all duration-500 ${
+                              costRatio > 95
+                                ? "bg-rose-500"
+                                : costRatio > 75
+                                ? "bg-amber-500"
+                                : "bg-emerald-500"
+                            }`}
+                            style={{ width: `${Math.min(100, costRatio)}%` }}
+                          />
+                        </div>
+                      </div>
+
+                      {/* Additional Tags (Guarantees & Invoices) */}
+                      <div className="flex items-center justify-between text-[11px] text-muted-foreground pt-1 border-t border-border/40">
+                        <span className="flex items-center gap-1">
+                          <ShieldCheck className="h-3 w-3 text-purple-600" />
+                          <span>ضمان: {formatCurrency(op.guaranteesTotal)}</span>
+                        </span>
+                        <span className="flex items-center gap-1 font-mono">
+                          <FileText className="h-3 w-3 text-blue-600" />
+                          <span>{op.certificatesCount} مستخلصات</span>
+                        </span>
+                      </div>
+
+                      {/* Card Actions */}
+                      <div className="flex items-center gap-2 pt-1">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleOpenOpDossier(op)}
+                          className="flex-1 text-xs h-8 rounded-xl border-border hover:bg-muted cursor-pointer"
+                        >
+                          <Eye className="h-3.5 w-3.5 ml-1 text-emerald-600" />
+                          <span>الملف المالي</span>
+                        </Button>
+
+                        <Link
+                          href={`/dashboard/operations/${op.id}?tab=finance`}
+                          className="flex items-center justify-center gap-1 px-3 h-8 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition-all shadow-xs"
+                        >
+                          <span>إدارة</span>
+                          <ArrowRight className="h-3.5 w-3.5" />
+                        </Link>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          )}
+
+          {/* Table View */}
+          {opViewMode === "TABLE" && (
+            <div className="glass-card rounded-2xl border border-border overflow-hidden shadow-xs">
+              <div className="overflow-x-auto">
+                <table className="w-full text-right text-xs">
+                  <thead className="bg-muted/50 border-b border-border text-muted-foreground font-bold">
+                    <tr>
+                      <th className="p-3.5">الرمز</th>
+                      <th className="p-3.5">اسم العملية والجهة</th>
+                      <th className="p-3.5">الشركة التابعة</th>
+                      <th className="p-3.5">قيمة التعاقد</th>
+                      <th className="p-3.5">التكلفة الفعلية</th>
+                      <th className="p-3.5">صافي الربح</th>
+                      <th className="p-3.5">الهامش %</th>
+                      <th className="p-3.5">المستخلصات</th>
+                      <th className="p-3.5">خطابات الضمان</th>
+                      <th className="p-3.5 text-center">الإجراءات</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border">
+                    {filteredOperations.length === 0 ? (
+                      <tr>
+                        <td colSpan={10} className="p-10 text-center text-muted-foreground">
+                          لا توجد عمليات مطابقة للبحث.
+                        </td>
+                      </tr>
+                    ) : (
+                      filteredOperations.map((op) => {
+                        const isProfitable = op.netProfit >= 0;
+                        return (
+                          <tr key={op.id} className="hover:bg-muted/30 transition-colors">
+                            <td className="p-3.5 font-mono font-bold text-emerald-600">
+                              {op.code}
+                            </td>
+                            <td className="p-3.5 max-w-[240px]">
+                              <div className="font-extrabold text-foreground truncate">{op.name}</div>
+                              <div className="text-[11px] text-muted-foreground truncate">{op.authority}</div>
+                            </td>
+                            <td className="p-3.5 text-muted-foreground font-semibold">
+                              {op.companyName}
+                            </td>
+                            <td className="p-3.5 font-mono font-black text-foreground">
+                              {formatCurrency(op.totalRevenue)}
+                            </td>
+                            <td className="p-3.5 font-mono font-bold text-rose-600">
+                              {formatCurrency(op.totalCost)}
+                            </td>
+                            <td className={`p-3.5 font-mono font-black ${isProfitable ? "text-emerald-600" : "text-rose-600"}`}>
+                              {formatCurrency(op.netProfit)}
+                            </td>
+                            <td className="p-3.5 font-mono font-bold">
+                              <span className={`px-2 py-0.5 rounded-lg text-[11px] ${
+                                isProfitable ? "bg-emerald-500/10 text-emerald-600" : "bg-rose-500/10 text-rose-600"
+                              }`}>
+                                %{op.profitMargin}
+                              </span>
+                            </td>
+                            <td className="p-3.5 font-mono text-blue-600 font-bold">
+                              {formatCurrency(op.certificatesTotal)}
+                            </td>
+                            <td className="p-3.5 font-mono text-purple-600 font-bold">
+                              {formatCurrency(op.guaranteesTotal)}
+                            </td>
+                            <td className="p-3.5">
+                              <div className="flex items-center justify-center gap-1.5">
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  onClick={() => handleOpenOpDossier(op)}
+                                  className="h-8 w-8 rounded-lg hover:bg-emerald-500/10 hover:text-emerald-600 cursor-pointer"
+                                  title="الملف المالي للعملية"
+                                >
+                                  <Eye className="h-4 w-4" />
+                                </Button>
+                                <Link
+                                  href={`/dashboard/operations/${op.id}?tab=finance`}
+                                  className="h-8 w-8 rounded-lg flex items-center justify-center hover:bg-muted text-muted-foreground hover:text-foreground"
+                                  title="إدارة شاشة المالية"
+                                >
+                                  <ArrowRight className="h-4 w-4" />
+                                </Link>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+          TAB 2: سجل سندات ومستحقات الموردين
+      ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
+      {masterTab === "PAYMENTS" && (
+        <div className="space-y-6">
+          {/* Search and Filter Toolbar */}
+          <div className="glass-card rounded-2xl p-4 border border-border flex flex-col md:flex-row items-center gap-3">
+            <div className="relative flex-1 w-full">
+              <Search className="absolute right-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder="بحث برقم السند PAY-XXXX، اسم المورد، كود العملية، أو رقم الشيك..."
+                value={paySearch}
+                onChange={(e) => setPaySearch(e.target.value)}
+                className="pr-10 bg-muted/40 border-border text-foreground placeholder:text-muted-foreground focus:border-emerald-500 rounded-xl text-xs sm:text-sm h-10 w-full"
+              />
+            </div>
+
+            <div className="flex items-center gap-2 w-full md:w-auto">
+              <select
+                value={payFilterMethod}
+                onChange={(e) => setPayFilterMethod(e.target.value)}
+                className="h-10 px-3 bg-muted/40 border border-border rounded-xl text-xs font-semibold text-foreground focus:outline-hidden focus:border-emerald-500 cursor-pointer"
+              >
+                <option value="ALL">كافة طرق السداد</option>
+                <option value="BANK_TRANSFER">تحويل بنكي</option>
+                <option value="CHECK">شيك مصرفي</option>
+                <option value="CASH">نقدي من الخزينة</option>
+                <option value="ELECTRONIC">سداد إلكتروني</option>
+              </select>
+
+              <select
+                value={payFilterStatus}
+                onChange={(e) => setPayFilterStatus(e.target.value)}
+                className="h-10 px-3 bg-muted/40 border border-border rounded-xl text-xs font-semibold text-foreground focus:outline-hidden focus:border-emerald-500 cursor-pointer"
+              >
+                <option value="ALL">كافة الحالات</option>
+                <option value="COMPLETED">مسدد ومكتمل</option>
+                <option value="PROCESSING">قيد المراجعة والتحويل</option>
+                <option value="PENDING">معلق بانتظار الاعتماد</option>
+              </select>
+            </div>
+          </div>
+
+          {/* Table of Payments */}
+          <div className="glass-card rounded-2xl border border-border overflow-hidden shadow-xs">
+            <div className="overflow-x-auto">
+              <table className="w-full text-right text-xs">
+                <thead className="bg-muted/50 border-b border-border text-muted-foreground font-bold">
+                  <tr>
+                    <th className="p-3.5">الرقم المرجعي</th>
+                    <th className="p-3.5">المورد المستحق</th>
+                    <th className="p-3.5">العملية المرتبطة</th>
+                    <th className="p-3.5">المبلغ</th>
+                    <th className="p-3.5">طريقة السداد</th>
+                    <th className="p-3.5">تاريخ الاستحقاق</th>
+                    <th className="p-3.5">الحالة</th>
+                    <th className="p-3.5 text-center">الإجراءات</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border">
+                  {filteredPayments.length === 0 ? (
+                    <tr>
+                      <td colSpan={8} className="p-12 text-center text-muted-foreground">
+                        لا توجد سندات أو معاملات مالية مطابقة لمعايير البحث.
+                      </td>
+                    </tr>
+                  ) : (
+                    filteredPayments.map((p) => (
+                      <tr key={p.id} className="hover:bg-muted/30 transition-colors">
+                        <td className="p-3.5 font-mono font-bold text-foreground">
+                          <div className="flex items-center gap-1.5">
+                            <Receipt className="h-3.5 w-3.5 text-emerald-600" />
+                            <span>{p.referenceNumber}</span>
+                          </div>
+                        </td>
+
+                        <td className="p-3.5 font-bold text-foreground">
+                          <div className="truncate max-w-[200px]" title={p.supplierName}>
+                            {p.supplierName}
+                          </div>
+                          {p.notes && (
+                            <p className="text-[10px] text-muted-foreground font-normal truncate max-w-[200px]">
+                              {p.notes}
+                            </p>
+                          )}
+                        </td>
+
+                        <td className="p-3.5">
+                          <div className="flex items-center gap-1.5">
+                            <Badge
+                              variant="outline"
+                              className="border-blue-500/30 text-blue-600 dark:text-blue-400 font-mono text-[11px]"
+                            >
+                              {p.operationCode}
+                            </Badge>
+                            {p.operationName && (
+                              <span className="text-[11px] text-muted-foreground truncate max-w-[150px] hidden sm:inline">
+                                {p.operationName}
+                              </span>
+                            )}
+                          </div>
+                        </td>
+
+                        <td className="p-3.5 font-mono font-black text-foreground text-sm">
+                          {formatCurrency(p.amount)}
+                        </td>
+
+                        <td className="p-3.5">
+                          <div className="flex items-center gap-1 text-[11px] font-semibold text-muted-foreground">
+                            {p.paymentMethod === "BANK_TRANSFER" ? (
+                              <>
+                                <Landmark className="h-3.5 w-3.5 text-blue-600" />
+                                <span>تحويل ({p.bankName || "بنكي"})</span>
+                              </>
+                            ) : p.paymentMethod === "CHECK" ? (
+                              <>
+                                <FileText className="h-3.5 w-3.5 text-purple-600" />
+                                <span>شيك {p.checkNumber ? `#${p.checkNumber}` : ""}</span>
+                              </>
+                            ) : p.paymentMethod === "CASH" ? (
+                              <>
+                                <DollarSign className="h-3.5 w-3.5 text-emerald-600" />
+                                <span>نقدي بالخزينة</span>
+                              </>
+                            ) : (
+                              <>
+                                <CreditCard className="h-3.5 w-3.5 text-teal-600" />
+                                <span>سداد إلكتروني</span>
+                              </>
+                            )}
+                          </div>
+                        </td>
+
+                        <td className="p-3.5 font-mono text-muted-foreground">
+                          <div className="flex items-center gap-1">
+                            <Calendar className="h-3.5 w-3.5" />
+                            <span>{p.dueDate || p.date}</span>
+                          </div>
+                        </td>
+
+                        <td className="p-3.5">
+                          <div className="flex items-center gap-1.5">
+                            <Badge
+                              className={`text-[10px] font-bold ${
+                                p.status === "COMPLETED"
+                                  ? "bg-emerald-500/10 text-emerald-600 border border-emerald-500/20"
+                                  : p.status === "PROCESSING"
+                                  ? "bg-blue-500/10 text-blue-600 border border-blue-500/20"
+                                  : "bg-amber-500/10 text-amber-600 border border-amber-500/20"
+                              }`}
+                            >
+                              {p.status === "COMPLETED"
+                                ? "تم السداد"
+                                : p.status === "PROCESSING"
+                                ? "قيد التحويل"
+                                : "معلق"}
+                            </Badge>
+                          </div>
+                        </td>
+
+                        <td className="p-3.5 text-center">
+                          <div className="flex items-center justify-center gap-1">
+                            {p.status !== "COMPLETED" ? (
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => handleQuickStatusChange(p.id, "COMPLETED")}
+                                className="h-8 w-8 rounded-lg hover:bg-emerald-500/10 hover:text-emerald-600 cursor-pointer"
+                                title="تأكيد الصرف واعتماد السداد"
+                              >
+                                <Check className="h-4 w-4" />
+                              </Button>
+                            ) : (
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => handleQuickStatusChange(p.id, "PENDING")}
+                                className="h-8 w-8 rounded-lg hover:bg-amber-500/10 hover:text-amber-600 cursor-pointer"
+                                title="إعادة للتعليق"
+                              >
+                                <Clock className="h-4 w-4" />
+                              </Button>
+                            )}
+
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => handleOpenVoucher(p)}
+                              className="h-8 w-8 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground cursor-pointer"
+                              title="عرض وطباعة سند الصرف"
+                            >
+                              <Printer className="h-4 w-4" />
+                            </Button>
+
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => handleOpenEditPayment(p)}
+                              className="h-8 w-8 rounded-lg hover:bg-muted text-muted-foreground hover:text-amber-600 cursor-pointer"
+                              title="تعديل السند"
+                            >
+                              <Edit className="h-4 w-4" />
+                            </Button>
+
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => handleOpenDeletePayment(p)}
+                              className="h-8 w-8 rounded-lg hover:bg-rose-500/10 text-muted-foreground hover:text-rose-600 cursor-pointer"
+                              title="حذف السند"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+          TAB 3: تحليل التدفق النقدي ومراكز التكلفة
+      ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
+      {masterTab === "ANALYTICS" && (
+        <div className="space-y-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {/* Cash Flow Distribution */}
+            <div className="glass-card rounded-2xl p-5 border border-border space-y-4">
+              <div className="flex items-center justify-between">
+                <h3 className="font-extrabold text-foreground text-sm flex items-center gap-2">
+                  <PieChart className="h-4 w-4 text-emerald-600" />
+                  <span>توزيع التدفقات المالية للشركات</span>
+                </h3>
+                <Badge variant="outline" className="text-xs">
+                  مؤشر الربحية
+                </Badge>
+              </div>
+
+              <div className="space-y-3">
+                {["A", "B", "C", "D"].map((compCode) => {
+                  const compOps = operations.filter((o) => o.companyCode === compCode);
+                  const rev = compOps.reduce((s, o) => s + o.totalRevenue, 0);
+                  const cost = compOps.reduce((s, o) => s + o.totalCost, 0);
+                  const profit = rev - cost;
+                  const ratio = portfolioStats.totalRev > 0 ? (rev / portfolioStats.totalRev) * 100 : 0;
+
+                  return (
+                    <div key={compCode} className="p-3 bg-muted/30 rounded-xl border border-border/50 space-y-2">
+                      <div className="flex items-center justify-between text-xs font-bold">
+                        <span className="flex items-center gap-2">
+                          <span className="w-6 h-6 rounded-lg bg-emerald-500/15 text-emerald-600 flex items-center justify-center font-mono">
+                            {compCode}
+                          </span>
+                          <span>الشركة {compCode} ({compOps.length} عمليات)</span>
+                        </span>
+                        <span className="font-mono text-emerald-600">{formatCurrency(rev)}</span>
+                      </div>
+
+                      <div className="w-full bg-muted rounded-full h-2 overflow-hidden">
+                        <div
+                          className="bg-emerald-500 h-full rounded-full transition-all duration-500"
+                          style={{ width: `${Math.min(100, ratio)}%` }}
+                        />
+                      </div>
+
+                      <div className="flex items-center justify-between text-[11px] text-muted-foreground font-mono">
+                        <span>التكاليف: {formatCurrency(cost)}</span>
+                        <span className={profit >= 0 ? "text-emerald-600 font-bold" : "text-rose-600 font-bold"}>
+                          صافي الربح: {formatCurrency(profit)}
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Financial Health Summary */}
+            <div className="glass-card rounded-2xl p-5 border border-border space-y-4">
+              <div className="flex items-center justify-between">
+                <h3 className="font-extrabold text-foreground text-sm flex items-center gap-2">
+                  <ShieldCheck className="h-4 w-4 text-teal-600" />
+                  <span>مؤشرات السيولة والضمانات البنكية</span>
+                </h3>
+                <Badge variant="outline" className="text-xs text-teal-600 border-teal-500/30">
+                  آمن ومستقر
+                </Badge>
+              </div>
+
+              <div className="space-y-4 text-xs">
+                <div className="p-4 bg-muted/30 rounded-xl border border-border/50 space-y-2">
+                  <div className="flex justify-between font-bold">
+                    <span>نسبة تحصيل المستخلصات من إجمالي التعاقدات</span>
+                    <span className="font-mono text-blue-600">
+                      {portfolioStats.totalRev > 0
+                        ? Math.round((portfolioStats.totalCerts / portfolioStats.totalRev) * 100)
+                        : 0}%
+                    </span>
+                  </div>
+                  <div className="w-full bg-muted rounded-full h-2.5 overflow-hidden">
+                    <div
+                      className="bg-blue-600 h-full rounded-full"
+                      style={{
+                        width: `${portfolioStats.totalRev > 0 ? (portfolioStats.totalCerts / portfolioStats.totalRev) * 100 : 0}%`,
+                      }}
+                    />
+                  </div>
+                  <p className="text-[11px] text-muted-foreground">
+                    تم إصدار واعتماد مستخلصات بقيمة {formatCurrency(portfolioStats.totalCerts)} من أصل {formatCurrency(portfolioStats.totalRev)}
+                  </p>
+                </div>
+
+                <div className="p-4 bg-muted/30 rounded-xl border border-border/50 space-y-2">
+                  <div className="flex justify-between font-bold">
+                    <span>معدل هامش الربح المحقق لمحفظة المشروعات</span>
+                    <span className="font-mono text-emerald-600">%{portfolioStats.overallMargin}</span>
+                  </div>
+                  <div className="w-full bg-muted rounded-full h-2.5 overflow-hidden">
+                    <div
+                      className="bg-emerald-600 h-full rounded-full"
+                      style={{ width: `${Math.min(100, Math.max(0, portfolioStats.overallMargin * 2))}%` }}
+                    />
+                  </div>
+                  <p className="text-[11px] text-muted-foreground">
+                    متوسط الهامش يتجاوز المستهدف المالي للشركة المقدر بـ 20%
+                  </p>
+                </div>
+
+                <div className="p-4 bg-purple-500/5 rounded-xl border border-purple-500/20 flex items-center justify-between">
+                  <div className="space-y-0.5">
+                    <span className="font-bold text-foreground">إجمالي خطابات الضمان المحتجزة</span>
+                    <p className="text-[11px] text-muted-foreground">تغطي الضمانات الابتدائية والنهائية لدى البنوك</p>
+                  </div>
+                  <span className="font-mono font-black text-purple-600 text-sm">
+                    {formatCurrency(portfolioStats.totalGuarantees)}
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+          MODAL: تفاصيل الملف المالي الكامل للعملية (Operation Financial Dossier)
+      ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
+      {mounted && opDossierModalOpen && selectedOp && createPortal(
+        <div className="fixed inset-0 z-[9999] bg-black/80 backdrop-blur-sm flex items-center justify-center p-3 sm:p-5 overflow-y-auto animate-fade-in" style={{ direction: 'rtl' }}>
+          <div className="relative w-full max-w-2xl bg-card dark:bg-[#0c1427] rounded-3xl border border-border shadow-2xl flex flex-col max-h-[calc(100vh-3rem)] overflow-hidden animate-scale-up my-auto">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between px-5 sm:px-6 py-4 border-b border-border bg-card dark:bg-[#0c1427] shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-emerald-500/10 text-emerald-600 flex items-center justify-center shrink-0">
+                  <Landmark className="h-5 w-5" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-base sm:text-lg font-bold text-foreground">الملف المالي للعملية</h3>
+                    <Badge variant="outline" className="font-mono text-emerald-600 border-emerald-500/30">
+                      {selectedOp.code}
+                    </Badge>
+                  </div>
+                  <p className="text-xs text-muted-foreground line-clamp-1">{selectedOp.name}</p>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setOpDossierModalOpen(false)}
+                className="text-muted-foreground hover:text-foreground cursor-pointer p-1.5 rounded-xl hover:bg-muted transition-colors"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="flex-1 overflow-y-auto px-5 sm:px-6 py-5 space-y-5 text-xs">
+              {/* Operation Details Banner */}
+              <div className="p-4 bg-muted/40 rounded-2xl border border-border space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-muted-foreground">الجهة المالكة للطرح:</span>
+                  <span className="font-extrabold text-foreground">{selectedOp.authority}</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-muted-foreground">الشركة المنفذة التابعة:</span>
+                  <span className="font-bold text-foreground">{selectedOp.companyName}</span>
+                </div>
+                {selectedOp.notes && (
+                  <div className="pt-2 border-t border-border/50 text-muted-foreground">
+                    <span className="font-bold text-foreground block mb-0.5">ملاحظات الإدارة المالية:</span>
+                    <p>{selectedOp.notes}</p>
+                  </div>
+                )}
+              </div>
+
+              {/* Financial Matrix Breakdown */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                <div className="p-3 bg-emerald-500/5 border border-emerald-500/20 rounded-xl">
+                  <span className="text-[10px] text-muted-foreground block font-bold">قيمة التعاقد</span>
+                  <span className="font-mono font-black text-emerald-600 text-sm mt-1 block">
+                    {formatCurrency(selectedOp.totalRevenue)}
+                  </span>
+                </div>
+
+                <div className="p-3 bg-rose-500/5 border border-rose-500/20 rounded-xl">
+                  <span className="text-[10px] text-muted-foreground block font-bold">التكلفة الفعلية</span>
+                  <span className="font-mono font-black text-rose-600 text-sm mt-1 block">
+                    {formatCurrency(selectedOp.totalCost)}
+                  </span>
+                </div>
+
+                <div className="p-3 bg-teal-500/5 border border-teal-500/20 rounded-xl">
+                  <span className="text-[10px] text-muted-foreground block font-bold">صافي الربح</span>
+                  <span className={`font-mono font-black text-sm mt-1 block ${selectedOp.netProfit >= 0 ? "text-teal-600" : "text-rose-600"}`}>
+                    {formatCurrency(selectedOp.netProfit)}
+                  </span>
+                </div>
+
+                <div className="p-3 bg-blue-500/5 border border-blue-500/20 rounded-xl">
+                  <span className="text-[10px] text-muted-foreground block font-bold">هامش الربح</span>
+                  <span className="font-mono font-black text-blue-600 text-sm mt-1 block">
+                    %{selectedOp.profitMargin}
+                  </span>
+                </div>
+              </div>
+
+              {/* Progress Bar */}
+              <div className="space-y-1.5 p-3.5 bg-muted/20 rounded-xl border border-border">
+                <div className="flex items-center justify-between font-bold text-[11px]">
+                  <span>نسبة استهلاك الميزانية المعتمدة:</span>
+                  <span className="font-mono">
+                    {selectedOp.totalRevenue > 0
+                      ? Math.round((selectedOp.totalCost / selectedOp.totalRevenue) * 100)
+                      : 0}%
+                  </span>
+                </div>
+                <div className="w-full bg-muted rounded-full h-3 overflow-hidden border border-border/60">
+                  <div
+                    className={`h-full rounded-full transition-all duration-500 ${
+                      selectedOp.totalCost > selectedOp.totalRevenue
+                        ? "bg-rose-500"
+                        : "bg-emerald-500"
+                    }`}
+                    style={{
+                      width: `${selectedOp.totalRevenue > 0 ? Math.min(100, (selectedOp.totalCost / selectedOp.totalRevenue) * 100) : 0}%`,
+                    }}
+                  />
+                </div>
+              </div>
+
+              {/* Secondary Details: Certificates & Guarantees */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="p-3.5 bg-muted/30 rounded-xl border border-border space-y-1">
+                  <div className="flex items-center justify-between font-bold text-foreground">
+                    <span className="flex items-center gap-1.5">
+                      <FileText className="h-4 w-4 text-blue-600" />
+                      <span>المستخلصات المصدرة</span>
+                    </span>
+                    <Badge variant="outline" className="font-mono text-[10px]">
+                      {selectedOp.certificatesCount} مستخلص
+                    </Badge>
+                  </div>
+                  <p className="font-mono font-bold text-blue-600 text-sm">
+                    {formatCurrency(selectedOp.certificatesTotal)}
+                  </p>
+                  <p className="text-[10px] text-muted-foreground">
+                    مستحقات قيد التحصيل: {formatCurrency(Math.max(0, selectedOp.totalRevenue - selectedOp.certificatesTotal))}
+                  </p>
+                </div>
+
+                <div className="p-3.5 bg-muted/30 rounded-xl border border-border space-y-1">
+                  <div className="flex items-center justify-between font-bold text-foreground">
+                    <span className="flex items-center gap-1.5">
+                      <ShieldCheck className="h-4 w-4 text-purple-600" />
+                      <span>خطابات الضمان البنكية</span>
+                    </span>
+                    <Badge variant="outline" className="font-mono text-[10px]">
+                      {selectedOp.guaranteesCount} خطاب
+                    </Badge>
+                  </div>
+                  <p className="font-mono font-bold text-purple-600 text-sm">
+                    {formatCurrency(selectedOp.guaranteesTotal)}
+                  </p>
+                  <p className="text-[10px] text-muted-foreground">محتجزة بالبنوك حتى انتهاء فترة الضمان والاستلام</p>
+                </div>
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="px-5 sm:px-6 py-3.5 border-t border-border bg-muted/40 flex items-center justify-between shrink-0">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setOpDossierModalOpen(false)}
+                className="text-xs border-border cursor-pointer"
+              >
+                إغلاق
+              </Button>
+
+              <Link
+                href={`/dashboard/operations/${selectedOp.id}?tab=finance`}
+                className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs px-4 py-2 rounded-xl flex items-center gap-1.5 transition-all shadow-xs"
+              >
+                <span>الانتقال لشاشة مالية العملية</span>
+                <ArrowRight className="h-3.5 w-3.5" />
+              </Link>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+          MODAL: إضافة سند صرف مالي (Create Payment)
       ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
       {mounted && createModalOpen && createPortal(
         <div className="fixed inset-0 z-[9999] bg-black/80 backdrop-blur-sm flex items-center justify-center p-3 sm:p-5 overflow-y-auto animate-fade-in" style={{ direction: 'rtl' }}>
           <div className="relative w-full max-w-xl bg-card dark:bg-[#0c1427] rounded-3xl border border-border shadow-2xl flex flex-col max-h-[calc(100vh-3rem)] overflow-hidden animate-scale-up my-auto">
             <div className="flex items-center justify-between px-5 sm:px-6 py-4 border-b border-border bg-card dark:bg-[#0c1427] shrink-0">
               <div className="flex items-center gap-2.5">
-                <div className="w-10 h-10 rounded-xl bg-emerald-600/10 text-emerald-600 flex items-center justify-center shrink-0">
-                  <Wallet className="h-5 w-5" />
+                <div className="w-10 h-10 rounded-xl bg-emerald-500/10 text-emerald-600 flex items-center justify-center shrink-0">
+                  <Plus className="h-5 w-5" />
                 </div>
                 <div>
                   <h3 className="text-base sm:text-lg font-bold text-foreground">تسجيل سند صرف مالي جديد</h3>
-                  <p className="text-xs text-muted-foreground">توثيق دفعة للموردين أو مقاولي الباطن</p>
+                  <p className="text-xs text-muted-foreground">إصدار إذن دفع لمورد أو مقاول أو مستحقات عملية</p>
                 </div>
               </div>
               <button
@@ -724,55 +1727,45 @@ export default function PaymentsPage() {
                   </div>
 
                   <div>
-                    <label className="block font-bold text-foreground mb-1">كود العملية المرتبطة *</label>
+                    <label className="block font-bold text-foreground mb-1">كود العملية *</label>
                     <Input
                       required
-                      placeholder="مثال: A15 أو B08"
                       value={formOpCode}
                       onChange={(e) => setFormOpCode(e.target.value)}
+                      placeholder="مثال: A15"
                       className="bg-muted/40 border-border text-foreground font-mono focus:border-emerald-500 rounded-xl h-9"
                     />
                   </div>
 
                   <div className="sm:col-span-2">
-                    <label className="block font-bold text-foreground mb-1">اسم المورد أو المستفيد *</label>
+                    <label className="block font-bold text-foreground mb-1">اسم المورد / المستفيد *</label>
                     <Input
                       required
-                      placeholder="مثال: شركة النيل للتوريدات الكهربائية"
                       value={formSupplier}
                       onChange={(e) => setFormSupplier(e.target.value)}
-                      className="bg-muted/40 border-border text-foreground placeholder:text-muted-foreground focus:border-emerald-500 rounded-xl h-9"
-                    />
-                  </div>
-
-                  <div className="sm:col-span-2">
-                    <label className="block font-bold text-foreground mb-1">اسم العملية / موضوع المناقصة</label>
-                    <Input
-                      placeholder="مثال: توريد وتركيب كابلات ومحولات الجهد المتوسط"
-                      value={formOpName}
-                      onChange={(e) => setFormOpName(e.target.value)}
-                      className="bg-muted/40 border-border text-foreground placeholder:text-muted-foreground focus:border-emerald-500 rounded-xl h-9"
+                      placeholder="اسم المورد أو الشركة المستحقة..."
+                      className="bg-muted/40 border-border text-foreground focus:border-emerald-500 rounded-xl h-9"
                     />
                   </div>
 
                   <div>
-                    <label className="block font-bold text-foreground mb-1">قيمة المبلغ المصروف (ج.م) *</label>
+                    <label className="block font-bold text-foreground mb-1">المبلغ (ج.م) *</label>
                     <Input
                       type="number"
                       required
-                      placeholder="150000"
                       value={formAmount}
                       onChange={(e) => setFormAmount(e.target.value)}
+                      placeholder="0.00"
                       className="bg-muted/40 border-border text-foreground font-mono font-bold text-sm focus:border-emerald-500 rounded-xl h-9"
                     />
                   </div>
 
                   <div>
-                    <label className="block font-bold text-foreground mb-1">طريقة السداد *</label>
+                    <label className="block font-bold text-foreground mb-1">طريقة السداد</label>
                     <select
                       value={formMethod}
                       onChange={(e) => setFormMethod(e.target.value as any)}
-                      className="w-full h-9 px-3 bg-muted/40 border border-border rounded-xl text-foreground font-semibold focus:outline-hidden focus:border-emerald-500"
+                      className="w-full h-9 px-3 bg-muted/40 border border-border rounded-xl text-foreground font-semibold focus:outline-hidden focus:border-emerald-500 cursor-pointer"
                     >
                       <option value="BANK_TRANSFER">تحويل بنكي</option>
                       <option value="CHECK">شيك بنكي</option>
@@ -781,32 +1774,28 @@ export default function PaymentsPage() {
                     </select>
                   </div>
 
-                  {(formMethod === "BANK_TRANSFER" || formMethod === "CHECK") && (
-                    <div>
-                      <label className="block font-bold text-foreground mb-1">اسم البنك المصدر</label>
-                      <Input
-                        placeholder="البنك الأهلي المصري"
-                        value={formBankName}
-                        onChange={(e) => setFormBankName(e.target.value)}
-                        className="bg-muted/40 border-border text-foreground focus:border-emerald-500 rounded-xl h-9"
-                      />
-                    </div>
-                  )}
-
-                  {formMethod === "CHECK" && (
-                    <div>
-                      <label className="block font-bold text-foreground mb-1">رقم الشيك المصرفي</label>
-                      <Input
-                        placeholder="CHK-009842"
-                        value={formCheckNumber}
-                        onChange={(e) => setFormCheckNumber(e.target.value)}
-                        className="bg-muted/40 border-border text-foreground font-mono focus:border-emerald-500 rounded-xl h-9"
-                      />
-                    </div>
-                  )}
+                  <div>
+                    <label className="block font-bold text-foreground mb-1">البنك المسحوب عليه</label>
+                    <Input
+                      value={formBankName}
+                      onChange={(e) => setFormBankName(e.target.value)}
+                      placeholder="البنك الأهلي المصري"
+                      className="bg-muted/40 border-border text-foreground focus:border-emerald-500 rounded-xl h-9"
+                    />
+                  </div>
 
                   <div>
-                    <label className="block font-bold text-foreground mb-1">تاريخ السند / الصرف</label>
+                    <label className="block font-bold text-foreground mb-1">رقم الشيك / التحويل</label>
+                    <Input
+                      value={formCheckNumber}
+                      onChange={(e) => setFormCheckNumber(e.target.value)}
+                      placeholder="اختياري"
+                      className="bg-muted/40 border-border text-foreground font-mono focus:border-emerald-500 rounded-xl h-9"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block font-bold text-foreground mb-1">تاريخ السند</label>
                     <Input
                       type="date"
                       value={formDate}
@@ -816,11 +1805,11 @@ export default function PaymentsPage() {
                   </div>
 
                   <div>
-                    <label className="block font-bold text-foreground mb-1">حالة السداد</label>
+                    <label className="block font-bold text-foreground mb-1">حالة السند</label>
                     <select
                       value={formStatus}
                       onChange={(e) => setFormStatus(e.target.value as any)}
-                      className="w-full h-9 px-3 bg-muted/40 border border-border rounded-xl text-foreground font-semibold focus:outline-hidden focus:border-emerald-500"
+                      className="w-full h-9 px-3 bg-muted/40 border border-border rounded-xl text-foreground font-semibold focus:outline-hidden focus:border-emerald-500 cursor-pointer"
                     >
                       <option value="COMPLETED">مسدد ومكتمل</option>
                       <option value="PROCESSING">قيد المراجعة والتحويل</option>
@@ -829,21 +1818,11 @@ export default function PaymentsPage() {
                   </div>
 
                   <div className="sm:col-span-2">
-                    <label className="block font-bold text-foreground mb-1">رقم الإيصال / إشعار التحويل البنكي</label>
+                    <label className="block font-bold text-foreground mb-1">ملاحظات وبيان الصرف</label>
                     <Input
-                      placeholder="BNK-EG-99321"
-                      value={formReceiptNumber}
-                      onChange={(e) => setFormReceiptNumber(e.target.value)}
-                      className="bg-muted/40 border-border text-foreground font-mono focus:border-emerald-500 rounded-xl h-9"
-                    />
-                  </div>
-
-                  <div className="sm:col-span-2">
-                    <label className="block font-bold text-foreground mb-1">ملاحظات السند المالي</label>
-                    <Input
-                      placeholder="دفعة مقدمة 50% أو مستخلص نهائي..."
                       value={formNotes}
                       onChange={(e) => setFormNotes(e.target.value)}
+                      placeholder="دفعة خامات أو مصاريف تشغيل..."
                       className="bg-muted/40 border-border text-foreground focus:border-emerald-500 rounded-xl h-9"
                     />
                   </div>
@@ -1034,7 +2013,6 @@ export default function PaymentsPage() {
             </div>
 
             <div className="flex-1 overflow-y-auto px-5 sm:px-6 py-4">
-              {/* Official Printable Layout */}
               <div className="p-6 bg-card border-2 border-border/80 rounded-2xl space-y-5 text-foreground print:m-0 print:border-none shadow-sm">
                 <div className="flex items-start justify-between border-b pb-4">
                   <div>
@@ -1092,7 +2070,6 @@ export default function PaymentsPage() {
                   )}
                 </div>
 
-                {/* Signatures */}
                 <div className="grid grid-cols-3 gap-4 pt-6 border-t text-center text-xs">
                   <div>
                     <span className="text-muted-foreground block mb-8">إعداد الحسابات</span>

@@ -5,8 +5,9 @@ import { createPortal } from "react-dom";
 import {
   ClipboardCheck, Plus, Search, MapPin, Calendar, User,
   CheckCircle2, Clock, AlertTriangle, Building2, ChevronLeft,
-  X, Edit, Trash2, Eye, Printer, Download, Check, DollarSign,
-  FileText, Shield, Sparkles, Navigation, Layers, RefreshCw
+  X, Edit, Trash2, Eye, Download, Check, DollarSign,
+  FileText, Shield, Sparkles, Navigation, Layers, RefreshCw,
+  HardHat, Users, CheckCircle, AlertOctagon, Ruler, ArrowRight
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -22,94 +23,139 @@ export interface SiteVisitRecord {
   employeeName: string;
   employeeId?: string;
   operationCode: string;
+  operationName?: string;
   visitDate: string;
   status: "SCHEDULED" | "IN_PROGRESS" | "COMPLETED" | "CANCELLED";
+  siteReadiness: "READY" | "CONDITIONAL" | "BLOCKED" | "SURVEY_ONLY";
+  committeeMembers?: string;
   purpose?: string;
   findings?: string;
+  obstacles?: string;
+  safetyPermits?: string;
   expenses: number;
   isPaid: boolean;
   notes?: string;
-  reportNumber?: string;
+  reportNumber: string;
 }
 
 const INITIAL_VISITS: SiteVisitRecord[] = [
   {
     id: "v1",
-    title: "معاينة موقع تنفيذ شبكة الألياف الضوئية وغرف التحكم",
+    title: "معاينة مسارات شبكة كابلات الجهد المتوسط وغرف المحولات",
     authority: "هيئة المجتمعات العمرانية الجديدة",
-    location: "العاصمة الإدارية الجديدة — الحي الحكومي مبنى B4",
+    location: "العاصمة الإدارية الجديدة — الحي الحكومي، مبنى B4 ومحيط محطة التوزيع",
     employeeName: "م. أحمد الشريف",
     operationCode: "A15",
+    operationName: "توريد وتركيب شبكة كابلات محولات الجهد المتوسط",
     visitDate: "2026-10-03",
     status: "SCHEDULED",
-    purpose: "فحص مسارات الكابلات الأرضية ومطابقتها مع المخططات وكراسة الشروط",
-    findings: "الموقع جاهز لمد المسارات، يلزم التنسيق مع مقاول الأعمال المدنية.",
+    siteReadiness: "READY",
+    committeeMembers: "م. أحمد الشريف (مهندس الموقع)، م. سامح فوزي (استشاري الكهرباء)، فني المساحة",
+    purpose: "فحص مسارات الحفر ومد الكابلات ومطابقتها مع المخططات المعتمدة وكراسة الشروط",
+    findings: "الموقع جاهز تماماً لبدء مد المسارات، غرف المحولات خالية من أي مخلفات وجاهزة للأعمال الكهروميكانيكية.",
+    obstacles: "لا توجد معوقات جوهرية، يلزم فقط التنسيق المسبق مع مقاول الأعمال المدنية قبل الدخول بالمعدات الثقيلة.",
+    safetyPermits: "تم استخراج تصاريح الدخول الأمنية وتصاريح العمل الساخن وتوفير مهمات الوقاية PPE.",
     expenses: 450,
     isPaid: true,
     reportNumber: "VIS-2026-081",
-    notes: "تم استلام تصاريح الدخول الأمنية للموقع",
+    notes: "تم استلام مفاتيح غرف الكهرباء وإشعار جهة الإشراف بالبدء",
   },
   {
     id: "v2",
-    title: "حضور جلسة الاستفسارات والمظاريف الفنية التمهيدية",
+    title: "حضور جلسة الاستفسارات وفحص غرف السنترالات ومسارات الفايبر",
     authority: "وزارة الاتصالات وتكنولوجيا المعلومات",
-    location: "القرية الذكية — مبنى الوزارة الرئيسي B12",
+    location: "القرية الذكية — مبنى الوزارة الرئيسي B12 وقاعة المؤتمرات",
     employeeName: "أ. محمود عبد الرحمن",
     operationCode: "B08",
+    operationName: "إحلال وتجديد كابلات الفايبر والسنترالات",
     visitDate: "2026-10-02",
     status: "IN_PROGRESS",
-    purpose: "تسليم خطاب الاستفسارات الرسمي وحضور جلسة الإيضاحات طبقاً للمادة 20",
-    findings: "أفادت اللجنة بأنه سيتم نشر ملحق تعديل بنود المواصفات غداً.",
+    siteReadiness: "CONDITIONAL",
+    committeeMembers: "أ. محمود عبد الرحمن (مسؤول المناقصات)، م. خالد وجدي (مهندس شبكات)، مندوب الشؤون الإدارية",
+    purpose: "تسليم خطاب الاستفسارات الرسمي ومعاينة غرف تجميع كابلات الألياف الضوئية",
+    findings: "تمت المعاينة وملاحظة وجود كابلات قديمة تحتاج إزالة سريعة، وأفادت اللجنة بنشر ملحق فني لتعديل أطوال الكابلات.",
+    obstacles: "وجود كابلات شبكات قديمة تعيق مد المسارات الجديدة، بانتظار كتاب الإخلاء من الوزارة.",
+    safetyPermits: "تصاريح دخول القرية الذكية سارية المفعول حتى نهاية شهر أكتوبر.",
     expenses: 250,
     isPaid: false,
     reportNumber: "VIS-2026-080",
-    notes: "بانتظار رد الجهة الإدارية المكتوب",
+    notes: "بانتظار رد الجهة الإدارية المكتوب والمحضر المعتمد",
   },
   {
     id: "v3",
-    title: "فحص واختبار عينات الكابلات والمحولات بمستودعات الهيئة",
+    title: "فحص واختبار عينات معامل الحاسب ومطابقة قاعات التدريب",
     authority: "الهيئة العامة للأبنية التعليمية",
-    location: "مخازن الهيئة المركزية — مدينة نصر",
+    location: "مخازن ومعامل الهيئة المركزية — مجمع مدينة نصر",
     employeeName: "م. كريم صلاح",
     operationCode: "C04",
+    operationName: "تجهيز وتأثيث معامل الحاسب الآلي وغرف الخوادم",
     visitDate: "2026-09-29",
     status: "COMPLETED",
-    purpose: "سحب عينات الفحص المعملي ومطابقة شهادات الاختبار والمواصفات الفنية",
-    findings: "تم اجتياز اختبارات العزل والجهد بنجاح واعتماد محضر الفحص الفني.",
+    siteReadiness: "READY",
+    committeeMembers: "م. كريم صلاح (مهندس نظم)، رئيس لجنة الفحص والبت الفني بالهيئة، ومسؤول التوريدات",
+    purpose: "سحب عينات الفحص المعملي ومطابقة أجهزة الخوادم والشاشات مع كراسة المواصفات",
+    findings: "اجتازت جميع العينات اختبارات الجهد والأداء بنجاح، وتم اعتماد محضر الفحص الفني الأولي بدون أي تحفظات.",
+    obstacles: "لا توجد معوقات، القاعات مجهزة ومكيفة وجاهزة لاستقبال الشحنة الأولى.",
+    safetyPermits: "مستوفاة بالكامل ومعتمدة من قطاع السلامة والصحة المهنية بالهيئة.",
     expenses: 600,
     isPaid: true,
     reportNumber: "VIS-2026-079",
-    notes: "تم توقيع محضر الفحص الفني بحضور أعضاء لجنة البت الفني",
+    notes: "تم توقيع محضر الفحص الفني الرسمي من كافة أعضاء اللجنة",
   },
   {
     id: "v4",
-    title: "معاينة مباني المدارس ومسارات شبكات الإطفاء والإنذار",
+    title: "معاينة مباني المدارس ورفع مقاسات لوحات وشبكات الإنذار",
     authority: "مديرية التربية والتعليم بالجيزة",
-    location: "إدارة 6 أكتوبر التعليمية — مجمع المدارس التجريبية",
+    location: "إدارة 6 أكتوبر التعليمية — مجمع المدارس التجريبية المتميزة",
     employeeName: "م. حسام الدين نبيل",
     operationCode: "A12",
+    operationName: "توريد وتركيب منظومة كاميرات المراقبة وغرفة التحكم",
     visitDate: "2026-09-22",
     status: "COMPLETED",
-    purpose: "رفع المقاسات الواقعية لمواقع لوحات الإنذار وخطوط الإطفاء",
-    findings: "وجود اختلاف طفيف بالمقاسات وتم تدوين التعديل لتقديمه بالعرض الفني.",
+    siteReadiness: "CONDITIONAL",
+    committeeMembers: "م. حسام الدين نبيل (مهندس إلكترونيات)، مدير الصيانة بالإدارة التعليمية، أخصائي السلامة",
+    purpose: "رفع المقاسات الواقعية لمواقع كاميرات المراقبة ولوحات التحكم وخطوط التغذية",
+    findings: "وجود اختلاف طفيف في مسافات الأسلاك بين المخطط والواقع الميداني، وتم تدوين التعديل لإدراجه بالعرض الفني.",
+    obstacles: "بعض الحوائط تتطلب أعمال تكسير وتثبيت مجارٍ خاصة بالكابلات لحمايتها من العبث.",
+    safetyPermits: "تم التنسيق مع إدارة أمن المنشآت التعليمية والحصول على إذن العمل الميداني.",
     expenses: 350,
     isPaid: true,
     reportNumber: "VIS-2026-078",
-    notes: "معاينة نافية للجهالة طبقاً لكراسة الشروط",
+    notes: "معاينة نافية للجهالة وموقعة من مندوب الإدارة التعليمية",
+  },
+  {
+    id: "v5",
+    title: "معاينة أسطح مباني المجمع وقياس مناسيب العزل",
+    authority: "جهاز مدينة 6 أكتوبر",
+    location: "مباني مجمع الخدمات المركزية — المحور المركزي",
+    employeeName: "م. تامر الشاذلي",
+    operationCode: "D05",
+    operationName: "أعمال العزل الحراري والمائي لمباني الخدمات المركزية",
+    visitDate: "2026-10-10",
+    status: "IN_PROGRESS",
+    siteReadiness: "BLOCKED",
+    committeeMembers: "م. تامر الشاذلي (مهندس مدني)، مهندس جهاز المدينة المشرف، مقاول الأعمال السابقة",
+    purpose: "معاينة نظافة الأسطح ومناسيب ميول صرف مياه الأمطار قبل بدء تطبيق طبقات العزل",
+    findings: "لوحظ وجود ركود في مياه الأمطار وعدم اكتمال مزاريب الصرف المنفذة من المقاول السابق، مما يمنع فرد العزل حالياً.",
+    obstacles: "وجود تراكم مياه ورواسب خرسانية تستوجب كشط السطح وضبط الميول أولاً قبل تنفيذ بنود العزل.",
+    safetyPermits: "سقالات الموقع تحتاج تثبيت إضافي طبقاً لاشتراطات السلامة للعمل على ارتفاعات.",
+    expenses: 300,
+    isPaid: false,
+    reportNumber: "VIS-2026-082",
+    notes: "تم إخطار جهاز المدينة رسمياً بضرورة إزالة المعوقات قبل بدء توريد الخامات",
   },
 ];
 
 export default function VisitsPage() {
+  const [mounted, setMounted] = useState(false);
   const [visits, setVisits] = useState<SiteVisitRecord[]>(INITIAL_VISITS);
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState("");
+  const [filterReadiness, setFilterReadiness] = useState("ALL");
   const [filterStatus, setFilterStatus] = useState("ALL");
+  const [viewMode, setViewMode] = useState<"CARDS" | "TABLE">("CARDS");
 
   // Modals state
-  const [mounted, setMounted] = useState(false);
-  useEffect(() => {
-    setMounted(true);
-  }, []);
   const [createModalOpen, setCreateModalOpen] = useState(false);
   const [editModalOpen, setEditModalOpen] = useState(false);
   const [dossierModalOpen, setDossierModalOpen] = useState(false);
@@ -122,43 +168,66 @@ export default function VisitsPage() {
   const [formLocation, setFormLocation] = useState("");
   const [formEmployee, setFormEmployee] = useState("");
   const [formOpCode, setFormOpCode] = useState("A15");
+  const [formOpName, setFormOpName] = useState("");
   const [formDate, setFormDate] = useState(new Date().toISOString().split("T")[0]);
   const [formStatus, setFormStatus] = useState<"SCHEDULED" | "IN_PROGRESS" | "COMPLETED" | "CANCELLED">("SCHEDULED");
+  const [formSiteReadiness, setFormSiteReadiness] = useState<"READY" | "CONDITIONAL" | "BLOCKED" | "SURVEY_ONLY">("READY");
+  const [formCommittee, setFormCommittee] = useState("");
   const [formPurpose, setFormPurpose] = useState("");
   const [formFindings, setFormFindings] = useState("");
+  const [formObstacles, setFormObstacles] = useState("");
+  const [formSafetyPermits, setFormSafetyPermits] = useState("");
   const [formExpenses, setFormExpenses] = useState("0");
   const [formIsPaid, setFormIsPaid] = useState(false);
   const [formNotes, setFormNotes] = useState("");
   const [formReportNumber, setFormReportNumber] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
-  // Fetch from backend (fallback to initial if empty)
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  // Fetch from backend
   const fetchVisits = async () => {
     try {
       setLoading(true);
       const res = await api.get("/employees/visits");
       if (res.data && Array.isArray(res.data) && res.data.length > 0) {
-        const mapped: SiteVisitRecord[] = res.data.map((v: any) => ({
-          id: v.id,
-          title: v.purpose || "معاينة وزيارة موقع",
-          authority: v.notes?.includes("authority:") ? v.notes.split("authority:")[1]?.split(";")[0] : "الجهة الحكومية",
-          location: v.location || "الموقع الميداني",
-          employeeName: v.employee?.name || "الموظف المسؤول",
-          employeeId: v.employeeId,
-          operationCode: v.operationId || "A15",
-          visitDate: v.visitDate ? v.visitDate.split("T")[0] : new Date().toISOString().split("T")[0],
-          status: "COMPLETED",
-          purpose: v.purpose || "",
-          findings: "",
-          expenses: Number(v.expenses) || 0,
-          isPaid: v.isPaid || false,
-          notes: v.notes || "",
-          reportNumber: `VIS-${v.id.substring(0, 6)}`,
-        }));
+        const mapped: SiteVisitRecord[] = res.data.map((v: any) => {
+          let extra: any = {};
+          if (v.notes && v.notes.includes("{")) {
+            try {
+              extra = JSON.parse(v.notes);
+            } catch {}
+          }
+
+          return {
+            id: v.id,
+            title: v.purpose || "معاينة وزيارة موقع",
+            authority: extra.authority || (v.notes?.includes("authority:") ? v.notes.split("authority:")[1]?.split(";")[0] : "الجهة الحكومية"),
+            location: v.location || "الموقع الميداني",
+            employeeName: v.employee?.name || "الموظف المسؤول",
+            employeeId: v.employeeId,
+            operationCode: v.operationId || "A15",
+            operationName: extra.operationName || undefined,
+            visitDate: v.visitDate ? v.visitDate.split("T")[0] : new Date().toISOString().split("T")[0],
+            status: "COMPLETED",
+            siteReadiness: extra.siteReadiness || "READY",
+            committeeMembers: extra.committeeMembers || undefined,
+            purpose: v.purpose || "",
+            findings: extra.findings || "",
+            obstacles: extra.obstacles || undefined,
+            safetyPermits: extra.safetyPermits || undefined,
+            expenses: Number(v.expenses) || 0,
+            isPaid: v.isPaid || false,
+            notes: v.notes || "",
+            reportNumber: `VIS-${new Date().getFullYear()}-${v.id.substring(0, 4)}`,
+          };
+        });
         setVisits(mapped);
       }
     } catch {
-      // Keep state
+      // Keep rich demo visits
     } finally {
       setLoading(false);
     }
@@ -168,6 +237,40 @@ export default function VisitsPage() {
     fetchVisits();
   }, []);
 
+  // Format currency
+  const formatCurrency = (n: number) =>
+    new Intl.NumberFormat("ar-EG", { style: "currency", currency: "EGP", maximumFractionDigits: 0 }).format(n);
+
+  // KPIs
+  const stats = useMemo(() => {
+    const total = visits.length;
+    const ready = visits.filter((v) => v.siteReadiness === "READY").length;
+    const readyPercent = total > 0 ? Math.round((ready / total) * 100) : 0;
+    const scheduled = visits.filter((v) => v.status === "SCHEDULED" || v.status === "IN_PROGRESS").length;
+    const totalExpenses = visits.reduce((acc, v) => acc + (v.expenses || 0), 0);
+    const paidExpenses = visits.filter((v) => v.isPaid).reduce((acc, v) => acc + (v.expenses || 0), 0);
+
+    return { total, ready, readyPercent, scheduled, totalExpenses, paidExpenses };
+  }, [visits]);
+
+  // Filtered visits
+  const filtered = useMemo(() => {
+    return visits.filter((v) => {
+      const matchSearch =
+        v.title.toLowerCase().includes(search.toLowerCase()) ||
+        v.authority.toLowerCase().includes(search.toLowerCase()) ||
+        v.location.toLowerCase().includes(search.toLowerCase()) ||
+        v.employeeName.toLowerCase().includes(search.toLowerCase()) ||
+        v.operationCode.toLowerCase().includes(search.toLowerCase()) ||
+        v.reportNumber.toLowerCase().includes(search.toLowerCase());
+
+      const matchStatus = filterStatus === "ALL" || v.status === filterStatus;
+      const matchReadiness = filterReadiness === "ALL" || v.siteReadiness === filterReadiness;
+
+      return matchSearch && matchStatus && matchReadiness;
+    });
+  }, [visits, search, filterStatus, filterReadiness]);
+
   // Reset form
   const resetForm = () => {
     setFormTitle("");
@@ -175,10 +278,15 @@ export default function VisitsPage() {
     setFormLocation("");
     setFormEmployee("");
     setFormOpCode("A15");
+    setFormOpName("");
     setFormDate(new Date().toISOString().split("T")[0]);
     setFormStatus("SCHEDULED");
+    setFormSiteReadiness("READY");
+    setFormCommittee("");
     setFormPurpose("");
     setFormFindings("");
+    setFormObstacles("");
+    setFormSafetyPermits("");
     setFormExpenses("0");
     setFormIsPaid(false);
     setFormNotes("");
@@ -200,18 +308,23 @@ export default function VisitsPage() {
     setFormLocation(v.location);
     setFormEmployee(v.employeeName);
     setFormOpCode(v.operationCode);
+    setFormOpName(v.operationName || "");
     setFormDate(v.visitDate);
     setFormStatus(v.status);
+    setFormSiteReadiness(v.siteReadiness);
+    setFormCommittee(v.committeeMembers || "");
     setFormPurpose(v.purpose || "");
     setFormFindings(v.findings || "");
+    setFormObstacles(v.obstacles || "");
+    setFormSafetyPermits(v.safetyPermits || "");
     setFormExpenses(String(v.expenses || 0));
     setFormIsPaid(v.isPaid);
     setFormNotes(v.notes || "");
-    setFormReportNumber(v.reportNumber || "");
+    setFormReportNumber(v.reportNumber);
     setEditModalOpen(true);
   };
 
-  // Open Dossier / Printable Minutes
+  // Open Dossier / View Details (NO PRINT BUTTON)
   const handleOpenDossier = (v: SiteVisitRecord) => {
     setActiveVisit(v);
     setDossierModalOpen(true);
@@ -226,7 +339,7 @@ export default function VisitsPage() {
   // Submit Create
   const handleCreateVisit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!formTitle.trim() || !formAuthority.trim()) {
+    if (!formTitle.trim() || !formAuthority.trim() || !formLocation.trim()) {
       toast.error("يرجى ملء جميع الحقول الإلزامية");
       return;
     }
@@ -236,13 +349,18 @@ export default function VisitsPage() {
       id: "v-" + Date.now(),
       title: formTitle.trim(),
       authority: formAuthority.trim(),
-      location: formLocation.trim() || "مقر جهة الطرح",
+      location: formLocation.trim(),
       employeeName: formEmployee.trim() || "مهندس الموقع",
       operationCode: formOpCode.trim(),
+      operationName: formOpName.trim() || undefined,
       visitDate: formDate,
       status: formStatus,
+      siteReadiness: formSiteReadiness,
+      committeeMembers: formCommittee.trim() || undefined,
       purpose: formPurpose.trim() || undefined,
       findings: formFindings.trim() || undefined,
+      obstacles: formObstacles.trim() || undefined,
+      safetyPermits: formSafetyPermits.trim() || undefined,
       expenses: Number(formExpenses) || 0,
       isPaid: formIsPaid,
       notes: formNotes.trim() || undefined,
@@ -250,7 +368,7 @@ export default function VisitsPage() {
     };
 
     setVisits([newVisit, ...visits]);
-    toast.success("تم تسجيل المعاينة الميدانية ومحضر الزيارة بنجاح");
+    toast.success("تم تسجيل المعاينة الميدانية ومحضر الموقع بنجاح");
     setCreateModalOpen(false);
     resetForm();
     setSubmitting(false);
@@ -260,28 +378,12 @@ export default function VisitsPage() {
   const handleUpdateVisit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!activeVisit) return;
-    if (!formTitle.trim() || !formAuthority.trim()) {
-      toast.error("يرجى ملء الحقول الإلزامية");
+    if (!formTitle.trim() || !formAuthority.trim() || !formLocation.trim()) {
+      toast.error("يرجى ملء جميع الحقول الإلزامية");
       return;
     }
 
     setSubmitting(true);
-    try {
-      // Attempt backend patch if real ID
-      if (!activeVisit.id.startsWith("v-") && !activeVisit.id.startsWith("v")) {
-        await api.patch(`/employees/visits/${activeVisit.id}`, {
-          location: formLocation.trim(),
-          purpose: formPurpose.trim() || formTitle.trim(),
-          visitDate: formDate,
-          expenses: Number(formExpenses) || 0,
-          isPaid: formIsPaid,
-          notes: formNotes.trim(),
-        });
-      }
-    } catch {
-      // Local fallback
-    }
-
     const updated = visits.map((v) => {
       if (v.id === activeVisit.id) {
         return {
@@ -291,10 +393,15 @@ export default function VisitsPage() {
           location: formLocation.trim(),
           employeeName: formEmployee.trim(),
           operationCode: formOpCode.trim(),
+          operationName: formOpName.trim() || undefined,
           visitDate: formDate,
           status: formStatus,
+          siteReadiness: formSiteReadiness,
+          committeeMembers: formCommittee.trim() || undefined,
           purpose: formPurpose.trim() || undefined,
           findings: formFindings.trim() || undefined,
+          obstacles: formObstacles.trim() || undefined,
+          safetyPermits: formSafetyPermits.trim() || undefined,
           expenses: Number(formExpenses) || 0,
           isPaid: formIsPaid,
           notes: formNotes.trim() || undefined,
@@ -305,89 +412,70 @@ export default function VisitsPage() {
     });
 
     setVisits(updated);
-    toast.success("تم تحديث بيانات المعاينة الميدانية بنجاح");
+    toast.success("تم تحديث بيانات محضر المعاينة بنجاح");
     setEditModalOpen(false);
     resetForm();
     setSubmitting(false);
   };
 
-  // Submit Delete
+  // Delete Visit
   const handleDeleteVisit = async () => {
     if (!activeVisit) return;
     setSubmitting(true);
-    try {
-      if (!activeVisit.id.startsWith("v-") && !activeVisit.id.startsWith("v")) {
-        await api.delete(`/employees/visits/${activeVisit.id}`);
-      }
-    } catch {
-      // Local fallback
-    }
-
     setVisits(visits.filter((v) => v.id !== activeVisit.id));
-    toast.success(`تم حذف المعاينة "${activeVisit.title}"`);
+    toast.success(`تم حذف محضر المعاينة ${activeVisit.reportNumber}`);
     setDeleteConfirmOpen(false);
     setActiveVisit(null);
     setSubmitting(false);
   };
 
-  // Quick Status Toggle
-  const handleQuickStatus = (id: string, newStatus: "SCHEDULED" | "IN_PROGRESS" | "COMPLETED" | "CANCELLED") => {
-    setVisits(visits.map((v) => (v.id === id ? { ...v, status: newStatus } : v)));
-    toast.success("تم تحديث حالة المعاينة الميدانية");
+  // Helper for Site Readiness Badge
+  const getReadinessBadge = (readiness: SiteVisitRecord["siteReadiness"]) => {
+    switch (readiness) {
+      case "READY":
+        return {
+          label: "جاهز للتنفيذ 100% 🟢",
+          color: "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30",
+        };
+      case "CONDITIONAL":
+        return {
+          label: "جاهز بشروط وملاحظات 🟡",
+          color: "bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/30",
+        };
+      case "BLOCKED":
+        return {
+          label: "معوقات تعيق البدء 🔴",
+          color: "bg-rose-500/15 text-rose-600 dark:text-rose-400 border border-rose-500/30",
+        };
+      case "SURVEY_ONLY":
+      default:
+        return {
+          label: "معاينة ورفع مقاسات 🔵",
+          color: "bg-blue-500/15 text-blue-600 dark:text-blue-400 border border-blue-500/30",
+        };
+    }
   };
-
-  // Toggle Expense Paid
-  const handleTogglePaid = (id: string) => {
-    setVisits(
-      visits.map((v) => {
-        if (v.id === id) {
-          const next = !v.isPaid;
-          toast.success(next ? "تم تحديد بدل الانتقال كـ مسدد للمهندس" : "تم إلغاء سداد البدل");
-          return { ...v, isPaid: next };
-        }
-        return v;
-      })
-    );
-  };
-
-  // Filtered visits
-  const filtered = useMemo(() => {
-    return visits.filter((v) => {
-      const matchSearch =
-        v.title.includes(search) ||
-        v.authority.includes(search) ||
-        v.employeeName.includes(search) ||
-        v.operationCode.includes(search) ||
-        v.location.includes(search) ||
-        (v.reportNumber && v.reportNumber.includes(search));
-
-      const matchStatus = filterStatus === "ALL" || v.status === filterStatus;
-      return matchSearch && matchStatus;
-    });
-  }, [visits, search, filterStatus]);
-
-  // Statistics
-  const totalVisits = visits.length;
-  const scheduledCount = visits.filter((v) => v.status === "SCHEDULED").length;
-  const completedCount = visits.filter((v) => v.status === "COMPLETED").length;
-  const inProgressCount = visits.filter((v) => v.status === "IN_PROGRESS").length;
-  const totalExpenses = visits.reduce((acc, v) => acc + (v.expenses || 0), 0);
 
   return (
-    <div className="space-y-6 sm:space-y-8 animate-fade-in pb-12">
+    <div className="space-y-6 sm:space-y-8 animate-fade-in pb-16">
       {/* ━━━ Header ━━━ */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <div className="flex items-center gap-2.5">
-            <div className="w-10 h-10 rounded-2xl bg-blue-600/10 text-blue-600 dark:text-blue-400 border border-blue-500/20 flex items-center justify-center shadow-xs">
-              <ClipboardCheck className="h-5 w-5" />
+          <div className="flex items-center gap-3">
+            <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-blue-600 to-indigo-700 text-white flex items-center justify-center shadow-lg shadow-blue-500/20 royal-glow">
+              <ClipboardCheck className="h-6 w-6" />
             </div>
             <div>
-              <h1 className="text-2xl sm:text-3xl font-extrabold text-foreground tracking-tight">
-                الزيارات والمعاينات الميدانية
-              </h1>
+              <div className="flex items-center gap-2">
+                <h1 className="text-2xl sm:text-3xl font-black text-foreground tracking-tight">
+                  المعاينات الميدانية ومحاضر المواقع
+                </h1>
+                <Badge className="bg-blue-500/15 text-blue-600 dark:text-blue-400 border border-blue-500/30 text-xs px-2.5 py-0.5 font-bold">
+                  مركز الرقابة الهندسية 🏗️
+                </Badge>
+              </div>
               <p className="text-muted-foreground text-xs sm:text-sm mt-0.5">
-                جدولة وتوثيق زيارات فحص المواقع، حضور جلسات الاستفسارات، ومحاضر الفحص الفني الرسمية
+                متابعة لجان المعاينة، فحص جاهزية المواقع، المطابقة مع كراسة الشروط، وبدلات الانتقال
               </p>
             </div>
           </div>
@@ -396,265 +484,569 @@ export default function VisitsPage() {
         <div className="flex items-center gap-2 flex-wrap">
           <Button
             variant="outline"
+            size="sm"
             onClick={fetchVisits}
+            disabled={loading}
             className="border-border text-foreground hover:bg-muted text-xs h-9 px-3 rounded-xl cursor-pointer"
           >
-            <RefreshCw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} />
-            <span className="hidden sm:inline mr-1.5">تحديث</span>
+            <RefreshCw className={`h-3.5 w-3.5 ml-1.5 text-blue-600 ${loading ? "animate-spin" : ""}`} />
+            <span>تحديث</span>
           </Button>
 
           <Button
             onClick={handleOpenCreate}
-            className="bg-gradient-to-r from-blue-700 via-blue-600 to-blue-700 hover:from-blue-800 hover:to-blue-700 text-white font-bold px-4 h-9 rounded-xl shadow-lg shadow-blue-500/20 royal-glow flex items-center gap-2 text-xs sm:text-sm active:scale-95 transition-all cursor-pointer"
+            className="bg-gradient-to-r from-blue-600 via-blue-500 to-blue-600 hover:from-blue-700 hover:to-blue-600 text-white font-bold px-4 h-9 rounded-xl shadow-lg shadow-blue-500/20 royal-glow flex items-center gap-2 text-xs sm:text-sm active:scale-95 transition-all cursor-pointer"
           >
             <Plus className="h-4 w-4" />
-            <span>جدولة معاينة ميدانية</span>
+            <span>تسجيل معاينة موقع جديدة</span>
           </Button>
         </div>
       </div>
 
-      {/* ━━━ Statistics Cards ━━━ */}
+      {/* ━━━ KPI Cards ━━━ */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
-        <div className="glass-card rounded-2xl p-4 sm:p-5 border border-border">
+        <div className="glass-card rounded-2xl p-4 sm:p-5 border border-border hover:border-blue-500/40 transition-all shadow-xs">
           <div className="flex items-center justify-between text-muted-foreground text-xs font-bold">
             <span>إجمالي المعاينات</span>
             <div className="w-8 h-8 rounded-xl bg-blue-500/10 text-blue-600 flex items-center justify-center">
               <ClipboardCheck className="h-4 w-4" />
             </div>
           </div>
-          <p className="text-2xl font-black text-foreground mt-2 font-mono">{totalVisits}</p>
-          <span className="text-[11px] text-muted-foreground mt-1 block">موثقة بمحاضر رسمية</span>
+          <p className="text-xl sm:text-2xl font-black text-blue-600 dark:text-blue-400 mt-2 font-mono">
+            {stats.total}
+          </p>
+          <span className="text-[11px] text-muted-foreground mt-1 block font-mono">
+            محاضر فحص ميداني معتمدة
+          </span>
         </div>
 
-        <div className="glass-card rounded-2xl p-4 sm:p-5 border border-border">
+        <div className="glass-card rounded-2xl p-4 sm:p-5 border border-border hover:border-emerald-500/40 transition-all shadow-xs">
           <div className="flex items-center justify-between text-muted-foreground text-xs font-bold">
-            <span>معاينات مكتملة ومعتمدة</span>
+            <span>مواقع جاهزة للتنفيذ</span>
             <div className="w-8 h-8 rounded-xl bg-emerald-500/10 text-emerald-600 flex items-center justify-center">
-              <CheckCircle2 className="h-4 w-4" />
+              <CheckCircle className="h-4 w-4" />
             </div>
           </div>
-          <p className="text-2xl font-black text-emerald-600 dark:text-emerald-400 mt-2 font-mono">
-            {completedCount}
+          <p className="text-xl sm:text-2xl font-black text-emerald-600 dark:text-emerald-400 mt-2 font-mono">
+            {stats.ready} <span className="text-xs font-bold">({stats.readyPercent}%)</span>
           </p>
-          <span className="text-[11px] text-emerald-600 dark:text-emerald-400 mt-1 block">معاينة نافية للجهالة</span>
+          <span className="text-[11px] text-muted-foreground mt-1 block">
+            مستوفاة للاشتراطات الفنية
+          </span>
         </div>
 
-        <div className="glass-card rounded-2xl p-4 sm:p-5 border border-border">
+        <div className="glass-card rounded-2xl p-4 sm:p-5 border border-border hover:border-amber-500/40 transition-all shadow-xs">
           <div className="flex items-center justify-between text-muted-foreground text-xs font-bold">
-            <span>معاينات مجدولة وقادمة</span>
+            <span>مجدولة وقيد التنفيذ</span>
             <div className="w-8 h-8 rounded-xl bg-amber-500/10 text-amber-600 flex items-center justify-center">
               <Clock className="h-4 w-4" />
             </div>
           </div>
-          <p className="text-2xl font-black text-amber-600 dark:text-amber-400 mt-2 font-mono">
-            {scheduledCount + inProgressCount}
+          <p className="text-xl sm:text-2xl font-black text-amber-600 dark:text-amber-400 mt-2 font-mono">
+            {stats.scheduled}
           </p>
-          <span className="text-[11px] text-amber-600 dark:text-amber-400 mt-1 block">بانتظار تنفيذ المهندس</span>
+          <span className="text-[11px] text-muted-foreground mt-1 block">
+            زيارات جارية ومستمرة
+          </span>
         </div>
 
-        <div className="glass-card rounded-2xl p-4 sm:p-5 border border-border">
+        <div className="glass-card rounded-2xl p-4 sm:p-5 border border-border hover:border-purple-500/40 transition-all shadow-xs">
           <div className="flex items-center justify-between text-muted-foreground text-xs font-bold">
-            <span>إجمالي مصاريف الانتقال</span>
+            <span>بدلات ومصروفات الفحص</span>
             <div className="w-8 h-8 rounded-xl bg-purple-500/10 text-purple-600 flex items-center justify-center">
               <DollarSign className="h-4 w-4" />
             </div>
           </div>
-          <p className="text-2xl font-black text-purple-600 dark:text-purple-400 mt-2 font-mono">
-            {totalExpenses} ج.م
+          <p className="text-xl sm:text-2xl font-black text-purple-600 dark:text-purple-400 mt-2 font-mono">
+            {formatCurrency(stats.totalExpenses)}
           </p>
-          <span className="text-[11px] text-muted-foreground mt-1 block">بدلات انتقال معتمدة</span>
+          <span className="text-[11px] text-muted-foreground mt-1 block font-mono">
+            المسدد: {formatCurrency(stats.paidExpenses)}
+          </span>
         </div>
       </div>
 
-      {/* ━━━ Search and Filter ━━━ */}
-      <div className="glass-card rounded-2xl p-4 border border-border flex flex-col md:flex-row items-center gap-3">
+      {/* ━━━ Search and Filter Toolbar ━━━ */}
+      <div className="glass-card rounded-2xl p-4 border border-border flex flex-col md:flex-row items-center justify-between gap-3">
         <div className="relative flex-1 w-full">
           <Search className="absolute right-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
-            placeholder="بحث بعنوان المعاينة، جهة الطرح، اسم الموظف، كود العملية، أو الموقع..."
+            placeholder="بحث بموضوع المعاينة، الجهة، كود العملية A15، المهندس المسؤول، أو الموقع..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="pr-10 bg-muted/40 border-border text-foreground placeholder:text-muted-foreground focus:border-blue-500 rounded-xl text-xs sm:text-sm h-10 w-full"
           />
         </div>
 
-        <div className="w-full md:w-auto">
+        <div className="flex items-center gap-2 w-full md:w-auto flex-wrap">
+          <select
+            value={filterReadiness}
+            onChange={(e) => setFilterReadiness(e.target.value)}
+            className="h-10 px-3 bg-muted/40 border border-border rounded-xl text-xs font-semibold text-foreground focus:outline-hidden focus:border-blue-500 cursor-pointer"
+          >
+            <option value="ALL">كافة حالات الجاهزية</option>
+            <option value="READY">جاهز للتنفيذ 100% 🟢</option>
+            <option value="CONDITIONAL">بشروط وملاحظات 🟡</option>
+            <option value="BLOCKED">معوقات تعيق البدء 🔴</option>
+            <option value="SURVEY_ONLY">رفع مقاسات 🔵</option>
+          </select>
+
           <select
             value={filterStatus}
             onChange={(e) => setFilterStatus(e.target.value)}
-            className="h-10 px-3 bg-muted/40 border border-border rounded-xl text-xs font-semibold text-foreground focus:outline-hidden focus:border-blue-500 w-full"
+            className="h-10 px-3 bg-muted/40 border border-border rounded-xl text-xs font-semibold text-foreground focus:outline-hidden focus:border-blue-500 cursor-pointer"
           >
             <option value="ALL">كافة الحالات</option>
-            <option value="SCHEDULED">مجدولة وقادمة</option>
-            <option value="IN_PROGRESS">جارية الآن</option>
-            <option value="COMPLETED">مكتملة ومعتمدة</option>
-            <option value="CANCELLED">ملغاة</option>
+            <option value="SCHEDULED">مجدولة 📅</option>
+            <option value="IN_PROGRESS">جارية ⚡</option>
+            <option value="COMPLETED">مكتملة معتمدة ✅</option>
           </select>
+
+          <div className="flex items-center gap-1 bg-muted/50 p-1 rounded-xl border border-border">
+            <button
+              type="button"
+              onClick={() => setViewMode("CARDS")}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                viewMode === "CARDS" ? "bg-background text-foreground shadow-xs" : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              الكروت 🗂️
+            </button>
+            <button
+              type="button"
+              onClick={() => setViewMode("TABLE")}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                viewMode === "TABLE" ? "bg-background text-foreground shadow-xs" : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              الجدول 📊
+            </button>
+          </div>
         </div>
       </div>
 
-      {/* ━━━ Visits Cards List ━━━ */}
-      <div className="space-y-3.5">
-        {filtered.length === 0 ? (
-          <div className="glass-card rounded-3xl p-12 text-center border border-border space-y-3 max-w-md mx-auto">
-            <ClipboardCheck className="h-12 w-12 text-muted-foreground mx-auto" />
-            <h3 className="text-base font-bold text-foreground">لا توجد زيارات أو معاينات مطابقة</h3>
-            <p className="text-muted-foreground text-xs leading-relaxed">
-              قم بجدولة زيارة ميدانية جديدة لفحص الموقع أو حضور جلسات فتح المظاريف.
-            </p>
-          </div>
-        ) : (
-          filtered.map((v) => (
-            <div
-              key={v.id}
-              className="glass-card-interactive rounded-2xl p-5 border border-border hover:border-blue-500/50 flex flex-col lg:flex-row lg:items-center justify-between gap-4 group transition-all"
-            >
-              <div className="flex items-start gap-4">
-                <div className="w-12 h-12 rounded-2xl bg-blue-600/10 text-blue-700 dark:text-blue-300 border border-blue-500/25 flex items-center justify-center shrink-0 mt-0.5">
-                  <ClipboardCheck className="h-6 w-6" />
-                </div>
+      {/* ━━━ Cards View ━━━ */}
+      {viewMode === "CARDS" && (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {filtered.length === 0 ? (
+            <div className="col-span-full glass-card rounded-2xl p-12 text-center text-muted-foreground border border-border">
+              <ClipboardCheck className="h-8 w-8 mx-auto mb-2 text-muted-foreground" />
+              <p>لا توجد معاينات ميدانية مطابقة لبحثك.</p>
+            </div>
+          ) : (
+            filtered.map((v) => {
+              const readiness = getReadinessBadge(v.siteReadiness);
 
-                <div className="space-y-1.5 flex-1">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="font-bold text-foreground text-base group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
-                      {v.title}
-                    </span>
-                    <Badge variant="outline" className="border-blue-500/30 text-blue-600 dark:text-blue-400 font-mono text-xs">
-                      {v.operationCode}
-                    </Badge>
-                    {v.reportNumber && (
-                      <Badge variant="outline" className="border-border text-muted-foreground font-mono text-[10px]">
-                        {v.reportNumber}
-                      </Badge>
-                    )}
-                    <Badge
-                      className={
-                        v.status === "COMPLETED"
-                          ? "badge-emerald text-xs"
-                          : v.status === "IN_PROGRESS"
-                          ? "badge-blue text-xs"
-                          : v.status === "CANCELLED"
-                          ? "badge-rose text-xs"
-                          : "badge-amber text-xs"
-                      }
-                    >
-                      {v.status === "COMPLETED"
-                        ? "مكتملة ✓"
-                        : v.status === "IN_PROGRESS"
-                        ? "جارية الآن"
-                        : v.status === "CANCELLED"
-                        ? "ملغاة"
-                        : "مجدولة"}
-                    </Badge>
-                  </div>
-
-                  <div className="flex flex-wrap items-center gap-x-5 gap-y-1 text-xs text-muted-foreground">
-                    <span className="flex items-center gap-1.5 font-semibold text-foreground">
-                      <Building2 className="h-3.5 w-3.5 text-blue-600" />
-                      {v.authority}
-                    </span>
-                    <span className="flex items-center gap-1.5">
-                      <MapPin className="h-3.5 w-3.5 text-muted-foreground" />
-                      {v.location}
-                    </span>
-                    <span className="flex items-center gap-1.5 font-medium text-foreground">
-                      <User className="h-3.5 w-3.5 text-blue-600" />
-                      المسؤول: {v.employeeName}
-                    </span>
-                    {v.expenses > 0 && (
-                      <span className="flex items-center gap-1 text-[11px] font-mono">
-                        <DollarSign className="h-3 w-3 text-emerald-600" />
-                        بدل الانتقال: <strong>{v.expenses} ج.م</strong>
-                        <span
-                          onClick={() => handleTogglePaid(v.id)}
-                          className={`cursor-pointer px-1.5 py-0.2 rounded text-[10px] ${
-                            v.isPaid
-                              ? "bg-emerald-500/10 text-emerald-600 border border-emerald-500/20"
-                              : "bg-amber-500/10 text-amber-600 border border-amber-500/20"
-                          }`}
-                          title="اضغط لتبديل حالة صرف البدل"
-                        >
-                          {v.isPaid ? "مسدد ✓" : "معلق"}
+              return (
+                <div
+                  key={v.id}
+                  className="glass-card rounded-2xl border border-border hover:border-blue-500/50 transition-all p-5 flex flex-col justify-between space-y-4 hover:shadow-lg group"
+                >
+                  {/* Top Bar: Code, Authority, Status */}
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-2">
+                        <span className="font-mono text-sm font-extrabold px-2.5 py-1 rounded-xl bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/30">
+                          {v.operationCode}
                         </span>
-                      </span>
-                    )}
+                        <span className="font-mono text-xs font-bold text-muted-foreground">
+                          {v.reportNumber}
+                        </span>
+                      </div>
+
+                      <Badge className={`text-[10px] font-bold px-2 py-0.5 ${readiness.color}`}>
+                        {readiness.label}
+                      </Badge>
+                    </div>
+
+                    <div>
+                      <h3 className="font-extrabold text-foreground text-sm line-clamp-2 group-hover:text-blue-600 transition-colors">
+                        {v.title}
+                      </h3>
+                      <div className="flex items-center gap-1.5 text-xs text-muted-foreground mt-1">
+                        <Building2 className="h-3.5 w-3.5 shrink-0" />
+                        <span className="truncate">{v.authority}</span>
+                      </div>
+                    </div>
                   </div>
 
-                  {v.purpose && (
-                    <p className="text-xs text-muted-foreground leading-relaxed line-clamp-2">
-                      <strong className="text-foreground">الغرض الفني: </strong>
-                      {v.purpose}
-                    </p>
+                  {/* Middle Info: Location & Engineers */}
+                  <div className="space-y-2 p-3 bg-muted/30 rounded-xl border border-border/60 text-xs">
+                    <div className="flex items-start gap-1.5 text-muted-foreground">
+                      <MapPin className="h-3.5 w-3.5 text-rose-500 shrink-0 mt-0.5" />
+                      <span className="line-clamp-2 text-foreground font-medium">{v.location}</span>
+                    </div>
+
+                    <div className="flex items-center justify-between pt-1 border-t border-border/40 text-[11px]">
+                      <span className="flex items-center gap-1 font-bold text-foreground">
+                        <HardHat className="h-3.5 w-3.5 text-amber-500" />
+                        <span>{v.employeeName}</span>
+                      </span>
+                      <span className="flex items-center gap-1 text-muted-foreground font-mono">
+                        <Calendar className="h-3 w-3" />
+                        <span>{v.visitDate}</span>
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Findings Snippet */}
+                  {v.findings && (
+                    <div className="text-xs text-muted-foreground line-clamp-2 bg-blue-500/5 p-2.5 rounded-xl border border-blue-500/15">
+                      <strong className="text-blue-600 block mb-0.5 font-bold">النتائج الفنية:</strong>
+                      {v.findings}
+                    </div>
                   )}
 
-                  {v.findings && (
-                    <div className="p-2 rounded-xl bg-muted/40 border border-border text-xs text-foreground mt-1">
-                      <span className="font-bold text-blue-600 block text-[11px]">نتائج المعاينة:</span>
-                      <p className="text-muted-foreground">{v.findings}</p>
+                  {/* Card Bottom: Expenses & Actions */}
+                  <div className="flex items-center justify-between pt-1 border-t border-border/40">
+                    <div className="text-xs">
+                      <span className="text-[10px] text-muted-foreground block font-bold">بدل الانتقال:</span>
+                      <span className="font-mono font-black text-foreground">
+                        {formatCurrency(v.expenses)}
+                      </span>
+                      {v.isPaid ? (
+                        <span className="text-[10px] text-emerald-600 font-bold mr-1">تم الصرف ✓</span>
+                      ) : (
+                        <span className="text-[10px] text-amber-600 font-bold mr-1">قيد الصرف</span>
+                      )}
+                    </div>
+
+                    <div className="flex items-center gap-1">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => handleOpenDossier(v)}
+                        className="h-8 w-8 rounded-lg hover:bg-blue-500/10 text-muted-foreground hover:text-blue-600 cursor-pointer"
+                        title="عرض محضر المعاينة الفني"
+                      >
+                        <Eye className="h-4 w-4" />
+                      </Button>
+
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => handleOpenEdit(v)}
+                        className="h-8 w-8 rounded-lg hover:bg-muted text-muted-foreground hover:text-amber-600 cursor-pointer"
+                        title="تعديل"
+                      >
+                        <Edit className="h-4 w-4" />
+                      </Button>
+
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => handleOpenDelete(v)}
+                        className="h-8 w-8 rounded-lg hover:bg-rose-500/10 text-muted-foreground hover:text-rose-600 cursor-pointer"
+                        title="حذف"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </div>
+      )}
+
+      {/* ━━━ Table View ━━━ */}
+      {viewMode === "TABLE" && (
+        <div className="glass-card rounded-2xl border border-border overflow-hidden shadow-xs">
+          <div className="overflow-x-auto">
+            <table className="w-full text-right text-xs">
+              <thead className="bg-muted/50 border-b border-border text-muted-foreground font-bold">
+                <tr>
+                  <th className="p-3.5">الرقم المرجعي</th>
+                  <th className="p-3.5">العملية والجهة</th>
+                  <th className="p-3.5">الموقع الفعلي</th>
+                  <th className="p-3.5">مهندس الموقع</th>
+                  <th className="p-3.5">تاريخ الزيارة</th>
+                  <th className="p-3.5">جاهزية الموقع</th>
+                  <th className="p-3.5">الحالة</th>
+                  <th className="p-3.5">المصروفات</th>
+                  <th className="p-3.5 text-center">الإجراءات</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border">
+                {filtered.length === 0 ? (
+                  <tr>
+                    <td colSpan={9} className="p-10 text-center text-muted-foreground">
+                      لا توجد محاضر معاينات مطابقة لمعايير البحث.
+                    </td>
+                  </tr>
+                ) : (
+                  filtered.map((v) => {
+                    const readiness = getReadinessBadge(v.siteReadiness);
+                    return (
+                      <tr key={v.id} className="hover:bg-muted/30 transition-colors">
+                        <td className="p-3.5 font-mono font-bold text-blue-600">
+                          {v.reportNumber}
+                        </td>
+                        <td className="p-3.5 max-w-[220px]">
+                          <div className="flex items-center gap-1.5 mb-0.5">
+                            <Badge variant="outline" className="font-mono text-[10px] text-blue-600">
+                              {v.operationCode}
+                            </Badge>
+                            <span className="font-extrabold text-foreground truncate">{v.title}</span>
+                          </div>
+                          <span className="text-[11px] text-muted-foreground truncate block">{v.authority}</span>
+                        </td>
+                        <td className="p-3.5 max-w-[200px] text-muted-foreground font-medium truncate">
+                          {v.location}
+                        </td>
+                        <td className="p-3.5 font-bold text-foreground">
+                          {v.employeeName}
+                        </td>
+                        <td className="p-3.5 font-mono text-muted-foreground">
+                          {v.visitDate}
+                        </td>
+                        <td className="p-3.5">
+                          <Badge className={`text-[10px] font-bold px-2 py-0.5 ${readiness.color}`}>
+                            {readiness.label}
+                          </Badge>
+                        </td>
+                        <td className="p-3.5">
+                          <Badge
+                            variant="outline"
+                            className={`text-[10px] font-bold ${
+                              v.status === "COMPLETED"
+                                ? "border-emerald-500/30 text-emerald-600"
+                                : v.status === "IN_PROGRESS"
+                                ? "border-blue-500/30 text-blue-600"
+                                : "border-amber-500/30 text-amber-600"
+                            }`}
+                          >
+                            {v.status === "COMPLETED"
+                              ? "مكتملة"
+                              : v.status === "IN_PROGRESS"
+                              ? "جارية"
+                              : "مجدولة"}
+                          </Badge>
+                        </td>
+                        <td className="p-3.5 font-mono font-bold text-foreground">
+                          {formatCurrency(v.expenses)}
+                        </td>
+                        <td className="p-3.5 text-center">
+                          <div className="flex items-center justify-center gap-1">
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => handleOpenDossier(v)}
+                              className="h-8 w-8 rounded-lg hover:bg-blue-500/10 text-muted-foreground hover:text-blue-600 cursor-pointer"
+                              title="عرض تفاصيل المحضر"
+                            >
+                              <Eye className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => handleOpenEdit(v)}
+                              className="h-8 w-8 rounded-lg hover:bg-muted text-muted-foreground hover:text-amber-600 cursor-pointer"
+                              title="تعديل"
+                            >
+                              <Edit className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => handleOpenDelete(v)}
+                              className="h-8 w-8 rounded-lg hover:bg-rose-500/10 text-muted-foreground hover:text-rose-600 cursor-pointer"
+                              title="حذف"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+          MODAL: عرض محضر المعاينة الفني المعتمد (View Details — STRICTLY NO PRINT BUTTON)
+      ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
+      {mounted && dossierModalOpen && activeVisit && createPortal(
+        <div className="fixed inset-0 z-[9999] bg-black/80 backdrop-blur-sm flex items-center justify-center p-3 sm:p-5 overflow-y-auto animate-fade-in" style={{ direction: 'rtl' }}>
+          <div className="relative w-full max-w-2xl bg-card dark:bg-[#0c1427] rounded-3xl border border-border shadow-2xl flex flex-col max-h-[calc(100vh-3rem)] overflow-hidden animate-scale-up my-auto">
+            {/* Header */}
+            <div className="flex items-center justify-between px-5 sm:px-6 py-4 border-b border-border bg-card dark:bg-[#0c1427] shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-blue-500/10 text-blue-600 flex items-center justify-center shrink-0">
+                  <ClipboardCheck className="h-5 w-5" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-base sm:text-lg font-bold text-foreground">
+                      محضر إثبات حالة ومعاينة موقع معتمد
+                    </h3>
+                    <Badge variant="outline" className="font-mono text-blue-600 border-blue-500/30">
+                      {activeVisit.reportNumber}
+                    </Badge>
+                  </div>
+                  <p className="text-xs text-muted-foreground">كود العملية: {activeVisit.operationCode}</p>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setDossierModalOpen(false)}
+                className="text-muted-foreground hover:text-foreground cursor-pointer p-1.5 rounded-xl hover:bg-muted transition-colors"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            {/* Content Body */}
+            <div className="flex-1 overflow-y-auto px-5 sm:px-6 py-5 space-y-4 text-xs">
+              {/* Site Readiness Banner */}
+              <div className="p-4 rounded-2xl bg-muted/40 border border-border space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-muted-foreground">تقييم جاهزية الموقع الفنية:</span>
+                  <Badge className={`text-xs font-bold px-3 py-1 ${getReadinessBadge(activeVisit.siteReadiness).color}`}>
+                    {getReadinessBadge(activeVisit.siteReadiness).label}
+                  </Badge>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs pt-2 border-t border-border/50">
+                  <div>
+                    <span className="text-muted-foreground font-bold block">جهة الإسناد والمالك:</span>
+                    <span className="font-extrabold text-foreground">{activeVisit.authority}</span>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground font-bold block">تاريخ إجراء المعاينة:</span>
+                    <span className="font-mono font-bold text-foreground">{activeVisit.visitDate}</span>
+                  </div>
+                </div>
+
+                <div className="pt-2 border-t border-border/50">
+                  <span className="text-muted-foreground font-bold block">الموقع الميداني الدقيق:</span>
+                  <div className="flex items-start gap-1.5 mt-0.5 text-foreground font-semibold">
+                    <MapPin className="h-3.5 w-3.5 text-rose-500 shrink-0 mt-0.5" />
+                    <span>{activeVisit.location}</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Committee & Engineers */}
+              <div className="p-4 rounded-2xl bg-muted/30 border border-border space-y-2">
+                <div className="flex items-center gap-1.5 font-bold text-foreground">
+                  <Users className="h-4 w-4 text-blue-600" />
+                  <span>اللجنة الهندسية والقائمون بالمعاينة</span>
+                </div>
+                <div className="space-y-1.5 text-muted-foreground pr-5">
+                  <div>
+                    <strong className="text-foreground">مهندس الموقع المسؤول: </strong>
+                    <span>{activeVisit.employeeName}</span>
+                  </div>
+                  {activeVisit.committeeMembers && (
+                    <div>
+                      <strong className="text-foreground">أعضاء اللجنة وممثلو الجهة: </strong>
+                      <span>{activeVisit.committeeMembers}</span>
                     </div>
                   )}
                 </div>
               </div>
 
-              {/* Action Controls */}
-              <div className="flex flex-row lg:flex-col items-end justify-between lg:justify-center gap-2 pt-3 lg:pt-0 border-t lg:border-t-0 border-border">
-                <div className="text-right">
-                  <span className="text-xs font-mono font-bold text-foreground block">{v.visitDate}</span>
-                  <span className="text-[11px] text-blue-600 dark:text-blue-400 block mt-0.5">
-                    معاينة معتمدة
-                  </span>
+              {/* Scope & Purpose */}
+              {activeVisit.purpose && (
+                <div className="p-4 rounded-2xl bg-muted/30 border border-border space-y-1">
+                  <span className="font-bold text-foreground block">موضوع ونطاق المعاينة:</span>
+                  <p className="text-muted-foreground leading-relaxed">{activeVisit.purpose}</p>
                 </div>
+              )}
 
-                <div className="flex items-center gap-1">
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    onClick={() => handleOpenDossier(v)}
-                    className="h-8 px-2.5 text-xs text-blue-600 dark:text-blue-400 hover:bg-blue-500/10 rounded-lg cursor-pointer"
-                    title="محضر المعاينة الرسمي للطباعة"
-                  >
-                    <Printer className="h-3.5 w-3.5 ml-1" />
-                    <span>المحضر</span>
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    onClick={() => handleOpenEdit(v)}
-                    className="h-8 w-8 p-0 text-muted-foreground hover:text-foreground hover:bg-muted rounded-lg cursor-pointer"
-                    title="تعديل المعاينة"
-                  >
-                    <Edit className="h-3.5 w-3.5" />
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    onClick={() => handleOpenDelete(v)}
-                    className="h-8 w-8 p-0 text-rose-500 hover:text-rose-600 hover:bg-rose-500/10 rounded-lg cursor-pointer"
-                    title="حذف المعاينة"
-                  >
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </Button>
+              {/* Technical Findings */}
+              {activeVisit.findings && (
+                <div className="p-4 rounded-2xl bg-blue-500/5 border border-blue-500/20 space-y-1">
+                  <span className="font-bold text-blue-600 block flex items-center gap-1.5">
+                    <CheckCircle className="h-4 w-4" />
+                    <span>الملاحظات الفنية والمطابقة الواقعية</span>
+                  </span>
+                  <p className="text-foreground leading-relaxed">{activeVisit.findings}</p>
+                </div>
+              )}
+
+              {/* Obstacles & Recommendations */}
+              {activeVisit.obstacles && (
+                <div className="p-4 rounded-2xl bg-amber-500/5 border border-amber-500/20 space-y-1">
+                  <span className="font-bold text-amber-600 block flex items-center gap-1.5">
+                    <AlertTriangle className="h-4 w-4" />
+                    <span>المعوقات والملاحظات الحرجة</span>
+                  </span>
+                  <p className="text-foreground leading-relaxed">{activeVisit.obstacles}</p>
+                </div>
+              )}
+
+              {/* Safety & Logistics */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {activeVisit.safetyPermits && (
+                  <div className="p-3.5 bg-muted/30 rounded-xl border border-border space-y-1">
+                    <span className="font-bold text-foreground flex items-center gap-1.5">
+                      <Shield className="h-3.5 w-3.5 text-emerald-600" />
+                      <span>السلامة وتصاريح الدخول</span>
+                    </span>
+                    <p className="text-[11px] text-muted-foreground">{activeVisit.safetyPermits}</p>
+                  </div>
+                )}
+
+                <div className="p-3.5 bg-muted/30 rounded-xl border border-border space-y-1">
+                  <span className="font-bold text-foreground flex items-center gap-1.5">
+                    <DollarSign className="h-3.5 w-3.5 text-purple-600" />
+                    <span>بدلات المعاينة الميدانية</span>
+                  </span>
+                  <div className="flex items-center justify-between text-xs font-mono font-bold text-foreground">
+                    <span>القيمة: {formatCurrency(activeVisit.expenses)}</span>
+                    <span className={activeVisit.isPaid ? "text-emerald-600" : "text-amber-600"}>
+                      {activeVisit.isPaid ? "تم الصرف" : "قيد الصرف"}
+                    </span>
+                  </div>
                 </div>
               </div>
+
+              {activeVisit.notes && (
+                <div className="p-3 rounded-xl bg-muted/20 border border-border/50 text-muted-foreground text-[11px]">
+                  <strong className="text-foreground block mb-0.5">ملاحظات تكميلية:</strong>
+                  <p>{activeVisit.notes}</p>
+                </div>
+              )}
             </div>
-          ))
-        )}
-      </div>
+
+            {/* Footer — STRICTLY NO PRINT BUTTON! */}
+            <div className="px-5 sm:px-6 py-3.5 border-t border-border bg-muted/40 flex items-center justify-end gap-2 shrink-0">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setDossierModalOpen(false)}
+                className="text-xs border-border px-5 rounded-xl cursor-pointer"
+              >
+                إغلاق
+              </Button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
 
       {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-          MODAL: جدولة معاينة جديدة (Create Visit)
+          MODAL: تسجيل محضر معاينة وزيارة موقع جديدة (Create Visit)
       ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
       {mounted && createModalOpen && createPortal(
         <div className="fixed inset-0 z-[9999] bg-black/80 backdrop-blur-sm flex items-center justify-center p-3 sm:p-5 overflow-y-auto animate-fade-in" style={{ direction: 'rtl' }}>
           <div className="relative w-full max-w-xl bg-card dark:bg-[#0c1427] rounded-3xl border border-border shadow-2xl flex flex-col max-h-[calc(100vh-3rem)] overflow-hidden animate-scale-up my-auto">
             <div className="flex items-center justify-between px-5 sm:px-6 py-4 border-b border-border bg-card dark:bg-[#0c1427] shrink-0">
-              <div className="flex items-center gap-2">
-                <div className="w-9 h-9 rounded-xl bg-blue-600/10 text-blue-600 flex items-center justify-center shrink-0">
-                  <ClipboardCheck className="h-5 w-5" />
+              <div className="flex items-center gap-2.5">
+                <div className="w-10 h-10 rounded-xl bg-blue-500/10 text-blue-600 flex items-center justify-center shrink-0">
+                  <Plus className="h-5 w-5" />
                 </div>
                 <div>
-                  <h3 className="text-base sm:text-lg font-bold text-foreground">جدولة معاينة ميدانية جديدة</h3>
-                  <p className="text-xs text-muted-foreground">توثيق موعد ومهمة فحص الموقع أو جلسة الاستفسارات</p>
+                  <h3 className="text-base sm:text-lg font-bold text-foreground">تسجيل محضر معاينة موقع جديدة</h3>
+                  <p className="text-xs text-muted-foreground">توثيق الزيارة الميدانية وفحص جاهزية الموقع</p>
                 </div>
               </div>
               <button
@@ -667,114 +1059,167 @@ export default function VisitsPage() {
             </div>
 
             <form onSubmit={handleCreateVisit} className="flex flex-col flex-1 min-h-0 overflow-hidden">
-              <div className="flex-1 overflow-y-auto px-5 sm:px-6 py-4 space-y-4 text-xs">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div className="sm:col-span-2">
-                  <label className="block font-bold text-foreground mb-1">عنوان المعاينة / المهمة *</label>
-                  <Input
-                    required
-                    placeholder="مثال: فحص مسارات كابلات الألياف الضوئية وغرف التحكم"
-                    value={formTitle}
-                    onChange={(e) => setFormTitle(e.target.value)}
-                    className="bg-muted/40 border-border text-foreground placeholder:text-muted-foreground focus:border-blue-500 rounded-xl h-9"
-                  />
-                </div>
+              <div className="flex-1 overflow-y-auto px-5 sm:px-6 py-4 space-y-3.5 text-xs">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="sm:col-span-2">
+                    <label className="block font-bold text-foreground mb-1">عنوان وموضوع المعاينة *</label>
+                    <Input
+                      required
+                      value={formTitle}
+                      onChange={(e) => setFormTitle(e.target.value)}
+                      placeholder="مثال: معاينة مسارات شبكة كابلات الجهد المتوسط ومحيط المحطة..."
+                      className="bg-muted/40 border-border text-foreground focus:border-blue-500 rounded-xl h-9"
+                    />
+                  </div>
 
-                <div>
-                  <label className="block font-bold text-foreground mb-1">الجهة الحكومية المستفيدة *</label>
-                  <Input
-                    required
-                    placeholder="اسم الوزارة أو الهيئة"
-                    value={formAuthority}
-                    onChange={(e) => setFormAuthority(e.target.value)}
-                    className="bg-muted/40 border-border text-foreground placeholder:text-muted-foreground focus:border-blue-500 rounded-xl h-9"
-                  />
-                </div>
+                  <div>
+                    <label className="block font-bold text-foreground mb-1">كود العملية المرتبطة *</label>
+                    <Input
+                      required
+                      value={formOpCode}
+                      onChange={(e) => setFormOpCode(e.target.value)}
+                      placeholder="مثال: A15"
+                      className="bg-muted/40 border-border text-foreground font-mono focus:border-blue-500 rounded-xl h-9"
+                    />
+                  </div>
 
-                <div>
-                  <label className="block font-bold text-foreground mb-1">كود العملية المرتبطة</label>
-                  <Input
-                    placeholder="A15 أو B08"
-                    value={formOpCode}
-                    onChange={(e) => setFormOpCode(e.target.value)}
-                    className="bg-muted/40 border-border text-foreground font-mono focus:border-blue-500 rounded-xl h-9"
-                  />
-                </div>
+                  <div>
+                    <label className="block font-bold text-foreground mb-1">الجهة المالكة للطرح *</label>
+                    <Input
+                      required
+                      value={formAuthority}
+                      onChange={(e) => setFormAuthority(e.target.value)}
+                      placeholder="مثال: هيئة المجتمعات العمرانية"
+                      className="bg-muted/40 border-border text-foreground focus:border-blue-500 rounded-xl h-9"
+                    />
+                  </div>
 
-                <div className="sm:col-span-2">
-                  <label className="block font-bold text-foreground mb-1">الموقع والعنوان الميداني</label>
-                  <Input
-                    placeholder="المحافظة — المنطقة — المبنى"
-                    value={formLocation}
-                    onChange={(e) => setFormLocation(e.target.value)}
-                    className="bg-muted/40 border-border text-foreground placeholder:text-muted-foreground focus:border-blue-500 rounded-xl h-9"
-                  />
-                </div>
+                  <div className="sm:col-span-2">
+                    <label className="block font-bold text-foreground mb-1">موقع المعاينة الميداني الدقيق *</label>
+                    <Input
+                      required
+                      value={formLocation}
+                      onChange={(e) => setFormLocation(e.target.value)}
+                      placeholder="المدينة، الحي، رقم المبنى أو القطعة..."
+                      className="bg-muted/40 border-border text-foreground focus:border-blue-500 rounded-xl h-9"
+                    />
+                  </div>
 
-                <div>
-                  <label className="block font-bold text-foreground mb-1">الموظف / المهندس المسؤول</label>
-                  <Input
-                    placeholder="اسم المهندس أو الفني"
-                    value={formEmployee}
-                    onChange={(e) => setFormEmployee(e.target.value)}
-                    className="bg-muted/40 border-border text-foreground placeholder:text-muted-foreground focus:border-blue-500 rounded-xl h-9"
-                  />
-                </div>
+                  <div>
+                    <label className="block font-bold text-foreground mb-1">مهندس الموقع المسؤول *</label>
+                    <Input
+                      required
+                      value={formEmployee}
+                      onChange={(e) => setFormEmployee(e.target.value)}
+                      placeholder="م. أحمد الشريف"
+                      className="bg-muted/40 border-border text-foreground focus:border-blue-500 rounded-xl h-9"
+                    />
+                  </div>
 
-                <div>
-                  <label className="block font-bold text-foreground mb-1">تاريخ المعاينة الميدانية</label>
-                  <Input
-                    type="date"
-                    value={formDate}
-                    onChange={(e) => setFormDate(e.target.value)}
-                    className="bg-muted/40 border-border text-foreground font-mono focus:border-blue-500 rounded-xl h-9"
-                  />
-                </div>
+                  <div>
+                    <label className="block font-bold text-foreground mb-1">تاريخ المعاينة *</label>
+                    <Input
+                      type="date"
+                      required
+                      value={formDate}
+                      onChange={(e) => setFormDate(e.target.value)}
+                      className="bg-muted/40 border-border text-foreground font-mono focus:border-blue-500 rounded-xl h-9"
+                    />
+                  </div>
 
-                <div>
-                  <label className="block font-bold text-foreground mb-1">بدل ومصاريف الانتقال (ج.م)</label>
-                  <Input
-                    type="number"
-                    value={formExpenses}
-                    onChange={(e) => setFormExpenses(e.target.value)}
-                    className="bg-muted/40 border-border text-foreground font-mono focus:border-blue-500 rounded-xl h-9"
-                  />
-                </div>
+                  <div>
+                    <label className="block font-bold text-foreground mb-1">تقييم جاهزية الموقع الفنية</label>
+                    <select
+                      value={formSiteReadiness}
+                      onChange={(e) => setFormSiteReadiness(e.target.value as any)}
+                      className="w-full h-9 px-3 bg-muted/40 border border-border rounded-xl text-foreground font-semibold focus:outline-hidden focus:border-blue-500 cursor-pointer"
+                    >
+                      <option value="READY">جاهز للتنفيذ الفوري 100% 🟢</option>
+                      <option value="CONDITIONAL">جاهز بشروط وملاحظات 🟡</option>
+                      <option value="BLOCKED">معوقات تعيق البدء 🔴</option>
+                      <option value="SURVEY_ONLY">معاينة ورفع مقاسات 🔵</option>
+                    </select>
+                  </div>
 
-                <div>
-                  <label className="block font-bold text-foreground mb-1">حالة المعاينة</label>
-                  <select
-                    value={formStatus}
-                    onChange={(e) => setFormStatus(e.target.value as any)}
-                    className="w-full h-9 px-3 bg-muted/40 border border-border rounded-xl font-bold text-foreground focus:outline-hidden focus:border-blue-500"
-                  >
-                    <option value="SCHEDULED">مجدولة وقادمة</option>
-                    <option value="IN_PROGRESS">جارية الآن</option>
-                    <option value="COMPLETED">مكتملة ومعتمدة</option>
-                  </select>
-                </div>
+                  <div>
+                    <label className="block font-bold text-foreground mb-1">حالة المعاينة</label>
+                    <select
+                      value={formStatus}
+                      onChange={(e) => setFormStatus(e.target.value as any)}
+                      className="w-full h-9 px-3 bg-muted/40 border border-border rounded-xl text-foreground font-semibold focus:outline-hidden focus:border-blue-500 cursor-pointer"
+                    >
+                      <option value="SCHEDULED">مجدولة 📅</option>
+                      <option value="IN_PROGRESS">جارية ⚡</option>
+                      <option value="COMPLETED">مكتملة معتمدة ✅</option>
+                    </select>
+                  </div>
 
-                <div className="sm:col-span-2">
-                  <label className="block font-bold text-foreground mb-1">الغرض الفني من الزيارة</label>
-                  <Input
-                    placeholder="مطابقة كراسة الشروط، فحص مسارات، حضور جلسة استفسارات..."
-                    value={formPurpose}
-                    onChange={(e) => setFormPurpose(e.target.value)}
-                    className="bg-muted/40 border-border text-foreground focus:border-blue-500 rounded-xl h-9"
-                  />
-                </div>
+                  <div className="sm:col-span-2">
+                    <label className="block font-bold text-foreground mb-1">أعضاء لجنة المعاينة وممثلو الجهة</label>
+                    <Input
+                      value={formCommittee}
+                      onChange={(e) => setFormCommittee(e.target.value)}
+                      placeholder="مهندس الاستشاري، فني المساحة، مندوب إدارة الصيانة..."
+                      className="bg-muted/40 border-border text-foreground focus:border-blue-500 rounded-xl h-9"
+                    />
+                  </div>
 
-                <div className="sm:col-span-2">
-                  <label className="block font-bold text-foreground mb-1">ملاحظات ونتائج أولية</label>
-                  <Input
-                    placeholder="أي تجهيزات مطلوبة أو موافقات أمنية..."
-                    value={formNotes}
-                    onChange={(e) => setFormNotes(e.target.value)}
-                    className="bg-muted/40 border-border text-foreground focus:border-blue-500 rounded-xl h-9"
-                  />
+                  <div className="sm:col-span-2">
+                    <label className="block font-bold text-foreground mb-1">الغرض الفني ومحاور الفحص</label>
+                    <Input
+                      value={formPurpose}
+                      onChange={(e) => setFormPurpose(e.target.value)}
+                      placeholder="مطابقة مسارات الحفر مع كراسة الشروط ورفع الإحداثيات..."
+                      className="bg-muted/40 border-border text-foreground focus:border-blue-500 rounded-xl h-9"
+                    />
+                  </div>
+
+                  <div className="sm:col-span-2">
+                    <label className="block font-bold text-foreground mb-1">النتائج الفنية الواقعية</label>
+                    <textarea
+                      rows={2}
+                      value={formFindings}
+                      onChange={(e) => setFormFindings(e.target.value)}
+                      placeholder="تفاصيل ما تم رصده في الموقع الميداني..."
+                      className="w-full p-2.5 bg-muted/40 border border-border text-foreground focus:border-blue-500 rounded-xl focus:outline-hidden"
+                    />
+                  </div>
+
+                  <div className="sm:col-span-2">
+                    <label className="block font-bold text-foreground mb-1">المعوقات والملاحظات الحرجة (إن وجدت)</label>
+                    <Input
+                      value={formObstacles}
+                      onChange={(e) => setFormObstacles(e.target.value)}
+                      placeholder="تراكم مياه، كابلات قديمة، عوائق تحتاج تنسيق..."
+                      className="bg-muted/40 border-border text-foreground focus:border-blue-500 rounded-xl h-9"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block font-bold text-foreground mb-1">بدل ومصروفات المعاينة (ج.م)</label>
+                    <Input
+                      type="number"
+                      value={formExpenses}
+                      onChange={(e) => setFormExpenses(e.target.value)}
+                      placeholder="0"
+                      className="bg-muted/40 border-border text-foreground font-mono focus:border-blue-500 rounded-xl h-9"
+                    />
+                  </div>
+
+                  <div className="flex items-center gap-2 pt-6">
+                    <input
+                      type="checkbox"
+                      id="createPaid"
+                      checked={formIsPaid}
+                      onChange={(e) => setFormIsPaid(e.target.checked)}
+                      className="rounded border-border text-blue-600 focus:ring-blue-500 h-4 w-4 cursor-pointer"
+                    />
+                    <label htmlFor="createPaid" className="font-bold text-foreground cursor-pointer select-none">
+                      تم صرف بدلات الانتقال للمهندس
+                    </label>
+                  </div>
                 </div>
               </div>
-            </div>
 
               <div className="px-5 sm:px-6 py-3.5 border-t border-border bg-muted/40 flex items-center justify-end gap-2.5 shrink-0">
                 <Button
@@ -790,7 +1235,7 @@ export default function VisitsPage() {
                   disabled={submitting}
                   className="bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl text-xs h-9 px-5 cursor-pointer shadow-sm"
                 >
-                  حفظ وتأكيد المعاينة
+                  {submitting ? "جاري الحفظ..." : "حفظ محضر المعاينة"}
                 </Button>
               </div>
             </form>
@@ -800,18 +1245,18 @@ export default function VisitsPage() {
       )}
 
       {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-          MODAL: تعديل المعاينة (Edit Visit)
+          MODAL: تعديل بيانات المعاينة (Edit Visit)
       ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
       {mounted && editModalOpen && activeVisit && createPortal(
         <div className="fixed inset-0 z-[9999] bg-black/80 backdrop-blur-sm flex items-center justify-center p-3 sm:p-5 overflow-y-auto animate-fade-in" style={{ direction: 'rtl' }}>
           <div className="relative w-full max-w-xl bg-card dark:bg-[#0c1427] rounded-3xl border border-border shadow-2xl flex flex-col max-h-[calc(100vh-3rem)] overflow-hidden animate-scale-up my-auto">
             <div className="flex items-center justify-between px-5 sm:px-6 py-4 border-b border-border bg-card dark:bg-[#0c1427] shrink-0">
-              <div className="flex items-center gap-2">
-                <div className="w-9 h-9 rounded-xl bg-amber-500/10 text-amber-600 flex items-center justify-center shrink-0">
+              <div className="flex items-center gap-2.5">
+                <div className="w-10 h-10 rounded-xl bg-amber-500/10 text-amber-600 flex items-center justify-center shrink-0">
                   <Edit className="h-5 w-5" />
                 </div>
                 <div>
-                  <h3 className="text-base sm:text-lg font-bold text-foreground">تعديل بيانات المعاينة الميدانية</h3>
+                  <h3 className="text-base sm:text-lg font-bold text-foreground">تعديل محضر المعاينة</h3>
                   <p className="text-xs text-muted-foreground">{activeVisit.reportNumber}</p>
                 </div>
               </div>
@@ -825,117 +1270,148 @@ export default function VisitsPage() {
             </div>
 
             <form onSubmit={handleUpdateVisit} className="flex flex-col flex-1 min-h-0 overflow-hidden">
-              <div className="flex-1 overflow-y-auto px-5 sm:px-6 py-4 space-y-4 text-xs">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div className="sm:col-span-2">
-                  <label className="block font-bold text-foreground mb-1">عنوان المعاينة *</label>
-                  <Input
-                    required
-                    value={formTitle}
-                    onChange={(e) => setFormTitle(e.target.value)}
-                    className="bg-muted/40 border-border text-foreground focus:border-amber-500 rounded-xl h-9"
-                  />
-                </div>
+              <div className="flex-1 overflow-y-auto px-5 sm:px-6 py-4 space-y-3.5 text-xs">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="sm:col-span-2">
+                    <label className="block font-bold text-foreground mb-1">عنوان وموضوع المعاينة *</label>
+                    <Input
+                      required
+                      value={formTitle}
+                      onChange={(e) => setFormTitle(e.target.value)}
+                      className="bg-muted/40 border-border text-foreground focus:border-amber-500 rounded-xl h-9"
+                    />
+                  </div>
 
-                <div>
-                  <label className="block font-bold text-foreground mb-1">الجهة الحكومية *</label>
-                  <Input
-                    required
-                    value={formAuthority}
-                    onChange={(e) => setFormAuthority(e.target.value)}
-                    className="bg-muted/40 border-border text-foreground focus:border-amber-500 rounded-xl h-9"
-                  />
-                </div>
+                  <div>
+                    <label className="block font-bold text-foreground mb-1">كود العملية المرتبطة *</label>
+                    <Input
+                      required
+                      value={formOpCode}
+                      onChange={(e) => setFormOpCode(e.target.value)}
+                      className="bg-muted/40 border-border text-foreground font-mono focus:border-amber-500 rounded-xl h-9"
+                    />
+                  </div>
 
-                <div>
-                  <label className="block font-bold text-foreground mb-1">كود العملية</label>
-                  <Input
-                    value={formOpCode}
-                    onChange={(e) => setFormOpCode(e.target.value)}
-                    className="bg-muted/40 border-border text-foreground font-mono focus:border-amber-500 rounded-xl h-9"
-                  />
-                </div>
+                  <div>
+                    <label className="block font-bold text-foreground mb-1">الجهة المالكة للطرح *</label>
+                    <Input
+                      required
+                      value={formAuthority}
+                      onChange={(e) => setFormAuthority(e.target.value)}
+                      className="bg-muted/40 border-border text-foreground focus:border-amber-500 rounded-xl h-9"
+                    />
+                  </div>
 
-                <div className="sm:col-span-2">
-                  <label className="block font-bold text-foreground mb-1">الموقع الميداني</label>
-                  <Input
-                    value={formLocation}
-                    onChange={(e) => setFormLocation(e.target.value)}
-                    className="bg-muted/40 border-border text-foreground focus:border-amber-500 rounded-xl h-9"
-                  />
-                </div>
+                  <div className="sm:col-span-2">
+                    <label className="block font-bold text-foreground mb-1">موقع المعاينة الميداني الدقيق *</label>
+                    <Input
+                      required
+                      value={formLocation}
+                      onChange={(e) => setFormLocation(e.target.value)}
+                      className="bg-muted/40 border-border text-foreground focus:border-amber-500 rounded-xl h-9"
+                    />
+                  </div>
 
-                <div>
-                  <label className="block font-bold text-foreground mb-1">الموظف المسؤول</label>
-                  <Input
-                    value={formEmployee}
-                    onChange={(e) => setFormEmployee(e.target.value)}
-                    className="bg-muted/40 border-border text-foreground focus:border-amber-500 rounded-xl h-9"
-                  />
-                </div>
+                  <div>
+                    <label className="block font-bold text-foreground mb-1">مهندس الموقع المسؤول *</label>
+                    <Input
+                      required
+                      value={formEmployee}
+                      onChange={(e) => setFormEmployee(e.target.value)}
+                      className="bg-muted/40 border-border text-foreground focus:border-amber-500 rounded-xl h-9"
+                    />
+                  </div>
 
-                <div>
-                  <label className="block font-bold text-foreground mb-1">تاريخ المعاينة</label>
-                  <Input
-                    type="date"
-                    value={formDate}
-                    onChange={(e) => setFormDate(e.target.value)}
-                    className="bg-muted/40 border-border text-foreground font-mono focus:border-amber-500 rounded-xl h-9"
-                  />
-                </div>
+                  <div>
+                    <label className="block font-bold text-foreground mb-1">تاريخ المعاينة *</label>
+                    <Input
+                      type="date"
+                      required
+                      value={formDate}
+                      onChange={(e) => setFormDate(e.target.value)}
+                      className="bg-muted/40 border-border text-foreground font-mono focus:border-amber-500 rounded-xl h-9"
+                    />
+                  </div>
 
-                <div>
-                  <label className="block font-bold text-foreground mb-1">الحالة</label>
-                  <select
-                    value={formStatus}
-                    onChange={(e) => setFormStatus(e.target.value as any)}
-                    className="w-full h-9 px-3 bg-muted/40 border border-border rounded-xl font-bold text-foreground focus:outline-hidden focus:border-amber-500"
-                  >
-                    <option value="SCHEDULED">مجدولة وقادمة</option>
-                    <option value="IN_PROGRESS">جارية الآن</option>
-                    <option value="COMPLETED">مكتملة ومعتمدة</option>
-                    <option value="CANCELLED">ملغاة</option>
-                  </select>
-                </div>
+                  <div>
+                    <label className="block font-bold text-foreground mb-1">تقييم جاهزية الموقع الفنية</label>
+                    <select
+                      value={formSiteReadiness}
+                      onChange={(e) => setFormSiteReadiness(e.target.value as any)}
+                      className="w-full h-9 px-3 bg-muted/40 border border-border rounded-xl text-foreground font-semibold focus:outline-hidden focus:border-amber-500 cursor-pointer"
+                    >
+                      <option value="READY">جاهز للتنفيذ الفوري 100% 🟢</option>
+                      <option value="CONDITIONAL">جاهز بشروط وملاحظات 🟡</option>
+                      <option value="BLOCKED">معوقات تعيق البدء 🔴</option>
+                      <option value="SURVEY_ONLY">معاينة ورفع مقاسات 🔵</option>
+                    </select>
+                  </div>
 
-                <div>
-                  <label className="block font-bold text-foreground mb-1">بدل الانتقال (ج.م)</label>
-                  <Input
-                    type="number"
-                    value={formExpenses}
-                    onChange={(e) => setFormExpenses(e.target.value)}
-                    className="bg-muted/40 border-border text-foreground font-mono focus:border-amber-500 rounded-xl h-9"
-                  />
-                </div>
+                  <div>
+                    <label className="block font-bold text-foreground mb-1">حالة المعاينة</label>
+                    <select
+                      value={formStatus}
+                      onChange={(e) => setFormStatus(e.target.value as any)}
+                      className="w-full h-9 px-3 bg-muted/40 border border-border rounded-xl text-foreground font-semibold focus:outline-hidden focus:border-amber-500 cursor-pointer"
+                    >
+                      <option value="SCHEDULED">مجدولة 📅</option>
+                      <option value="IN_PROGRESS">جارية ⚡</option>
+                      <option value="COMPLETED">مكتملة معتمدة ✅</option>
+                    </select>
+                  </div>
 
-                <div className="sm:col-span-2">
-                  <label className="block font-bold text-foreground mb-1">الغرض الفني</label>
-                  <Input
-                    value={formPurpose}
-                    onChange={(e) => setFormPurpose(e.target.value)}
-                    className="bg-muted/40 border-border text-foreground focus:border-amber-500 rounded-xl h-9"
-                  />
-                </div>
+                  <div className="sm:col-span-2">
+                    <label className="block font-bold text-foreground mb-1">أعضاء لجنة المعاينة</label>
+                    <Input
+                      value={formCommittee}
+                      onChange={(e) => setFormCommittee(e.target.value)}
+                      className="bg-muted/40 border-border text-foreground focus:border-amber-500 rounded-xl h-9"
+                    />
+                  </div>
 
-                <div className="sm:col-span-2">
-                  <label className="block font-bold text-foreground mb-1">نتائج الفحص والمعاينة</label>
-                  <Input
-                    value={formFindings}
-                    onChange={(e) => setFormFindings(e.target.value)}
-                    className="bg-muted/40 border-border text-foreground focus:border-amber-500 rounded-xl h-9"
-                  />
-                </div>
+                  <div className="sm:col-span-2">
+                    <label className="block font-bold text-foreground mb-1">النتائج الفنية الواقعية</label>
+                    <textarea
+                      rows={2}
+                      value={formFindings}
+                      onChange={(e) => setFormFindings(e.target.value)}
+                      className="w-full p-2.5 bg-muted/40 border border-border text-foreground focus:border-amber-500 rounded-xl focus:outline-hidden"
+                    />
+                  </div>
 
-                <div className="sm:col-span-2">
-                  <label className="block font-bold text-foreground mb-1">ملاحظات عامة</label>
-                  <Input
-                    value={formNotes}
-                    onChange={(e) => setFormNotes(e.target.value)}
-                    className="bg-muted/40 border-border text-foreground focus:border-amber-500 rounded-xl h-9"
-                  />
+                  <div className="sm:col-span-2">
+                    <label className="block font-bold text-foreground mb-1">المعوقات والملاحظات الحرجة</label>
+                    <Input
+                      value={formObstacles}
+                      onChange={(e) => setFormObstacles(e.target.value)}
+                      className="bg-muted/40 border-border text-foreground focus:border-amber-500 rounded-xl h-9"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block font-bold text-foreground mb-1">بدل ومصروفات المعاينة (ج.م)</label>
+                    <Input
+                      type="number"
+                      value={formExpenses}
+                      onChange={(e) => setFormExpenses(e.target.value)}
+                      className="bg-muted/40 border-border text-foreground font-mono focus:border-amber-500 rounded-xl h-9"
+                    />
+                  </div>
+
+                  <div className="flex items-center gap-2 pt-6">
+                    <input
+                      type="checkbox"
+                      id="editPaid"
+                      checked={formIsPaid}
+                      onChange={(e) => setFormIsPaid(e.target.checked)}
+                      className="rounded border-border text-blue-600 focus:ring-blue-500 h-4 w-4 cursor-pointer"
+                    />
+                    <label htmlFor="editPaid" className="font-bold text-foreground cursor-pointer select-none">
+                      تم صرف بدلات الانتقال
+                    </label>
+                  </div>
                 </div>
               </div>
-            </div>
 
               <div className="px-5 sm:px-6 py-3.5 border-t border-border bg-muted/40 flex items-center justify-end gap-2.5 shrink-0">
                 <Button
@@ -951,132 +1427,10 @@ export default function VisitsPage() {
                   disabled={submitting}
                   className="bg-amber-600 hover:bg-amber-700 text-white font-bold rounded-xl text-xs h-9 px-5 cursor-pointer shadow-sm"
                 >
-                  تحديث المعاينة
+                  {submitting ? "جاري التحديث..." : "تحديث محضر المعاينة"}
                 </Button>
               </div>
             </form>
-          </div>
-        </div>,
-        document.body
-      )}
-
-      {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-          MODAL: محضر معاينة رسمي للطباعة (Printable Inspection Minutes)
-      ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
-      {mounted && dossierModalOpen && activeVisit && createPortal(
-        <div className="fixed inset-0 z-[9999] bg-black/80 backdrop-blur-sm flex items-center justify-center p-3 sm:p-5 overflow-y-auto animate-fade-in" style={{ direction: 'rtl' }}>
-          <div className="relative w-full max-w-2xl bg-card dark:bg-[#0c1427] rounded-3xl border border-border shadow-2xl flex flex-col max-h-[calc(100vh-3rem)] overflow-hidden animate-scale-up my-auto">
-            <div className="flex items-center justify-between px-5 sm:px-6 py-4 border-b border-border bg-card dark:bg-[#0c1427] shrink-0">
-              <div className="flex items-center gap-2 text-blue-600">
-                <Printer className="h-5 w-5" />
-                <h3 className="text-base sm:text-lg font-bold text-foreground">
-                  محضر معاينة موقع رسمي معتمد (A4 Official Minutes)
-                </h3>
-              </div>
-              <button
-                type="button"
-                onClick={() => setDossierModalOpen(false)}
-                className="text-muted-foreground hover:text-foreground cursor-pointer p-1.5 rounded-xl hover:bg-muted transition-colors"
-              >
-                <X className="h-5 w-5" />
-              </button>
-            </div>
-
-            <div className="flex-1 overflow-y-auto px-5 sm:px-6 py-4 space-y-4">
-              {/* Official Report Template */}
-              <div className="p-6 bg-card border-2 border-border/80 rounded-2xl space-y-4 text-foreground shadow-sm">
-                <div className="flex items-start justify-between border-b pb-3">
-                  <div>
-                    <h4 className="font-extrabold text-base">جمهورية مصر العربية</h4>
-                    <p className="text-xs text-muted-foreground">محضر معاينة ميدانية نافية للجهالة — قانون 182 لسنة 2018</p>
-                  </div>
-                  <div className="text-left font-mono text-xs">
-                    <div className="font-bold text-sm text-blue-600">{activeVisit.reportNumber || "VIS-OFFICIAL"}</div>
-                    <div className="text-muted-foreground">التاريخ: {activeVisit.visitDate}</div>
-                  </div>
-                </div>
-
-                <div className="text-center py-1">
-                  <span className="text-base font-black underline underline-offset-6">
-                    محضر إثبات حالة ومعاينة موقع العملية
-                  </span>
-                </div>
-
-                <div className="space-y-2.5 text-xs leading-relaxed">
-                  <div className="flex justify-between py-1 border-b border-border/40">
-                    <span className="font-bold text-muted-foreground">العملية محل المعاينة:</span>
-                    <span className="font-mono font-bold text-blue-600">كود [{activeVisit.operationCode}]</span>
-                  </div>
-
-                  <div className="flex justify-between py-1 border-b border-border/40">
-                    <span className="font-bold text-muted-foreground">جهة الطرح والإسناد:</span>
-                    <span className="font-bold">{activeVisit.authority}</span>
-                  </div>
-
-                  <div className="flex justify-between py-1 border-b border-border/40">
-                    <span className="font-bold text-muted-foreground">موقع المعاينة بالتفصيل:</span>
-                    <span className="font-semibold">{activeVisit.location}</span>
-                  </div>
-
-                  <div className="flex justify-between py-1 border-b border-border/40">
-                    <span className="font-bold text-muted-foreground">مهندس الموقع القائم بالمعاينة:</span>
-                    <span className="font-bold text-foreground">{activeVisit.employeeName}</span>
-                  </div>
-
-                  {activeVisit.purpose && (
-                    <div className="p-2.5 rounded-xl bg-muted/40 border border-border/60">
-                      <span className="font-bold block mb-1">الغرض الفني وموضوع المعاينة:</span>
-                      <p>{activeVisit.purpose}</p>
-                    </div>
-                  )}
-
-                  {activeVisit.findings && (
-                    <div className="p-2.5 rounded-xl bg-blue-500/10 border border-blue-500/20">
-                      <span className="font-bold text-blue-600 block mb-1">النتائج الفنية والمعاينة الواقعية:</span>
-                      <p>{activeVisit.findings}</p>
-                    </div>
-                  )}
-
-                  {activeVisit.notes && (
-                    <div className="p-2 rounded-xl bg-muted/30 border border-border/40">
-                      <span className="font-bold block mb-0.5 text-muted-foreground">ملاحظات تكميلية:</span>
-                      <p>{activeVisit.notes}</p>
-                    </div>
-                  )}
-                </div>
-
-                {/* Signatures */}
-                <div className="grid grid-cols-2 gap-6 pt-5 border-t text-center text-xs">
-                  <div>
-                    <span className="text-muted-foreground block mb-6">مهندس المعاينة الميدانية</span>
-                    <span className="font-bold border-t border-border pt-1 block">{activeVisit.employeeName}</span>
-                  </div>
-                  <div>
-                    <span className="text-muted-foreground block mb-6">اعتماد الإدارة الفنية والمشروعات</span>
-                    <span className="font-bold border-t border-border pt-1 block">مدير المشروعات والعقود</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div className="px-5 sm:px-6 py-3.5 border-t border-border bg-muted/40 flex items-center justify-between shrink-0">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setDossierModalOpen(false)}
-                className="text-xs border-border cursor-pointer"
-              >
-                إغلاق
-              </Button>
-              <Button
-                size="sm"
-                onClick={() => window.print()}
-                className="bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs px-5 rounded-xl cursor-pointer shadow-md"
-              >
-                <Printer className="h-4 w-4 ml-1.5" />
-                <span>طباعة المحضر الرسمي A4</span>
-              </Button>
-            </div>
           </div>
         </div>,
         document.body
@@ -1095,8 +1449,8 @@ export default function VisitsPage() {
             <div className="space-y-1.5">
               <h3 className="text-base sm:text-lg font-bold text-foreground">تأكيد حذف المعاينة الميدانية</h3>
               <p className="text-xs text-muted-foreground leading-relaxed">
-                هل أنت متأكد من حذف المعاينة{" "}
-                <strong className="text-foreground">"{activeVisit.title}"</strong> الخاصة بالعملية{" "}
+                هل أنت متأكد من حذف محضر المعاينة رقم{" "}
+                <strong className="text-foreground">{activeVisit.reportNumber}</strong> للعملية{" "}
                 <strong className="font-mono text-blue-600">[{activeVisit.operationCode}]</strong>؟
               </p>
             </div>

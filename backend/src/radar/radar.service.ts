@@ -198,6 +198,12 @@ export class RadarService {
     const importedCount = await this.prisma.radarItem.count({ where: { isImported: true } });
     const highMatchCount = await this.prisma.radarItem.count({ where: { matchScore: { gte: 90 } } });
 
+    const startOfToday = new Date();
+    startOfToday.setHours(0, 0, 0, 0);
+    const todayCount = await this.prisma.radarItem.count({
+      where: { createdAt: { gte: startOfToday } },
+    });
+
     const source = await this.prisma.radarSource.findFirst({
       where: { url: { contains: 'digitalegypt' } },
     });
@@ -207,6 +213,7 @@ export class RadarService {
       pendingCount,
       importedCount,
       highMatchCount,
+      todayCount,
       lastScanTime: source?.lastFetched || null,
       sourceName: source?.name || 'منظومة التعاقدات الحكومية — مصر الرقمية',
     };

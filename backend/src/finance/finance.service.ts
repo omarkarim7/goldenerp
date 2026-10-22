@@ -53,4 +53,51 @@ export class FinanceService {
     const netProfit = records.reduce((s, r) => s + Number(r.netProfit), 0);
     return { totalCost, totalRevenue, netProfit };
   }
+
+  async getOperationsOverview() {
+    const operations = await this.prisma.operation.findMany({
+      include: {
+        companies: {
+          include: {
+            company: { select: { id: true, name: true, code: true } },
+          },
+        },
+        operationFinance: true,
+        certificates: {
+          select: {
+            id: true,
+            certificateNo: true,
+            grossAmount: true,
+            taxDeduction: true,
+            vatAmount: true,
+            performanceBond: true,
+            netAmount: true,
+            certificateDate: true,
+          },
+        },
+        guarantees: {
+          select: {
+            id: true,
+            guaranteeNumber: true,
+            bank: true,
+            amount: true,
+            type: true,
+            status: true,
+            validUntil: true,
+          },
+        },
+        purchases: {
+          select: {
+            id: true,
+            totalAmount: true,
+            paidAmount: true,
+            remaining: true,
+            status: true,
+          },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+    return operations;
+  }
 }

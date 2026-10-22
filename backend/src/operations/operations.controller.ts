@@ -409,6 +409,16 @@ export class OperationsController {
     return this.operationsService.addCertificate(id, body);
   }
 
+  @Delete(':id/certificates/:certId')
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.GENERAL_MANAGER, UserRole.EMPLOYEE)
+  deleteCertificate(
+    @Param('id') id: string,
+    @Param('certId') certId: string,
+  ) {
+    return this.operationsService.deleteCertificate(id, certId);
+  }
+
   @Post(':id/finance')
   @UseGuards(RolesGuard)
   @Roles(UserRole.GENERAL_MANAGER)

@@ -16,6 +16,8 @@ import {
   Download,
   Check,
   Landmark,
+  Eye,
+  X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -86,24 +88,27 @@ export function TabCertificates({
 
   const remainingBalance = Math.max(0, expectedTotalContract - totalCertificatesPaid);
 
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [viewingCert, setViewingCert] = useState<any | null>(null);
+
   const handleSaveCertificate = async () => {
     setSaving(true);
     try {
       const notesPayload = JSON.stringify({
-        vatRate: Number(vatRate),
+        vatRate: Number(vatRate) || 0,
         vatAmount: vat,
-        profitTaxRate: Number(profitTaxRate),
+        profitTaxRate: Number(profitTaxRate) || 0,
         profitTaxAmount: profitTax,
         socialInsuranceDeduction: socialIns,
         laborDeduction: labor,
-        retentionRate: Number(retentionRate),
+        retentionRate: Number(retentionRate) || 0,
         retentionAmount: retention,
         penaltyDeduction: penalty,
         userNotes: notes,
       });
 
       await api.post(`/operations/${op.id}/certificates`, {
-        certificateNo: Number(certificateNo),
+        certificateNo: Number(certificateNo) || 1,
         grossAmount: gross,
         taxDeduction: profitTax,
         vatAmount: vat,
@@ -115,10 +120,26 @@ export function TabCertificates({
       toast.success("تم تسجيل المستخلص المالي وحساب الاستقطاعات الرسمية بنجاح! 🧾✓");
       setAdding(false);
       onRefresh();
-    } catch {
-      toast.error("فشل تسجيل المستخلص");
+    } catch (err: any) {
+      const msg = err?.response?.data?.message || err?.message || "فشل تسجيل المستخلص";
+      toast.error(`فشل تسجيل المستخلص: ${msg}`);
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleDeleteCertificate = async (certId: string, certNo: number) => {
+    if (!confirm(`هل أنت متأكد من حذف المستخلص رقم #${certNo}؟`)) return;
+    setDeletingId(certId);
+    try {
+      await api.delete(`/operations/${op.id}/certificates/${certId}`);
+      toast.success(`تم حذف المستخلص رقم #${certNo} بنجاح! 🗑️`);
+      onRefresh();
+    } catch (err: any) {
+      const msg = err?.response?.data?.message || err?.message || "فشل حذف المستخلص";
+      toast.error(`فشل حذف المستخلص: ${msg}`);
+    } finally {
+      setDeletingId(null);
     }
   };
 
@@ -382,9 +403,35 @@ export function TabCertificates({
                         صافي المنصرف: {formatCurrency(Number(c.netAmount))}
                       </Badge>
                     </div>
-                    <span className="text-xs text-muted-foreground font-mono">
-                      تاريخ التسجيل: {formatDate(c.createdAt)}
-                    </span>
+
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-muted-foreground font-mono">
+                        تاريخ التسجيل: {formatDate(c.createdAt)}
+                      </span>
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        onClick={() => setViewingCert(c)}
+                        className="h-8 w-8 rounded-xl text-teal-600 hover:text-teal-700 hover:bg-teal-50 dark:hover:bg-teal-950/40 cursor-pointer"
+                        title="معاينة تفاصيل المستخلص والاستقطاعات"
+                      >
+                        <Eye className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        disabled={deletingId === c.id}
+                        onClick={() => handleDeleteCertificate(c.id, c.certificateNo)}
+                        className="h-8 w-8 rounded-xl text-rose-500 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 cursor-pointer"
+                        title="حذف المستخلص"
+                      >
+                        {deletingId === c.id ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <Trash2 className="h-4 w-4" />
+                        )}
+                      </Button>
+                    </div>
                   </div>
 
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
@@ -425,6 +472,98 @@ export function TabCertificates({
           )
         )}
       </SectionCard>
+
+      {/* ━━━ DETAILS MODAL (VIEW CERTIFICATE — STRICTLY NO PRINT BUTTON) ━━━ */}
+      {viewingCert && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto animate-fade-in">
+          <div className="bg-card text-card-foreground border border-border rounded-3xl max-w-lg w-full p-6 space-y-5 shadow-2xl relative">
+            <div className="flex items-center justify-between pb-3 border-b border-border">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-xl bg-teal-500/15 text-teal-600 flex items-center justify-center font-bold text-sm">
+                  #{viewingCert.certificateNo}
+                </div>
+                <div>
+                  <h3 className="font-black text-sm sm:text-base text-foreground">
+                    تفاصيل المستخلص المالي رقم #{viewingCert.certificateNo}
+                  </h3>
+                  <span className="text-[11px] text-muted-foreground font-mono">
+                    تاريخ التسجيل: {formatDate(viewingCert.createdAt)}
+                  </span>
+                </div>
+              </div>
+              <button
+                onClick={() => setViewingCert(null)}
+                className="p-1 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground cursor-pointer"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="space-y-3.5 text-xs">
+              <div className="p-4 rounded-2xl bg-teal-500/10 border border-teal-500/20 flex items-center justify-between">
+                <div>
+                  <span className="text-[11px] text-muted-foreground block font-bold">صافي أمر الصرف المعتمد:</span>
+                  <span className="text-2xl font-black font-mono text-teal-600 dark:text-teal-400">
+                    {formatCurrency(Number(viewingCert.netAmount))}
+                  </span>
+                  <span className="text-[11px] text-foreground block font-semibold mt-0.5">
+                    {tafqeetArabic(Number(viewingCert.netAmount))}
+                  </span>
+                </div>
+                <Badge className="badge-teal text-xs font-bold">
+                  معتمد للدفع ✓
+                </Badge>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3 p-3.5 rounded-2xl bg-muted/40 border border-border">
+                <div>
+                  <span className="text-muted-foreground block text-[11px]">إجمالي الأعمال (Gross):</span>
+                  <span className="font-mono font-bold text-foreground text-sm">{formatCurrency(Number(viewingCert.grossAmount))}</span>
+                </div>
+                <div>
+                  <span className="text-muted-foreground block text-[11px]">ضريبة القيمة المضافة (14%):</span>
+                  <span className="font-mono font-bold text-emerald-600 text-sm">+{formatCurrency(Number(viewingCert.vatAmount))}</span>
+                </div>
+                <div>
+                  <span className="text-muted-foreground block text-[11px]">خصم أ.ت.ص (1%):</span>
+                  <span className="font-mono font-bold text-rose-500 text-sm">-{formatCurrency(Number(viewingCert.taxDeduction))}</span>
+                </div>
+                <div>
+                  <span className="text-muted-foreground block text-[11px]">ضمان الأعمال (5%):</span>
+                  <span className="font-mono font-bold text-rose-500 text-sm">-{formatCurrency(Number(viewingCert.performanceBond))}</span>
+                </div>
+              </div>
+
+              {viewingCert.notes && (
+                <div className="p-3 rounded-xl bg-muted/30 border border-border text-xs space-y-1">
+                  <span className="font-bold text-muted-foreground block">ملاحظات المستخلص:</span>
+                  <p className="text-foreground leading-relaxed">
+                    {(() => {
+                      try {
+                        const parsed = JSON.parse(viewingCert.notes);
+                        return parsed.userNotes || viewingCert.notes;
+                      } catch {
+                        return viewingCert.notes;
+                      }
+                    })()}
+                  </p>
+                </div>
+              )}
+            </div>
+
+            <div className="flex justify-end pt-2 border-t border-border">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setViewingCert(null)}
+                className="rounded-xl px-5 text-xs cursor-pointer"
+              >
+                إغلاق
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Continuity Action Footer */}
       <StepFooterNav currentTabId="certificates" onNavigate={onNavigate} />

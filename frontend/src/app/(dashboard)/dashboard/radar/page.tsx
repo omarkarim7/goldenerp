@@ -168,6 +168,7 @@ export default function RadarPage() {
   const [selectedMethod, setSelectedMethod] = useState("ALL");
   const [selectedCategory, setSelectedCategory] = useState("ALL");
   const [importFilter, setImportFilter] = useState<"ALL" | "PENDING" | "IMPORTED">("PENDING");
+  const [recencyFilter, setRecencyFilter] = useState<"ALL" | "TODAY" | "YESTERDAY" | "RECENT">("ALL");
   const [sortOption, setSortOption] = useState<"date" | "deadline">("date");
 
   // Pagination State (Default 5 rows minimum)
@@ -702,6 +703,60 @@ export default function RadarPage() {
     return diffDays;
   };
 
+  // Detection Recency Badge Helper (Intelligent Discovery)
+  const getDetectionBadge = (createdAtStr?: string | null, pubDateStr?: string | null) => {
+    const dateToCheck = createdAtStr || pubDateStr;
+    if (!dateToCheck) return null;
+    const itemDate = new Date(dateToCheck);
+    if (isNaN(itemDate.getTime())) return null;
+    const now = new Date();
+    const diffMs = now.getTime() - itemDate.getTime();
+    const diffHours = diffMs / (1000 * 60 * 60);
+
+    const isSameCalendarDay =
+      itemDate.getDate() === now.getDate() &&
+      itemDate.getMonth() === now.getMonth() &&
+      itemDate.getFullYear() === now.getFullYear();
+
+    const yesterday = new Date();
+    yesterday.setDate(now.getDate() - 1);
+    const isYesterday =
+      itemDate.getDate() === yesterday.getDate() &&
+      itemDate.getMonth() === yesterday.getMonth() &&
+      itemDate.getFullYear() === yesterday.getFullYear();
+
+    if (isSameCalendarDay || diffHours <= 24) {
+      return {
+        label: "تم رصدها اليوم 🟢",
+        className: "bg-emerald-500/20 text-emerald-800 dark:text-emerald-300 border-emerald-500/40 font-black animate-pulse",
+        type: "TODAY" as const,
+      };
+    }
+    if (isYesterday || (diffHours > 24 && diffHours <= 48)) {
+      return {
+        label: "رُصدت أمس ⚡",
+        className: "bg-amber-500/20 text-amber-800 dark:text-amber-300 border-amber-500/40 font-bold",
+        type: "YESTERDAY" as const,
+      };
+    }
+    if (diffHours <= 72) {
+      return {
+        label: "مناقصة جديدة 🚀",
+        className: "bg-cyan-500/20 text-cyan-800 dark:text-cyan-300 border-cyan-500/40 font-bold",
+        type: "RECENT" as const,
+      };
+    }
+    return null;
+  };
+
+  // Real-time Today Detected Items Count
+  const todayDetectedCount = useMemo(() => {
+    return items.filter((i) => {
+      const b = getDetectionBadge(i.createdAt, i.publicationDate);
+      return b?.type === "TODAY";
+    }).length;
+  }, [items]);
+
   // Filtered and Sorted Items
   const filteredItems = useMemo(() => {
     return items
@@ -720,6 +775,14 @@ export default function RadarPage() {
         // Import Status Filter
         if (importFilter === "PENDING" && item.isImported) return false;
         if (importFilter === "IMPORTED" && !item.isImported) return false;
+
+        // Recency Filter
+        if (recencyFilter !== "ALL") {
+          const badge = getDetectionBadge(item.createdAt, item.publicationDate);
+          if (recencyFilter === "TODAY" && badge?.type !== "TODAY") return false;
+          if (recencyFilter === "YESTERDAY" && badge?.type !== "YESTERDAY") return false;
+          if (recencyFilter === "RECENT" && !badge) return false;
+        }
 
         // Method Filter (طريقة الطرح: مناقصة، ممارسة، مزايدة، إسناد)
         if (selectedMethod !== "ALL") {
@@ -753,12 +816,12 @@ export default function RadarPage() {
         const pb = b.publicationDate ? new Date(b.publicationDate).getTime() : new Date(b.createdAt).getTime();
         return pb - pa;
       });
-  }, [items, searchQuery, importFilter, selectedMethod, selectedCategory, sortOption]);
+  }, [items, searchQuery, importFilter, recencyFilter, selectedMethod, selectedCategory, sortOption]);
 
   // Reset pagination when filters change
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchQuery, importFilter, selectedMethod, selectedCategory, sortOption, pageSize]);
+  }, [searchQuery, importFilter, recencyFilter, selectedMethod, selectedCategory, sortOption, pageSize]);
 
   // Pagination calculations
   const totalItems = filteredItems.length;
@@ -1030,26 +1093,46 @@ export default function RadarPage() {
       {/* ========================================================================= */}
       {/* 2. Key Metric KPI Cards (100% Dynamic & Instantly Reactive)               */}
       {/* ========================================================================= */}
-      <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        {/* KPI 1: إجمالي العمليات المرصودة */}
         <div className="glass-card rounded-2xl p-4 sm:p-5 border border-border">
-          <span className="text-xs text-muted-foreground font-bold">إجمالي العمليات المرصودة</span>
+          <span className="text-xs text-muted-foreground font-bold">إجمالي العمليات بالرادار</span>
           <p className="text-2xl sm:text-3xl font-black text-foreground mt-1 font-mono">
             {totalCount}
           </p>
           <span className="text-[11px] text-muted-foreground mt-1 block">مسحوبة من البوابة الحكومية</span>
         </div>
 
-        <div className="glass-card rounded-2xl p-4 sm:p-5 border border-border">
-          <span className="text-xs text-amber-600 dark:text-amber-400 font-bold">فرص جديدة بانتظار الإجراء</span>
+        {/* KPI 2: تم رصدها اليوم (الجديدة) */}
+        <div className="glass-card rounded-2xl p-4 sm:p-5 border border-emerald-500/40 bg-emerald-500/[0.04] relative overflow-hidden group">
+          <div className="flex items-center justify-between">
+            <span className="text-xs text-emerald-600 dark:text-emerald-400 font-bold flex items-center gap-1.5">
+              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping inline-block" />
+              <span>تم رصدها اليوم</span>
+            </span>
+            <Badge className="bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 border-emerald-500/30 text-[10px] font-bold">
+              جديد 🟢
+            </Badge>
+          </div>
+          <p className="text-2xl sm:text-3xl font-black text-emerald-600 dark:text-emerald-400 mt-1 font-mono">
+            {todayDetectedCount}
+          </p>
+          <span className="text-[11px] text-muted-foreground mt-1 block">عمليات ملتقطة خلال آخر 24 ساعة</span>
+        </div>
+
+        {/* KPI 3: فرص جديدة بانتظار الإجراء */}
+        <div className="glass-card rounded-2xl p-4 sm:p-5 border border-amber-500/30">
+          <span className="text-xs text-amber-600 dark:text-amber-400 font-bold">فرص قيد الانتظار</span>
           <p className="text-2xl sm:text-3xl font-black text-amber-600 dark:text-amber-400 mt-1 font-mono">
             {pendingCount}
           </p>
           <span className="text-[11px] text-muted-foreground mt-1 block">جاهزة للسحب والتسجيل</span>
         </div>
 
-        <div className="glass-card rounded-2xl p-4 sm:p-5 border border-border">
-          <span className="text-xs text-emerald-600 dark:text-emerald-400 font-bold">تم تحويلها لعمليات بالمنظومة</span>
-          <p className="text-2xl sm:text-3xl font-black text-emerald-600 dark:text-emerald-400 mt-1 font-mono">
+        {/* KPI 4: تم تحويلها لعمليات بالمنظومة */}
+        <div className="glass-card rounded-2xl p-4 sm:p-5 border border-blue-500/30">
+          <span className="text-xs text-blue-600 dark:text-blue-400 font-bold">تم تحويلها لعمليات</span>
+          <p className="text-2xl sm:text-3xl font-black text-blue-600 dark:text-blue-400 mt-1 font-mono">
             {importedCount}
           </p>
           <span className="text-[11px] text-muted-foreground mt-1 block">مسجلة رسمياً كعمليات</span>
@@ -1119,6 +1202,56 @@ export default function RadarPage() {
               كافة العمليات ({items.length})
             </button>
           </div>
+        </div>
+
+        {/* Row 1.5: Smart Detection Timing Filter Chips (تم رصدها اليوم 🟢 / رصدت أمس ⚡ / الكل) */}
+        <div className="flex items-center gap-1.5 flex-wrap pt-1">
+          <span className="text-[11px] font-bold text-muted-foreground ml-1">توقيت الرصد الذكي:</span>
+          <button
+            type="button"
+            onClick={() => setRecencyFilter("ALL")}
+            className={`px-3 py-1 rounded-xl text-xs font-bold transition-all cursor-pointer border ${
+              recencyFilter === "ALL"
+                ? "bg-foreground text-background border-foreground shadow-xs"
+                : "bg-muted/40 text-muted-foreground border-border hover:text-foreground"
+            }`}
+          >
+            الكل ({items.length})
+          </button>
+          <button
+            type="button"
+            onClick={() => setRecencyFilter("TODAY")}
+            className={`px-3 py-1 rounded-xl text-xs font-bold transition-all cursor-pointer border flex items-center gap-1.5 ${
+              recencyFilter === "TODAY"
+                ? "bg-emerald-600 text-white border-emerald-500 shadow-xs"
+                : "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-500/30 hover:bg-emerald-500/20"
+            }`}
+          >
+            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+            <span>تم رصدها اليوم ({todayDetectedCount})</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setRecencyFilter("YESTERDAY")}
+            className={`px-3 py-1 rounded-xl text-xs font-bold transition-all cursor-pointer border flex items-center gap-1.5 ${
+              recencyFilter === "YESTERDAY"
+                ? "bg-amber-600 text-white border-amber-500 shadow-xs"
+                : "bg-amber-500/10 text-amber-700 dark:text-amber-300 border-amber-500/30 hover:bg-amber-500/20"
+            }`}
+          >
+            <span>⚡ رُصدت أمس ({items.filter((i) => getDetectionBadge(i.createdAt, i.publicationDate)?.type === "YESTERDAY").length})</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setRecencyFilter("RECENT")}
+            className={`px-3 py-1 rounded-xl text-xs font-bold transition-all cursor-pointer border flex items-center gap-1.5 ${
+              recencyFilter === "RECENT"
+                ? "bg-cyan-600 text-white border-cyan-500 shadow-xs"
+                : "bg-cyan-500/10 text-cyan-700 dark:text-cyan-300 border-cyan-500/30 hover:bg-cyan-500/20"
+            }`}
+          >
+            <span>🚀 ملتقطات حديثة (آخر 72 ساعة)</span>
+          </button>
         </div>
 
         {/* Row 2: Method & Category Dropdowns + Reset + Result Count + View Toggle */}
@@ -1336,6 +1469,16 @@ export default function RadarPage() {
                                   <span>تمت المعاينة</span>
                                 </span>
                               )}
+                              {/* Recency Discovery Badge */}
+                              {(() => {
+                                const recency = getDetectionBadge(tender.createdAt, tender.publicationDate);
+                                if (!recency) return null;
+                                return (
+                                  <span className={`px-2 py-0.5 rounded-md border text-[10px] font-bold flex items-center gap-1 ${recency.className}`}>
+                                    <span>{recency.label}</span>
+                                  </span>
+                                );
+                              })()}
                             </div>
 
                             <div className="font-bold text-foreground text-xs leading-snug line-clamp-2" title={tender.title}>
@@ -1540,17 +1683,30 @@ export default function RadarPage() {
                       )}
                     </div>
 
-                    {/* Status Badge */}
-                    {tender.isImported ? (
-                      <span className="px-2 py-0.5 rounded-md bg-emerald-500/15 text-emerald-800 dark:text-emerald-300 border border-emerald-500/30 text-[10px] font-bold flex items-center gap-1">
-                        <CheckCircle2 className="h-3 w-3" />
-                        <span>مسجلة</span>
-                      </span>
-                    ) : (
-                      <span className="px-2 py-0.5 rounded-md bg-amber-500/15 text-amber-800 dark:text-amber-300 border border-amber-500/30 text-[10px] font-bold">
-                        متاحة للسحب
-                      </span>
-                    )}
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      {/* Recency Discovery Badge */}
+                      {(() => {
+                        const recency = getDetectionBadge(tender.createdAt, tender.publicationDate);
+                        if (!recency) return null;
+                        return (
+                          <span className={`px-2 py-0.5 rounded-md border text-[10px] font-bold flex items-center gap-1 ${recency.className}`}>
+                            <span>{recency.label}</span>
+                          </span>
+                        );
+                      })()}
+
+                      {/* Status Badge */}
+                      {tender.isImported ? (
+                        <span className="px-2 py-0.5 rounded-md bg-emerald-500/15 text-emerald-800 dark:text-emerald-300 border border-emerald-500/30 text-[10px] font-bold flex items-center gap-1">
+                          <CheckCircle2 className="h-3 w-3" />
+                          <span>مسجلة</span>
+                        </span>
+                      ) : (
+                        <span className="px-2 py-0.5 rounded-md bg-amber-500/15 text-amber-800 dark:text-amber-300 border border-amber-500/30 text-[10px] font-bold">
+                          متاحة للسحب
+                        </span>
+                      )}
+                    </div>
                   </div>
 
                   {/* Row 2: Tender Title */}
@@ -1750,6 +1906,17 @@ export default function RadarPage() {
                           <span>تم سحبها بالمنظومة</span>
                         </span>
                       )}
+
+                      {/* Recency Discovery Badge */}
+                      {(() => {
+                        const recency = getDetectionBadge(tender.createdAt, tender.publicationDate);
+                        if (!recency) return null;
+                        return (
+                          <span className={`px-2.5 py-1 rounded-xl border text-xs font-bold flex items-center gap-1 ${recency.className}`}>
+                            <span>{recency.label}</span>
+                          </span>
+                        );
+                      })()}
                     </div>
 
                     {tender.referenceNumber && (

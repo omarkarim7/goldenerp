@@ -116,7 +116,7 @@ export function TabFinance({
   const [reportModalOpen, setReportModalOpen] = useState(false);
   const [saving, setSaving] = useState(false);
 
-  // Form State
+  // Committed Saved State (Used for Dashboard KPI Cards & Progress Bar)
   const [revenue, setRevenue] = useState<string>(() =>
     (fin?.totalRevenue ?? defaultRevenue).toString()
   );
@@ -146,7 +146,68 @@ export function TabFinance({
   );
   const [isFinClosed, setIsFinClosed] = useState<boolean>(() => !!fin?.isClosed);
 
-  // Computed Financial Aggregates
+  // Sync committed state if op or fin changes from server
+  React.useEffect(() => {
+    setRevenue((fin?.totalRevenue ?? defaultRevenue).toString());
+    setDirectSupplyCost((existingDetailed.directSupplyCost ?? (fin ? Number(fin.totalCost) * 0.78 : 540000)).toString());
+    setLaborSocialCost((existingDetailed.laborSocialCost ?? (autoInsurancesTotal || 2600)).toString());
+    setGuaranteeFees((existingDetailed.guaranteeFees ?? 3500).toString());
+    setTaxDeductionAmount((existingDetailed.taxDeductionAmount ?? Math.round(Number(defaultRevenue) * 0.01)).toString());
+    setAdminLogisticsCost((existingDetailed.adminLogisticsCost ?? 14500).toString());
+    setExtraExpenses((existingDetailed.extraExpenses ?? 4500).toString());
+    setCollectedTotal((existingDetailed.collectedTotal ?? (autoPaymentOrderAmount || 0)).toString());
+    setFinancialNotes(fin?.notes || existingDetailed.financialNotes || "تم تسوية حسابات التوريد والمصروفات والتأمينات ومطابقة أوامر الدفع");
+    setIsFinClosed(!!fin?.isClosed);
+  }, [fin, op.notes, defaultRevenue, autoInsurancesTotal, autoPaymentOrderAmount]);
+
+  // Draft State (Active strictly inside Editing Modal — discarded on Cancel)
+  const [draft, setDraft] = useState({
+    revenue: (fin?.totalRevenue ?? defaultRevenue).toString(),
+    directSupplyCost: (existingDetailed.directSupplyCost ?? (fin ? Number(fin.totalCost) * 0.78 : 540000)).toString(),
+    laborSocialCost: (existingDetailed.laborSocialCost ?? (autoInsurancesTotal || 2600)).toString(),
+    guaranteeFees: (existingDetailed.guaranteeFees ?? 3500).toString(),
+    taxDeductionAmount: (existingDetailed.taxDeductionAmount ?? Math.round(Number(defaultRevenue) * 0.01)).toString(),
+    adminLogisticsCost: (existingDetailed.adminLogisticsCost ?? 14500).toString(),
+    extraExpenses: (existingDetailed.extraExpenses ?? 4500).toString(),
+    collectedTotal: (existingDetailed.collectedTotal ?? (autoPaymentOrderAmount || 0)).toString(),
+    financialNotes: fin?.notes || existingDetailed.financialNotes || "تم تسوية حسابات التوريد والمصروفات والتأمينات ومطابقة أوامر الدفع",
+    isFinClosed: !!fin?.isClosed,
+  });
+
+  const handleOpenEdit = () => {
+    setDraft({
+      revenue,
+      directSupplyCost,
+      laborSocialCost,
+      guaranteeFees,
+      taxDeductionAmount,
+      adminLogisticsCost,
+      extraExpenses,
+      collectedTotal,
+      financialNotes,
+      isFinClosed,
+    });
+    setEditing(true);
+  };
+
+  const handleCancelEdit = () => {
+    // Reset draft back to saved values without mutating dashboard cards
+    setDraft({
+      revenue,
+      directSupplyCost,
+      laborSocialCost,
+      guaranteeFees,
+      taxDeductionAmount,
+      adminLogisticsCost,
+      extraExpenses,
+      collectedTotal,
+      financialNotes,
+      isFinClosed,
+    });
+    setEditing(false);
+  };
+
+  // Committed Computed Financial Aggregates (For Dashboard display)
   const numRevenue = Number(revenue) || 0;
   const numDirectSupply = Number(directSupplyCost) || 0;
   const numLaborSocial = Number(laborSocialCost) || 0;
@@ -168,11 +229,15 @@ export function TabFinance({
     numRevenue > 0 ? ((netProfit / numRevenue) * 100).toFixed(1) : "0.0";
   const numMargin = Number(marginPercent);
 
-  // Percentages of revenue for stacked breakdown
-  const supplyPct = numRevenue > 0 ? Math.min(100, Math.round((numDirectSupply / numRevenue) * 100)) : 0;
-  const laborPct = numRevenue > 0 ? Math.min(100, Math.round((numLaborSocial / numRevenue) * 100)) : 0;
-  const feesTaxesPct = numRevenue > 0 ? Math.min(100, Math.round(((numGuaranteeFees + numTaxes + numAdminLogistics + numExtra) / numRevenue) * 100)) : 0;
-  const profitPct = numRevenue > 0 ? Math.max(0, Math.round((netProfit / numRevenue) * 100)) : 0;
+  // Dynamic Robust Progress Bar Calculation (Thick & Never Empty)
+  const isDeficit = netProfit < 0;
+  const hasRevenue = numRevenue > 0;
+  const baseForPercentages = hasRevenue && !isDeficit ? numRevenue : (totalCalculatedCost > 0 ? totalCalculatedCost : 1);
+
+  const supplyPct = Math.min(100, Math.round((numDirectSupply / baseForPercentages) * 100));
+  const laborPct = Math.min(100, Math.round((numLaborSocial / baseForPercentages) * 100));
+  const feesTaxesPct = Math.min(100, Math.round(((numGuaranteeFees + numTaxes + numAdminLogistics + numExtra) / baseForPercentages) * 100));
+  const profitPct = hasRevenue && !isDeficit ? Math.max(0, 100 - (supplyPct + laborPct + feesTaxesPct)) : 0;
 
   // Collection progress
   const numCollected = Number(collectedTotal) || 0;
@@ -180,16 +245,28 @@ export function TabFinance({
   const collectionRate =
     numRevenue > 0 ? Math.min(100, Math.round((numCollected / numRevenue) * 100)) : 0;
 
+  // Draft Live Preview Calculations (For inside edit modal)
+  const draftRevenue = Number(draft.revenue) || 0;
+  const draftSupply = Number(draft.directSupplyCost) || 0;
+  const draftLabor = Number(draft.laborSocialCost) || 0;
+  const draftFees = Number(draft.guaranteeFees) || 0;
+  const draftTaxes = Number(draft.taxDeductionAmount) || 0;
+  const draftAdmin = Number(draft.adminLogisticsCost) || 0;
+  const draftExtra = Number(draft.extraExpenses) || 0;
+  const draftTotalCost = draftSupply + draftLabor + draftFees + draftTaxes + draftAdmin + draftExtra;
+  const draftNetProfit = draftRevenue - draftTotalCost;
+  const draftMargin = draftRevenue > 0 ? ((draftNetProfit / draftRevenue) * 100).toFixed(1) : "0.0";
+
   // Save Finance Action
   const handleSaveFinance = async () => {
     setSaving(true);
     try {
       // 1. Update backend finance record
       await api.post(`/operations/${op.id}/finance`, {
-        totalRevenue: numRevenue,
-        totalCost: totalCalculatedCost,
-        netProfit,
-        notes: financialNotes,
+        totalRevenue: draftRevenue,
+        totalCost: draftTotalCost,
+        netProfit: draftNetProfit,
+        notes: draft.financialNotes,
       });
 
       // 2. Persist detailed cost breakdown into op.notes
@@ -203,21 +280,33 @@ export function TabFinance({
       }
 
       existingNotesObj.detailedFinanceData = {
-        directSupplyCost: numDirectSupply,
-        laborSocialCost: numLaborSocial,
-        guaranteeFees: numGuaranteeFees,
-        taxDeductionAmount: numTaxes,
-        adminLogisticsCost: numAdminLogistics,
-        extraExpenses: numExtra,
-        collectedTotal: numCollected,
-        financialNotes,
-        isFinClosed,
+        directSupplyCost: draftSupply,
+        laborSocialCost: draftLabor,
+        guaranteeFees: draftFees,
+        taxDeductionAmount: draftTaxes,
+        adminLogisticsCost: draftAdmin,
+        extraExpenses: draftExtra,
+        collectedTotal: Number(draft.collectedTotal) || 0,
+        financialNotes: draft.financialNotes,
+        isFinClosed: draft.isFinClosed,
         updatedAt: new Date().toISOString(),
       };
 
       await api.patch(`/operations/${op.id}`, {
         notes: JSON.stringify(existingNotesObj),
       });
+
+      // Commit changes to local state
+      setRevenue(draft.revenue);
+      setDirectSupplyCost(draft.directSupplyCost);
+      setLaborSocialCost(draft.laborSocialCost);
+      setGuaranteeFees(draft.guaranteeFees);
+      setTaxDeductionAmount(draft.taxDeductionAmount);
+      setAdminLogisticsCost(draft.adminLogisticsCost);
+      setExtraExpenses(draft.extraExpenses);
+      setCollectedTotal(draft.collectedTotal);
+      setFinancialNotes(draft.financialNotes);
+      setIsFinClosed(draft.isFinClosed);
 
       toast.success("تم تحديث وحفظ لوحة الحسابات والمالية وصافي الربح بنجاح! 📊✨");
       setEditing(false);
@@ -262,17 +351,13 @@ export function TabFinance({
           <div className="flex items-center gap-2 flex-wrap">
             <Button
               size="sm"
-              variant="outline"
-              onClick={() => setReportModalOpen(true)}
-              className="h-9 px-3.5 rounded-xl border-emerald-500/40 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 font-bold text-xs flex items-center gap-1.5 cursor-pointer shadow-xs"
-            >
-              <Printer className="h-4 w-4" />
-              <span>التقرير المالي التنفيذي 📜</span>
-            </Button>
-
-            <Button
-              size="sm"
-              onClick={() => setEditing(!editing)}
+              onClick={() => {
+                if (editing) {
+                  handleCancelEdit();
+                } else {
+                  handleOpenEdit();
+                }
+              }}
               className="h-9 px-4 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-bold text-xs flex items-center gap-1.5 cursor-pointer shadow-md"
             >
               <Edit className="h-3.5 w-3.5" />
@@ -387,40 +472,94 @@ export function TabFinance({
         </div>
       </div>
 
-      {/* ━━━ FINANCIAL BREAKDOWN STACKED BAR ━━━ */}
-      <div className="p-5 rounded-2xl bg-card border border-border shadow-md space-y-3">
-        <div className="flex items-center justify-between text-xs font-bold">
+      {/* ━━━ FINANCIAL BREAKDOWN STACKED BAR (THICK & INFORMATIVE) ━━━ */}
+      <div className="p-5 sm:p-6 rounded-3xl bg-card border border-border shadow-md space-y-3.5">
+        <div className="flex items-center justify-between text-xs font-bold flex-wrap gap-2">
           <span className="text-foreground flex items-center gap-2">
             <Layers className="h-4 w-4 text-emerald-600" />
-            شريط التوزيع والمسار المالي للعملية (% من إجمالي الإيراد التعاقدي):
+            {hasRevenue && !isDeficit ? (
+              <span>شريط التوزيع والمسار المالي للعملية (% من إجمالي الإيراد التعاقدي):</span>
+            ) : isDeficit ? (
+              <span className="text-rose-600 flex items-center gap-1.5 font-black">
+                <AlertTriangle className="h-4 w-4" />
+                توزيع مراكز التكلفة الفعلية (تجاوز الإيراد التعاقدي - عجز مالي):
+              </span>
+            ) : (
+              <span>توزيع مراكز التكلفة الفعلية (100% من إجمالي المنصرف):</span>
+            )}
           </span>
-          <span className="text-muted-foreground font-mono">
-            المتبقي كصافي أرباح: {profitPct}%
-          </span>
+          <div className="flex items-center gap-2">
+            {isDeficit && (
+              <Badge className="bg-rose-500/15 text-rose-700 dark:text-rose-300 border-rose-500/30 text-xs font-bold">
+                عجز: {formatCurrency(Math.abs(netProfit))}
+              </Badge>
+            )}
+            <span className="text-muted-foreground font-mono">
+              {hasRevenue && !isDeficit ? `المتبقي كصافي أرباح: ${profitPct}%` : "100% تكلفة إجمالية"}
+            </span>
+          </div>
         </div>
 
-        {/* Multi-segment Bar */}
-        <div className="w-full h-4 bg-muted/60 rounded-full overflow-hidden flex border border-border/50">
-          <div
-            style={{ width: `${supplyPct}%` }}
-            className="bg-blue-600 transition-all"
-            title={`تكاليف التوريد والمشتريات: ${supplyPct}%`}
-          />
-          <div
-            style={{ width: `${laborPct}%` }}
-            className="bg-amber-500 transition-all"
-            title={`التأمينات والعمالة: ${laborPct}%`}
-          />
-          <div
-            style={{ width: `${feesTaxesPct}%` }}
-            className="bg-purple-600 transition-all"
-            title={`الرسوم والضرائب والإداريات: ${feesTaxesPct}%`}
-          />
-          <div
-            style={{ width: `${profitPct}%` }}
-            className="bg-emerald-500 transition-all"
-            title={`صافي الأرباح: ${profitPct}%`}
-          />
+        {/* Multi-segment Bar (Thick: h-7 sm:h-8 with rounded-2xl & inner shadow) */}
+        <div className="w-full h-7 sm:h-8 bg-muted/80 rounded-2xl overflow-hidden flex border-2 border-border/80 shadow-inner p-0.5 gap-0.5">
+          {supplyPct > 0 && (
+            <div
+              style={{ width: `${supplyPct}%` }}
+              className="bg-blue-600 hover:bg-blue-500 rounded-xl transition-all flex items-center justify-center overflow-hidden cursor-help relative group"
+              title={`تكاليف التوريد والمشتريات: ${supplyPct}% (${formatCurrency(numDirectSupply)})`}
+            >
+              {supplyPct >= 8 && (
+                <span className="text-[11px] font-black font-mono text-white px-1 truncate drop-shadow-sm select-none">
+                  {supplyPct}%
+                </span>
+              )}
+            </div>
+          )}
+          {laborPct > 0 && (
+            <div
+              style={{ width: `${laborPct}%` }}
+              className="bg-amber-500 hover:bg-amber-400 rounded-xl transition-all flex items-center justify-center overflow-hidden cursor-help relative group"
+              title={`التأمينات والعمالة: ${laborPct}% (${formatCurrency(numLaborSocial)})`}
+            >
+              {laborPct >= 8 && (
+                <span className="text-[11px] font-black font-mono text-white px-1 truncate drop-shadow-sm select-none">
+                  {laborPct}%
+                </span>
+              )}
+            </div>
+          )}
+          {feesTaxesPct > 0 && (
+            <div
+              style={{ width: `${feesTaxesPct}%` }}
+              className="bg-purple-600 hover:bg-purple-500 rounded-xl transition-all flex items-center justify-center overflow-hidden cursor-help relative group"
+              title={`الرسوم والضرائب والإداريات: ${feesTaxesPct}% (${formatCurrency(numGuaranteeFees + numTaxes + numAdminLogistics + numExtra)})`}
+            >
+              {feesTaxesPct >= 8 && (
+                <span className="text-[11px] font-black font-mono text-white px-1 truncate drop-shadow-sm select-none">
+                  {feesTaxesPct}%
+                </span>
+              )}
+            </div>
+          )}
+          {profitPct > 0 && (
+            <div
+              style={{ width: `${profitPct}%` }}
+              className="bg-emerald-500 hover:bg-emerald-400 rounded-xl transition-all flex items-center justify-center overflow-hidden cursor-help relative group"
+              title={`صافي الأرباح المحققة: ${profitPct}% (${formatCurrency(netProfit)})`}
+            >
+              {profitPct >= 8 && (
+                <span className="text-[11px] font-black font-mono text-white px-1 truncate drop-shadow-sm select-none">
+                  {profitPct}%
+                </span>
+              )}
+            </div>
+          )}
+          {/* Fallback if all 0 */}
+          {supplyPct === 0 && laborPct === 0 && feesTaxesPct === 0 && profitPct === 0 && (
+            <div className="w-full h-full rounded-xl flex items-center justify-center text-[11px] font-bold text-muted-foreground bg-muted/40">
+              بانتظار تسجيل عناصر التكلفة وقيمة التعاقد للعملية
+            </div>
+          )}
         </div>
 
         {/* Legend */}
@@ -444,7 +583,7 @@ export function TabFinance({
         </div>
       </div>
 
-      {/* ━━━ EDITING FORM PANEL (IF ACTIVE) ━━━ */}
+      {/* ━━━ EDITING FORM PANEL (DRAFT ISOLATED) ━━━ */}
       {editing && (
         <div className="p-5 sm:p-6 rounded-3xl bg-card border-2 border-emerald-500/40 shadow-2xl space-y-4 animate-fade-in">
           <div className="flex items-center justify-between pb-3 border-b border-border">
@@ -457,8 +596,9 @@ export function TabFinance({
               </h3>
             </div>
             <button
-              onClick={() => setEditing(false)}
-              className="p-1 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground"
+              onClick={handleCancelEdit}
+              className="p-1 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground cursor-pointer"
+              title="إغلاق وإلغاء التعديلات"
             >
               <X className="h-4 w-4" />
             </button>
@@ -473,8 +613,8 @@ export function TabFinance({
               </Label>
               <Input
                 type="number"
-                value={revenue}
-                onChange={(e) => setRevenue(e.target.value)}
+                value={draft.revenue}
+                onChange={(e) => setDraft((prev) => ({ ...prev, revenue: e.target.value }))}
                 className="h-10 text-xs font-mono font-black rounded-xl border-blue-500/30"
               />
             </div>
@@ -487,8 +627,8 @@ export function TabFinance({
               </Label>
               <Input
                 type="number"
-                value={directSupplyCost}
-                onChange={(e) => setDirectSupplyCost(e.target.value)}
+                value={draft.directSupplyCost}
+                onChange={(e) => setDraft((prev) => ({ ...prev, directSupplyCost: e.target.value }))}
                 className="h-10 text-xs font-mono font-bold rounded-xl text-rose-600"
               />
             </div>
@@ -501,8 +641,8 @@ export function TabFinance({
               </Label>
               <Input
                 type="number"
-                value={laborSocialCost}
-                onChange={(e) => setLaborSocialCost(e.target.value)}
+                value={draft.laborSocialCost}
+                onChange={(e) => setDraft((prev) => ({ ...prev, laborSocialCost: e.target.value }))}
                 className="h-10 text-xs font-mono font-bold rounded-xl text-rose-600"
               />
             </div>
@@ -515,8 +655,8 @@ export function TabFinance({
               </Label>
               <Input
                 type="number"
-                value={guaranteeFees}
-                onChange={(e) => setGuaranteeFees(e.target.value)}
+                value={draft.guaranteeFees}
+                onChange={(e) => setDraft((prev) => ({ ...prev, guaranteeFees: e.target.value }))}
                 className="h-10 text-xs font-mono font-bold rounded-xl text-rose-600"
               />
             </div>
@@ -529,8 +669,8 @@ export function TabFinance({
               </Label>
               <Input
                 type="number"
-                value={taxDeductionAmount}
-                onChange={(e) => setTaxDeductionAmount(e.target.value)}
+                value={draft.taxDeductionAmount}
+                onChange={(e) => setDraft((prev) => ({ ...prev, taxDeductionAmount: e.target.value }))}
                 className="h-10 text-xs font-mono font-bold rounded-xl text-rose-600"
               />
             </div>
@@ -543,8 +683,8 @@ export function TabFinance({
               </Label>
               <Input
                 type="number"
-                value={adminLogisticsCost}
-                onChange={(e) => setAdminLogisticsCost(e.target.value)}
+                value={draft.adminLogisticsCost}
+                onChange={(e) => setDraft((prev) => ({ ...prev, adminLogisticsCost: e.target.value }))}
                 className="h-10 text-xs font-mono font-bold rounded-xl text-rose-600"
               />
             </div>
@@ -556,8 +696,8 @@ export function TabFinance({
               </Label>
               <Input
                 type="number"
-                value={extraExpenses}
-                onChange={(e) => setExtraExpenses(e.target.value)}
+                value={draft.extraExpenses}
+                onChange={(e) => setDraft((prev) => ({ ...prev, extraExpenses: e.target.value }))}
                 className="h-10 text-xs font-mono font-bold rounded-xl text-rose-600"
               />
             </div>
@@ -570,8 +710,8 @@ export function TabFinance({
               </Label>
               <Input
                 type="number"
-                value={collectedTotal}
-                onChange={(e) => setCollectedTotal(e.target.value)}
+                value={draft.collectedTotal}
+                onChange={(e) => setDraft((prev) => ({ ...prev, collectedTotal: e.target.value }))}
                 className="h-10 text-xs font-mono font-bold rounded-xl text-emerald-600"
               />
             </div>
@@ -585,8 +725,8 @@ export function TabFinance({
                 <input
                   type="checkbox"
                   id="finClosedCheck"
-                  checked={isFinClosed}
-                  onChange={(e) => setIsFinClosed(e.target.checked)}
+                  checked={draft.isFinClosed}
+                  onChange={(e) => setDraft((prev) => ({ ...prev, isFinClosed: e.target.checked }))}
                   className="w-4 h-4 rounded text-emerald-600 cursor-pointer"
                 />
                 <label
@@ -604,35 +744,35 @@ export function TabFinance({
             <Label className="text-xs font-bold text-foreground">ملاحظات واعتماد التسوية المالية</Label>
             <Textarea
               rows={2}
-              value={financialNotes}
-              onChange={(e) => setFinancialNotes(e.target.value)}
+              value={draft.financialNotes}
+              onChange={(e) => setDraft((prev) => ({ ...prev, financialNotes: e.target.value }))}
               placeholder="تسجيل أية تسويات خاصة، أوامر دفع، أو خصومات معتمدة..."
               className="text-xs rounded-xl"
             />
           </div>
 
-          {/* Live Preview Box */}
+          {/* Live Preview Box (Calculated from Draft) */}
           <div className="p-3.5 rounded-2xl bg-muted/40 border border-border flex flex-col sm:flex-row items-center justify-between gap-3 text-xs">
             <div>
-              <span className="font-bold block">إجمالي التكلفة التقديرية الحالية:</span>
+              <span className="font-bold block">إجمالي التكلفة التقديرية المقترحة:</span>
               <span className="font-mono text-rose-600 font-bold text-sm">
-                {formatCurrency(totalCalculatedCost)}
+                {formatCurrency(draftTotalCost)}
               </span>
             </div>
             <div>
               <span className="font-bold block">صافي الربح المتوقع:</span>
-              <span className={`font-mono font-black text-sm ${netProfit >= 0 ? "text-emerald-600" : "text-rose-600"}`}>
-                {formatCurrency(netProfit)} (هامش ربح {marginPercent}%)
+              <span className={`font-mono font-black text-sm ${draftNetProfit >= 0 ? "text-emerald-600" : "text-rose-600"}`}>
+                {formatCurrency(draftNetProfit)} (هامش ربح {draftMargin}%)
               </span>
             </div>
             <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => setEditing(false)}
-                className="rounded-xl h-9 text-xs"
+                onClick={handleCancelEdit}
+                className="rounded-xl h-9 text-xs cursor-pointer hover:bg-muted"
               >
-                إلغاء
+                إلغاء التعديلات
               </Button>
               <Button
                 size="sm"
