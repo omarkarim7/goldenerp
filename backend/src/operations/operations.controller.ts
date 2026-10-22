@@ -31,13 +31,45 @@ import { RolesGuard } from '../common/guards/roles.guard.js';
 import { Roles } from '../common/decorators/roles.decorator.js';
 import { OperationStatus, UserRole, OpDocType } from '@prisma/client';
 
+const getSafeUploadDir = (subDir: string): string => {
+  // If running on Vercel or read-only serverless environment
+  if (process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME) {
+    const tmpDir = path.join(os.tmpdir(), 'goldenerp-uploads', subDir);
+    if (!existsSync(tmpDir)) {
+      try {
+        mkdirSync(tmpDir, { recursive: true });
+      } catch {}
+    }
+    return tmpDir;
+  }
+
+  // Try standard local ./uploads/subDir
+  const localDir = path.resolve(process.cwd(), 'uploads', subDir);
+  try {
+    if (!existsSync(localDir)) {
+      mkdirSync(localDir, { recursive: true });
+    }
+    return localDir;
+  } catch {
+    // Fallback to os.tmpdir() if filesystem is read-only
+    const tmpDir = path.join(os.tmpdir(), 'goldenerp-uploads', subDir);
+    if (!existsSync(tmpDir)) {
+      try {
+        mkdirSync(tmpDir, { recursive: true });
+      } catch {}
+    }
+    return tmpDir;
+  }
+};
+
 const operationDocStorage = diskStorage({
   destination: (req, file, cb) => {
-    const uploadPath = './uploads/operations';
-    if (!existsSync(uploadPath)) {
-      mkdirSync(uploadPath, { recursive: true });
+    try {
+      const uploadPath = getSafeUploadDir('operations');
+      cb(null, uploadPath);
+    } catch (err: any) {
+      cb(err, os.tmpdir());
     }
-    cb(null, uploadPath);
   },
   filename: (req, file, cb) => {
     const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);

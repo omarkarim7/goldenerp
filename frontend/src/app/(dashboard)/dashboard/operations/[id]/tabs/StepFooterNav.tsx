@@ -70,14 +70,14 @@ export function StepFooterNav({
         </div>
 
         {/* Actions: Stage Lock Button + Next Step Button */}
-        <div className="w-full sm:w-auto flex flex-wrap items-center justify-end gap-2.5">
+        <div className="w-full sm:w-auto flex items-center justify-end gap-2.5 flex-nowrap shrink-0">
           {/* زر قفل / فتح المرحلة */}
           {isLocked ? (
             <Button
               type="button"
               variant="outline"
               onClick={() => unlockStage(currentTabId, currentTab.label)}
-              className="w-full sm:w-auto h-11 px-4 sm:px-5 rounded-2xl border-amber-500/50 bg-amber-500/15 text-amber-800 dark:text-amber-200 hover:bg-amber-500/25 font-bold text-xs sm:text-sm cursor-pointer flex items-center justify-center gap-2 shadow-sm transition-all active:scale-95"
+              className="h-11 px-3 sm:px-4 rounded-2xl border-amber-500/50 bg-amber-500/15 text-amber-800 dark:text-amber-200 hover:bg-amber-500/25 font-bold text-xs cursor-pointer flex items-center justify-center gap-1.5 shadow-sm transition-all active:scale-95 shrink-0 whitespace-nowrap"
               title="المرحلة مقفولة — انقر لفتح التعديلات"
             >
               <Unlock className="h-4 w-4 text-amber-600 dark:text-amber-400" />
@@ -88,7 +88,7 @@ export function StepFooterNav({
               type="button"
               variant="outline"
               onClick={() => lockStage(currentTabId, currentTab.label)}
-              className="w-full sm:w-auto h-11 px-4 sm:px-5 rounded-2xl border-border bg-card hover:bg-amber-500/10 hover:border-amber-500/40 text-foreground font-bold text-xs sm:text-sm cursor-pointer flex items-center justify-center gap-2 shadow-sm transition-all active:scale-95 group"
+              className="h-11 px-3.5 sm:px-4 rounded-2xl border-border bg-card hover:bg-amber-500/10 hover:border-amber-500/40 text-foreground font-bold text-xs cursor-pointer flex items-center justify-center gap-1.5 shadow-sm transition-all active:scale-95 group shrink-0 whitespace-nowrap"
               title="قفل المرحلة وتثبيت كافة بياناتها لمنع التعديل"
             >
               <Lock className="h-4 w-4 text-muted-foreground group-hover:text-amber-600 transition-colors" />
@@ -100,13 +100,13 @@ export function StepFooterNav({
             <Button
               type="button"
               onClick={() => handleGo(nextTab.id)}
-              className="w-full sm:w-auto h-11 px-5 sm:px-7 rounded-2xl bg-gradient-to-r from-blue-600 via-indigo-600 to-emerald-600 hover:from-blue-700 hover:via-indigo-700 hover:to-emerald-700 text-white font-black text-xs sm:text-sm shadow-lg shadow-blue-500/25 cursor-pointer active:scale-95 transition-all flex items-center justify-center gap-2 group shrink-0"
+              className="h-11 px-4 sm:px-6 rounded-2xl bg-gradient-to-r from-blue-600 via-indigo-600 to-emerald-600 hover:from-blue-700 hover:via-indigo-700 hover:to-emerald-700 text-white font-black text-xs sm:text-sm shadow-lg shadow-blue-500/25 cursor-pointer active:scale-95 transition-all flex items-center justify-center gap-2 group shrink-0 whitespace-nowrap"
             >
               <span>{nextLabel || `الانتقال إلى: #${nextTab.order} ${nextTab.shortLabel}`}</span>
               <ChevronLeft className="h-4.5 w-4.5 transition-transform group-hover:-translate-x-1.5 text-white" />
             </Button>
           ) : (
-            <div className="inline-flex items-center gap-1.5 px-4 py-2 rounded-2xl bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-500/30 text-xs font-bold">
+            <div className="inline-flex items-center gap-1.5 px-4 py-2 rounded-2xl bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-500/30 text-xs font-bold shrink-0 whitespace-nowrap">
               <CheckCircle2 className="h-4 w-4 text-emerald-600" />
               <span>المرحلة النهائية للعملية</span>
             </div>

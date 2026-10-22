@@ -10,7 +10,7 @@ import * as path from 'path';
 import * as os from 'os';
 import * as fs from 'fs';
 import { exec } from 'child_process';
-import { existsSync, unlinkSync, statSync, mkdirSync, writeFileSync } from 'fs';
+import { existsSync, unlinkSync, statSync, mkdirSync, writeFileSync, readFileSync } from 'fs';
 import { extname } from 'path';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { CompaniesService } from '../companies/companies.service.js';
@@ -1322,13 +1322,31 @@ export class OperationsService {
       safeType = OpDocType.MARKET_STUDY;
     }
 
+    let finalPath = file.path ? file.path.replace(/\\/g, '/') : '';
+    try {
+      const fileBuffer = file.buffer || (file.path && existsSync(file.path) ? readFileSync(file.path) : null);
+      if (fileBuffer) {
+        const r2Upload = await this.uploadBufferToR2(
+          fileBuffer,
+          `operations/${operationId}/${Date.now()}-${file.originalname}`,
+          file.mimetype || 'application/octet-stream'
+        );
+        if (r2Upload && r2Upload.url) {
+          finalPath = r2Upload.url;
+          this.logger.log(`تم رفع مستند العملية بنجاح إلى Cloudflare R2: ${finalPath}`);
+        }
+      }
+    } catch (r2Err: any) {
+      this.logger.warn(`تعذر الرفع إلى Cloudflare R2، تم الاعتماد على المسار المحلي: ${r2Err?.message}`);
+    }
+
     return this.prisma.operationDocument.create({
       data: {
         operationId,
         companyId: assignedCompanyId,
         type: safeType,
         fileName: cleanFileName,
-        filePath: file.path.replace(/\\/g, '/'),
+        filePath: finalPath,
         fileType: rawExt,
         fileSize: file.size,
         uploadedBy: uploadedBy || 'المدير العام',
@@ -1580,6 +1598,27 @@ export class OperationsService {
       txt: 'text/plain',
       html: 'text/html; charset=utf-8',
     };
+
+    // 0. If remote cloud link (Cloudflare R2, Gofile, or any https URL)
+    if (doc.filePath && (doc.filePath.startsWith('http://') || doc.filePath.startsWith('https://'))) {
+      try {
+        const remoteRes = await fetch(doc.filePath);
+        if (remoteRes.ok) {
+          const ab = await remoteRes.arrayBuffer();
+          const ext = (doc.fileType || 'bin').toLowerCase();
+          const contentType = remoteRes.headers.get('content-type') || mimeMap[ext] || 'application/octet-stream';
+          return {
+            buffer: Buffer.from(ab),
+            fileName: doc.fileName,
+            fileType: ext,
+            contentType,
+            size: ab.byteLength,
+          };
+        }
+      } catch (remErr: any) {
+        this.logger.warn(`Failed to fetch remote document from cloud URL: ${remErr?.message}`);
+      }
+    }
 
     // 1. Try local physical file on server
     const localPath = this.resolveFilePath(doc.filePath);
@@ -2397,6 +2436,57 @@ try {
     } catch (err: any) {
       this.logger.error(`فشل التحويل الآلي عبر iLovePDF: ${err.message}`);
       throw err;
+    }
+  }
+
+  async uploadBufferToR2(
+    fileBuffer: Buffer,
+    fileName: string,
+    contentType: string = 'application/octet-stream'
+  ): Promise<{ url: string } | null> {
+    try {
+      const accountId = process.env.R2_ACCOUNT_ID || 'e955866121f5a31f17c8cd21f8c09d19';
+      const bucketName = process.env.R2_BUCKET_NAME || 'goldenerp-storage';
+      const accessKeyId = process.env.R2_ACCESS_KEY_ID || '87f6a410e812d016695a39cb23c6c4ce';
+      const secretAccessKey = process.env.R2_SECRET_ACCESS_KEY || '717642f36c3f9d7f8af1b0d57999b724ad504becd460b826ba7aa9a7dede42c3';
+      const endpoint = process.env.R2_ENDPOINT || `https://${accountId}.r2.cloudflarestorage.com`;
+
+      const s3 = new S3Client({
+        region: 'auto',
+        endpoint,
+        credentials: { accessKeyId, secretAccessKey },
+      });
+
+      const key = `uploads/${fileName.replace(/^[/\\]+/, '')}`;
+
+      await s3.send(
+        new PutObjectCommand({
+          Bucket: bucketName,
+          Key: key,
+          Body: fileBuffer,
+          ContentType: contentType,
+        })
+      );
+
+      const publicDomain = process.env.R2_PUBLIC_DOMAIN;
+      let finalUrl: string;
+      if (publicDomain && publicDomain.startsWith('http')) {
+        finalUrl = `${publicDomain.replace(/\/+$/, '')}/${key}`;
+      } else {
+        finalUrl = await getSignedUrl(
+          s3,
+          new GetObjectCommand({
+            Bucket: bucketName,
+            Key: key,
+            ResponseContentType: contentType,
+          }),
+          { expiresIn: 604800 }
+        );
+      }
+      return { url: finalUrl };
+    } catch (err: any) {
+      this.logger.warn(`R2 buffer upload failed: ${err?.message}`);
+      return null;
     }
   }
 

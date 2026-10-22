@@ -17,6 +17,8 @@ import {
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { diskStorage } from 'multer';
+import * as path from 'path';
+import * as os from 'os';
 import { extname } from 'path';
 import { existsSync, mkdirSync, createReadStream } from 'fs';
 import type { Response } from 'express';
@@ -28,13 +30,37 @@ import { RolesGuard } from '../common/guards/roles.guard.js';
 import { Roles } from '../common/decorators/roles.decorator.js';
 import { UserRole } from '@prisma/client';
 
+const getSafeCompanyUploadDir = (): string => {
+  if (process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME) {
+    const tmpDir = path.join(os.tmpdir(), 'goldenerp-uploads', 'companies');
+    if (!existsSync(tmpDir)) {
+      try { mkdirSync(tmpDir, { recursive: true }); } catch {}
+    }
+    return tmpDir;
+  }
+  const localDir = path.resolve(process.cwd(), 'uploads', 'companies');
+  try {
+    if (!existsSync(localDir)) {
+      mkdirSync(localDir, { recursive: true });
+    }
+    return localDir;
+  } catch {
+    const tmpDir = path.join(os.tmpdir(), 'goldenerp-uploads', 'companies');
+    if (!existsSync(tmpDir)) {
+      try { mkdirSync(tmpDir, { recursive: true }); } catch {}
+    }
+    return tmpDir;
+  }
+};
+
 const companyStorage = diskStorage({
   destination: (req, file, cb) => {
-    const uploadPath = './uploads/companies';
-    if (!existsSync(uploadPath)) {
-      mkdirSync(uploadPath, { recursive: true });
+    try {
+      const uploadPath = getSafeCompanyUploadDir();
+      cb(null, uploadPath);
+    } catch (err: any) {
+      cb(err, os.tmpdir());
     }
-    cb(null, uploadPath);
   },
   filename: (req, file, cb) => {
     const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);

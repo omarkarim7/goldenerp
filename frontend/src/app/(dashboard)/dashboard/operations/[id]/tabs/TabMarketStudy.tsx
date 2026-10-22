@@ -340,19 +340,19 @@ export function TabMarketStudy({
 
       {/* Live Table */}
       <div className={`overflow-x-auto rounded-2xl border border-border shadow-xs bg-card ${isExpandedMode ? "flex-1 overflow-y-auto" : ""}`}>
-        <table className="w-full text-right text-xs">
+        <table className="min-w-[1360px] w-full text-right text-xs">
           <thead className="bg-muted text-muted-foreground border-b border-border sticky top-0 z-10 shadow-xs">
             <tr>
               <th className="px-3 py-3 w-12 text-center font-bold">م</th>
-              <th className="px-3 py-3 min-w-[280px] lg:min-w-[340px] font-bold">اسم الصنف / البند والمواصفة الفنية</th>
-              <th className="px-2 py-3 w-24 text-center font-bold">الوحدة</th>
-              <th className="px-2 py-3 w-24 text-center font-bold">الكمية</th>
+              <th className="px-3 py-3 min-w-[280px] lg:min-w-[320px] font-bold">اسم الصنف / البند والمواصفة الفنية</th>
+              <th className="px-2 py-3 w-28 min-w-[95px] text-center font-bold">الوحدة</th>
+              <th className="px-2 py-3 w-28 min-w-[110px] text-center font-bold">الكمية</th>
               <th className="px-3 py-3 min-w-[200px] lg:min-w-[240px] font-bold">اسم المورد / الشركة المسعرة</th>
-              <th className="px-2 py-3 w-28 text-center font-bold">سعر الوحدة</th>
-              <th className="px-3 py-3 w-32 text-left font-bold">إجمالي البند</th>
-              <th className="px-2 py-3 w-28 text-center font-bold">مدة التوريد</th>
-              <th className="px-2 py-3 w-32 text-center font-bold">المطابقة</th>
-              <th className="px-2 py-3 min-w-[180px] font-bold">ملاحظات وشروط الدفع</th>
+              <th className="px-2 py-3 w-32 min-w-[125px] text-center font-bold">سعر الوحدة</th>
+              <th className="px-3 py-3 w-40 min-w-[150px] text-left font-bold whitespace-nowrap">إجمالي البند</th>
+              <th className="px-2 py-3 w-32 min-w-[120px] text-center font-bold">مدة التوريد</th>
+              <th className="px-2 py-3 w-36 min-w-[135px] text-center font-bold">المطابقة</th>
+              <th className="px-2 py-3 min-w-[190px] font-bold">ملاحظات وشروط الدفع</th>
               <th className="px-3 py-3 w-36 min-w-[140px] text-center font-bold">أدوات الأدمن</th>
             </tr>
           </thead>
@@ -401,7 +401,7 @@ export function TabMarketStudy({
                       placeholder="متر، طن.."
                       value={item.unit}
                       onChange={(e) => handleUpdateQuoteItem(item.id, "unit", e.target.value)}
-                      className="h-9 text-xs rounded-lg bg-background text-center"
+                      className="h-9 text-xs rounded-lg bg-background text-center font-medium"
                     />
                   </td>
                   <td className="px-2 py-2">
@@ -410,7 +410,7 @@ export function TabMarketStudy({
                       placeholder="الكمية"
                       value={item.quantity || ""}
                       onChange={(e) => handleUpdateQuoteItem(item.id, "quantity", Number(e.target.value))}
-                      className="h-9 text-xs font-mono rounded-lg bg-background text-center font-bold"
+                      className="h-9 text-xs font-mono rounded-lg bg-background text-center font-bold [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none px-2"
                     />
                   </td>
                   <td className="px-3 py-2">
@@ -428,10 +428,10 @@ export function TabMarketStudy({
                       placeholder="السعر"
                       value={item.unitPrice || ""}
                       onChange={(e) => handleUpdateQuoteItem(item.id, "unitPrice", Number(e.target.value))}
-                      className="h-9 text-xs font-mono font-bold rounded-lg bg-background text-center text-blue-600 dark:text-blue-400"
+                      className="h-9 text-xs font-mono font-bold rounded-lg bg-background text-center text-blue-600 dark:text-blue-400 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none px-2"
                     />
                   </td>
-                  <td className="px-3 py-2 font-mono font-bold text-foreground text-xs text-left">
+                  <td className="px-3 py-2 font-mono font-black text-emerald-700 dark:text-emerald-400 text-xs text-left whitespace-nowrap">
                     {formatCurrency(item.totalPrice)}
                   </td>
                   <td className="px-2 py-2">

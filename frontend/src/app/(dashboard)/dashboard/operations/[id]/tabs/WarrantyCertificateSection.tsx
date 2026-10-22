@@ -554,13 +554,22 @@ export function WarrantyCertificateSection({
     docXml = docXml.replace(/2024\s*\/\s*2025/g, escapeXml(fiscalYear));
     docXml = docXml.replace(/14\/\s*1\s*\/2024/g, escapeXml(technicalOpeningDate));
 
-    // مدة الضمان وتغطيته
-    docXml = docXml.replace(
-      /مدة الضمان:\s*سنة ضد عيوب الصناعه في مداس الكاوتش\s*فقط/g,
-      `مدة الضمان: ${escapeXml(warrantyDuration)} ${escapeXml(warrantyCoverage)}`
-    );
-    docXml = docXml.replace(/سنة/g, escapeXml(warrantyDuration));
-    docXml = docXml.replace(/مداس الكاوتش\s*فقط/g, escapeXml(warrantyCoverage));
+    // مدة الضمان وتغطيته بدقة ومنع التكرار أو الفراغات الزائدة
+    let cleanCoverage = (warrantyCoverage || "").trim();
+    if (cleanCoverage && !cleanCoverage.startsWith("ضد") && !cleanCoverage.startsWith("شامل")) {
+      cleanCoverage = `ضد عيوب الصناعة في ${cleanCoverage}`;
+    }
+    const safeDuration = (warrantyDuration || "سنة").trim();
+    const warrantyReplacementParagraph = `<w:p w14:paraId="5314EBCB" w14:textId="15F624A1" w:rsidR="003776BD" w:rsidRDefault="003776BD" w:rsidP="003776BD"><w:pPr><w:pStyle w:val="ListParagraph"/><w:numPr><w:ilvl w:val="0"/><w:numId w:val="1"/></w:numPr><w:spacing w:after="0" w:line="240" w:lineRule="auto"/><w:jc w:val="mediumKashida"/><w:rPr><w:b/><w:bCs/><w:sz w:val="32"/><w:szCs w:val="32"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr></w:pPr><w:r><w:rPr><w:b/><w:bCs/><w:sz w:val="36"/><w:szCs w:val="36"/><w:u w:val="single"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t>مدة الضمان</w:t></w:r><w:r><w:rPr><w:b/><w:bCs/><w:sz w:val="36"/><w:szCs w:val="36"/><w:u w:val="none"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t>: </w:t></w:r><w:r><w:rPr><w:b/><w:bCs/><w:sz w:val="32"/><w:szCs w:val="32"/><w:u w:val="none"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t xml:space="preserve">${escapeXml(safeDuration)} ${escapeXml(cleanCoverage)}</w:t></w:r></w:p>`;
+
+    if (/<w:p[\s\S]*?مدة الضمان[\s\S]*?<\/w:p>/.test(docXml)) {
+      docXml = docXml.replace(/<w:p[\s\S]*?مدة الضمان[\s\S]*?<\/w:p>/, warrantyReplacementParagraph);
+    } else {
+      docXml = docXml.replace(
+        /مدة الضمان:\s*سنة ضد عيوب الصناعه في مداس الكاوتش\s*فقط/g,
+        `مدة الضمان: ${escapeXml(safeDuration)} ${escapeXml(cleanCoverage)}`
+      );
+    }
 
     // الحالات المستثناة
     docXml = docXml.replace(/زيادة ضغط الهواء بالاطارات\./g, escapeXml(case1));
