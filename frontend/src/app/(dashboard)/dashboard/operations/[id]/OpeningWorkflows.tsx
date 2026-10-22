@@ -1967,20 +1967,11 @@ export function TabTechOpening({
                         <div className="flex items-center gap-2 flex-wrap shrink-0">
                           <Button
                             size="sm"
-                            onClick={() => setRefundLetterModalOpen(true)}
-                            className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs h-9 px-4 rounded-xl flex items-center gap-1.5 cursor-pointer shadow-md"
-                          >
-                            <Receipt className="h-3.5 w-3.5" />
-                            <span>فتح وطباعة خطاب استرداد التأمين الابتدائي 📄</span>
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="outline"
                             onClick={() => setShowFinalRefundSection(!showFinalRefundSection)}
-                            className="text-xs h-9 px-3 rounded-xl border-border text-foreground hover:bg-muted flex items-center gap-1.5 cursor-pointer"
+                            className="text-xs h-9 px-4 rounded-xl font-bold bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white shadow-md flex items-center gap-2 cursor-pointer active:scale-95 transition-all"
                           >
-                            <FileText className="h-3.5 w-3.5 text-blue-600" />
-                            <span>{showFinalRefundSection ? "إخفاء نموذج التأمين النهائي" : "نموذج استرداد التأمين النهائي"}</span>
+                            <FileText className="h-4 w-4 text-blue-200" />
+                            <span>{showFinalRefundSection ? "إخفاء نموذج التأمين النهائي" : "نموذج استرداد التأمين النهائي 📄"}</span>
                           </Button>
                         </div>
                       </div>
@@ -3308,20 +3299,11 @@ export function TabFinOpening({
                         <div className="flex items-center gap-2 flex-wrap shrink-0">
                           <Button
                             size="sm"
-                            onClick={() => setRefundModalOpen(true)}
-                            className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs h-9 px-4 rounded-xl flex items-center gap-1.5 cursor-pointer shadow-md"
-                          >
-                            <Receipt className="h-3.5 w-3.5" />
-                            <span>فتح وطباعة خطاب استرداد التأمين الابتدائي (المادة 42) 📄</span>
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="outline"
                             onClick={() => setShowFinalRefundSection(!showFinalRefundSection)}
-                            className="text-xs h-9 px-3 rounded-xl border-border text-foreground hover:bg-muted flex items-center gap-1.5 cursor-pointer"
+                            className="text-xs h-9 px-4 rounded-xl font-bold bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white shadow-md flex items-center gap-2 cursor-pointer active:scale-95 transition-all"
                           >
-                            <FileText className="h-3.5 w-3.5 text-blue-600" />
-                            <span>{showFinalRefundSection ? "إخفاء نموذج التأمين النهائي" : "نموذج استرداد التأمين النهائي"}</span>
+                            <FileText className="h-4 w-4 text-blue-200" />
+                            <span>{showFinalRefundSection ? "إخفاء نموذج التأمين النهائي" : "نموذج استرداد التأمين النهائي 📄"}</span>
                           </Button>
                         </div>
                       </div>

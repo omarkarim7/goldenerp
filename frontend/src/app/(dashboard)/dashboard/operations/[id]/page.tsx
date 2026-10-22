@@ -46,6 +46,7 @@ import { useCompany, CompanyCode } from "@/context/company-context";
 import { DocxViewer } from "@/components/docx-viewer";
 import { Portal } from "@/components/ui/portal";
 import { StageLockProvider, useStageLock } from "./StageLockContext";
+import { CrossStageConsistencyAlert } from "./CrossStageConsistencyAlert";
 import {
   LIFECYCLE_STAGES,
   getStageIndex,
@@ -655,9 +656,11 @@ function OperationDetailContent({ id }: { id: string }) {
     }
 
     if (willBeDone) {
-      toast.success(`تم تحديد مرحلة "${tab.label}" كمنتهية ومكتملة ✓`);
+      lockStage(tabId, tab.label);
+      toast.success(`تم تحديد مرحلة "${tab.label}" كمنتهية ومكتملة ✓ وتم قفلها تلقائياً لحماية البيانات 🔒`);
     } else {
-      toast.info(`تم إرجاع مرحلة "${tab.label}" إلى قيد التنفيذ (غير مكتملة)`);
+      unlockStage(tabId, tab.label);
+      toast.info(`تم إرجاع مرحلة "${tab.label}" إلى قيد التنفيذ وفتح التعديل 🔓`);
     }
   };
 
@@ -1471,6 +1474,13 @@ function OperationDetailContent({ id }: { id: string }) {
               : ""
           }`}
         >
+          {/* ━━━ فحص وتنبيهات ترابط وتناسق البيانات بين المراحل المتتالية ━━━ */}
+          <CrossStageConsistencyAlert
+            op={op}
+            activeTab={activeTab}
+            onNavigate={setActiveTab}
+          />
+
           {renderTabContent()}
         </div>
 

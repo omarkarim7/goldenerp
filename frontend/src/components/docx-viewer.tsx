@@ -487,6 +487,17 @@ export function DocxViewer({
           line-height: 1.8;
           margin-bottom: 12px;
         }
+        .docx-preview-root mark,
+        .docx-mammoth-body mark,
+        .docx-preview-root [style*="background-color: red"],
+        .docx-preview-root [style*="background-color: #ff0000"],
+        .docx-preview-root [style*="background-color: rgb(255, 0, 0)"],
+        .docx-mammoth-body [style*="background-color: red"],
+        .docx-mammoth-body [style*="background-color: #ff0000"],
+        .docx-mammoth-body [style*="background-color: rgb(255, 0, 0)"] {
+          background-color: transparent !important;
+          color: inherit !important;
+        }
       `}</style>
     </div>
   );

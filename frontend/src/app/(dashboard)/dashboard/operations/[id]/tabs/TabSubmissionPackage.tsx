@@ -32,6 +32,7 @@ import {
   Receipt,
   HelpCircle,
   TrendingUp,
+  Archive,
 } from "lucide-react";
 import JSZip from "jszip";
 import { Button } from "@/components/ui/button";
@@ -55,6 +56,7 @@ import { StepFooterNav } from "./StepFooterNav";
 
 export type FileCategory =
   | "ALL"
+  | "ARCHIVE_ONLY"
   | "BOOKLET_INSURANCE"
   | "CLARIFICATIONS"
   | "COMPANY_DOCS"
@@ -78,6 +80,7 @@ export interface DossierItem {
   companyDocRef?: any;
   size?: number;
   uploadedAt?: string;
+  isArchived?: boolean;
 }
 
 export function TabSubmissionPackage({
@@ -129,7 +132,11 @@ export function TabSubmissionPackage({
   const [notes, setNotes] = useState("");
   const [savingSubmission, setSavingSubmission] = useState(false);
 
-  // استخراج الروابط السحابية المسجلة مسبقاً
+  // حالة استعراض تفاصيل إيصال التقديم في نافذة عائمة
+  const [viewingSubmission, setViewingSubmission] = useState<any | null>(null);
+  const [, setTogglingArchiveId] = useState<string | null>(null);
+
+  // استخراج الروابط السحابية وقائمة مستندات الأرشيف
   const savedNotes = useMemo(() => {
     try {
       if (op.notes && op.notes.startsWith("{")) {
@@ -138,6 +145,38 @@ export function TabSubmissionPackage({
     } catch {}
     return null;
   }, [op.notes]);
+
+  const archivedDocIds: string[] = useMemo(() => {
+    return savedNotes?.archivedDocIds || [];
+  }, [savedNotes]);
+
+  const handleToggleDocArchive = async (itemId: string) => {
+    setTogglingArchiveId(itemId);
+    let notesObj: any = {};
+    try {
+      if (op.notes && op.notes.startsWith("{")) {
+        notesObj = JSON.parse(op.notes);
+      }
+    } catch {}
+
+    const current: string[] = notesObj.archivedDocIds || [];
+    const exists = current.includes(itemId);
+    const updated = exists ? current.filter((id: string) => id !== itemId) : [...current, itemId];
+
+    notesObj.archivedDocIds = updated;
+
+    try {
+      await api.patch(`/operations/${op.id}`, {
+        notes: JSON.stringify(notesObj),
+      });
+      toast.success(exists ? "تم إزالة المستند من قائمة الأرشيف 📂" : "تمت إضافة المستند إلى مستندات الأرشيف بنجاح! 📦");
+      onRefresh();
+    } catch {
+      toast.error("فشل تحديث حالة الأرشيف للمستند");
+    } finally {
+      setTogglingArchiveId(null);
+    }
+  };
 
   const techCloudUrl = savedNotes?.technicalOfferDocx?.cloudPdfUrl || "";
   const clrCloudUrl = savedNotes?.clarificationLetterDocx?.cloudPdfUrl || "";
@@ -198,6 +237,7 @@ export function TabSubmissionPackage({
         docRef: d,
         size: d.fileSize,
         uploadedAt: d.createdAt,
+        isArchived: archivedDocIds.includes(d.id) || archivedDocIds.includes(`op-doc-${d.id}`),
       });
     });
 
@@ -223,141 +263,77 @@ export function TabSubmissionPackage({
         companyDocRef: cd,
         size: cd.fileSize,
         uploadedAt: cd.createdAt,
+        isArchived: archivedDocIds.includes(cd.id) || archivedDocIds.includes(`comp-doc-${cd.id}`),
       });
     });
 
     // ─────────────────────────────────────────────────────────────
-    // 3. نماذج وخطابات العطاء الرسمية المعتمدة (Word & PDF)
+    // 3. نماذج وخطابات العطاء الرسمية المعتمدة (نسخة PDF رسمية واحدة فقط بدون قوالب وورد أولية)
     // ─────────────────────────────────────────────────────────────
     list.push({
-      id: "letter-clarification-docx",
-      name: "خطاب التوضيح والاستفسارات الرسمي (Word)",
-      description: "مستند Word رسمي معتمد بالترويسة والباركود وجدول الاستفسارات",
+      id: "letter-clarification",
+      name: "خطاب التوضيح والاستفسارات الرسمي",
+      description: "النسخة الرقمية المعتمدة لخطاب التوضيح مع رمز QR الموثق",
       category: "LETTERS",
       sourceTab: "خطابات ومخرجات العطاء",
       envelope: "المظروف الفني",
-      fileType: "docx",
+      fileType: "pdf",
       templateKey: "clarification",
-      templatePath: "/templates/clarification_template.docx",
+      cloudUrl: clrCloudUrl,
+      isArchived: archivedDocIds.includes("letter-clarification"),
     });
 
-    if (clrCloudUrl) {
-      list.push({
-        id: "letter-clarification-pdf",
-        name: "خطاب التوضيح والاستفسارات الرسمي (نسخة PDF رقمية)",
-        description: "النسخة الرقمية المعتمدة لخطاب التوضيح مع رمز QR",
-        category: "LETTERS",
-        sourceTab: "خطابات ومخرجات العطاء",
-        envelope: "المظروف الفني",
-        fileType: "pdf",
-        templateKey: "clarification",
-        cloudUrl: clrCloudUrl,
-      });
-    }
-
     list.push({
-      id: "letter-technical-docx",
-      name: "العرض الفني والمواصفات الفنية والبدائل (Word)",
-      description: "مستند Word للعرض الفني بالجدول المدمج 8 أعمدة والبدائل الفنية",
+      id: "letter-technical",
+      name: "العرض الفني والمواصفات الفنية والبدائل",
+      description: "النسخة الرقمية المعتمدة للعرض الفني بالجدول المدمج والبدائل الفنية مع رمز QR",
       category: "LETTERS",
       sourceTab: "خطابات ومخرجات العطاء",
       envelope: "المظروف الفني",
-      fileType: "docx",
+      fileType: "pdf",
       templateKey: "technical",
-      templatePath: "/templates/technical_offer_template.docx",
+      cloudUrl: techCloudUrl,
+      isArchived: archivedDocIds.includes("letter-technical"),
     });
 
-    if (techCloudUrl) {
-      list.push({
-        id: "letter-technical-pdf",
-        name: "العرض الفني والمواصفات الرسمية (نسخة PDF رقمية)",
-        description: "النسخة الرقمية المعتمدة للعرض الفني مع رمز QR الرقمي",
-        category: "LETTERS",
-        sourceTab: "خطابات ومخرجات العطاء",
-        envelope: "المظروف الفني",
-        fileType: "pdf",
-        templateKey: "technical",
-        cloudUrl: techCloudUrl,
-      });
-    }
-
     list.push({
-      id: "letter-financial-docx",
-      name: "العرض المالي وجدول الأسعار والتفقيط (Word)",
-      description: "مستند Word للعرض المالي الرسمي بأعمدة سعر الوحدة والإجمالي والتفقيط",
+      id: "letter-financial",
+      name: "العرض المالي وجدول الأسعار والتفقيط",
+      description: "النسخة الرقمية المعتمدة للعرض المالي الرسمي بأعمدة سعر الوحدة والإجمالي والتفقيط مع رمز QR",
       category: "LETTERS",
       sourceTab: "خطابات ومخرجات العطاء",
       envelope: "المظروف المالي",
-      fileType: "docx",
+      fileType: "pdf",
       templateKey: "financial",
-      templatePath: "/templates/financial_offer_template.docx",
+      cloudUrl: finCloudUrl,
+      isArchived: archivedDocIds.includes("letter-financial"),
     });
 
-    if (finCloudUrl) {
-      list.push({
-        id: "letter-financial-pdf",
-        name: "العرض المالي وجدول الأسعار (نسخة PDF رقمية)",
-        description: "النسخة الرقمية المعتمدة للعرض المالي مع رمز QR",
-        category: "LETTERS",
-        sourceTab: "خطابات ومخرجات العطاء",
-        envelope: "المظروف المالي",
-        fileType: "pdf",
-        templateKey: "financial",
-        cloudUrl: finCloudUrl,
-      });
-    }
-
     list.push({
-      id: "decl-specs-docx",
-      name: "إقرار الالتزام بكراسة الشروط والمواصفات (Word)",
-      description: "إقرار وتعهد قانوني بالالتزام بكافة الشروط الفنية والمالية",
+      id: "decl-specs",
+      name: "إقرار الالتزام بكراسة الشروط والمواصفات",
+      description: "النسخة الرقمية المعتمدة لإقرار الالتزام بالشروط والمواصفات مع رمز QR",
       category: "LETTERS",
       sourceTab: "خطابات ومخرجات العطاء",
       envelope: "المظروف الفني",
-      fileType: "docx",
+      fileType: "pdf",
       templateKey: "specs",
-      templatePath: "/templates/declaration_specs_template.docx",
+      cloudUrl: specsCloudUrl,
+      isArchived: archivedDocIds.includes("decl-specs"),
     });
 
-    if (specsCloudUrl) {
-      list.push({
-        id: "decl-specs-pdf",
-        name: "إقرار الالتزام بكراسة الشروط (نسخة PDF رقمية)",
-        description: "النسخة الرقمية المعتمدة للإقرار مع رمز QR",
-        category: "LETTERS",
-        sourceTab: "خطابات ومخرجات العطاء",
-        envelope: "المظروف الفني",
-        fileType: "pdf",
-        templateKey: "specs",
-        cloudUrl: specsCloudUrl,
-      });
-    }
-
     list.push({
-      id: "decl-insurance-docx",
-      name: "إقرار الالتزام بالتأمينات والعمالة والمساواة (Word)",
-      description: "إقرار قانوني بالالتزام بالتأمينات وحسن معاملة الموظفين",
+      id: "decl-insurance",
+      name: "إقرار الالتزام بالتأمينات والعمالة والمساواة",
+      description: "النسخة الرقمية المعتمدة لإقرار التأمينات وحسن معاملة الموظفين مع رمز QR",
       category: "LETTERS",
       sourceTab: "خطابات ومخرجات العطاء",
       envelope: "المظروف الفني",
-      fileType: "docx",
+      fileType: "pdf",
       templateKey: "insurance",
-      templatePath: "/templates/declaration_insurance_template.docx",
+      cloudUrl: insCloudUrl,
+      isArchived: archivedDocIds.includes("decl-insurance"),
     });
-
-    if (insCloudUrl) {
-      list.push({
-        id: "decl-insurance-pdf",
-        name: "إقرار الالتزام بالتأمينات والعمالة (نسخة PDF رقمية)",
-        description: "النسخة الرقمية المعتمدة لإقرار التأمينات",
-        category: "LETTERS",
-        sourceTab: "خطابات ومخرجات العطاء",
-        envelope: "المظروف الفني",
-        fileType: "pdf",
-        templateKey: "insurance",
-        cloudUrl: insCloudUrl,
-      });
-    }
 
     return list;
   }, [
@@ -369,6 +345,7 @@ export function TabSubmissionPackage({
     specsCloudUrl,
     insCloudUrl,
     finCloudUrl,
+    archivedDocIds,
   ]);
 
   // حالة تحديد الملفات للـ ZIP
@@ -403,6 +380,10 @@ export function TabSubmissionPackage({
     () => packageFiles.filter((f) => f.envelope === "المظروف الفني").length,
     [packageFiles]
   );
+  const archiveDocsCount = useMemo(
+    () => packageFiles.filter((f) => f.isArchived).length,
+    [packageFiles]
+  );
   const finCount = useMemo(
     () => packageFiles.filter((f) => f.envelope === "المظروف المالي").length,
     [packageFiles]
@@ -411,6 +392,9 @@ export function TabSubmissionPackage({
   // تصفية الملفات بحسب الفئة النشطة
   const filteredFiles = useMemo(() => {
     if (activeCategory === "ALL") return packageFiles;
+    if (activeCategory === "ARCHIVE_ONLY") {
+      return packageFiles.filter((f) => f.isArchived);
+    }
     if (activeCategory === "BOOKLET_INSURANCE") {
       return packageFiles.filter((f) => f.category === "BOOKLET_INSURANCE" || f.category === "RECEIPTS");
     }
@@ -451,7 +435,7 @@ export function TabSubmissionPackage({
     }
   };
 
-  // ━━━ دالة جلب محتوى المستند الفعلي كـ Blob ━━━
+  // ━━━ دالة جلب محتوى المستند الفعلي كـ Blob بالصيغة الأصلية بدون تحويل ━━━
   const fetchFileBlob = async (item: DossierItem): Promise<{ blob: Blob; fileName: string }> => {
     const safeTitle = item.name.replace(/[/\\?%*:|"<>]/g, "_");
 
@@ -460,7 +444,12 @@ export function TabSubmissionPackage({
       const res = await api.get(`/operations/${op.id}/documents/${item.docRef.id}/file`, {
         responseType: "blob",
       });
-      return { blob: res.data, fileName: item.docRef.fileName || `${safeTitle}.${item.fileType}` };
+      let finalName = item.docRef.fileName || safeTitle;
+      const rawExt = (item.docRef.fileType || item.fileType || "").toLowerCase();
+      if (rawExt && !finalName.toLowerCase().endsWith(`.${rawExt}`)) {
+        finalName = `${finalName}.${rawExt}`;
+      }
+      return { blob: res.data, fileName: finalName };
     }
 
     // 2. إذا كان مستند شركة مرفوع
@@ -469,25 +458,18 @@ export function TabSubmissionPackage({
       const res = await api.get(`/companies/${compId}/documents/${item.companyDocRef.id}/file`, {
         responseType: "blob",
       });
+      let finalName = item.companyDocRef.originalFileName || item.companyDocRef.fileName || safeTitle;
+      const rawExt = (item.companyDocRef.fileType || item.fileType || "").toLowerCase();
+      if (rawExt && !finalName.toLowerCase().endsWith(`.${rawExt}`)) {
+        finalName = `${finalName}.${rawExt}`;
+      }
       return {
         blob: res.data,
-        fileName: item.companyDocRef.originalFileName || `${safeTitle}.${item.fileType}`,
+        fileName: finalName,
       };
     }
 
-    // 3. إذا كان قالب Word
-    if (item.templatePath) {
-      const res = await fetch(item.templatePath);
-      if (res.ok) {
-        const arrayBuf = await res.arrayBuffer();
-        const docxBlob = new Blob([arrayBuf], {
-          type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-        });
-        return { blob: docxBlob, fileName: `${safeTitle}.docx` };
-      }
-    }
-
-    // 4. إذا كان رابط سحابي معتمد (PDF)
+    // 3. إذا كان رابط سحابي معتمد (PDF)
     if (item.cloudUrl) {
       try {
         const res = await api.get("/operations/download-remote-file", {
@@ -509,7 +491,7 @@ export function TabSubmissionPackage({
       }
     }
 
-    // 5. بطاقة المستند كملف نصي موثق
+    // 4. بطاقة المستند كملف نصي موثق
     const content = `=========================================================================\n` +
       `منظومة جولدن ERP لإدارة المناقصات — بطاقة مستند العطاء الرسمي\n` +
       `=========================================================================\n` +
@@ -533,18 +515,28 @@ export function TabSubmissionPackage({
   // ━━━ دالة المعاينة الشاملة للمستند ━━━
   const handlePreviewItem = async (item: DossierItem) => {
     if (item.docRef) {
+      let finalName = item.docRef.fileName || item.name;
+      const rawExt = (item.docRef.fileType || item.fileType || "").toLowerCase();
+      if (rawExt && !finalName.toLowerCase().endsWith(`.${rawExt}`)) {
+        finalName = `${finalName}.${rawExt}`;
+      }
       onPreviewDoc?.({
         ...item.docRef,
-        fileName: item.name,
+        fileName: finalName,
         fileType: item.fileType,
       });
       return;
     }
     if (item.companyDocRef) {
+      let finalName = item.companyDocRef.originalFileName || item.companyDocRef.fileName || item.name;
+      const rawExt = (item.companyDocRef.fileType || item.fileType || "").toLowerCase();
+      if (rawExt && !finalName.toLowerCase().endsWith(`.${rawExt}`)) {
+        finalName = `${finalName}.${rawExt}`;
+      }
       onPreviewDoc?.({
         ...item.companyDocRef,
         id: item.companyDocRef.id,
-        fileName: item.name,
+        fileName: finalName,
         filePath: item.companyDocRef.filePath,
         fileType: item.fileType,
       });
@@ -552,28 +544,18 @@ export function TabSubmissionPackage({
     }
     if (item.cloudUrl) {
       onPreviewDoc?.({
-        fileName: item.name,
+        fileName: `${item.name}.pdf`,
         filePath: item.cloudUrl,
         fileType: "pdf",
       });
       return;
     }
-    if (item.templatePath) {
-      try {
-        const res = await fetch(item.templatePath);
-        if (res.ok) {
-          const blob = await res.blob();
-          onPreviewDoc?.({
-            fileName: `${item.name}.docx`,
-            fileType: "docx",
-            blob,
-          });
-          return;
-        }
-      } catch (err) {
-        console.warn("Failed to load template for preview:", err);
-      }
-      handleDownloadSingleItem(item);
+    if (item.templateKey) {
+      toast.info(`يرجى الانتقال لتبويب خطابات العطاء لتوليد واعتماد النسخة الرسمية (${item.name}) بصيغة PDF`);
+      if (item.templateKey === "clarification") onNavigate?.("clarification");
+      else if (item.templateKey === "technical") onNavigate?.("technical");
+      else if (item.templateKey === "financial") onNavigate?.("financial");
+      else if (item.templateKey === "specs" || item.templateKey === "insurance") onNavigate?.("declarations");
       return;
     }
   };
@@ -806,16 +788,6 @@ export function TabSubmissionPackage({
           <div className="flex items-center gap-2 flex-wrap">
             <Button
               size="sm"
-              variant="outline"
-              onClick={() => setChecklistOpen(true)}
-              className="border-border text-xs font-bold h-9 rounded-xl cursor-pointer flex items-center gap-1.5 hover:bg-muted"
-            >
-              <Printer className="h-3.5 w-3.5 text-blue-600" />
-              <span>كشف محتويات المظاريف</span>
-            </Button>
-
-            <Button
-              size="sm"
               onClick={handleDownloadZipPackage}
               disabled={packagingZip || selectedIds.length === 0}
               className="bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs h-9 px-4 rounded-xl cursor-pointer shadow-md flex items-center gap-1.5"
@@ -835,7 +807,7 @@ export function TabSubmissionPackage({
 
             <Button
               size="sm"
-              onClick={() => setAddingSubmission(!addingSubmission)}
+              onClick={() => setAddingSubmission(true)}
               className="bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs h-9 rounded-xl cursor-pointer shadow-md flex items-center gap-1.5"
             >
               <Send className="h-3.5 w-3.5" />
@@ -883,93 +855,116 @@ export function TabSubmissionPackage({
           </div>
         </div>
 
-        {/* نموذج تسجيل محضر تسليم العطاء */}
+        {/* نافذة عائمة: تسجيل وتوثيق تسليم العطاء بمقر الجهة */}
         {addingSubmission && (
-          <div className="p-5 rounded-2xl bg-card border-2 border-purple-500/30 space-y-3.5 animate-fade-in shadow-xl">
-            <div className="flex items-center justify-between pb-2 border-b border-border">
-              <h4 className="text-xs font-black text-foreground flex items-center gap-2">
-                <Send className="h-4 w-4 text-purple-600" />
-                <span>تسجيل وتوثيق تسليم المظاريف بمقر جهة الإسناد</span>
-              </h4>
-              <Badge className="bg-purple-500/15 text-purple-700 dark:text-purple-300 text-[10px] font-bold">
-                محضر استلام المظاريف
-              </Badge>
+          <Portal>
+            <div className="fixed inset-0 z-[100] bg-black/75 backdrop-blur-xs flex items-center justify-center p-3 sm:p-5 overflow-y-auto animate-fade-in">
+              <div className="bg-background border border-border w-full max-w-2xl rounded-3xl shadow-2xl overflow-hidden animate-scale-up">
+                <div className="p-4 sm:p-5 border-b border-border flex items-center justify-between bg-muted/40 shrink-0">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-10 h-10 rounded-2xl bg-purple-600 text-white flex items-center justify-center font-bold shadow-md">
+                      <Send className="h-5 w-5" />
+                    </div>
+                    <div>
+                      <h3 className="text-sm sm:text-base font-extrabold text-foreground">
+                        توثيق تسليم العطاء رسمياً بمقر جهة الإسناد
+                      </h3>
+                      <p className="text-[11px] text-muted-foreground">
+                        تسجيل محضر وإيصال استلام المظاريف الفنية والمالية طبقاً للقانون 182 لسنة 2018
+                      </p>
+                    </div>
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => setAddingSubmission(false)}
+                    className="h-8 w-8 rounded-full hover:bg-muted cursor-pointer"
+                  >
+                    <X className="h-4 w-4" />
+                  </Button>
+                </div>
+
+                <div className="p-5 sm:p-6 space-y-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <div className="space-y-1">
+                      <Label className="text-[11px] font-bold">الشركة المقدمة *</Label>
+                      <Input
+                        value={`${selectedCompanyRel?.company?.name || "الشركة"} (${selectedCompanyRel?.displayCode || "A1"})`}
+                        disabled
+                        className="h-9 text-xs font-bold bg-muted/40 cursor-not-allowed"
+                      />
+                    </div>
+
+                    <div className="space-y-1">
+                      <Label className="text-[11px] font-bold">تاريخ وساعة التسليم الفعلي *</Label>
+                      <Input
+                        type="date"
+                        value={submissionDate}
+                        onChange={(e) => setSubmissionDate(e.target.value)}
+                        className="h-9 text-xs font-mono"
+                      />
+                    </div>
+
+                    <div className="space-y-1">
+                      <Label className="text-[11px] font-bold">رقم إيصال الاستلام / قيد المظروف *</Label>
+                      <Input
+                        value={receiptNumber}
+                        onChange={(e) => setReceiptNumber(e.target.value)}
+                        placeholder="مثال: قيد رقم 148 / وارد خزينة"
+                        className="h-9 text-xs font-mono font-bold"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div className="space-y-1">
+                      <Label className="text-[11px] font-bold">اسم المستلم بالجهة / أمانة سر اللجنة</Label>
+                      <Input
+                        value={recipientPerson}
+                        onChange={(e) => setRecipientPerson(e.target.value)}
+                        placeholder="مثال: السيد / أمين سر لجنة فتح المظاريف"
+                        className="h-9 text-xs"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-[11px] font-bold">ملاحظات التسليم والمحضر</Label>
+                      <Input
+                        value={notes}
+                        onChange={(e) => setNotes(e.target.value)}
+                        placeholder="مثال: تم تسليم المظروفين الفني والمالي مغلقين بالشمع ومختومين"
+                        className="h-9 text-xs"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="p-3 rounded-2xl bg-purple-500/10 border border-purple-500/20 text-xs text-purple-800 dark:text-purple-300 flex items-center gap-2">
+                    <Sparkles className="h-4 w-4 text-purple-600 shrink-0" />
+                    <span>يتم توثيق محضر الاستلام وحفظه بالسجلات الرسمية للعملية مع ربطه بالشركة المتقدمة.</span>
+                  </div>
+                </div>
+
+                <div className="p-4 bg-muted/30 border-t border-border flex justify-end gap-2.5">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => setAddingSubmission(false)}
+                    className="rounded-xl h-9 text-xs cursor-pointer"
+                  >
+                    إلغاء
+                  </Button>
+                  <Button
+                    type="button"
+                    onClick={handleSaveSubmission}
+                    disabled={savingSubmission}
+                    className="bg-purple-600 hover:bg-purple-700 text-white rounded-xl font-bold h-9 text-xs cursor-pointer shadow-md flex items-center gap-1.5 px-4"
+                  >
+                    {savingSubmission ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle2 className="h-3.5 w-3.5" />}
+                    <span>حفظ وتوثيق التسليم رسمياً ✓</span>
+                  </Button>
+                </div>
+              </div>
             </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-              <div className="space-y-1">
-                <Label className="text-[11px] font-bold">الشركة المقدمة *</Label>
-                <Input
-                  value={`${selectedCompanyRel?.company?.name || "الشركة"} (${selectedCompanyRel?.displayCode || "A1"})`}
-                  disabled
-                  className="h-9 text-xs font-bold bg-muted/40 cursor-not-allowed"
-                />
-              </div>
-
-              <div className="space-y-1">
-                <Label className="text-[11px] font-bold">تاريخ وساعة التسليم الفعلي *</Label>
-                <Input
-                  type="date"
-                  value={submissionDate}
-                  onChange={(e) => setSubmissionDate(e.target.value)}
-                  className="h-9 text-xs font-mono"
-                />
-              </div>
-
-              <div className="space-y-1">
-                <Label className="text-[11px] font-bold">رقم إيصال الاستلام / قيد المظروف *</Label>
-                <Input
-                  value={receiptNumber}
-                  onChange={(e) => setReceiptNumber(e.target.value)}
-                  placeholder="مثال: قيد رقم 148 / وارد خزينة"
-                  className="h-9 text-xs font-mono font-bold"
-                />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div className="space-y-1">
-                <Label className="text-[11px] font-bold">اسم المستلم بالجهة / اللجنة</Label>
-                <Input
-                  value={recipientPerson}
-                  onChange={(e) => setRecipientPerson(e.target.value)}
-                  placeholder="مثال: السيد / أمين سر لجنة فتح المظاريف"
-                  className="h-9 text-xs"
-                />
-              </div>
-              <div className="space-y-1">
-                <Label className="text-[11px] font-bold">ملاحظات التسليم والمحضر</Label>
-                <Input
-                  value={notes}
-                  onChange={(e) => setNotes(e.target.value)}
-                  placeholder="مثال: تم تسليم المظروفين الفني والمالي مغلقين بالشمع ومختومين"
-                  className="h-9 text-xs"
-                />
-              </div>
-            </div>
-
-            <div className="flex justify-end gap-2 pt-2">
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => setAddingSubmission(false)}
-                className="rounded-xl h-8 text-xs cursor-pointer"
-              >
-                إلغاء
-              </Button>
-              <Button
-                type="button"
-                size="sm"
-                onClick={handleSaveSubmission}
-                disabled={savingSubmission}
-                className="bg-purple-600 hover:bg-purple-700 text-white rounded-xl font-bold h-8 text-xs cursor-pointer shadow-sm flex items-center gap-1.5"
-              >
-                {savingSubmission ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle2 className="h-3.5 w-3.5" />}
-                <span>حفظ وتوثيق التسليم رسمياً</span>
-              </Button>
-            </div>
-          </div>
+          </Portal>
         )}
 
         {/* ━━━ جدول ملفات التقديم مع أزرار الفلترة والتحديد والتحميل المباشر ━━━ */}
@@ -979,6 +974,7 @@ export function TabSubmissionPackage({
             <div className="flex items-center gap-1.5 flex-wrap">
               {[
                 { id: "ALL", label: `كافة الملفات (${packageFiles.length})`, icon: Layers },
+                { id: "ARCHIVE_ONLY", label: `مستندات الأرشيف (${archiveDocsCount})`, icon: Archive },
                 { id: "BOOKLET_INSURANCE", label: `الكراسة والتأمين (${bookletInsuranceCount})`, icon: Receipt },
                 { id: "CLARIFICATIONS", label: `الاستفسارات والملاحق (${clarificationsCount})`, icon: HelpCircle },
                 { id: "MARKET_STUDY", label: `دراسة السوق (${marketStudyCount})`, icon: TrendingUp },
@@ -1156,6 +1152,11 @@ export function TabSubmissionPackage({
                                 سحابي موثق ✓
                               </Badge>
                             )}
+                            {item.isArchived && (
+                              <Badge className="bg-purple-500/15 text-purple-700 dark:text-purple-300 border border-purple-500/30 text-[9px] font-bold">
+                                مضاف للأرشيف 📦
+                              </Badge>
+                            )}
                           </div>
                         )}
                         <span className="text-[11px] text-muted-foreground block truncate">
@@ -1169,6 +1170,22 @@ export function TabSubmissionPackage({
 
                     {/* أزرار الإجراءات والتحكم للمستند */}
                     <div className="flex items-center gap-1.5 shrink-0" onClick={(e) => e.stopPropagation()}>
+                      {/* زر الإضافة إلى مستندات الأرشيف */}
+                      <Button
+                        size="sm"
+                        variant={item.isArchived ? "secondary" : "outline"}
+                        onClick={() => handleToggleDocArchive(item.id)}
+                        className={`h-8.5 px-2 text-xs font-bold rounded-xl cursor-pointer flex items-center gap-1 transition-all ${
+                          item.isArchived
+                            ? "bg-purple-500/15 text-purple-700 dark:text-purple-300 border border-purple-500/30 hover:bg-purple-500/25"
+                            : "border-border text-muted-foreground hover:text-foreground hover:bg-muted"
+                        }`}
+                        title={item.isArchived ? "المستند مضاف للأرشيف (انقر للإزالة من الأرشيف)" : "انقر لإضافة هذا المستند إلى مستندات الأرشيف"}
+                      >
+                        <Archive className="h-3.5 w-3.5 text-purple-600" />
+                        <span className="hidden sm:inline">{item.isArchived ? "بالأرشيف ✓" : "إضافة للأرشيف"}</span>
+                      </Button>
+
                       {/* زر المعاينة */}
                       <Button
                         size="sm"
@@ -1269,27 +1286,151 @@ export function TabSubmissionPackage({
               {op.submissions.map((sub: any) => (
                 <div
                   key={sub.id}
-                  className="p-3.5 rounded-2xl bg-card border border-border space-y-2 shadow-xs"
+                  className="p-3.5 rounded-2xl bg-card border border-border space-y-2 shadow-xs hover:border-purple-500/30 transition-all"
                 >
                   <div className="flex items-center justify-between pb-2 border-b border-border/50">
                     <span className="text-xs font-bold text-foreground">
                       شركة {(op.companies || []).find((c: any) => c.company.id === sub.companyId || c.companyId === sub.companyId)?.company?.name || "—"}
                     </span>
-                    <Badge className="bg-purple-500/15 text-purple-700 dark:text-purple-300 border border-purple-500/30 text-[10px] font-bold">
-                      مقدم رسمياً ✓
-                    </Badge>
+                    <div className="flex items-center gap-1.5">
+                      <Badge className="bg-purple-500/15 text-purple-700 dark:text-purple-300 border border-purple-500/30 text-[10px] font-bold">
+                        مقدم رسمياً ✓
+                      </Badge>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => setViewingSubmission(sub)}
+                        className="h-7 w-7 p-0 rounded-lg text-purple-600 hover:bg-purple-500/10 cursor-pointer"
+                        title="عرض تفاصيل الإيصال في نافذة عائمة"
+                      >
+                        <Eye className="h-3.5 w-3.5" />
+                      </Button>
+                    </div>
                   </div>
                   <DataRow label="تاريخ التقديم" value={formatDate(sub.submissionDate)} />
                   <DataRow label="رقم إيصال الاستلام" value={sub.receiptNumber} mono />
                   {sub.notes && (
-                    <p className="text-[11px] text-muted-foreground bg-muted/30 p-2 rounded-lg font-mono">
+                    <p className="text-[11px] text-muted-foreground bg-muted/30 p-2 rounded-lg font-mono truncate">
                       {sub.notes}
                     </p>
                   )}
+                  <div className="pt-1 flex justify-end">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => setViewingSubmission(sub)}
+                      className="h-7 px-2.5 text-[11px] font-bold rounded-xl border-purple-500/30 text-purple-700 dark:text-purple-300 hover:bg-purple-500/10 cursor-pointer flex items-center gap-1"
+                    >
+                      <Eye className="h-3.5 w-3.5" />
+                      <span>عرض كامل التفاصيل</span>
+                    </Button>
+                  </div>
                 </div>
               ))}
             </div>
           </div>
+        )}
+
+        {/* ━━━ نافذة عائمة: استعراض تفاصيل إيصال ومحضر التسليم الرسمي ━━━ */}
+        {viewingSubmission && (
+          <Portal>
+            <div className="fixed inset-0 z-[100] bg-black/75 backdrop-blur-xs flex items-center justify-center p-3 sm:p-5 overflow-y-auto animate-fade-in">
+              <div className="bg-background border border-border w-full max-w-xl rounded-3xl shadow-2xl overflow-hidden animate-scale-up">
+                <div className="p-4 sm:p-5 border-b border-border flex items-center justify-between bg-muted/40 shrink-0">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-10 h-10 rounded-2xl bg-purple-600 text-white flex items-center justify-center font-bold shadow-md">
+                      <Eye className="h-5 w-5" />
+                    </div>
+                    <div>
+                      <h3 className="text-sm sm:text-base font-extrabold text-foreground">
+                        تفاصيل إيصال ومحضر استلام العطاء الموثق
+                      </h3>
+                      <p className="text-[11px] text-muted-foreground">
+                        بيانات استلام المظاريف الرسمية لدى لجنة فض المظاريف
+                      </p>
+                    </div>
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => setViewingSubmission(null)}
+                    className="h-8 w-8 rounded-full hover:bg-muted cursor-pointer"
+                  >
+                    <X className="h-4 w-4" />
+                  </Button>
+                </div>
+
+                <div className="p-5 sm:p-6 space-y-3.5">
+                  <div className="p-3.5 rounded-2xl bg-purple-500/10 border border-purple-500/20 flex items-center justify-between">
+                    <div>
+                      <span className="text-[11px] text-purple-700 dark:text-purple-300 font-bold block">
+                        الشركة المتقدمة بالعطاء:
+                      </span>
+                      <span className="text-sm font-extrabold text-foreground">
+                        شركة {(op.companies || []).find((c: any) => c.company.id === viewingSubmission.companyId || c.companyId === viewingSubmission.companyId)?.company?.name || "جولدن"}
+                      </span>
+                    </div>
+                    <Badge className="bg-purple-600 text-white text-xs font-bold px-3 py-1">
+                      مقدم رسمياً ✓
+                    </Badge>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div className="p-3 rounded-xl bg-card border border-border">
+                      <span className="text-[11px] text-muted-foreground block">رقم إيصال الاستلام / القيد:</span>
+                      <span className="text-sm font-mono font-bold text-foreground">{viewingSubmission.receiptNumber || "—"}</span>
+                    </div>
+                    <div className="p-3 rounded-xl bg-card border border-border">
+                      <span className="text-[11px] text-muted-foreground block">تاريخ وساعة التقديم:</span>
+                      <span className="text-sm font-bold text-foreground">{formatDate(viewingSubmission.submissionDate)}</span>
+                    </div>
+                  </div>
+
+                  <div className="p-3 rounded-xl bg-card border border-border space-y-1">
+                    <span className="text-[11px] text-muted-foreground block">المستلم بجهة الإسناد / أمانة سر اللجنة:</span>
+                    <span className="text-xs font-bold text-foreground">
+                      {viewingSubmission.notes?.includes("|") 
+                        ? viewingSubmission.notes.split("|")[0].replace("المستلم:", "").trim()
+                        : "سكرتارية لجنة فض المظاريف بالجهة الإدارية"}
+                    </span>
+                  </div>
+
+                  {viewingSubmission.notes && (
+                    <div className="p-3 rounded-xl bg-muted/40 border border-border space-y-1">
+                      <span className="text-[11px] text-muted-foreground block">ملاحظات ومحضر الاستلام:</span>
+                      <p className="text-xs font-mono text-foreground leading-relaxed whitespace-pre-wrap">
+                        {viewingSubmission.notes}
+                      </p>
+                    </div>
+                  )}
+
+                  <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-xs text-emerald-800 dark:text-emerald-300 flex items-center gap-2">
+                    <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-600" />
+                    <span>تم توثيق هذا الإيصال واعتماده وفقاً لأحكام القانون رقم 182 لسنة 2018 ولائحته التنفيذية.</span>
+                  </div>
+                </div>
+
+                <div className="p-4 bg-muted/30 border-t border-border flex justify-end gap-2.5">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => window.print()}
+                    className="rounded-xl h-9 text-xs font-bold cursor-pointer flex items-center gap-1.5"
+                  >
+                    <Printer className="h-3.5 w-3.5 text-blue-600" />
+                    <span>طباعة الإيصال</span>
+                  </Button>
+                  <Button
+                    type="button"
+                    onClick={() => setViewingSubmission(null)}
+                    className="bg-primary text-primary-foreground hover:bg-primary/90 rounded-xl font-bold h-9 text-xs cursor-pointer shadow-md px-4"
+                  >
+                    إغلاق النافذة
+                  </Button>
+                </div>
+              </div>
+            </div>
+          </Portal>
         )}
 
         {/* ━━━ نافذة كشف تسليم محتويات المظاريف القابل للطباعة ━━━ */}
