@@ -151,14 +151,14 @@ export class OperationsController {
 
   @Patch(':id')
   @UseGuards(RolesGuard)
-  @Roles(UserRole.GENERAL_MANAGER, UserRole.EMPLOYEE)
+  @Roles(UserRole.GENERAL_MANAGER, UserRole.DEPUTY_MANAGER, UserRole.EMPLOYEE)
   update(@Param('id') id: string, @Body() dto: UpdateOperationDto) {
     return this.operationsService.update(id, dto);
   }
 
   @Patch(':id/status')
   @UseGuards(RolesGuard)
-  @Roles(UserRole.GENERAL_MANAGER, UserRole.EMPLOYEE)
+  @Roles(UserRole.GENERAL_MANAGER, UserRole.DEPUTY_MANAGER, UserRole.EMPLOYEE)
   updateStatus(
     @Param('id') id: string,
     @Body('status') status: OperationStatus,
@@ -169,7 +169,7 @@ export class OperationsController {
 
   @Patch(':id/toggle-lock')
   @UseGuards(RolesGuard)
-  @Roles(UserRole.GENERAL_MANAGER, UserRole.EMPLOYEE)
+  @Roles(UserRole.GENERAL_MANAGER, UserRole.DEPUTY_MANAGER, UserRole.EMPLOYEE)
   toggleCodeLock(@Param('id') id: string) {
     return this.operationsService.toggleCodeLock(id);
   }
