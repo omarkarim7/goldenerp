@@ -314,98 +314,112 @@ export function TabSubmissionPackage({
     });
 
     // ─────────────────────────────────────────────────────────────
-    // 3. نماذج وخطابات العطاء الرسمية المعتمدة
+    // 3. نماذج وخطابات العطاء الرسمية المعتمدة (فقط الملفات الموجودة فعلياً أو المحفوظة بالأرشيف)
     // ─────────────────────────────────────────────────────────────
-    list.push({
-      id: "letter-clarification",
-      name: "خطاب التوضيح والاستفسارات الرسمي",
-      description: "النسخة الرقمية المعتمدة لخطاب التوضيح مع رمز QR الموثق",
-      category: "LETTERS",
-      sourceTab: "خطابات ومخرجات العطاء",
-      envelope: "المظروف الفني",
-      fileType: "pdf",
-      templateKey: "clarification",
-      cloudUrl: clrCloudUrl,
-      isArchived: archivedDocIds.includes("letter-clarification"),
-    });
+    if (clrCloudUrl || archivedDocIds.includes("letter-clarification")) {
+      list.push({
+        id: "letter-clarification",
+        name: "خطاب التوضيح والاستفسارات الرسمي",
+        description: "النسخة الرقمية المعتمدة لخطاب التوضيح مع رمز QR الموثق",
+        category: "LETTERS",
+        sourceTab: "خطابات ومخرجات العطاء",
+        envelope: "المظروف الفني",
+        fileType: "pdf",
+        templateKey: "clarification",
+        cloudUrl: clrCloudUrl,
+        isArchived: archivedDocIds.includes("letter-clarification"),
+      });
+    }
 
-    list.push({
-      id: "letter-technical",
-      name: "العرض الفني والمواصفات الفنية والبدائل",
-      description: "النسخة الرقمية المعتمدة للعرض الفني بالجدول المدمج والبدائل الفنية مع رمز QR",
-      category: "LETTERS",
-      sourceTab: "خطابات ومخرجات العطاء",
-      envelope: "المظروف الفني",
-      fileType: "pdf",
-      templateKey: "technical",
-      cloudUrl: techCloudUrl,
-      isArchived: archivedDocIds.includes("letter-technical"),
-    });
+    if (techCloudUrl || archivedDocIds.includes("letter-technical")) {
+      list.push({
+        id: "letter-technical",
+        name: "العرض الفني والمواصفات الفنية والبدائل",
+        description: "النسخة الرقمية المعتمدة للعرض الفني بالجدول المدمج والبدائل الفنية مع رمز QR",
+        category: "LETTERS",
+        sourceTab: "خطابات ومخرجات العطاء",
+        envelope: "المظروف الفني",
+        fileType: "pdf",
+        templateKey: "technical",
+        cloudUrl: techCloudUrl,
+        isArchived: archivedDocIds.includes("letter-technical"),
+      });
+    }
 
-    list.push({
-      id: "letter-warranty",
-      name: "شهادة الضمان المعتمدة للأصناف الموردة",
-      description: "النسخة الرقمية المعتمدة لشهادة الضمان للأصناف مع رمز QR والبنود المستثناة وفترة السريان",
-      category: "LETTERS",
-      sourceTab: "خطابات ومخرجات العطاء",
-      envelope: "المظروف الفني",
-      fileType: "pdf",
-      templateKey: "technical",
-      cloudUrl: warrantyCloudUrl,
-      isArchived: archivedDocIds.includes("letter-warranty"),
-    });
+    if (warrantyCloudUrl || archivedDocIds.includes("letter-warranty")) {
+      list.push({
+        id: "letter-warranty",
+        name: "شهادة الضمان المعتمدة للأصناف الموردة",
+        description: "النسخة الرقمية المعتمدة لشهادة الضمان للأصناف مع رمز QR والبنود المستثناة وفترة السريان",
+        category: "LETTERS",
+        sourceTab: "خطابات ومخرجات العطاء",
+        envelope: "المظروف الفني",
+        fileType: "pdf",
+        templateKey: "technical",
+        cloudUrl: warrantyCloudUrl,
+        isArchived: archivedDocIds.includes("letter-warranty"),
+      });
+    }
 
-    list.push({
-      id: "letter-financial",
-      name: "العرض المالي وجدول الأسعار والتفقيط",
-      description: "النسخة الرقمية المعتمدة للعرض المالي الرسمي بأعمدة سعر الوحدة والإجمالي والتفقيط مع رمز QR",
-      category: "LETTERS",
-      sourceTab: "خطابات ومخرجات العطاء",
-      envelope: "المظروف المالي",
-      fileType: "pdf",
-      templateKey: "financial",
-      cloudUrl: finCloudUrl,
-      isArchived: archivedDocIds.includes("letter-financial"),
-    });
+    if (finCloudUrl || archivedDocIds.includes("letter-financial")) {
+      list.push({
+        id: "letter-financial",
+        name: "العرض المالي وجدول الأسعار والتفقيط",
+        description: "النسخة الرقمية المعتمدة للعرض المالي الرسمي بأعمدة سعر الوحدة والإجمالي والتفقيط مع رمز QR",
+        category: "LETTERS",
+        sourceTab: "خطابات ومخرجات العطاء",
+        envelope: "المظروف المالي",
+        fileType: "pdf",
+        templateKey: "financial",
+        cloudUrl: finCloudUrl,
+        isArchived: archivedDocIds.includes("letter-financial"),
+      });
+    }
 
-    list.push({
-      id: "decl-specs",
-      name: "إقرار الالتزام بكراسة الشروط والمواصفات",
-      description: "النسخة الرقمية المعتمدة لإقرار الالتزام بالشروط والمواصفات مع رمز QR",
-      category: "LETTERS",
-      sourceTab: "خطابات ومخرجات العطاء",
-      envelope: "المظروف الفني",
-      fileType: "pdf",
-      templateKey: "specs",
-      cloudUrl: specsCloudUrl,
-      isArchived: archivedDocIds.includes("decl-specs"),
-    });
+    if (specsCloudUrl || archivedDocIds.includes("decl-specs")) {
+      list.push({
+        id: "decl-specs",
+        name: "إقرار الالتزام بكراسة الشروط والمواصفات",
+        description: "النسخة الرقمية المعتمدة لإقرار الالتزام بالشروط والمواصفات مع رمز QR",
+        category: "LETTERS",
+        sourceTab: "خطابات ومخرجات العطاء",
+        envelope: "المظروف الفني",
+        fileType: "pdf",
+        templateKey: "specs",
+        cloudUrl: specsCloudUrl,
+        isArchived: archivedDocIds.includes("decl-specs"),
+      });
+    }
 
-    list.push({
-      id: "decl-insurance",
-      name: "إقرار الالتزام بالتأمينات والعمالة والمساواة",
-      description: "النسخة الرقمية المعتمدة لإقرار التأمينات وحسن معاملة الموظفين مع رمز QR",
-      category: "LETTERS",
-      sourceTab: "خطابات ومخرجات العطاء",
-      envelope: "المظروف الفني",
-      fileType: "pdf",
-      templateKey: "insurance",
-      cloudUrl: insCloudUrl,
-      isArchived: archivedDocIds.includes("decl-insurance"),
-    });
+    if (insCloudUrl || archivedDocIds.includes("decl-insurance")) {
+      list.push({
+        id: "decl-insurance",
+        name: "إقرار الالتزام بالتأمينات والعمالة والمساواة",
+        description: "النسخة الرقمية المعتمدة لإقرار التأمينات وحسن معاملة الموظفين مع رمز QR",
+        category: "LETTERS",
+        sourceTab: "خطابات ومخرجات العطاء",
+        envelope: "المظروف الفني",
+        fileType: "pdf",
+        templateKey: "insurance",
+        cloudUrl: insCloudUrl,
+        isArchived: archivedDocIds.includes("decl-insurance"),
+      });
+    }
 
-    list.push({
-      id: "decl-general",
-      name: "الخطاب الرسمي العام الموجه لجهة الإسناد",
-      description: "النسخة الرقمية المعتمدة للخطاب العام مع رمز QR الموثق",
-      category: "LETTERS",
-      sourceTab: "خطابات ومخرجات العطاء",
-      envelope: "المظروف الفني",
-      fileType: "pdf",
-      templateKey: "clarification",
-      cloudUrl: generalCloudUrl,
-      isArchived: archivedDocIds.includes("decl-general"),
-    });
+    if (generalCloudUrl || archivedDocIds.includes("decl-general")) {
+      list.push({
+        id: "decl-general",
+        name: "الخطاب الرسمي العام الموجه لجهة الإسناد",
+        description: "النسخة الرقمية المعتمدة للخطاب العام مع رمز QR الموثق",
+        category: "LETTERS",
+        sourceTab: "خطابات ومخرجات العطاء",
+        envelope: "المظروف الفني",
+        fileType: "pdf",
+        templateKey: "clarification",
+        cloudUrl: generalCloudUrl,
+        isArchived: archivedDocIds.includes("decl-general"),
+      });
+    }
 
     return list;
   }, [
@@ -587,51 +601,37 @@ export function TabSubmissionPackage({
     };
   };
 
-  // ━━━ دالة المعاينة الشاملة للمستند ━━━
+  // ━━━ دالة المعاينة الفورية الشاملة للمستند ━━━
   const handlePreviewItem = async (item: DossierItem) => {
-    if (item.docRef) {
-      let finalName = item.docRef.fileName || item.name;
-      const rawExt = (item.docRef.fileType || item.fileType || "").toLowerCase();
-      if (rawExt && !finalName.toLowerCase().endsWith(`.${rawExt}`)) {
-        finalName = `${finalName}.${rawExt}`;
-      }
+    try {
+      const { blob, fileName } = await fetchFileBlob(item);
       onPreviewDoc?.({
-        ...item.docRef,
-        fileName: finalName,
+        id: item.docRef?.id || item.companyDocRef?.id || item.id,
+        blob,
+        fileName: fileName || item.name,
+        filePath: item.cloudUrl || item.companyDocRef?.filePath || item.docRef?.filePath,
         fileType: item.fileType,
       });
-      return;
-    }
-    if (item.companyDocRef) {
-      let finalName = item.companyDocRef.originalFileName || item.companyDocRef.fileName || item.name;
-      const rawExt = (item.companyDocRef.fileType || item.fileType || "").toLowerCase();
-      if (rawExt && !finalName.toLowerCase().endsWith(`.${rawExt}`)) {
-        finalName = `${finalName}.${rawExt}`;
+    } catch (err: any) {
+      console.warn("Direct blob pre-fetch fallback:", err);
+      if (item.docRef) {
+        onPreviewDoc?.({ ...item.docRef, fileName: item.name, fileType: item.fileType });
+      } else if (item.companyDocRef) {
+        onPreviewDoc?.({
+          ...item.companyDocRef,
+          companyId: selectedCompanyRel?.companyId || selectedCompanyRel?.company?.id,
+          fileName: item.name,
+          fileType: item.fileType,
+        });
+      } else if (item.cloudUrl) {
+        onPreviewDoc?.({ fileName: `${item.name}.pdf`, filePath: item.cloudUrl, fileType: "pdf" });
+      } else if (item.templateKey) {
+        toast.info(`يرجى الانتقال لتبويب خطابات العطاء لتوليد واعتماد النسخة الرسمية (${item.name}) بصيغة PDF`);
+        if (item.templateKey === "clarification") onNavigate?.("clarification");
+        else if (item.templateKey === "technical") onNavigate?.("technical");
+        else if (item.templateKey === "financial") onNavigate?.("financial");
+        else if (item.templateKey === "specs" || item.templateKey === "insurance") onNavigate?.("declarations");
       }
-      onPreviewDoc?.({
-        ...item.companyDocRef,
-        id: item.companyDocRef.id,
-        fileName: finalName,
-        filePath: item.companyDocRef.filePath,
-        fileType: item.fileType,
-      });
-      return;
-    }
-    if (item.cloudUrl) {
-      onPreviewDoc?.({
-        fileName: `${item.name}.pdf`,
-        filePath: item.cloudUrl,
-        fileType: "pdf",
-      });
-      return;
-    }
-    if (item.templateKey) {
-      toast.info(`يرجى الانتقال لتبويب خطابات العطاء لتوليد واعتماد النسخة الرسمية (${item.name}) بصيغة PDF`);
-      if (item.templateKey === "clarification") onNavigate?.("clarification");
-      else if (item.templateKey === "technical") onNavigate?.("technical");
-      else if (item.templateKey === "financial") onNavigate?.("financial");
-      else if (item.templateKey === "specs" || item.templateKey === "insurance") onNavigate?.("declarations");
-      return;
     }
   };
 

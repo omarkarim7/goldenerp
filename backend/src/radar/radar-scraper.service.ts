@@ -700,7 +700,10 @@ export class RadarScraperService {
       data: { lastFetched: new Date() },
     });
 
-    const msg = `تم فحص بوابة التعاقدات الحكومية بنجاح: تم رصد ${tendersBasic.length} مناقصة (إضافة ${newCount} جديدة وتحديث ${updatedCount}).`;
+    const msg =
+      newCount > 0
+        ? `تم رصد ${newCount} مناقصة جديدة اليوم وإضافتها للرادار بنجاح!`
+        : `الرادار محدث: تم التحقق من البوابة الحكومية ولم يتم رصد مناقصات جديدة منذ آخر فحص.`;
     this.logger.log(msg);
 
     return {

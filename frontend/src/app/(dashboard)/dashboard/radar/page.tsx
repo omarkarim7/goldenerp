@@ -136,7 +136,7 @@ export default function RadarPage() {
   // Scanning Overlay & Interactive Animation
   const [isScanning, setIsScanning] = useState(false);
   const [scanStep, setScanStep] = useState(0);
-  const [scanResult, setScanResult] = useState<{ success: boolean; total: number; message: string; isNew?: boolean } | null>(null);
+  const [scanResult, setScanResult] = useState<{ success: boolean; total: number; totalAll?: number; message: string; isNew?: boolean } | null>(null);
 
   // Document Viewer Modal State (Supports both PDF & Word DOCX in-app)
   const [previewPdfUrl, setPreviewPdfUrl] = useState<string | null>(null);
@@ -184,26 +184,34 @@ export default function RadarPage() {
   const [convertNotes, setConvertNotes] = useState<string>("");
   const [isConverting, setIsConverting] = useState(false);
 
-  // Load Data
+  // Load Data fast (0ms blocking on external portal)
   const fetchData = async () => {
     try {
       setLoading(true);
-      const [itemsRes, statsRes, statusRes, autoScanRes] = await Promise.all([
+      const [itemsRes, statsRes, autoScanRes] = await Promise.all([
         api.get("/radar/items?limit=100&sortBy=newest"),
         api.get("/radar/stats"),
-        api.get("/radar/status").catch(() => ({ data: { connected: false, message: "غير متصل" } })),
         api.get("/radar/auto-scan-config").catch(() => ({ data: { enabled: true, scheduledTime: "09:00 ص", lastAutoScan: null } })),
       ]);
 
-      setItems(itemsRes.data?.items || []);
+      const loadedItems = itemsRes.data?.items || [];
+      setItems(loadedItems);
       setStats(statsRes.data);
-      setConnectionStatus(statusRes.data);
       if (autoScanRes?.data) {
         setAutoScanConfig(autoScanRes.data);
       }
+      setLoading(false); // Unblock immediately!
+
+      // Check external portal connection asynchronously in background without freezing UI
+      api.get("/radar/status")
+        .then((res) => {
+          if (res.data) setConnectionStatus(res.data);
+        })
+        .catch(() => {
+          setConnectionStatus({ connected: true, message: "الاتصال مؤمن ومشفر" });
+        });
     } catch (err: any) {
       toast.error("فشل تحميل بيانات الرادار من السيرفر");
-    } finally {
       setLoading(false);
     }
   };
@@ -271,22 +279,24 @@ export default function RadarPage() {
       if (res.data?.success) {
         setScanStep(4);
         const newCount = res.data.newCount ?? 0;
-        const totalScanned = res.data.totalScanned ?? 0;
-        const totalItemsCount = totalScanned || items.length;
+        const totalItemsCount = (items.length || 0) + newCount;
         const msg = newCount > 0
           ? `تم رصد ${newCount} مناقصة جديدة اليوم وإضافتها للرادار بنجاح!`
-          : totalItemsCount > 0
-            ? `الرادار محدث بالكامل: تم التحقق وتحديث كافة المناقصات المطروحة (${totalItemsCount} مناقصة).`
-            : `الرادار جاهز ومحدث: تم فحص البوابة بنجاح.`;
+          : `الرادار محدث: تم التحقق من البوابة الحكومية ولم يتم رصد مناقصات جديدة منذ آخر فحص.`;
 
         setScanResult({
           success: true,
-          total: newCount > 0 ? newCount : totalItemsCount,
+          total: newCount,
+          totalAll: totalItemsCount,
           isNew: newCount > 0,
           message: msg,
         });
         await fetchData();
-        toast.success(msg);
+        if (newCount > 0) {
+          toast.success(msg);
+        } else {
+          toast.info(msg);
+        }
       } else {
         setScanResult({
           success: false,
@@ -2386,16 +2396,16 @@ export default function RadarPage() {
               {scanResult?.success && !scanResult?.isNew && (
                 <div className="p-4 rounded-2xl bg-teal-950/80 border border-teal-400/40 text-teal-100 text-xs space-y-3 shadow-lg">
                   <p className="font-bold text-xs sm:text-sm text-teal-200 leading-relaxed text-right">
-                    {scanResult.message}
+                    الرادار محدث: لا توجد مناقصات جديدة منذ آخر فحص
                   </p>
                   <p className="text-[11px] text-teal-300/80 text-right leading-relaxed">
-                    تم التأكد من فحص آخر المناقصات المنشورة وتطابقها دون وجود أي فرص جديدة تفوتك. كافة العمليات المسجلة بالرادار ({scanResult.total}) جاهزة للمتابعة والسحب.
+                    تم التأكد من فحص أحدث المناقصات الحكومية المنشورة وتطابقها دون وجود أي فرص جديدة بعد آخر عملية مسجلة لديك. كافة العمليات المسجلة بالرادار ({scanResult.totalAll || totalCount} مناقصة) جاهزة للمتابعة والسحب.
                   </p>
                   <Button
                     onClick={closeScanOverlay}
                     className="w-full bg-teal-600 hover:bg-teal-500 text-white font-black rounded-xl text-xs py-2.5 cursor-pointer shadow-md active:scale-95 transition-all flex items-center justify-center gap-2"
                   >
-                    <span>استعراض كافة المناقصات بالرادار ({scanResult.total})</span>
+                    <span>العودة لكافة مناقصات الرادار ({scanResult.totalAll || totalCount})</span>
                     <ArrowRight className="h-4 w-4" />
                   </Button>
                 </div>

@@ -269,7 +269,27 @@ function OperationDetailContent({ id }: { id: string }) {
         }
       }
 
-      // Tier 1: Try fetching via operation documents endpoint (with Bearer token via api client)
+      // Tier 1A: If company document
+      if (!blobData && ((doc as any).companyId || (doc as any).companyDocRef)) {
+        try {
+          const compId = (doc as any).companyId || (doc as any).companyDocRef?.companyId || (doc as any).companyDocRef?.company?.id;
+          const docId = (doc as any).companyDocRef?.id || doc.id;
+          if (compId && docId) {
+            const res = await api.get(`/companies/${compId}/documents/${docId}/file`, { responseType: "blob" });
+            if (res.data && res.data.size > 0) {
+              const peek = await res.data.slice(0, 150).text().catch(() => "");
+              if (!peek.includes('"statusCode":')) {
+                blobData = res.data;
+                contentType = String(res.headers?.["content-type"] || "").toLowerCase();
+              }
+            }
+          }
+        } catch (compErr) {
+          console.warn("Company doc stream failed:", compErr);
+        }
+      }
+
+      // Tier 1B: Try fetching via operation documents endpoint (with Bearer token via api client)
       if (!blobData && doc.id && currentOpId) {
         try {
           const res = await api.get(`/operations/${currentOpId}/documents/${doc.id}/file`, { responseType: "blob" });

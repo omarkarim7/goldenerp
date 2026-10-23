@@ -1,6 +1,6 @@
 "use client";
 
-import React from "react";
+import React, { useState } from "react";
 import {
   ChevronLeft, ChevronRight, Sparkles, CheckCircle2,
   Lock, Unlock, Clock, Send, RotateCcw, Check, ShieldCheck, AlertCircle
@@ -8,6 +8,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { LIFECYCLE_TABS, TabDef } from "./types";
 import { useStageLock } from "../StageLockContext";
+import { Portal } from "@/components/ui/portal";
 import { toast } from "sonner";
 
 interface StepFooterNavProps {
@@ -30,6 +31,8 @@ export function StepFooterNav({
   const prevTab: TabDef | undefined = currentIndex > 0 ? LIFECYCLE_TABS[currentIndex - 1] : undefined;
   const nextTab: TabDef | undefined = currentIndex < LIFECYCLE_TABS.length - 1 ? LIFECYCLE_TABS[currentIndex + 1] : undefined;
 
+  const [advanceModalTarget, setAdvanceModalTarget] = useState<string | null>(null);
+
   const {
     isStageLocked,
     lockStage,
@@ -49,19 +52,29 @@ export function StepFooterNav({
   const canGoNext = canAccessNextStage(currentTabId);
 
   const handleGo = (targetId: string) => {
-    // إذا كان الموظف يحاول القفز للمرحلة التالية والمرحلة الحالية غير معتمدة
-    if (!isManagerOrDeputy && !canGoNext) {
-      toast.warning(
-        `المرحلة الحالية "${currentTab.label}" قيد المراجعة بانتظار اعتماد المدير العام أو النائب أولاً قبل الانتقال للمرحلة التالية.`
-      );
-      return;
-    }
     if (onNavigate) {
       onNavigate(targetId);
     }
     if (typeof window !== "undefined") {
       window.scrollTo({ top: 0, behavior: "smooth" });
     }
+  };
+
+  const handleNextClick = (targetId: string) => {
+    if (isApproved) {
+      handleGo(targetId);
+      return;
+    }
+
+    if (!isManagerOrDeputy) {
+      toast.warning(
+        `المرحلة الحالية "${currentTab.label}" لم تعتمد بعد من الإدارة العليا. يرجى إرسالها للمراجعة وانتظار الاعتماد.`
+      );
+      return;
+    }
+
+    // للمدير والنائب: إظهار تنبيه التأكيد بوضوح قبل الانتقال إذا كانت المرحلة غير معتمدة أو تمت إعادتها للتعديل
+    setAdvanceModalTarget(targetId);
   };
 
   return (
@@ -116,6 +129,23 @@ export function StepFooterNav({
               <span>اعتماد المرحلة وتصريح المتابعة ✓</span>
             </Button>
           </div>
+        </div>
+      )}
+
+      {stageStatus === "DRAFT" && (
+        <div className="p-3.5 rounded-2xl bg-slate-500/10 border border-slate-500/20 flex items-center justify-between gap-3 text-xs text-foreground animate-fade-in shadow-xs">
+          <div className="flex items-center gap-2.5">
+            <RotateCcw className="h-4 w-4 text-blue-600 shrink-0" />
+            <div>
+              <span className="font-extrabold text-xs sm:text-sm block">المرحلة في وضع التعديل والتحرير ✏️</span>
+              <span className="text-[11px] text-muted-foreground">
+                يمكن إدخال وتعديل البيانات وحفظها، وعند الانتهاء يتم إرسالها لمراجعة واعتماد الإدارة أو اعتمادها مباشرة.
+              </span>
+            </div>
+          </div>
+          <span className="px-2.5 py-1 rounded-xl bg-muted text-muted-foreground font-mono font-bold text-[11px] shrink-0">
+            وضع التحرير
+          </span>
         </div>
       )}
 
@@ -204,20 +234,22 @@ export function StepFooterNav({
             )
           )}
 
-          {/* زر الانتقال للمرحلة التالية مع فحص الصلاحية وحالة الاعتماد */}
+          {/* زر الانتقال للمرحلة التالية مع فحص الصلاحية وحالة الاعتماد والتأكيد السلس */}
           {nextTab ? (
             <Button
               type="button"
-              onClick={() => handleGo(nextTab.id)}
-              disabled={!canGoNext}
+              onClick={() => handleNextClick(nextTab.id)}
+              disabled={!isManagerOrDeputy && !canGoNext}
               title={
-                !canGoNext
+                !isManagerOrDeputy && !canGoNext
                   ? "يجب اعتماد هذه المرحلة من المدير العام أو النائب أولاً"
                   : undefined
               }
               className={`h-11 px-4 sm:px-6 rounded-2xl font-black text-xs sm:text-sm shadow-lg cursor-pointer active:scale-95 transition-all flex items-center justify-center gap-2 group shrink-0 whitespace-nowrap ${
-                canGoNext
+                isApproved
                   ? "bg-gradient-to-r from-blue-600 via-indigo-600 to-emerald-600 hover:from-blue-700 hover:via-indigo-700 hover:to-emerald-700 text-white shadow-blue-500/25"
+                  : isManagerOrDeputy
+                  ? "bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-700 hover:to-orange-700 text-white shadow-amber-500/20"
                   : "bg-muted text-muted-foreground border border-border cursor-not-allowed opacity-60"
               }`}
             >
@@ -232,6 +264,80 @@ export function StepFooterNav({
           )}
         </div>
       </div>
+
+      {/* ━━━ نافذة تأكيد الانتقال قبل الاعتماد (للمدير والنائب) ━━━ */}
+      {advanceModalTarget && (
+        <Portal>
+          <div className="fixed inset-0 z-[9999] bg-background/80 backdrop-blur-md flex items-center justify-center p-4">
+            <div className="bg-card border-2 border-border/80 shadow-2xl rounded-3xl p-6 sm:p-7 max-w-lg w-full space-y-5 animate-scale-up text-right">
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 rounded-2xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-center text-amber-600 shrink-0">
+                  <AlertCircle className="h-6 w-6" />
+                </div>
+                <div>
+                  <h3 className="text-base sm:text-lg font-black text-foreground">
+                    تنبيه: مرحلة "{currentTab.label}" لم تُعتمد بعد
+                  </h3>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    {stageStatus === "DRAFT"
+                      ? "المرحلة حالياً في وضع التحرير والتعديل المفتوح (تمت إعادتها للتعديل أو لم تُعتمد بعد)."
+                      : "المرحلة ما زالت قيد المراجعة وبانتظار قرارك الإداري."}
+                  </p>
+                </div>
+              </div>
+
+              <div className="p-4 rounded-2xl bg-muted/40 border border-border/60 text-xs leading-relaxed text-foreground space-y-2">
+                <p className="font-bold text-amber-700 dark:text-amber-400">
+                  هل ترغب في اعتماد هذه المرحلة الآن وتصريح المتابعة للمرحلة التالية؟
+                </p>
+                <p className="text-muted-foreground text-[11px]">
+                  • الضغط على "اعتماد وتصريح المتابعة" يغلق المرحلة ويعتمدها رسمياً وينقلك للمرحلة التالية.
+                  <br />
+                  • الضغط على "المتابعة للمعاينة فقط" ينقلك للمرحلة التالية مع إبقاء هذه المرحلة في وضع التعديل.
+                </p>
+              </div>
+
+              <div className="flex flex-col sm:flex-row items-center gap-2.5 pt-2">
+                <Button
+                  type="button"
+                  onClick={() => {
+                    approveStage(currentTabId, currentTab.label);
+                    const target = advanceModalTarget;
+                    setAdvanceModalTarget(null);
+                    handleGo(target);
+                  }}
+                  className="w-full sm:flex-1 h-11 bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs rounded-xl shadow-md cursor-pointer flex items-center justify-center gap-2"
+                >
+                  <Check className="h-4 w-4" />
+                  <span>اعتماد المرحلة وتصريح المتابعة ✓</span>
+                </Button>
+
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => {
+                    const target = advanceModalTarget;
+                    setAdvanceModalTarget(null);
+                    handleGo(target);
+                  }}
+                  className="w-full sm:w-auto h-11 px-4 border-border font-bold text-xs rounded-xl cursor-pointer"
+                >
+                  <span>المتابعة للمعاينة فقط &larr;</span>
+                </Button>
+
+                <Button
+                  type="button"
+                  variant="ghost"
+                  onClick={() => setAdvanceModalTarget(null)}
+                  className="w-full sm:w-auto h-11 px-3 text-muted-foreground hover:text-foreground font-semibold text-xs cursor-pointer"
+                >
+                  إلغاء
+                </Button>
+              </div>
+            </div>
+          </div>
+        </Portal>
+      )}
     </div>
   );
 }
