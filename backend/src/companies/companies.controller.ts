@@ -144,6 +144,7 @@ export class CompaniesController {
     @UploadedFile() file: Express.Multer.File,
     @Body('title') title: string,
     @Body('type') type: string,
+    @Body('notes') notes: string,
     @Req() req: any,
   ) {
     if (!file) {
@@ -157,6 +158,7 @@ export class CompaniesController {
       cleanTitle,
       type,
       req.user?.username || req.user?.fullName || 'المدير العام',
+      notes,
     );
   }
 
@@ -175,8 +177,9 @@ export class CompaniesController {
     @UploadedFile() file: Express.Multer.File | undefined,
     @Body('title') title?: string,
     @Body('type') type?: string,
+    @Body('notes') notes?: string,
   ) {
-    return this.companiesService.updateDocument(id, docId, title, type, file);
+    return this.companiesService.updateDocument(id, docId, title, type, file, notes);
   }
 
   @Delete(':id/documents/:docId')

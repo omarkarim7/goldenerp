@@ -410,10 +410,9 @@ export default function EmployeesPage() {
   };
 
   // Open Permissions Modal
-  const openPermissionsModal = async (u: SystemUser) => {
+  const openPermissionsModal = (u: SystemUser) => {
     setUserForPermissions(u);
     setPermissionsModalOpen(true);
-    setLoadingPermissions(true);
 
     const fallbackList = [
       // Radar
@@ -449,38 +448,40 @@ export default function EmployeesPage() {
       { code: "settings.manage", name: "إدارة إعدادات المنظومة", module: "settings", description: "تعديل بيانات الشركات والإعدادات العامة" },
     ];
 
-    try {
-      const [allRes, userRes] = await Promise.all([
-        api.get("/users/permissions/all"),
-        api.get(`/users/${u.id}/permissions`),
+    // Populated immediately for instant 0ms rendering
+    setAllPermissions(fallbackList);
+
+    if (u.role === "GENERAL_MANAGER") {
+      setSelectedPermissions(fallbackList.map((x) => x.code));
+    } else if (u.role === "DEPUTY_MANAGER") {
+      setSelectedPermissions(
+        fallbackList
+          .filter((x) => !["user.manage", "permission.assign", "approval.instant"].includes(x.code))
+          .map((x) => x.code)
+      );
+    } else {
+      setSelectedPermissions([
+        "operation.data_entry",
+        "operation.view",
+        "approval.request",
+        "document.view",
+        "finance.entry",
+        "finance.view",
+        "visit.create",
+        "visit.view",
       ]);
-      setAllPermissions(allRes.data && allRes.data.length > 0 ? allRes.data : fallbackList);
-      setSelectedPermissions(Array.isArray(userRes.data) ? userRes.data : []);
-    } catch {
-      setAllPermissions(fallbackList);
-      if (u.role === "GENERAL_MANAGER") {
-        setSelectedPermissions(fallbackList.map((x) => x.code));
-      } else if (u.role === "DEPUTY_MANAGER") {
-        setSelectedPermissions(
-          fallbackList
-            .filter((x) => !["user.manage", "permission.assign", "approval.instant"].includes(x.code))
-            .map((x) => x.code)
-        );
-      } else {
-        setSelectedPermissions([
-          "operation.data_entry",
-          "operation.view",
-          "approval.request",
-          "document.view",
-          "finance.entry",
-          "finance.view",
-          "visit.create",
-          "visit.view",
-        ]);
-      }
-    } finally {
-      setLoadingPermissions(false);
     }
+
+    setLoadingPermissions(false);
+
+    // Sync in background without blocking
+    api.get(`/users/${u.id}/permissions`)
+      .then((userRes) => {
+        if (Array.isArray(userRes.data) && userRes.data.length > 0) {
+          setSelectedPermissions(userRes.data);
+        }
+      })
+      .catch(() => {});
   };
 
   // Save Permissions
@@ -583,23 +584,13 @@ export default function EmployeesPage() {
         </div>
 
         <div className="flex items-center gap-2">
-          {activeTab === "users" ? (
-            <Button
-              onClick={() => setCreateUserModalOpen(true)}
-              className="bg-gradient-to-r from-blue-700 via-blue-600 to-blue-700 hover:from-blue-800 hover:to-blue-700 text-white font-bold px-4 py-2 rounded-xl shadow-lg shadow-blue-500/20 royal-glow flex items-center gap-2 text-xs sm:text-sm active:scale-95 transition-all cursor-pointer"
-            >
-              <KeyRound className="h-4 w-4" />
-              <span>إضافة مستخدم جديد للنظام</span>
-            </Button>
-          ) : (
-            <Button
-              onClick={() => setFieldModalOpen(true)}
-              className="bg-gradient-to-r from-blue-700 via-blue-600 to-blue-700 hover:from-blue-800 hover:to-blue-700 text-white font-bold px-4 py-2 rounded-xl shadow-lg shadow-blue-500/20 royal-glow flex items-center gap-2 text-xs sm:text-sm active:scale-95 transition-all cursor-pointer"
-            >
-              <Plus className="h-4 w-4" />
-              <span>إضافة كادر ميداني</span>
-            </Button>
-          )}
+          <Button
+            onClick={() => setCreateUserModalOpen(true)}
+            className="bg-gradient-to-r from-blue-700 via-blue-600 to-blue-700 hover:from-blue-800 hover:to-blue-700 text-white font-bold px-4 py-2 rounded-xl shadow-lg shadow-blue-500/20 royal-glow flex items-center gap-2 text-xs sm:text-sm active:scale-95 transition-all cursor-pointer"
+          >
+            <KeyRound className="h-4 w-4" />
+            <span>إضافة مستخدم جديد للنظام</span>
+          </Button>
         </div>
       </div>
 
@@ -620,20 +611,19 @@ export default function EmployeesPage() {
           </span>
         </button>
 
-        <button
-          onClick={() => setActiveTab("field")}
-          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold transition-all cursor-pointer ${
-            activeTab === "field"
-              ? "bg-blue-600 text-white shadow-md shadow-blue-500/20"
-              : "text-muted-foreground hover:text-foreground hover:bg-muted/60"
-          }`}
-        >
-          <Users className="h-4 w-4" />
-          <span>سجلات الكادر الميداني والعهد</span>
-          <span className="px-1.5 py-0.2 rounded-md bg-white/20 text-white text-[11px] font-mono">
-            {fieldEmployees.length}
-          </span>
-        </button>
+        {/* سجلات الكادر الميداني والعهد تم إخفاؤها من الواجهة بناء على طلب الإدارة مع الاحتفاظ بالكود البرمجي بالكامل */}
+        {false && (
+          <button
+            onClick={() => setActiveTab("field")}
+            className="hidden items-center gap-2 px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold"
+          >
+            <Users className="h-4 w-4" />
+            <span>سجلات الكادر الميداني والعهد</span>
+            <span className="px-1.5 py-0.2 rounded-md bg-white/20 text-white text-[11px] font-mono">
+              {fieldEmployees.length}
+            </span>
+          </button>
+        )}
       </div>
 
       {/* ============================================================= */}

@@ -163,12 +163,11 @@ function getSidebarSections(role?: string): SidebarSection[] {
       },
       {
         id: "docs",
-        title: "المستندات والأرشيف",
-        icon: FileText,
+        title: "أرشيف العمليات والتكويد",
+        icon: Archive,
         iconColor: "text-purple-500",
         bgLight: "bg-purple-500/10 dark:bg-purple-500/20 text-purple-600 dark:text-purple-400",
         items: [
-          { label: "المستندات", href: "/dashboard/documents", icon: FileText },
           { label: "أرشيف العمليات", href: "/dashboard/archive", icon: Archive },
           { label: "التكويد", href: "/dashboard/coding-guide", icon: BookOpen },
         ],
@@ -230,7 +229,6 @@ function getSidebarSections(role?: string): SidebarSection[] {
       bgLight: "bg-rose-500/10 dark:bg-rose-500/20 text-rose-600 dark:text-rose-400",
       items: [
         { label: "بيانات الشركة", href: "/dashboard/companies", icon: Building2 },
-        { label: "المستندات", href: "/dashboard/documents", icon: FileText },
         { label: "التقارير", href: "/dashboard/reports", icon: BarChart3 },
         { label: "أرشيف العمليات", href: "/dashboard/archive", icon: Archive },
         { label: "التكويد", href: "/dashboard/coding-guide", icon: BookOpen },

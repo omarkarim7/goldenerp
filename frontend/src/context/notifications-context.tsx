@@ -19,6 +19,20 @@ export interface SystemNotification {
 }
 
 export const initialCompanyNotifications: SystemNotification[] = [
+  // --- High Priority Management Stage Review (اعتماد ومراجعة المراحل) ---
+  {
+    id: "notif-stage-approval-cockpit",
+    companyCode: "ALL",
+    type: "warning",
+    title: "تتطلب قرار واعتماد الإدارة (المدير / النائب)",
+    message: "قام الموظف بإدخال بيانات المرحلة وإرسالها لمراجعتك، يمكنك فحصها واعتمادها أو إعادتها للتعديل.",
+    details: "المسار: مرحلة فحص كراسة الشروط والتأمين الابتدائي • عملية توريد وتركيب كابلات الفايبر (A15)",
+    time: "الآن",
+    link: "/dashboard/operations",
+    actionLabel: "اعتماد وتصريح المتابعة ✓",
+    isRead: false,
+  },
+
   // --- Company A: المجموعة الذهبية (جولدن) ---
   {
     id: "notif-a1",

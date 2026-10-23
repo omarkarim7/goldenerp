@@ -115,17 +115,9 @@ export function DocxViewer({
           ignoreFonts: false,
           breakPages: true,
           ignoreLastRenderedPageBreak: false,
-          experimental: true,
+          experimental: false,
           useBase64URL: true,
         } as any);
-
-        if (containerRef.current) {
-          const sections = containerRef.current.querySelectorAll("section, article, .docx, [class*='docx']");
-          sections.forEach((s) => {
-            (s as HTMLElement).style.setProperty("background-color", "#ffffff", "important");
-            (s as HTMLElement).style.setProperty("color", "#0f172a", "important");
-          });
-        }
 
         if (isCancelled) return;
         setRenderedWith("docx-preview");
@@ -457,32 +449,39 @@ export function DocxViewer({
 
       <style jsx global>{`
         .docx-wrapper {
-          background: transparent !important;
-          padding: 20px 0 !important;
+          background: #0f172a !important;
+          padding: 24px 0 !important;
           display: flex !important;
           flex-direction: column !important;
           align-items: center !important;
           gap: 24px !important;
           width: 100% !important;
+          min-height: 100% !important;
+          box-sizing: border-box !important;
         }
+        /* Only direct section pages receive the white A4 page styling */
         .docx-wrapper > section.docx,
-        .docx-wrapper section,
-        section.docx,
-        article.docx,
-        .docx-preview-root section,
-        .docx-preview-root article,
-        .docx-preview-root .docx {
+        .docx-preview-root > section.docx {
           background: #ffffff !important;
           background-color: #ffffff !important;
           color: #0f172a !important;
-          box-shadow: 0 10px 35px -5px rgba(0, 0, 0, 0.45), 0 0 0 1px rgba(0, 0, 0, 0.1) !important;
+          box-shadow: 0 10px 30px -5px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(0, 0, 0, 0.15) !important;
           border-radius: 4px !important;
           margin-bottom: 24px !important;
-          direction: rtl !important;
-          text-align: right !important;
-          min-height: 800px !important;
+          box-sizing: border-box !important;
         }
-        /* لا يتم فرض أي ألوان أو حدود إجبارية على محتوى الوورد لضمان عرضه الأصيل كما هو مصمم تماماً داخل Microsoft Word */
+        /* All nested descendants inside the page must NOT have white backgrounds or duplicate shadows */
+        .docx-wrapper > section.docx section,
+        .docx-wrapper > section.docx article,
+        .docx-wrapper > section.docx div,
+        .docx-preview-root > section.docx section,
+        .docx-preview-root > section.docx article,
+        .docx-preview-root > section.docx div {
+          box-shadow: none !important;
+          border-radius: 0 !important;
+          min-height: auto !important;
+        }
+        /* Clean mammoth html fallback styling */
         .docx-mammoth-body {
           background: #ffffff !important;
           background-color: #ffffff !important;

@@ -18,6 +18,7 @@ import { Button } from "@/components/ui/button";
 import { useNotifications } from "@/context/notifications-context";
 import { useCompany, CompanyCode } from "@/context/company-context";
 import { API_BASE_URL } from "@/lib/api";
+import { toast } from "sonner";
 
 interface Stats {
   total: number;
@@ -120,6 +121,10 @@ export default function DashboardPage() {
   const [pendingApprovalsCount, setPendingApprovalsCount] = useState<number>(3);
   const [activeSectionFilter, setActiveSectionFilter] = useState<"ALL" | "ALERTS" | "FINANCE" | "RADAR" | "VISITS" | "GUARANTEES">("ALL");
   const [alertCategoryFilter, setAlertCategoryFilter] = useState<string>("ALL");
+
+  // Stage Review Approval Banner State (طلب العميل: تتطلب قرار واعتماد الإدارة)
+  const [stageReviewDismissed, setStageReviewDismissed] = useState(false);
+  const [stageReviewStatus, setStageReviewStatus] = useState<"pending" | "approved" | "returned">("pending");
 
   // Live formatted Arabic Date
   const [currentTimeStr, setCurrentTimeStr] = useState<string>("");
@@ -1119,6 +1124,138 @@ export default function DashboardPage() {
           </button>
         </div>
       </div>
+
+      {/* ━━━ STAGE REVIEW EXECUTIVE DECISION BANNER (طلب العميل: تتطلب قرار واعتماد الإدارة) ━━━ */}
+      {!stageReviewDismissed && (
+        <div
+          className={`rounded-3xl p-5 sm:p-6 border transition-all duration-300 relative overflow-hidden shadow-xl ${
+            stageReviewStatus === "approved"
+              ? "bg-emerald-950/40 border-emerald-500/50 text-emerald-100"
+              : stageReviewStatus === "returned"
+              ? "bg-amber-950/40 border-amber-500/50 text-amber-100"
+              : "bg-gradient-to-br from-amber-500/15 via-card to-amber-900/10 border-amber-500/40"
+          }`}
+        >
+          <div className="absolute top-0 right-0 w-72 h-72 bg-amber-500/10 rounded-full blur-3xl pointer-events-none -mr-20 -mt-20" />
+
+          <div className="relative z-10 flex flex-col lg:flex-row lg:items-center justify-between gap-5">
+            <div className="flex items-start gap-4">
+              <div
+                className={`w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 shadow-lg ${
+                  stageReviewStatus === "approved"
+                    ? "bg-emerald-600 text-white"
+                    : stageReviewStatus === "returned"
+                    ? "bg-amber-600 text-white"
+                    : "bg-gradient-to-br from-amber-500 to-amber-700 text-white animate-pulse"
+                }`}
+              >
+                {stageReviewStatus === "approved" ? (
+                  <CheckCheck className="h-6 w-6" />
+                ) : stageReviewStatus === "returned" ? (
+                  <RefreshCw className="h-6 w-6" />
+                ) : (
+                  <AlertOctagon className="h-6 w-6" />
+                )}
+              </div>
+
+              <div className="space-y-1.5">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <Badge
+                    className={`text-xs font-bold px-2.5 py-0.5 ${
+                      stageReviewStatus === "approved"
+                        ? "bg-emerald-500/20 text-emerald-300 border-emerald-500/40"
+                        : stageReviewStatus === "returned"
+                        ? "bg-amber-500/20 text-amber-300 border-amber-500/40"
+                        : "bg-amber-500/20 text-amber-700 dark:text-amber-300 border-amber-500/40"
+                    }`}
+                  >
+                    {stageReviewStatus === "approved"
+                      ? "تم الاعتماد والتصريح رسمياً ✓"
+                      : stageReviewStatus === "returned"
+                      ? "تمت الإعادة للتعديل ↺"
+                      : "تتطلب قرار واعتماد الإدارة (المدير / النائب)"}
+                  </Badge>
+
+                  <span className="text-xs text-muted-foreground font-mono">
+                    عملية: شبكة كابلات الجهد المتوسط (A15) • مرحلة كراسة الشروط
+                  </span>
+                </div>
+
+                <p className="text-sm font-extrabold text-foreground leading-relaxed">
+                  {stageReviewStatus === "approved"
+                    ? "تم تصريح المتابعة للمرحلة التالية بنجاح وتم إخطار فريق العمل بالمنظومة."
+                    : stageReviewStatus === "returned"
+                    ? "تمت إعادة مسودة المرحلة للموظف المختص مع إرسال إشعار فوري بإجراء التعديلات المطلوبة."
+                    : "قام الموظف بإدخال بيانات المرحلة وإرسالها لمراجعتك، يمكنك فحصها واعتمادها أو إعادتها للتعديل."}
+                </p>
+
+                <p className="text-xs text-muted-foreground">
+                  المسار: مرحلة فحص كراسة الشروط والتأمين الابتدائي • يتطلب تصريح المتابعة لسحب الكراسة وسداد التأمين البنكي
+                </p>
+              </div>
+            </div>
+
+            {/* Quick Action Buttons */}
+            <div className="flex items-center gap-2.5 flex-wrap shrink-0">
+              {stageReviewStatus === "pending" ? (
+                <>
+                  <Button
+                    onClick={() => {
+                      setStageReviewStatus("approved");
+                      toast.success("تم اعتماد وتصريح المرحلة بنجاح! تم نقل العملية للمرحلة التالية 🛡️");
+                    }}
+                    className="bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold px-4 py-2 rounded-xl shadow-lg shadow-emerald-600/25 text-xs h-10 flex items-center gap-1.5 cursor-pointer active:scale-95 transition-all"
+                  >
+                    <CheckCircle2 className="h-4 w-4" />
+                    <span>اعتماد المرحلة وتصريح المتابعة ✓</span>
+                  </Button>
+
+                  <Button
+                    onClick={() => {
+                      setStageReviewStatus("returned");
+                      toast.info("تمت إعادة مسودة المرحلة إلى الموظف للتعديل والمراجعة ↺");
+                    }}
+                    variant="outline"
+                    className="border-amber-500/40 bg-amber-500/10 hover:bg-amber-500/20 text-foreground font-bold px-3.5 py-2 rounded-xl text-xs h-10 flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <RefreshCw className="h-3.5 w-3.5 text-amber-500" />
+                    <span>إعادة للتعديل ↺</span>
+                  </Button>
+
+                  <Link href="/dashboard/operations">
+                    <Button
+                      variant="outline"
+                      className="border-border hover:bg-muted text-foreground font-bold px-3.5 py-2 rounded-xl text-xs h-10 flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <ExternalLink className="h-3.5 w-3.5" />
+                      <span>فتح مسار العملية</span>
+                    </Button>
+                  </Link>
+                </>
+              ) : (
+                <div className="flex items-center gap-2">
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => setStageReviewStatus("pending")}
+                    className="text-xs text-muted-foreground hover:text-foreground cursor-pointer"
+                  >
+                    إعادة فتح التنبيه
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => setStageReviewDismissed(true)}
+                    className="text-xs text-muted-foreground hover:text-foreground cursor-pointer"
+                  >
+                    إغلاق التنبيه ✕
+                  </Button>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ━━━ SECTION SHORTCUT FILTERS ━━━ */}
       <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none">

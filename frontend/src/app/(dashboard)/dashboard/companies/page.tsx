@@ -8,7 +8,7 @@ import {
   ShieldCheck, CheckCircle2, ChevronLeft, MapPin, Mail, Phone,
   Upload, Eye, Download, Trash2, X, AlertCircle, File,
   Image as ImageIcon, ZoomIn, ZoomOut, RotateCcw, Printer,
-  Lock, Crown, Sparkles, Filter, RefreshCw, Edit3, LayoutGrid, List
+  Lock, Crown, Sparkles, Filter, RefreshCw, Edit3, LayoutGrid, List, Info
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -53,6 +53,7 @@ interface CompanyDoc {
   fileType: string;
   fileSize: number | null;
   uploadedBy: string | null;
+  notes?: string | null;
   createdAt: string;
 }
 
@@ -145,14 +146,16 @@ export default function CompaniesPage() {
   // Upload Form State (Admin Only)
   const [uploadFile, setUploadFile] = useState<File | null>(null);
   const [uploadTitle, setUploadTitle] = useState(""); // Custom title / rename file (طلب العميل)
+  const [uploadNotes, setUploadNotes] = useState(""); // Notes / تفاصيل وملاحظات المستند (طلب العميل)
   const [uploadType, setUploadType] = useState("COMMERCIAL_REGISTER");
   const [uploading, setUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Edit Document State (طلب العميل: خيار التعديل لتغيير اسم المستند أو استبدال الملف)
+  // Edit Document State (طلب العميل: خيار التعديل لتغيير اسم المستند أو استبدال الملف أو الملاحظات)
   const [editModalOpen, setEditModalOpen] = useState(false);
   const [editingDoc, setEditingDoc] = useState<CompanyDoc | null>(null);
   const [editTitle, setEditTitle] = useState("");
+  const [editNotes, setEditNotes] = useState("");
   const [editType, setEditType] = useState("COMMERCIAL_REGISTER");
   const [editFile, setEditFile] = useState<File | null>(null);
   const [updatingDoc, setUpdatingDoc] = useState(false);
@@ -232,6 +235,7 @@ export default function CompaniesPage() {
     setSelectedCompany(company);
     setUploadFile(null);
     setUploadTitle("");
+    setUploadNotes("");
     setUploadType("COMMERCIAL_REGISTER");
     setDocSearch("");
     setDocTypeFilter("all");
@@ -270,6 +274,9 @@ export default function CompaniesPage() {
       formData.append("file", uploadFile);
       formData.append("title", uploadTitle.trim());
       formData.append("type", uploadType);
+      if (uploadNotes.trim()) {
+        formData.append("notes", uploadNotes.trim());
+      }
 
       await api.post(`/companies/${selectedCompany.id}/documents`, formData, {
         headers: { "Content-Type": "multipart/form-data" },
@@ -278,6 +285,7 @@ export default function CompaniesPage() {
       toast.success(`تم حفظ مستند "${uploadTitle.trim()}" بنجاح في أرشيف الشركة!`);
       setUploadFile(null);
       setUploadTitle("");
+      setUploadNotes("");
       setUploadType("COMMERCIAL_REGISTER");
       if (fileInputRef.current) fileInputRef.current.value = "";
       fetchCompanyDocs(selectedCompany.id);
@@ -332,6 +340,7 @@ export default function CompaniesPage() {
   const handleOpenEditModal = (doc: CompanyDoc) => {
     setEditingDoc(doc);
     setEditTitle(doc.fileName);
+    setEditNotes(doc.notes || "");
     setEditType(doc.type || "COMMERCIAL_REGISTER");
     setEditFile(null);
     if (editFileInputRef.current) editFileInputRef.current.value = "";
@@ -344,10 +353,11 @@ export default function CompaniesPage() {
     setEditingDoc(null);
     setEditFile(null);
     setEditTitle("");
+    setEditNotes("");
     if (editFileInputRef.current) editFileInputRef.current.value = "";
   };
 
-  // Save Document Edits (Name, Type, or Replace File)
+  // Save Document Edits (Name, Type, Notes, or Replace File)
   const handleSaveEditDoc = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedCompany || !editingDoc) return;
@@ -361,6 +371,7 @@ export default function CompaniesPage() {
       const formData = new FormData();
       formData.append("title", editTitle.trim());
       formData.append("type", editType);
+      formData.append("notes", editNotes.trim());
       if (editFile) {
         formData.append("file", editFile);
       }
@@ -725,15 +736,15 @@ export default function CompaniesPage() {
             </div>
 
             <form onSubmit={handleUploadDoc} className="space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                {/* 1. Custom Arabic File Picker (طلب العميل: زر اختيار الملف بالعربي وبشكل واضح) */}
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                {/* 1. Custom Arabic File Picker */}
                 <div className="space-y-1.5">
                   <label className="block text-xs font-bold text-foreground flex items-center justify-between">
                     <span>الملف المراد رفعه (Word / PDF / صور) *</span>
                     {uploadFile && (
                       <span className="text-[11px] text-emerald-600 dark:text-emerald-400 font-bold flex items-center gap-1">
                         <CheckCircle2 className="h-3.5 w-3.5" />
-                        <span>تم تحديد الملف بنجاح</span>
+                        <span>تم التحديد</span>
                       </span>
                     )}
                   </label>
@@ -759,13 +770,13 @@ export default function CompaniesPage() {
                         </div>
                         <div className="overflow-hidden">
                           <p className="text-xs font-bold text-slate-800 dark:text-slate-100 truncate">
-                            اضغط لتحديد ملف من الجهاز
+                            اختر ملف من الجهاز
                           </p>
                         </div>
                       </div>
 
-                      <span className="bg-blue-600 text-white hover:bg-blue-700 px-3 py-1 rounded-xl text-xs font-bold shrink-0 shadow-xs">
-                        اختيار ملف
+                      <span className="bg-blue-600 text-white hover:bg-blue-700 px-2.5 py-1 rounded-xl text-xs font-bold shrink-0 shadow-xs">
+                        تحديد
                       </span>
                     </div>
                   ) : (
@@ -779,7 +790,7 @@ export default function CompaniesPage() {
                             {uploadFile.name}
                           </p>
                           <span className="text-[10px] text-emerald-700 dark:text-emerald-400 font-mono font-semibold block">
-                            الحجم: {formatFileSize(uploadFile.size)}
+                            {formatFileSize(uploadFile.size)}
                           </span>
                         </div>
                       </div>
@@ -790,7 +801,7 @@ export default function CompaniesPage() {
                           size="sm"
                           variant="ghost"
                           onClick={() => fileInputRef.current?.click()}
-                          className="h-7 px-2 text-xs font-bold text-blue-700 dark:text-blue-300 hover:bg-blue-100/60 dark:hover:bg-blue-900/40 rounded-lg cursor-pointer"
+                          className="h-7 px-1.5 text-xs font-bold text-blue-700 dark:text-blue-300 rounded-lg cursor-pointer"
                         >
                           تغيير
                         </Button>
@@ -802,7 +813,7 @@ export default function CompaniesPage() {
                             setUploadFile(null);
                             if (fileInputRef.current) fileInputRef.current.value = "";
                           }}
-                          className="h-7 w-7 p-0 text-rose-600 hover:bg-rose-100/60 dark:hover:bg-rose-950/40 rounded-lg cursor-pointer"
+                          className="h-7 w-7 p-0 text-rose-600 hover:bg-rose-100/60 rounded-lg cursor-pointer"
                           title="إلغاء الملف"
                         >
                           <X className="h-3.5 w-3.5" />
@@ -811,28 +822,52 @@ export default function CompaniesPage() {
                     </div>
                   )}
                   <span className="text-[10px] text-muted-foreground block">
-                    الصيغ المعتمدة: Word (.docx, .doc) أو PDF أو الصور الرسمية
+                    Word (.docx) أو PDF أو صور
                   </span>
                 </div>
 
-                {/* 2. Custom Title / Rename File Input (الخانة التي طلبها العميل) */}
+                {/* 2. Company Selector (تبع أنهو شركة - طلب العميل) */}
                 <div className="space-y-1.5">
                   <label className="block text-xs font-bold text-foreground">
-                    اسم المستند المعتمد (إعادة تسمية / تنظيم) *
+                    الشركة التابع لها المستند (تبع أنهو شركة) *
+                  </label>
+                  <select
+                    value={selectedCompany.id}
+                    onChange={(e) => {
+                      const found = companies.find((c) => c.id === e.target.value);
+                      if (found) handleOpenCompanyDocs(found);
+                    }}
+                    className="w-full h-11 bg-muted/40 border border-border text-foreground rounded-xl px-3 text-xs focus:border-blue-500 font-semibold"
+                  >
+                    {companies.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        شركة ({c.code}): {c.name}
+                      </option>
+                    ))}
+                  </select>
+                  <span className="text-[10px] text-muted-foreground block">
+                    الكيان المالك للمستند وسجلاته
+                  </span>
+                </div>
+
+                {/* 3. Document Name / Title (تسمية الملف - طلب العميل) */}
+                <div className="space-y-1.5">
+                  <label className="block text-xs font-bold text-foreground">
+                    تسمية الملف / اسم المستند المعتمد *
                   </label>
                   <Input
                     required
-                    placeholder="مثال: السجل التجاري المجدد 2026، رخصة مزاولة النشاط..."
+                    placeholder="مثال: السجل التجاري المجدد 2026..."
                     value={uploadTitle}
                     onChange={(e) => setUploadTitle(e.target.value)}
                     className="bg-muted/40 border-border text-foreground rounded-xl text-xs h-11"
                   />
                   <span className="text-[10px] text-muted-foreground block">
-                    سيظهر هذا الاسم كعنوان رئيسي منظم للوثيقة في النظام
+                    الاسم التعريفي الرئيسي بالأرشيف
                   </span>
                 </div>
 
-                {/* 3. Document Type (طلب العميل: شيل الإنجليزي بالكامل) */}
+                {/* 4. Document Type */}
                 <div className="space-y-1.5">
                   <label className="block text-xs font-bold text-foreground">نوع وتصنيف الوثيقة *</label>
                   <select
@@ -851,9 +886,22 @@ export default function CompaniesPage() {
                     <option value="OTHER">مستند رسمي عام</option>
                   </select>
                   <span className="text-[10px] text-muted-foreground block">
-                    تصنيف الوثيقة لتنظيم البحث والفرز في الأرشيف
+                    تصنيف الوثيقة للفرز والتنظيم
                   </span>
                 </div>
+              </div>
+
+              {/* 5. Notes Input (الملاحظات - طلب العميل) */}
+              <div className="space-y-1.5">
+                <label className="block text-xs font-bold text-foreground">
+                  الملاحظات والتفاصيل التوضيحية عن المستند (الملاحظات)
+                </label>
+                <Input
+                  placeholder="سجل ملاحظاتك هنا: مثلاً ساري حتى 2028، مطابق لشروط المناقصات، تم استخراج أصل الشهادة..."
+                  value={uploadNotes}
+                  onChange={(e) => setUploadNotes(e.target.value)}
+                  className="bg-muted/40 border-border text-foreground rounded-xl text-xs h-10"
+                />
               </div>
 
               {/* Submit Row */}
@@ -1021,6 +1069,17 @@ export default function CompaniesPage() {
                           </div>
                         )}
                       </div>
+
+                      {/* Notes (ملاحظات وتفاصيل المستند) */}
+                      {doc.notes && (
+                        <div className="mt-2 text-xs bg-blue-50/60 dark:bg-blue-950/30 p-2.5 rounded-xl border border-blue-200/60 dark:border-blue-900/40 text-foreground flex items-start gap-1.5">
+                          <Info className="h-3.5 w-3.5 text-blue-600 dark:text-blue-400 shrink-0 mt-0.5" />
+                          <div className="overflow-hidden">
+                            <span className="font-bold text-[11px] text-blue-700 dark:text-blue-300">ملاحظات: </span>
+                            <span className="text-[11px] text-muted-foreground line-clamp-2 leading-relaxed">{doc.notes}</span>
+                          </div>
+                        </div>
+                      )}
                     </div>
 
                     {/* Actions: View in Viewer, Edit, Download, Delete */}
@@ -1132,6 +1191,12 @@ export default function CompaniesPage() {
                             >
                               {doc.fileName}
                             </div>
+                            {doc.notes && (
+                              <div className="text-[11px] text-muted-foreground mt-0.5 truncate max-w-xs flex items-center gap-1 font-sans">
+                                <span className="text-blue-600 dark:text-blue-400 font-bold">ملاحظة:</span>
+                                <span>{doc.notes}</span>
+                              </div>
+                            )}
                           </td>
 
                           {/* Original File */}
@@ -1439,6 +1504,19 @@ export default function CompaniesPage() {
                   <option value="TAX_EXEMPTION">شهادة إعفاء ضريبي</option>
                   <option value="OTHER">مستند رسمي عام</option>
                 </select>
+              </div>
+
+              {/* Document Notes (الملاحظات) */}
+              <div className="space-y-1.5">
+                <label className="block text-xs font-bold text-foreground">
+                  الملاحظات والتفاصيل التوضيحية عن المستند
+                </label>
+                <Input
+                  value={editNotes}
+                  onChange={(e) => setEditNotes(e.target.value)}
+                  placeholder="ملاحظات حول المستند، الصلاحية، أو الاستخدام..."
+                  className="bg-muted/40 border-border text-foreground rounded-xl text-xs h-11"
+                />
               </div>
 
               {/* File Replacement Section */}

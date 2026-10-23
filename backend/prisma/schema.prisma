@@ -111,6 +111,7 @@ model CompanyDocument {
   fileType         String         // pdf, docx, doc, jpg, png, etc.
   fileSize         Int?
   uploadedBy       String?
+  notes            String?        @db.Text
   createdAt        DateTime       @default(now())
 
   company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)

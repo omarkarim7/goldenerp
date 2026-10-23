@@ -418,6 +418,7 @@ export class CompaniesService {
     title: string,
     typeStr?: string,
     uploadedBy?: string,
+    notes?: string,
   ) {
     const company = await this.prisma.company.findFirst({
       where: {
@@ -475,6 +476,7 @@ export class CompaniesService {
         fileSize: file.size,
         type: docType,
         uploadedBy: uploadedBy || 'المدير العام',
+        notes: notes?.trim() || null,
       },
     });
   }
@@ -488,6 +490,7 @@ export class CompaniesService {
     title?: string,
     typeStr?: string,
     newFile?: Express.Multer.File,
+    notes?: string,
   ) {
     const doc = await this.getDocument(companyIdOrCode, docId);
 
@@ -495,6 +498,10 @@ export class CompaniesService {
 
     if (title && title.trim()) {
       dataToUpdate.fileName = title.trim();
+    }
+
+    if (notes !== undefined) {
+      dataToUpdate.notes = notes?.trim() || null;
     }
 
     if (
