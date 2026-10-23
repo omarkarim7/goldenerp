@@ -104,6 +104,10 @@ export function StageLockProvider({
   };
 
   const lockStage = (stageId: string, stageName?: string) => {
+    if (!isManagerOrDeputy) {
+      toast.error("عذراً، قفل المراحل وتثبيتها مقتصر حصرياً على المدير العام ونائب المدير.");
+      return;
+    }
     const updated = { ...lockedStages, [stageId]: true };
     persistLocks(updated);
     toast.success(
@@ -112,6 +116,10 @@ export function StageLockProvider({
   };
 
   const unlockStage = (stageId: string, stageName?: string) => {
+    if (!isManagerOrDeputy) {
+      toast.error("عذراً، فتح التعديلات للمراحل المقفولة والمعتمدة مقتصر حصرياً على المدير العام ونائب المدير.");
+      return;
+    }
     const updated = { ...lockedStages, [stageId]: false };
     persistLocks(updated);
     toast.info(
@@ -120,6 +128,10 @@ export function StageLockProvider({
   };
 
   const toggleStageLock = (stageId: string, stageName?: string) => {
+    if (!isManagerOrDeputy) {
+      toast.error("عذراً، التحكم في قفل أو فتح المراحل مقتصر حصرياً على الإدارة العليا.");
+      return;
+    }
     if (isStageLocked(stageId)) {
       unlockStage(stageId, stageName);
     } else {

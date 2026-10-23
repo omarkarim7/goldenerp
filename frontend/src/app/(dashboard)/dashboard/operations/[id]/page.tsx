@@ -187,7 +187,7 @@ export default function OperationDetailPage() {
 function OperationDetailContent({ id }: { id: string }) {
   const router = useRouter();
   const { userRole, selectedCompany, setSelectedCompany } = useCompany();
-  const { isStageLocked, lockStage, unlockStage } = useStageLock();
+  const { isStageLocked, lockStage, unlockStage, isManagerOrDeputy } = useStageLock();
 
   // تحميل فوري مباشر من الذاكرة المؤقتة (SWR Pattern) لتفادي أي انتظار أو بطء
   const [op, setOp] = useState<Operation | null>(() => {
@@ -1178,16 +1178,26 @@ function OperationDetailContent({ id }: { id: string }) {
 
             {/* 2.5. Stage Lock / Unlock Toggle (فتح التعديلات / قفل المرحلة) */}
             {isCurrentStageLocked ? (
-              <Button
-                variant="outline"
-                onClick={() => unlockStage(currentTabDef.id, currentTabDef.label)}
-                className="h-9 text-xs font-black rounded-xl border border-amber-500/60 bg-amber-500/20 text-amber-800 dark:text-amber-200 hover:bg-amber-500/30 cursor-pointer flex items-center gap-1.5 shadow-sm transition-all active:scale-95 animate-pulse"
-                title="المرحلة مقفولة ومحمية — انقر هنا لفتح التعديلات"
-              >
-                <Unlock className="h-3.5 w-3.5 text-amber-600 dark:text-amber-400" />
-                <span>فتح التعديلات (المرحلة مقفولة 🔒)</span>
-              </Button>
-            ) : (
+              isManagerOrDeputy ? (
+                <Button
+                  variant="outline"
+                  onClick={() => unlockStage(currentTabDef.id, currentTabDef.label)}
+                  className="h-9 text-xs font-black rounded-xl border border-amber-500/60 bg-amber-500/20 text-amber-800 dark:text-amber-200 hover:bg-amber-500/30 cursor-pointer flex items-center gap-1.5 shadow-sm transition-all active:scale-95 animate-pulse"
+                  title="المرحلة مقفولة ومحمية — انقر هنا لفتح التعديلات"
+                >
+                  <Unlock className="h-3.5 w-3.5 text-amber-600 dark:text-amber-400" />
+                  <span>فتح التعديلات (المرحلة مقفولة 🔒)</span>
+                </Button>
+              ) : (
+                <div
+                  className="h-9 text-xs font-bold rounded-xl border border-amber-500/40 bg-amber-500/10 text-amber-800 dark:text-amber-200 flex items-center gap-1.5 px-3 shadow-xs select-none"
+                  title="المرحلة معتمدة ومقفولة من الإدارة العليا — للاطلاع فقط"
+                >
+                  <Lock className="h-3.5 w-3.5 text-amber-600 dark:text-amber-400" />
+                  <span>المرحلة مقفولة ومعتمدة 🔒</span>
+                </div>
+              )
+            ) : isManagerOrDeputy ? (
               <Button
                 variant="outline"
                 onClick={() => lockStage(currentTabDef.id, currentTabDef.label)}
@@ -1197,7 +1207,7 @@ function OperationDetailContent({ id }: { id: string }) {
                 <Lock className="h-3.5 w-3.5 text-muted-foreground group-hover:text-amber-600 transition-colors" />
                 <span>قفل المرحلة 🔒</span>
               </Button>
-            )}
+            ) : null}
 
             {/* 3. Code Lock Toggle */}
             <Button
@@ -1524,18 +1534,21 @@ function OperationDetailContent({ id }: { id: string }) {
                   </h4>
                 </div>
                 <p className="text-xs text-muted-foreground leading-relaxed max-w-2xl">
-                  تم قفل هذه المرحلة وتثبيت جميع بياناتها وخاناتها منعاً للتعديل غير المقصود.
-                  يمكنك التنقل بحرية بين باقي المراحل عبر المسار الزمني أعلاه، ولتعديل أي خانة في هذه المرحلة اضغط على زر &quot;فتح التعديلات&quot;.
+                  {isManagerOrDeputy
+                    ? "تم قفل هذه المرحلة وتثبيت جميع بياناتها وخاناتها منعاً للتعديل غير المقصود. بصفتك مديراً يمكنك فتح التعديلات عند الحاجة."
+                    : "تم اعتماد وتثبيت بيانات هذه المرحلة من قبل الإدارة العليا (المدير / النائب) وتجميدها لمنع التعديل. (للاطلاع والقراءة فقط)"}
                 </p>
               </div>
             </div>
-            <Button
-              onClick={() => unlockStage(currentTabDef.id, currentTabDef.label)}
-              className="bg-gradient-to-r from-amber-500 via-amber-600 to-amber-500 hover:from-amber-600 hover:to-amber-700 text-slate-950 font-black text-xs sm:text-sm h-11 px-6 rounded-2xl shadow-md shadow-amber-500/20 cursor-pointer flex items-center gap-2 shrink-0 active:scale-95 transition-all"
-            >
-              <Unlock className="w-4 h-4 stroke-[2.5] text-slate-950" />
-              <span>فتح التعديلات على المرحلة 🔓</span>
-            </Button>
+            {isManagerOrDeputy && (
+              <Button
+                onClick={() => unlockStage(currentTabDef.id, currentTabDef.label)}
+                className="bg-gradient-to-r from-amber-500 via-amber-600 to-amber-500 hover:from-amber-600 hover:to-amber-700 text-slate-950 font-black text-xs sm:text-sm h-11 px-6 rounded-2xl shadow-md shadow-amber-500/20 cursor-pointer flex items-center gap-2 shrink-0 active:scale-95 transition-all"
+              >
+                <Unlock className="w-4 h-4 stroke-[2.5] text-slate-950" />
+                <span>فتح التعديلات على المرحلة 🔓</span>
+              </Button>
+            )}
           </div>
         )}
 
