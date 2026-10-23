@@ -125,7 +125,16 @@ export class AuthService {
 
     if (!user) throw new UnauthorizedException('المستخدم غير موجود');
 
-    return { ...user, permissions: user.permissions.map((p) => p.permission) };
+    const permCodes =
+      user.role === 'GENERAL_MANAGER' || user.username === 'admin'
+        ? ['*']
+        : user.permissions.map((p) => p.permission.code);
+
+    return {
+      ...user,
+      permissions: permCodes,
+      permissionDetails: user.permissions.map((p) => p.permission),
+    };
   }
 
   private async generateTokens(userId: string, username: string, role: string) {

@@ -57,6 +57,8 @@ interface CompanyContextType {
   userRole: string | null;
   allowedCompanyCodes: string[];
   isCompanyAllowed: (code: string) => boolean;
+  userPermissions: string[];
+  hasPermission: (perm: string) => boolean;
   refreshUserPermissions: () => Promise<void>;
 }
 
@@ -123,6 +125,7 @@ export function CompanyProvider({ children }: { children: React.ReactNode }) {
   const [loadingOverview, setLoadingOverview] = useState<boolean>(true);
   const [userRole, setUserRole] = useState<string | null>(null);
   const [allowedCompanyCodes, setAllowedCompanyCodes] = useState<string[]>(["A", "B", "C", "D"]);
+  const [userPermissions, setUserPermissions] = useState<string[]>([]);
 
 function parseAllowedCodes(role?: string | null, allowedStr?: string | null): string[] {
   if (role === "GENERAL_MANAGER" || allowedStr === "ALL") {
@@ -152,6 +155,11 @@ function parseAllowedCodes(role?: string | null, allowedStr?: string | null): st
         const freshAllowed = parseAllowedCodes(freshUser.role, freshUser.allowedCompanies);
         setAllowedCompanyCodes(freshAllowed);
 
+        if (Array.isArray(freshUser.permissions)) {
+          const codes = freshUser.permissions.map((p: any) => (typeof p === "string" ? p : p.code));
+          setUserPermissions(codes);
+        }
+
         if (freshUser.role !== "GENERAL_MANAGER") {
           const savedComp = localStorage.getItem("selectedCompany") as CompanyCode;
           if (!savedComp || !freshAllowed.includes(savedComp)) {
@@ -166,6 +174,15 @@ function parseAllowedCodes(role?: string | null, allowedStr?: string | null): st
     } catch {}
   }, []);
 
+  const hasPermission = useCallback(
+    (perm: string) => {
+      if (userRole === "GENERAL_MANAGER") return true;
+      if (userPermissions.includes("*") || userPermissions.includes(perm)) return true;
+      return false;
+    },
+    [userRole, userPermissions]
+  );
+
   // Load persisted company and user role
   useEffect(() => {
     try {
@@ -175,6 +192,10 @@ function parseAllowedCodes(role?: string | null, allowedStr?: string | null): st
         setUserRole(u.role || null);
         const allowed = parseAllowedCodes(u.role, u.allowedCompanies);
         setAllowedCompanyCodes(allowed);
+        if (Array.isArray(u.permissions)) {
+          const codes = u.permissions.map((p: any) => (typeof p === "string" ? p : p.code));
+          setUserPermissions(codes);
+        }
 
         // Employee / Deputy Manager: default selected company to allowed list
         if (u.role !== "GENERAL_MANAGER") {
@@ -350,6 +371,8 @@ function parseAllowedCodes(role?: string | null, allowedStr?: string | null): st
         userRole,
         allowedCompanyCodes,
         isCompanyAllowed,
+        userPermissions,
+        hasPermission,
         refreshUserPermissions,
       }}
     >

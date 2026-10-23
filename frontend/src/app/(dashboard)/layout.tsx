@@ -87,7 +87,14 @@ interface SidebarSection {
   items: SidebarItem[];
 }
 
-function getSidebarSections(role?: string): SidebarSection[] {
+function getSidebarSections(role?: string, permissions: string[] = []): SidebarSection[] {
+  const hasPagePerm = (pageCode: string, fallbackCodes: string[] = []): boolean => {
+    if (role === "GENERAL_MANAGER") return true;
+    if (permissions.includes("*")) return true;
+    if (permissions.includes(pageCode)) return true;
+    return fallbackCodes.some((fc) => permissions.includes(fc));
+  };
+
   if (role === "DEPUTY_MANAGER") {
     return [
       {
@@ -99,35 +106,39 @@ function getSidebarSections(role?: string): SidebarSection[] {
         items: [
           { label: "لوحة التحكم", href: "/dashboard", icon: LayoutDashboard },
           { label: "الاعتمادات", href: "/dashboard/approvals", icon: CheckCircle2, badge: "مهامك", badgeClass: "badge-amber" },
+          ...(hasPagePerm("page.radar", ["radar.scan"])
+            ? [{ label: "الرادار", href: "/dashboard/radar", icon: Radar, badge: "ذكي", badgeClass: "badge-blue" }]
+            : []),
         ],
       },
       {
         id: "operations_view",
-        title: "العمليات",
+        title: "العمليات والمستندات",
         icon: FileText,
         iconColor: "text-blue-500",
         bgLight: "bg-blue-500/10 dark:bg-blue-500/20 text-blue-600 dark:text-blue-400",
         items: [
           { label: "العمليات", href: "/dashboard/operations", icon: FileText, badge: "اطلاع", badgeClass: "badge-blue" },
-          { label: "المستندات", href: "/dashboard/documents", icon: FileText },
+          { label: "بيانات الشركة والمستندات", href: "/dashboard/companies", icon: Building2 },
         ],
       },
       {
         id: "reports_archive",
-        title: "التقارير",
+        title: "التقارير والأرشيف",
         icon: BarChart3,
         iconColor: "text-purple-500",
         bgLight: "bg-purple-500/10 dark:bg-purple-500/20 text-purple-600 dark:text-purple-400",
         items: [
           { label: "التقارير", href: "/dashboard/reports", icon: BarChart3 },
           { label: "أرشيف العمليات", href: "/dashboard/archive", icon: Archive },
+          { label: "التكويد", href: "/dashboard/coding-guide", icon: BookOpen },
         ],
       },
     ];
   }
 
   if (role === "EMPLOYEE") {
-    return [
+    const rawSections: SidebarSection[] = [
       {
         id: "monitoring",
         title: "الرئيسية",
@@ -136,8 +147,12 @@ function getSidebarSections(role?: string): SidebarSection[] {
         bgLight: "bg-blue-500/10 dark:bg-blue-500/20 text-blue-600 dark:text-blue-400",
         items: [
           { label: "لوحة التحكم", href: "/dashboard", icon: LayoutDashboard },
-          { label: "الرادار", href: "/dashboard/radar", icon: Radar, badge: "ذكي", badgeClass: "badge-blue" },
-          { label: "الاعتمادات", href: "/dashboard/approvals", icon: CheckCircle2, badge: "طلباتي", badgeClass: "badge-amber" },
+          ...(hasPagePerm("page.radar", ["radar.scan"])
+            ? [{ label: "الرادار", href: "/dashboard/radar", icon: Radar, badge: "ذكي", badgeClass: "badge-blue" }]
+            : []),
+          ...(hasPagePerm("page.approvals", ["approval.request", "approval.approve"])
+            ? [{ label: "الاعتمادات", href: "/dashboard/approvals", icon: CheckCircle2, badge: "طلباتي", badgeClass: "badge-amber" }]
+            : []),
         ],
       },
       {
@@ -147,7 +162,9 @@ function getSidebarSections(role?: string): SidebarSection[] {
         iconColor: "text-amber-500",
         bgLight: "bg-amber-500/10 dark:bg-amber-500/20 text-amber-600 dark:text-amber-400",
         items: [
-          { label: "العمليات", href: "/dashboard/operations", icon: FileText },
+          ...(hasPagePerm("page.operations", ["operation.view", "operation.data_entry"])
+            ? [{ label: "العمليات", href: "/dashboard/operations", icon: FileText }]
+            : []),
         ],
       },
       {
@@ -157,22 +174,56 @@ function getSidebarSections(role?: string): SidebarSection[] {
         iconColor: "text-emerald-500",
         bgLight: "bg-emerald-500/10 dark:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400",
         items: [
-          { label: "الموردين", href: "/dashboard/suppliers", icon: Truck },
-          { label: "المعاينات", href: "/dashboard/visits", icon: ClipboardCheck },
+          ...(hasPagePerm("page.suppliers")
+            ? [{ label: "الموردين", href: "/dashboard/suppliers", icon: Truck }]
+            : []),
+          ...(hasPagePerm("page.visits", ["visit.view", "visit.create"])
+            ? [{ label: "المعاينات", href: "/dashboard/visits", icon: ClipboardCheck }]
+            : []),
         ],
       },
       {
         id: "docs",
-        title: "أرشيف العمليات والتكويد",
+        title: "بيانات الشركة والأرشيف",
         icon: Archive,
         iconColor: "text-purple-500",
         bgLight: "bg-purple-500/10 dark:bg-purple-500/20 text-purple-600 dark:text-purple-400",
         items: [
-          { label: "أرشيف العمليات", href: "/dashboard/archive", icon: Archive },
-          { label: "التكويد", href: "/dashboard/coding-guide", icon: BookOpen },
+          ...(hasPagePerm("page.companies")
+            ? [{ label: "بيانات الشركة والمستندات", href: "/dashboard/companies", icon: Building2 }]
+            : []),
+          ...(hasPagePerm("page.archive")
+            ? [{ label: "أرشيف العمليات", href: "/dashboard/archive", icon: Archive }]
+            : []),
+          ...(hasPagePerm("page.coding_guide")
+            ? [{ label: "التكويد", href: "/dashboard/coding-guide", icon: BookOpen }]
+            : []),
+        ],
+      },
+      {
+        id: "extra_modules",
+        title: "الوحدات المصرح بها",
+        icon: Settings,
+        iconColor: "text-indigo-500",
+        bgLight: "bg-indigo-500/10 dark:bg-indigo-500/20 text-indigo-600 dark:text-indigo-400",
+        items: [
+          ...(hasPagePerm("page.finance", ["finance.view"])
+            ? [{ label: "المالية", href: "/dashboard/payments", icon: Wallet }]
+            : []),
+          ...(hasPagePerm("page.reports")
+            ? [{ label: "التقارير", href: "/dashboard/reports", icon: BarChart3 }]
+            : []),
+          ...(hasPagePerm("page.settings", ["settings.manage"])
+            ? [{ label: "الإعدادات", href: "/dashboard/settings", icon: Settings }]
+            : []),
+          ...(hasPagePerm("user.manage")
+            ? [{ label: "الموظفين", href: "/dashboard/employees", icon: Users }]
+            : []),
         ],
       },
     ];
+
+    return rawSections.filter((sec) => sec.items.length > 0);
   }
 
   // GENERAL_MANAGER: Full sections
@@ -238,48 +289,47 @@ function getSidebarSections(role?: string): SidebarSection[] {
   ];
 }
 
-function isRouteAllowed(role: string | undefined, pathname: string): boolean {
+function isRouteAllowed(role: string | undefined, pathname: string, permissions: string[] = []): boolean {
   if (!role) return true;
   if (role === "GENERAL_MANAGER") return true;
 
   if (pathname === "/dashboard") return true;
 
   if (role === "DEPUTY_MANAGER") {
-    // Blocked from creating new operations and operational editing
     if (pathname.startsWith("/dashboard/operations/new")) return false;
     if (pathname.startsWith("/dashboard/settings")) return false;
-    if (pathname.startsWith("/dashboard/companies")) return false;
     if (pathname.startsWith("/dashboard/payments")) return false;
     if (pathname.startsWith("/dashboard/inventory")) return false;
-    if (pathname.startsWith("/dashboard/suppliers")) return false;
     if (pathname.startsWith("/dashboard/employees")) return false;
-    if (pathname.startsWith("/dashboard/guarantees")) return false;
-    if (pathname.startsWith("/dashboard/visits")) return false;
-    if (pathname.startsWith("/dashboard/radar")) return false;
-
-    // Allowed for Deputy Manager:
-    if (pathname.startsWith("/dashboard/approvals")) return true;
-    if (pathname.startsWith("/dashboard/operations")) return true;
-    if (pathname.startsWith("/dashboard/reports")) return true;
-    if (pathname.startsWith("/dashboard/documents")) return true;
-    if (pathname.startsWith("/dashboard/archive")) return true;
-    return false;
+    return true;
   }
 
   if (role === "EMPLOYEE") {
-    // Blocked from admin settings, companies management, finance margins, and managerial HR
-    if (pathname.startsWith("/dashboard/settings")) return false;
-    if (pathname.startsWith("/dashboard/companies")) return false;
-    if (pathname.startsWith("/dashboard/payments")) return false;
-    if (pathname.startsWith("/dashboard/employees")) return false;
-    if (pathname.startsWith("/dashboard/reports")) return false;
+    // Radar is strictly blocked unless page.radar or radar.scan is explicitly granted
+    if (pathname.startsWith("/dashboard/radar")) {
+      return permissions.includes("*") || permissions.includes("page.radar") || permissions.includes("radar.scan");
+    }
+    // Blocked unless specifically permitted:
+    if (pathname.startsWith("/dashboard/payments")) {
+      return permissions.includes("*") || permissions.includes("page.finance") || permissions.includes("finance.view");
+    }
+    if (pathname.startsWith("/dashboard/reports")) {
+      return permissions.includes("*") || permissions.includes("page.reports");
+    }
+    if (pathname.startsWith("/dashboard/employees")) {
+      return permissions.includes("*") || permissions.includes("user.manage");
+    }
+    if (pathname.startsWith("/dashboard/settings")) {
+      return permissions.includes("*") || permissions.includes("page.settings") || permissions.includes("settings.manage");
+    }
+    // Permitted by default: /dashboard/operations, /dashboard/companies, /dashboard/approvals, /dashboard/suppliers, /dashboard/visits, /dashboard/archive, /dashboard/coding-guide
     return true;
   }
 
   return true;
 }
 
-function getMobileBottomNavItems(role?: string) {
+function getMobileBottomNavItems(role?: string, permissions: string[] = []) {
   if (role === "DEPUTY_MANAGER") {
     return [
       { label: "الرئيسية", href: "/dashboard", icon: LayoutDashboard },
@@ -289,10 +339,13 @@ function getMobileBottomNavItems(role?: string) {
     ];
   }
   if (role === "EMPLOYEE") {
+    const hasRadar = permissions.includes("*") || permissions.includes("page.radar") || permissions.includes("radar.scan");
     return [
       { label: "الرئيسية", href: "/dashboard", icon: LayoutDashboard },
       { label: "العمليات", href: "/dashboard/operations", icon: FileText },
-      { label: "الرادار", href: "/dashboard/radar", icon: Radar },
+      hasRadar
+        ? { label: "الرادار", href: "/dashboard/radar", icon: Radar }
+        : { label: "بيانات الشركة", href: "/dashboard/companies", icon: Building2 },
       { label: "الطباعة", href: "/dashboard/approvals", icon: CheckCircle2 },
     ];
   }
@@ -318,7 +371,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const [userMenuOpen, setUserMenuOpen] = useState(false);
 
   // Global Company Scope Context
-  const { selectedCompany, setSelectedCompany, currentCompany, companies, isCompanyLocked } = useCompany();
+  const { selectedCompany, setSelectedCompany, currentCompany, companies, isCompanyLocked, userPermissions } = useCompany();
 
   // Shared Notification state from context
   const { notifications, allNotifications, unreadCount, markAsRead, markAllAsRead } = useNotifications();
@@ -480,19 +533,43 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     }
   }, [router]);
 
-  const sidebarSections = getSidebarSections(user?.role);
-  const mobileBottomNavItems = getMobileBottomNavItems(user?.role);
+  const effectivePermissions = useMemo(() => {
+    if (user?.role === "GENERAL_MANAGER") return ["*"];
+    if (userPermissions && userPermissions.length > 0) return userPermissions;
+    if (user && Array.isArray((user as any).permissions)) {
+      return (user as any).permissions.map((p: any) => (typeof p === "string" ? p : p.code));
+    }
+    return [];
+  }, [user, userPermissions]);
+
+  const sidebarSections = useMemo(
+    () => getSidebarSections(user?.role, effectivePermissions),
+    [user?.role, effectivePermissions]
+  );
+  const mobileBottomNavItems = useMemo(
+    () => getMobileBottomNavItems(user?.role, effectivePermissions),
+    [user?.role, effectivePermissions]
+  );
+
+  // Route protection
+  useEffect(() => {
+    if (!mounted || !user) return;
+    if (!isRouteAllowed(user.role, pathname, effectivePermissions)) {
+      toast.error("عذراً، هذه الصفحة غير مصرح بها لحسابك.");
+      router.push("/dashboard");
+    }
+  }, [mounted, user, pathname, effectivePermissions, router]);
 
   // Keep section active when user navigates
   useEffect(() => {
-    const sections = getSidebarSections(user?.role);
+    const sections = getSidebarSections(user?.role, effectivePermissions);
     for (const sec of sections) {
       if (sec.items.some((it) => it.href === pathname || (it.href !== "/dashboard" && pathname.startsWith(it.href)))) {
         setOpenSections((prev) => ({ ...prev, [sec.id]: true }));
         break;
       }
     }
-  }, [pathname, user?.role]);
+  }, [pathname, user?.role, effectivePermissions]);
 
   const handleLogout = () => {
     localStorage.removeItem("accessToken");

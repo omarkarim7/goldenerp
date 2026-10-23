@@ -446,6 +446,18 @@ export default function EmployeesPage() {
       { code: "permission.assign", name: "تخصيص وتعديل الصلاحيات", module: "users", description: "تحديد صلاحيات دقيقة لكل مستخدم" },
       { code: "audit.view", name: "عرض سجل التدقيق والرقابة", module: "audit", description: "متابعة سجل حركات النظام والأمان والحوكمة" },
       { code: "settings.manage", name: "إدارة إعدادات المنظومة", module: "settings", description: "تعديل بيانات الشركات والإعدادات العامة" },
+
+      // Pages / Sidebar Navigation Control (صلاحيات عرض الصفحات في القائمة الجانبية)
+      { code: "page.radar", name: "عرض صفحة رادار المناقصات (القائمة الجانبية)", module: "pages", description: "إظهار رادار المناقصات والمنافسين في القائمة الجانبية (مخصص للمدير ويمكن منحه للموظف)" },
+      { code: "page.operations", name: "عرض صفحة العمليات (القائمة الجانبية)", module: "pages", description: "إظهار أرشيف وسجل العمليات في القائمة الجانبية للموظف" },
+      { code: "page.approvals", name: "عرض صفحة الاعتمادات (القائمة الجانبية)", module: "pages", description: "إظهار صفحة طلبات واعتمادات الطباعة في القائمة الجانبية" },
+      { code: "page.companies", name: "عرض صفحة بيانات الشركات والمستندات", module: "pages", description: "إظهار صفحة بيانات الشركات ومستندات السجلات الرسمية" },
+      { code: "page.suppliers", name: "عرض صفحة سجل الموردين", module: "pages", description: "إظهار صفحة سجل الموردين في القائمة الجانبية" },
+      { code: "page.visits", name: "عرض صفحة المعاينات الميدانية", module: "pages", description: "إظهار صفحة تقارير المعاينات الميدانية في القائمة الجانبية" },
+      { code: "page.coding_guide", name: "عرض صفحة دليل التكويد", module: "pages", description: "إظهار دليل التكويد الموحد في القائمة الجانبية" },
+      { code: "page.archive", name: "عرض صفحة أرشيف العمليات", module: "pages", description: "إظهار أرشيف العمليات المكتملة في القائمة الجانبية" },
+      { code: "page.reports", name: "عرض صفحة التقارير والمؤشرات", module: "pages", description: "إظهار صفحة التقارير والمؤشرات المالية في القائمة الجانبية" },
+      { code: "page.settings", name: "عرض صفحة الإعدادات العامة", module: "pages", description: "إظهار صفحة إعدادات المنظومة في القائمة الجانبية" },
     ];
 
     // Populated immediately for instant 0ms rendering
@@ -461,6 +473,13 @@ export default function EmployeesPage() {
       );
     } else {
       setSelectedPermissions([
+        "page.operations",
+        "page.approvals",
+        "page.companies",
+        "page.suppliers",
+        "page.visits",
+        "page.coding_guide",
+        "page.archive",
         "operation.data_entry",
         "operation.view",
         "approval.request",
@@ -1897,6 +1916,23 @@ export default function EmployeesPage() {
                 </div>
               ) : (
                 [
+                  {
+                    id: "pages",
+                    title: "صلاحيات عرض الصفحات في القائمة الجانبية (Sidebar Navigation)",
+                    icon: "📑",
+                    codes: [
+                      "page.radar",
+                      "page.operations",
+                      "page.approvals",
+                      "page.companies",
+                      "page.suppliers",
+                      "page.visits",
+                      "page.coding_guide",
+                      "page.archive",
+                      "page.reports",
+                      "page.settings",
+                    ],
+                  },
                   {
                     id: "radar",
                     title: "رادار المناقصات والفرص الحكومية",

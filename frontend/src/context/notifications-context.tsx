@@ -200,7 +200,7 @@ interface NotificationsContextType {
 const NotificationsContext = createContext<NotificationsContextType | undefined>(undefined);
 
 export function NotificationsProvider({ children }: { children: React.ReactNode }) {
-  const { selectedCompany } = useCompany();
+  const { selectedCompany, userRole } = useCompany();
   const [allNotifications, setAllNotifications] = useState<SystemNotification[]>(initialCompanyNotifications);
 
   // Load persisted read statuses or notifications from localStorage
@@ -274,15 +274,30 @@ export function NotificationsProvider({ children }: { children: React.ReactNode 
     refreshNotifications();
   }, [refreshNotifications]);
 
-  // Filter notifications strictly for the active company!
+  // Filter notifications strictly for active company and user role!
   const notifications = useMemo(() => {
-    if (!selectedCompany || selectedCompany === "ALL") {
-      return allNotifications;
+    const isManagerOrDeputy = userRole === "GENERAL_MANAGER" || userRole === "DEPUTY_MANAGER";
+    let list = allNotifications;
+
+    if (selectedCompany && selectedCompany !== "ALL") {
+      list = list.filter(
+        (n) => n.companyCode === selectedCompany || n.companyCode === "ALL"
+      );
     }
-    return allNotifications.filter(
-      (n) => n.companyCode === selectedCompany || n.companyCode === "ALL"
-    );
-  }, [allNotifications, selectedCompany]);
+
+    // Regular employees must never see managerial stage approval decisions
+    if (!isManagerOrDeputy) {
+      list = list.filter(
+        (n) =>
+          !n.id.includes("stage-approval") &&
+          !n.title.includes("اعتماد الإدارة") &&
+          !n.title.includes("قرار واعتماد") &&
+          !n.actionLabel?.includes("اعتماد وتصريح")
+      );
+    }
+
+    return list;
+  }, [allNotifications, selectedCompany, userRole]);
 
   // Unread count strictly for active company
   const unreadCount = useMemo(() => {
