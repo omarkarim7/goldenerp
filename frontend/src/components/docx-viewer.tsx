@@ -474,12 +474,23 @@ export function DocxViewer({
         .docx-wrapper > section.docx section,
         .docx-wrapper > section.docx article,
         .docx-wrapper > section.docx div,
+        .docx-wrapper > section.docx p,
+        .docx-wrapper > section.docx table,
         .docx-preview-root > section.docx section,
         .docx-preview-root > section.docx article,
-        .docx-preview-root > section.docx div {
+        .docx-preview-root > section.docx div,
+        .docx-preview-root > section.docx p,
+        .docx-preview-root > section.docx table {
           box-shadow: none !important;
           border-radius: 0 !important;
           min-height: auto !important;
+        }
+        .docx-wrapper > section.docx section,
+        .docx-wrapper > section.docx article,
+        .docx-preview-root > section.docx section,
+        .docx-preview-root > section.docx article {
+          background: transparent !important;
+          background-color: transparent !important;
         }
         /* Clean mammoth html fallback styling */
         .docx-mammoth-body {

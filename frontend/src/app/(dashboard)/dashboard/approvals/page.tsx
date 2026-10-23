@@ -4,9 +4,9 @@ import { Suspense, useEffect, useState, useMemo } from "react";
 import { useSearchParams } from "next/navigation";
 import {
   Printer, ShieldCheck, Clock, CheckCircle2, XCircle,
-  Plus, Search, Hash, FileText, Check, X, ShieldAlert,
-  RefreshCw, KeyRound, Eye, EyeOff, Briefcase, User, Calendar, Copy, Sparkles, CheckCheck, FileCheck, ExternalLink, Lock,
-  Loader2, AlertCircle
+  Plus, Search, FileText, Check, X, ShieldAlert,
+  RefreshCw, KeyRound, Eye, Briefcase, User, Calendar, Sparkles, FileCheck, ExternalLink, Lock,
+  Loader2, AlertCircle, Hash, EyeOff, Copy
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -14,7 +14,9 @@ import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import api from "@/lib/api";
 import { useCompany } from "@/context/company-context";
+import { OnlyOfficeDocViewer } from "@/components/OnlyOfficeDocViewer";
 import { DocxViewer } from "@/components/docx-viewer";
+import { Portal } from "@/components/ui/portal";
 import JSZip from "jszip";
 
 interface ApprovalItem {
@@ -74,7 +76,7 @@ const INITIAL_APPROVALS: ApprovalItem[] = [
     operationCode: "A01",
     operationName: "تجهيز معمل حاسب آلي هيئة النقل العام",
     documentTitle: "المظروف المالي وعطاء الأسعار النهائي",
-    notes: "[HASH: 9E4F2B71A83C50D64E20B91C88FA3341] — تم التدقيق والمطابقة مع دراسة التكاليف والاعتماد للطباعة",
+    notes: "تم التدقيق والمطابقة مع دراسة التكاليف والاعتماد للطباعة",
   },
   {
     id: "app-a4",
@@ -132,7 +134,7 @@ const INITIAL_APPROVALS: ApprovalItem[] = [
     operationCode: "B07",
     operationName: "تجهيز معامل كلية الصيدلة جامعة القاهرة",
     documentTitle: "كراسة الشروط والمواصفات الفنية المعتمدة",
-    notes: "[HASH: 4F2C9901BA8E5531DE01449FA31B8820] — تمت مراجعة البنود والموافقة على الطباعة الرسمية",
+    notes: "تمت مراجعة البنود والموافقة على الطباعة الرسمية",
   },
   {
     id: "app-b4",
@@ -190,7 +192,7 @@ const INITIAL_APPROVALS: ApprovalItem[] = [
     operationCode: "C02",
     operationName: "تطوير محطة تنقية مياه الشرب بالمنيا",
     documentTitle: "العرض الفني والمالي النهائي المعتمد",
-    notes: "[HASH: 8A19B5E4023C9100FD45771A2E3388DC] — مطابق للمواصفات القياسية والاعتماد الفني",
+    notes: "مطابق للمواصفات القياسية والاعتماد الفني",
   },
   {
     id: "app-c4",
@@ -248,7 +250,7 @@ const INITIAL_APPROVALS: ApprovalItem[] = [
     operationCode: "D02",
     operationName: "توريد أجهزة كشف المعادن للمنشآت الإدارية",
     documentTitle: "محضر الفحص والاستلام المعتمد للممارسات",
-    notes: "[HASH: 7C38B12D04EE9F321A88344BC291910A] — تم التدقيق الإجرائي والموافقة على الطباعة",
+    notes: "تم التدقيق الإجرائي والموافقة على الطباعة",
   },
   {
     id: "app-d4",
@@ -335,9 +337,6 @@ async function generateOfficialDocxBlob(item: ApprovalItem, companyInfo: any): P
   const regMatch = item.notes?.match(/رقم القيد:\s*([A-Z0-9]+)/i);
   const regNum = regMatch ? regMatch[1] : (item.entityId?.startsWith("letter-") ? item.entityId.replace("letter-", "") : `${opCode}26102128556`);
 
-  const hashMatch = item.notes?.match(/\[HASH:\s*([A-F0-9]{32})\]/i);
-  const hashCode = hashMatch ? hashMatch[1] : null;
-
   // 1. Process headers
   for (const hName of ["word/header1.xml", "word/header2.xml", "word/header3.xml"]) {
     const hdrFile = zip.file(hName);
@@ -384,11 +383,7 @@ async function generateOfficialDocxBlob(item: ApprovalItem, companyInfo: any): P
       docXml = docXml.replace(/توقيع صورة|أو اسم/g, escapeXml(item.approvedBy));
     }
 
-    if (hashCode) {
-      docXml = docXml.replace(/خان[ةه] (?:خالي[ةه] للملاحظات|معلومات وملاحظات|ملاحظات)/g, escapeXml(`[رمز الحوكمة والاعتماد الرقمي: ${hashCode}]`));
-    } else {
-      docXml = docXml.replace(/خان[ةه] (?:خالي[ةه] للملاحظات|معلومات وملاحظات|ملاحظات)/g, "");
-    }
+    docXml = docXml.replace(/خان[ةه] (?:خالي[ةه] للملاحظات|معلومات وملاحظات|ملاحظات)/g, "");
 
     docXml = docXml.replace(/<w:highlight\s+[^>]*\/>/g, "");
     docXml = docXml.replace(/<w:color\s+w:val=\"(red|FF0000)\"[^>]*\/>/g, "");

@@ -1188,34 +1188,24 @@ export function LetterBottomActionWidget({
         entityId: `letter-${registrationNumber}`,
         documentTitle: title,
         operationCode: registrationNumber.slice(0, 3) || "A15",
-        notes: `طلب اعتماد طباعة وتوليد الهاش لخطاب رسمي: ${title} (رقم القيد: ${registrationNumber})`,
+        notes: `طلب اعتماد طباعة لخطاب رسمي: ${title} (رقم القيد: ${registrationNumber})`,
         status: "PENDING",
       });
 
       setApprovalStatus("PENDING");
       localStorage.setItem(`letter_approval_status_${registrationNumber}`, "PENDING");
-      toast.success("تم إرسال طلب الاعتماد للمدير العام والنائب بنجاح! 📥 بانتظار الموافقة وتوليد الهاش التشفيري.");
+      toast.success("تم إرسال طلب الاعتماد للمدير العام والنائب بنجاح! 📥 بانتظار قرار الإدارة.");
     } catch (err: any) {
       setApprovalStatus("PENDING");
       localStorage.setItem(`letter_approval_status_${registrationNumber}`, "PENDING");
-      toast.success("تم تسجيل طلب الاعتماد بنجاح! 📥 بانتظار موافقة الإدارة وتوليد الهاش.");
+      toast.success("تم تسجيل طلب الاعتماد بنجاح! 📥 بانتظار قرار الإدارة.");
     } finally {
       setRequestingApproval(false);
     }
   };
 
   const handlePreviewClick = () => {
-    if (isEmployee && approvalStatus !== "APPROVED") {
-      if (approvalStatus === "PENDING") {
-        toast.warning(
-          "المستند قيد مراجعة واعتماد الإدارة العليا — بانتظار قرار المدير أو النائب وتوليد كود الهاش لفتحه للطباعة."
-        );
-        return;
-      }
-      toast.info("يجب تقديم طلب اعتماد المستند للإدارة أولاً قبل المعاينة والطباعة الرسمية.");
-      handleRequestApproval();
-      return;
-    }
+    // المعاينة متاحة دائماً للموظف للاطلاع والمراجعة البصرية
     onPreview();
   };
 
@@ -1363,11 +1353,11 @@ export function LetterBottomActionWidget({
           {/* للموظف: إذا كان هناك طلب قيد المراجعة */}
           {isEmployee && approvalStatus === "PENDING" && (
             <div
-              className="h-10 px-4 text-xs font-bold rounded-xl border border-amber-500/40 bg-amber-500/15 text-amber-800 dark:text-amber-200 flex items-center gap-2 cursor-not-allowed shadow-xs"
+              className="h-10 px-4 text-xs font-bold rounded-xl border border-amber-500/40 bg-amber-500/15 text-amber-800 dark:text-amber-200 flex items-center gap-2 shadow-xs"
               title="يوجد طلب قيد المراجعة حالياً لهذا المستند بانتظار قرار المدير أو النائب"
             >
               <Clock className="h-4 w-4 text-amber-600 animate-pulse" />
-              <span>قيد مراجعة الإدارة (بانتظار الاعتماد وتوليد الهاش) ⏳</span>
+              <span>قيد مراجعة الإدارة (بانتظار الاعتماد) ⏳</span>
             </div>
           )}
 
@@ -1378,28 +1368,26 @@ export function LetterBottomActionWidget({
               onClick={handleRequestApproval}
               disabled={isDirty || requestingApproval}
               title="إرسال طلب اعتماد وطباعة المستند للمدير العام والنائب"
-              className="h-10 px-5 text-xs font-black rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white shadow-md cursor-pointer flex items-center gap-2"
+              className="h-10 px-4 text-xs font-black rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white shadow-md cursor-pointer flex items-center gap-2"
             >
               <FileCheck className="h-4 w-4 ml-1" />
               <span>{requestingApproval ? "جاري إرسال الطلب..." : "طلب اعتماد المستند من المدير 📤"}</span>
             </Button>
           )}
 
-          {/* للمدير والنائب، أو للموظف عندما يكون المستند APPROVED */}
-          {(!isEmployee || approvalStatus === "APPROVED") && (
-            <Button
-              size="sm"
-              onClick={onPreview}
-              disabled={isDirty}
-              title={isDirty ? "يرجى حفظ التعديلات أولاً لتفعيل المعاينة الرسمية" : "معاينة مستند الوورد"}
-              className={`h-10 px-5 text-xs font-black rounded-xl border-2 border-[#d97706] bg-[#d97706] hover:bg-[#b45309] text-white shadow-md cursor-pointer flex items-center gap-2 transition-all ${
-                isDirty ? "opacity-50 cursor-not-allowed" : "hover:scale-102"
-              }`}
-            >
-              {isDirty ? <Lock className="h-4 w-4" /> : <Eye className="h-4 w-4 ml-1 text-white" />}
-              <span>معاينة مستند الوورد {approvalStatus === "APPROVED" ? "(معتمد ✓)" : ""}</span>
-            </Button>
-          )}
+          {/* زر المعاينة: متاح دائماً لكافة المستخدمين للاطلاع والمراجعة البصرية */}
+          <Button
+            size="sm"
+            onClick={onPreview}
+            disabled={isDirty}
+            title={isDirty ? "يرجى حفظ التعديلات أولاً لتفعيل المعاينة الرسمية" : "معاينة المستند الرسمي"}
+            className={`h-10 px-5 text-xs font-black rounded-xl border-2 border-[#d97706] bg-[#d97706] hover:bg-[#b45309] text-white shadow-md cursor-pointer flex items-center gap-2 transition-all ${
+              isDirty ? "opacity-50 cursor-not-allowed" : "hover:scale-102"
+            }`}
+          >
+            {isDirty ? <Lock className="h-4 w-4" /> : <Eye className="h-4 w-4 ml-1 text-white" />}
+            <span>معاينة المستند {approvalStatus === "APPROVED" ? "(معتمد للطباعة ✓)" : ""}</span>
+          </Button>
 
           {isDirty && onSave && (
             <Button

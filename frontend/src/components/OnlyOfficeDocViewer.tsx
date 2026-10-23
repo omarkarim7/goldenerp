@@ -11,8 +11,11 @@ import {
   Minimize2,
   AlertCircle,
   FileDown,
+  Clock,
+  Lock,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { toast } from "sonner";
 import { getPdfBlobFromDocx, getLastPdfEngineUsed } from "@/app/(dashboard)/dashboard/operations/[id]/tabs/client-pdf";
 
 export interface OnlyOfficeDocViewerProps {
@@ -24,6 +27,10 @@ export interface OnlyOfficeDocViewerProps {
   onDownloadPdf?: () => void;
   onPrint?: () => void;
   onOpenInWord?: () => void;
+  userRole?: string | null;
+  isApproved?: boolean;
+  isApprovalPending?: boolean;
+  onRequestApproval?: () => void;
 }
 
 /**
@@ -40,6 +47,10 @@ export const OnlyOfficeDocViewer: React.FC<OnlyOfficeDocViewerProps> = ({
   onDownloadDocx,
   onDownloadPdf,
   onPrint,
+  userRole,
+  isApproved = false,
+  isApprovalPending = false,
+  onRequestApproval,
 }) => {
   const [pdfObjectUrl, setPdfObjectUrl] = useState<string | null>(null);
   const [internalPdfBlob, setInternalPdfBlob] = useState<Blob | null>(null);
@@ -145,8 +156,38 @@ export const OnlyOfficeDocViewer: React.FC<OnlyOfficeDocViewerProps> = ({
     return () => document.removeEventListener("fullscreenchange", handleFsChange);
   }, []);
 
+  // التحقق من صلاحيات الموظف والحوكمة الإدارية
+  const activeRole = userRole || (() => {
+    try {
+      const u = typeof window !== "undefined" ? localStorage.getItem("user") : null;
+      return u ? JSON.parse(u).role : null;
+    } catch {
+      return null;
+    }
+  })();
+  const isEmployee = activeRole === "EMPLOYEE";
+
+  const checkEmployeePermission = (): boolean => {
+    // المدير العام ونائب المدير لديهم صلاحية كاملة فورية
+    if (!isEmployee) return true;
+    // إذا كان المستند معتمداً بالفعل، يتم السماح بالتحميل والطباعة
+    if (isApproved) return true;
+
+    // الموظف العادي: تنبيه بانتظار اعتماد الإدارة ورفع الطلب
+    if (isApprovalPending) {
+      toast.warning("طلب الاعتماد قيد مراجعة المدير أو النائب حالياً. يرجى الانتظار حتى تتم الموافقة لفتح خيار الطباعة والتحميل.");
+    } else {
+      if (onRequestApproval) {
+        onRequestApproval();
+      }
+      toast.info("إنتظر مراجعة المدير أو النائب حتى يوافق على طلبك. تم إرسال طلب الاعتماد للإدارة العليا مع ملف المستند بنجاح 📤");
+    }
+    return false;
+  };
+
   // تنفيذ تنزيل ملف Word الأصلي المحدث
   const handleDownloadDocxFile = () => {
+    if (!checkEmployeePermission()) return;
     if (onDownloadDocx) {
       onDownloadDocx();
       return;
@@ -165,6 +206,7 @@ export const OnlyOfficeDocViewer: React.FC<OnlyOfficeDocViewerProps> = ({
 
   // تنفيذ تنزيل ملف الـ PDF الرسمي
   const handleDownloadPdfFile = () => {
+    if (!checkEmployeePermission()) return;
     if (onDownloadPdf) {
       onDownloadPdf();
       return;
@@ -191,6 +233,7 @@ export const OnlyOfficeDocViewer: React.FC<OnlyOfficeDocViewerProps> = ({
 
   // تنفيذ الطباعة المباشرة بأعلى دقة متجهة وجودة مطابقة لقالب الوورد الأصلي
   const handleDirectPrint = () => {
+    if (!checkEmployeePermission()) return;
     // 1. إذا وفّر المكون الأب معالج طباعة رسمي يسجل التاريخ والمستخدمين وعدد المرات، ننفذه فوراً
     if (onPrint) {
       onPrint();
@@ -244,20 +287,28 @@ export const OnlyOfficeDocViewer: React.FC<OnlyOfficeDocViewerProps> = ({
               <span className="font-extrabold text-sm text-slate-100 truncate max-w-xs sm:max-w-md">
                 {cleanBaseName}
               </span>
-              <span className="px-2.5 py-0.5 text-[11px] font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 rounded-full flex items-center gap-1.5 shadow-xs">
-                <CheckCircle2 className="w-3.5 h-3.5" />
-                {getLastPdfEngineUsed() === "Instant Cache"
-                  ? "⚡ معاينة فورية (نسخة معتمدة محفوظة مسبقاً)"
-                  : getLastPdfEngineUsed() === "Adobe PDF"
-                  ? "معاينة Adobe PDF Services الرسمية 100%"
-                  : getLastPdfEngineUsed() === "Cloudmersive PDF"
-                  ? "معاينة Cloudmersive API السحابية 100%"
-                  : "معاينة Word COM الرسمية 100%"}
-              </span>
+              {isEmployee && !isApproved ? (
+                <span className="px-2.5 py-0.5 text-[11px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30 rounded-full flex items-center gap-1.5 shadow-xs">
+                  <Clock className="w-3.5 h-3.5" />
+                  {isApprovalPending
+                    ? "معاينة للمراجعة • بانتظار قرار المدير أو النائب ⏳"
+                    : "معاينة للمراجعة • يتطلب التنزيل والطباعة اعتماد الإدارة 🔒"}
+                </span>
+              ) : isApproved ? (
+                <span className="px-2.5 py-0.5 text-[11px] font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 rounded-full flex items-center gap-1.5 shadow-xs">
+                  <CheckCircle2 className="w-3.5 h-3.5" />
+                  معتمد رسمياً للطباعة والتحميل ✓
+                </span>
+              ) : (
+                <span className="px-2.5 py-0.5 text-[11px] font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 rounded-full flex items-center gap-1.5 shadow-xs">
+                  <CheckCircle2 className="w-3.5 h-3.5" />
+                  معاينة النسخة المعتمدة (PDF) 100%
+                </span>
+              )}
             </div>
             <p className="text-[11px] text-slate-400 hidden sm:block">
-              {getLastPdfEngineUsed() === "Instant Cache"
-                ? "تم فتح النسخة المعتمدة مباشرة في 0ms بدون استهلاك كوتا التحويل لعدم وجود تعديلات جديدة"
+              {isEmployee && !isApproved
+                ? "يمكنك فحص ومراجعة كافة البيانات في المستند بحرية. عند طلب الطباعة أو التحميل يتم إرسال طلب الاعتماد للمدير أو النائب."
                 : "معاينة طبق الأصل لملف الـ PDF الرسمي مطابقة تماماً لما يظهر على السحابة وGitHub"}
             </p>
           </div>
