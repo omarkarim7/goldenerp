@@ -107,6 +107,8 @@ export default function DashboardPage() {
     overviewData,
     loadingOverview,
     isCompanyLocked,
+    userRole,
+    hasPermission,
   } = useCompany();
 
   const [stats, setStats] = useState<Stats>({
@@ -122,9 +124,14 @@ export default function DashboardPage() {
   const [activeSectionFilter, setActiveSectionFilter] = useState<"ALL" | "ALERTS" | "FINANCE" | "RADAR" | "VISITS" | "GUARANTEES">("ALL");
   const [alertCategoryFilter, setAlertCategoryFilter] = useState<string>("ALL");
 
-  // Stage Review Approval Banner State (طلب العميل: تتطلب قرار واعتماد الإدارة)
+  // Stage Review Approval Banner State (خاص بالإدارة العليا: المدير العام والنائب فقط)
   const [stageReviewDismissed, setStageReviewDismissed] = useState(false);
   const [stageReviewStatus, setStageReviewStatus] = useState<"pending" | "approved" | "returned">("pending");
+
+  // Role & Permissions Helper
+  const effectiveRole = userRole || user?.role;
+  const isManagerOrDeputy = effectiveRole === "GENERAL_MANAGER" || effectiveRole === "DEPUTY_MANAGER";
+  const canViewRadar = isManagerOrDeputy || (hasPermission ? hasPermission("operations_radar") : false);
 
   // Live formatted Arabic Date
   const [currentTimeStr, setCurrentTimeStr] = useState<string>("");
@@ -1069,16 +1076,18 @@ export default function DashboardPage() {
               </Button>
             </Link>
 
-            <Link href="/dashboard/radar">
-              <Button
-                variant="outline"
-                className="border-border bg-card/60 hover:bg-muted text-foreground px-3.5 py-2.5 rounded-2xl flex items-center gap-1.5 text-xs sm:text-sm cursor-pointer"
-                title="رادار المناقصات الحكومية"
-              >
-                <Radar className="h-4 w-4 text-indigo-500" />
-                <span className="hidden sm:inline">رادار المناقصات</span>
-              </Button>
-            </Link>
+            {canViewRadar && (
+              <Link href="/dashboard/radar">
+                <Button
+                  variant="outline"
+                  className="border-border bg-card/60 hover:bg-muted text-foreground px-3.5 py-2.5 rounded-2xl flex items-center gap-1.5 text-xs sm:text-sm cursor-pointer"
+                  title="رادار المناقصات الحكومية"
+                >
+                  <Radar className="h-4 w-4 text-indigo-500" />
+                  <span className="hidden sm:inline">رادار المناقصات</span>
+                </Button>
+              </Link>
+            )}
           </div>
         </div>
 
@@ -1125,8 +1134,8 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* ━━━ STAGE REVIEW EXECUTIVE DECISION BANNER (طلب العميل: تتطلب قرار واعتماد الإدارة) ━━━ */}
-      {!stageReviewDismissed && (
+      {/* ━━━ STAGE REVIEW EXECUTIVE DECISION BANNER (خاص بالإدارة العليا: المدير العام والنائب فقط) ━━━ */}
+      {isManagerOrDeputy && !stageReviewDismissed && (
         <div
           className={`rounded-3xl p-5 sm:p-6 border transition-all duration-300 relative overflow-hidden shadow-xl ${
             stageReviewStatus === "approved"
@@ -1263,7 +1272,7 @@ export default function DashboardPage() {
           { id: "ALL", label: "نظرة شاملة 🌐" },
           { id: "ALERTS", label: `🚨 الإجراءات العاجلة (${activeAlertsList.length})` },
           { id: "FINANCE", label: `📊 المركز المالي (${filteredOperations.length})` },
-          { id: "RADAR", label: `📡 رادار المناقصات (${activeRadarList.length})` },
+          ...(canViewRadar ? [{ id: "RADAR", label: `📡 رادار المناقصات (${activeRadarList.length})` }] : []),
           { id: "VISITS", label: `🏗️ المعاينات الميدانية (${activeVisitsList.length})` },
           { id: "GUARANTEES", label: `🛡️ الضمانات البنكية (${activeGuaranteesList.length})` },
         ].map((tab) => (
@@ -1859,7 +1868,7 @@ export default function DashboardPage() {
       )}
 
       {/* ━━━ SECTION 3: 📡 LIVE SMART RADAR FEED (Tailored to Selected Company) ━━━ */}
-      {(activeSectionFilter === "ALL" || activeSectionFilter === "RADAR") && (
+      {canViewRadar && (activeSectionFilter === "ALL" || activeSectionFilter === "RADAR") && (
         <div className="glass-card rounded-3xl p-5 sm:p-6 border border-indigo-500/30 shadow-xl space-y-4">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-border">
             <div className="flex items-center gap-2.5">
