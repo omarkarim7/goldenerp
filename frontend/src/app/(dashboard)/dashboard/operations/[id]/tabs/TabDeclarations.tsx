@@ -443,7 +443,19 @@ export function TabDeclarations({
     // ━━━ استبدال متغيرات إقرارات الشروط والتأمينات ━━━
     docXml = docXml.replace(/اسم العملية المسجله[\s\.]*/g, escapeXml(operationRegisteredName) + " ");
     docXml = docXml.replace(/365/g, escapeXml(operationNumber));
-    docXml = docXml.replace(/المناقصة المحدودة/g, escapeXml(tenderMethod));
+
+    // طريقة الطرح والتعاقد الرسمية بدقة 100% (معالجة تجزئة runs في قوالب الإقرارات)
+    const tenderPattern = /(<w:t[^>]*>[^<]*وذلك\s*في\s*<\/w:t><\/w:r>)([\s\S]*?)(<w:r\b[^>]*>(?:(?!<\/w:r>)[\s\S])*?<w:t[^>]*>[^<]*وطبيعتها[^<]*<\/w:t>)/;
+    if (tenderPattern.test(docXml)) {
+      docXml = docXml.replace(
+        tenderPattern,
+        `$1<w:r><w:rPr><w:rFonts w:hint="cs"/><w:b/><w:bCs/><w:sz w:val="32"/><w:szCs w:val="32"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t xml:space="preserve"> ${escapeXml(tenderMethod)} </w:t></w:r>$3`
+      );
+    } else {
+      docXml = docXml.replace(/(<w:t[^>]*>)المناقصة ال<\/w:t><\/w:r>[\s\S]*?<w:t>ة<\/w:t>(<\/w:r>)/g, `$1${escapeXml(tenderMethod)}$2`);
+      docXml = docXml.replace(/المناقصة\s+المحدودة/g, escapeXml(tenderMethod));
+    }
+
     docXml = replaceDocxScope(docXml, operationScope);
     docXml = replaceDocxFiscalAndDate(docXml, fiscalYear, technicalOpeningDate);
 
@@ -1262,6 +1274,22 @@ export function TabDeclarations({
                 onChange={(e) => setTenderMethod(e.target.value)}
                 className="h-9.5 text-xs font-bold rounded-xl text-center"
               />
+              <div className="flex items-center gap-1 flex-wrap pt-0.5">
+                {["بالمناقصة العامة", "بالمناقصة المحدودة", "بالممارسة العامة", "بالمزايدة العلنية", "بالاتفاق المباشر"].map((preset) => (
+                  <button
+                    key={preset}
+                    type="button"
+                    onClick={() => setTenderMethod(preset)}
+                    className={`px-1.5 py-0.5 text-[9.5px] font-bold rounded-md border transition-all ${
+                      tenderMethod === preset
+                        ? "bg-teal-500/15 text-teal-700 dark:text-teal-300 border-teal-500/40"
+                        : "bg-muted/40 text-muted-foreground hover:text-foreground border-border"
+                    }`}
+                  >
+                    {preset}
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
 
