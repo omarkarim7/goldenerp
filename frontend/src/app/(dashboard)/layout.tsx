@@ -19,7 +19,8 @@ import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { useNotifications } from "@/context/notifications-context";
 import { useCompany, CompanyCode } from "@/context/company-context";
-import { API_BASE_URL } from "@/lib/api";
+import api, { API_BASE_URL } from "@/lib/api";
+import { SmartSearch } from "@/components/SmartSearch";
 
 function getPageTitle(pathname: string): string {
   if (pathname === "/dashboard") return "لوحة التحكم";
@@ -427,6 +428,27 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     };
   }, []);
 
+  // Global Eastern Arabic to Western Arabic numerals normalizer (123 instead of ١٢٣)
+  useEffect(() => {
+    const handleInput = (e: Event) => {
+      const target = e.target as HTMLInputElement | HTMLTextAreaElement;
+      if (!target || !("value" in target) || typeof target.value !== "string") return;
+      if (/[٠-٩]/.test(target.value)) {
+        const start = target.selectionStart;
+        const end = target.selectionEnd;
+        target.value = target.value.replace(/[٠-٩]/g, (d) => String("٠١٢٣٤٥٦٧٨٩".indexOf(d)));
+        if (start !== null && end !== null) {
+          target.setSelectionRange(start, end);
+        }
+        target.dispatchEvent(new Event("input", { bubbles: true }));
+      }
+    };
+    document.addEventListener("input", handleInput, true);
+    return () => {
+      document.removeEventListener("input", handleInput, true);
+    };
+  }, []);
+
   // Accordion state: which sections are expanded
   const [openSections, setOpenSections] = useState<Record<string, boolean>>({
     monitoring: true,
@@ -518,15 +540,11 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
     // Fetch fresh profile in background to keep permissions synced
     if (token) {
-      const apiBase = API_BASE_URL;
-      fetch(`${apiBase}/api/auth/me`, {
-        headers: { Authorization: `Bearer ${token}` },
-      })
-        .then((res) => (res.ok ? res.json() : null))
-        .then((freshUser) => {
-          if (freshUser && freshUser.id) {
-            setUser(freshUser);
-            localStorage.setItem("user", JSON.stringify(freshUser));
+      api.get("/auth/me")
+        .then((res) => {
+          if (res.data && res.data.id) {
+            setUser(res.data);
+            localStorage.setItem("user", JSON.stringify(res.data));
           }
         })
         .catch(() => {});
@@ -1107,19 +1125,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               </span>
             </div>
 
-            {/* Global Search Bar */}
-            <form onSubmit={handleSearch} className="flex-1 hidden md:block min-w-0">
-              <div className="relative group">
-                <Search className="absolute right-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-white/90 group-focus-within:text-white transition-colors" />
-                <Input
-                  type="text"
-                  placeholder="بحث سريع في العمليات (AM01، جهة الإسناد)..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="pr-10 bg-white/15 hover:bg-white/20 focus:bg-white/25 border-white/25 focus:border-white text-white placeholder:text-blue-100/90 rounded-xl h-9 sm:h-10 text-xs w-full transition-all shadow-2xs"
-                />
-              </div>
-            </form>
+            {/* Global Smart Search Bar */}
+            <SmartSearch />
           </div>
 
           {/* Right section: Theme Toggle + Quick Action + Notifications + Profile */}

@@ -39,6 +39,7 @@ import {
   tafqeetArabic,
 } from "./types";
 import { StepFooterNav } from "./StepFooterNav";
+import { SmartArabicDatePicker } from "@/components/ui/arabic-date-picker";
 
 export function TabGuarantees({
   op,
@@ -781,21 +782,19 @@ export function TabGuarantees({
 
                   <div className="grid grid-cols-2 gap-3">
                     <div>
-                      <label className="text-xs font-semibold text-muted-foreground block mb-1">تاريخ البداية</label>
-                      <input
-                        type="date"
+                      <SmartArabicDatePicker
+                        label="تاريخ البداية"
                         value={editingG.startDate ? editingG.startDate.split("T")[0] : ""}
-                        onChange={(e) => setEditingG({ ...editingG, startDate: e.target.value })}
-                        className="w-full bg-background border border-border rounded-xl px-3 py-2 text-xs text-foreground"
+                        onChange={(val) => setEditingG({ ...editingG, startDate: val })}
+                        outputFormat="iso"
                       />
                     </div>
                     <div>
-                      <label className="text-xs font-semibold text-muted-foreground block mb-1">تاريخ النهاية</label>
-                      <input
-                        type="date"
+                      <SmartArabicDatePicker
+                        label="تاريخ النهاية"
                         value={editingG.endDate ? editingG.endDate.split("T")[0] : ""}
-                        onChange={(e) => setEditingG({ ...editingG, endDate: e.target.value })}
-                        className="w-full bg-background border border-border rounded-xl px-3 py-2 text-xs text-foreground"
+                        onChange={(val) => setEditingG({ ...editingG, endDate: val })}
+                        outputFormat="iso"
                       />
                     </div>
                   </div>

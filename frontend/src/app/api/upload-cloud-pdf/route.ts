@@ -24,103 +24,58 @@ export async function POST(req: NextRequest) {
     const finalFileName = rawName.endsWith(".pdf") ? rawName : `${rawName}.pdf`;
     const buffer = Buffer.from(arrayBuffer);
 
-    // 1. المحاولة الأولى والأساسية: Cloudflare R2 المعتمد للشركة (goldenerp-storage)
-    try {
-      const accountId = process.env.R2_ACCOUNT_ID || "e955866121f5a31f17c8cd21f8c09d19";
-      const bucketName = process.env.R2_BUCKET_NAME || "goldenerp-storage";
-      const accessKeyId = process.env.R2_ACCESS_KEY_ID || "87f6a410e812d016695a39cb23c6c4ce";
-      const secretAccessKey = process.env.R2_SECRET_ACCESS_KEY || "717642f36c3f9d7f8af1b0d57999b724ad504becd460b826ba7aa9a7dede42c3";
-      const endpoint = process.env.R2_ENDPOINT || `https://${accountId}.r2.cloudflarestorage.com`;
+    // Cloudflare R2 المعتمد للشركة (goldenerp-storage) حصرياً بدون أي بدائل
+    const accountId = process.env.R2_ACCOUNT_ID || "e955866121f5a31f17c8cd21f8c09d19";
+    const bucketName = process.env.R2_BUCKET_NAME || "goldenerp-storage";
+    const accessKeyId = process.env.R2_ACCESS_KEY_ID || "87f6a410e812d016695a39cb23c6c4ce";
+    const secretAccessKey = process.env.R2_SECRET_ACCESS_KEY || "717642f36c3f9d7f8af1b0d57999b724ad504becd460b826ba7aa9a7dede42c3";
+    const endpoint = process.env.R2_ENDPOINT || `https://${accountId}.r2.cloudflarestorage.com`;
 
-      const s3 = new S3Client({
-        region: "auto",
-        endpoint,
-        credentials: { accessKeyId, secretAccessKey },
-      });
+    const s3 = new S3Client({
+      region: "auto",
+      endpoint,
+      credentials: { accessKeyId, secretAccessKey },
+    });
 
-      const key = `official_docs/${finalFileName}`;
+    const key = `official_docs/${finalFileName}`;
 
-      await s3.send(
-        new PutObjectCommand({
+    await s3.send(
+      new PutObjectCommand({
+        Bucket: bucketName,
+        Key: key,
+        Body: buffer,
+        ContentType: "application/pdf",
+        ContentDisposition: `inline; filename="${finalFileName}"`,
+      })
+    );
+
+    const publicDomain = process.env.R2_PUBLIC_DOMAIN;
+    let directUrl: string;
+    if (publicDomain && publicDomain.startsWith("http")) {
+      directUrl = `${publicDomain.replace(/\/+$/, "")}/${key}`;
+    } else {
+      // توليد رابط موقع رسمي مباشر يفتح ملف الـ PDF مباشرة بدون أي شاشة وسيطة
+      directUrl = await getSignedUrl(
+        s3,
+        new GetObjectCommand({
           Bucket: bucketName,
           Key: key,
-          Body: buffer,
-          ContentType: "application/pdf",
-          ContentDisposition: `inline; filename="${finalFileName}"`,
-        })
+          ResponseContentType: "application/pdf",
+          ResponseContentDisposition: `inline; filename="${finalFileName}"`,
+        }),
+        { expiresIn: 604800 }
       );
-
-      const publicDomain = process.env.R2_PUBLIC_DOMAIN;
-      let directUrl: string;
-      if (publicDomain && publicDomain.startsWith("http")) {
-        directUrl = `${publicDomain.replace(/\/+$/, "")}/${key}`;
-      } else {
-        // توليد رابط موقع رسمي مباشر يفتح ملف الـ PDF مباشرة بدون أي شاشة وسيطة
-        directUrl = await getSignedUrl(
-          s3,
-          new GetObjectCommand({
-            Bucket: bucketName,
-            Key: key,
-            ResponseContentType: "application/pdf",
-            ResponseContentDisposition: `inline; filename="${finalFileName}"`,
-          }),
-          { expiresIn: 604800 }
-        );
-      }
-
-      return NextResponse.json({
-        success: true,
-        url: directUrl,
-        provider: "Cloudflare R2 Storage (حساب الشركة المعتمد)",
-      });
-    } catch (r2Err: any) {
-      console.warn("Cloudflare R2 upload failed, switching to Gofile fallback:", r2Err?.message);
     }
 
-    // 2. المحاولة الثانية (الاحتياطي): Gofile.io
-    try {
-      const srvRes = await fetch("https://api.gofile.io/servers", {
-        headers: { "User-Agent": "Mozilla/5.0" },
-        signal: AbortSignal.timeout(8000),
-      });
-      if (srvRes.ok) {
-        const srvData = await srvRes.json();
-        const serverName = srvData?.data?.servers?.[0]?.name || "store1";
-
-        const gofileForm = new FormData();
-        const pdfBlob = new Blob([buffer], { type: "application/pdf" });
-        gofileForm.append("file", pdfBlob, finalFileName);
-
-        const upRes = await fetch(`https://${serverName}.gofile.io/contents/uploadfile`, {
-          method: "POST",
-          body: gofileForm,
-          headers: { "User-Agent": "Mozilla/5.0" },
-          signal: AbortSignal.timeout(20000),
-        });
-
-        if (upRes.ok) {
-          const upData = await upRes.json();
-          if (upData?.status === "ok" && upData?.data?.downloadPage) {
-            return NextResponse.json({
-              success: true,
-              url: upData.data.downloadPage,
-              provider: "Gofile Cloud (تخزين سحابي)",
-            });
-          }
-        }
-      }
-    } catch (gofileErr: any) {
-      console.warn("Gofile upload failed in Next.js route:", gofileErr?.message);
-    }
-
-    return NextResponse.json(
-      { error: "تعذر الرفع إلى مراكز التخزين السحابي (Cloudflare R2 / Gofile). يرجى التحقق من اتصال الإنترنت والمحاولة مجدداً." },
-      { status: 502 }
-    );
+    return NextResponse.json({
+      success: true,
+      url: directUrl,
+      provider: "Cloudflare R2 Storage (حساب الشركة المعتمد)",
+    });
   } catch (err: any) {
-    console.error("خطأ في راوت الرفع السحابي:", err);
+    console.error("خطأ في رفع الملف إلى Cloudflare R2:", err);
     return NextResponse.json(
-      { error: err?.message || "حدث خطأ غير متوقع أثناء الرفع السحابي" },
+      { error: `تعذر الرفع إلى سحابة Cloudflare R2: ${err?.message || "خطأ غير متوقع"}` },
       { status: 500 }
     );
   }

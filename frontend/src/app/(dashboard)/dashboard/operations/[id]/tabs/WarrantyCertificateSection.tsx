@@ -34,6 +34,7 @@ import api from "@/lib/api";
 import { Portal } from "@/components/ui/portal";
 import { OnlyOfficeDocViewer } from "@/components/OnlyOfficeDocViewer";
 import { Operation, SectionCard } from "./types";
+import { StepFooterNav } from "./StepFooterNav";
 import {
   isValidCloudDocUrl,
   escapeXml,
@@ -41,6 +42,8 @@ import {
   buildQrAnchorXml,
   injectSingleQrIntoDocXml,
   getUnifiedOperationRegistrationNumber,
+  getLetterSpecificRegistrationNumber,
+  regenerateLetterSpecificRegistrationNumber,
   getOperationRecipientTitle,
   LetterQrCloudCard,
   LetterBottomActionWidget,
@@ -49,6 +52,9 @@ import {
   PrintHistoryEntry,
   getCurrentUserName,
   sanitizeChairmanTitle,
+  generateHighResDocQrBuffer,
+  getStandardDocQrPayload,
+  buildOfficialSignaturesTableXml,
 } from "./letter-utils";
 import { getPdfBlobFromDocx, uploadPdfToFreeCloud, getExpectedCloudPdfUrl } from "./client-pdf";
 
@@ -71,6 +77,7 @@ interface WarrantyCertificateSectionProps {
     variants?: Array<{ description?: string; notes?: string }>;
   }>;
   onGoBackToOffer?: () => void;
+  onNavigate?: (tabId: string) => void;
 }
 
 function buildWarrantyTableRowsXml(items: WarrantyCertificateItem[]): string {
@@ -98,6 +105,7 @@ export function WarrantyCertificateSection({
   onRefresh,
   initialItems = [],
   onGoBackToOffer,
+  onNavigate,
 }: WarrantyCertificateSectionProps) {
   // قراءة بيانات شهادة الضمان المحفوظة مسبقاً
   const savedWarranty = useMemo(() => {
@@ -145,10 +153,25 @@ export function WarrantyCertificateSection({
   const currentCompany = currentCompanyLink?.company;
 
   const [registrationNumber, setRegistrationNumber] = useState(() => {
-    if (savedWarranty?.registrationNumber) return savedWarranty.registrationNumber;
-    if (savedTechOffer?.registrationNumber) return savedTechOffer.registrationNumber;
-    return getUnifiedOperationRegistrationNumber(op, currentCompanyLink?.displayCode);
+    return getLetterSpecificRegistrationNumber(
+      op,
+      "warranty_certificate",
+      currentCompanyLink?.displayCode,
+      savedWarranty?.registrationNumber || savedTechOffer?.registrationNumber
+    );
   });
+
+  const handleRegenerateRef = async () => {
+    await regenerateLetterSpecificRegistrationNumber({
+      op,
+      letterKey: "warranty_certificate",
+      companyCode: currentCompanyLink?.displayCode || "AZ",
+      onSuccess: (fresh) => {
+        setRegistrationNumber(fresh);
+        onRefresh();
+      },
+    });
+  };
 
   const [companyOpCode, setCompanyOpCode] = useState(() => {
     return (
@@ -297,10 +320,10 @@ export function WarrantyCertificateSection({
 
   // التوقيعات
   const [engineerSpecialist, setEngineerSpecialist] = useState(() => {
-    return savedWarranty?.engineerSpecialist || "أحمد محمد";
+    return savedWarranty?.engineerSpecialist || "";
   });
   const [financeManager, setFinanceManager] = useState(() => {
-    return savedWarranty?.financeManager || "المدير المالي";
+    return savedWarranty?.financeManager || "";
   });
   const [boardChairman, setBoardChairman] = useState(() => {
     return sanitizeChairmanTitle(savedWarranty?.boardChairman || "رئيس مجلس الإدارة");
@@ -319,6 +342,16 @@ export function WarrantyCertificateSection({
     // تهيئة تلقائية من أصناف العرض الفني الأولي
     if (initialItems && initialItems.length > 0) {
       return initialItems.map((item, idx) => ({
+        id: `w-item-${idx + 1}`,
+        itemName: item.itemName || `صنف #${idx + 1}`,
+        unit: item.unit || "عدد",
+        quantity: item.quantity || "1",
+        description: item.variants?.[0]?.description || item.itemName || "",
+        notes: item.variants?.[0]?.notes || "مطابق للمواصفة القياسية",
+      }));
+    }
+    if (savedTechOffer?.items && savedTechOffer.items.length > 0) {
+      return savedTechOffer.items.map((item: any, idx: number) => ({
         id: `w-item-${idx + 1}`,
         itemName: item.itemName || `صنف #${idx + 1}`,
         unit: item.unit || "عدد",
@@ -479,40 +512,39 @@ export function WarrantyCertificateSection({
 
     const zip = await JSZip.loadAsync(templateBuffer);
 
-    // توليد رمز التحقق الرقمي المباشر - فقط في حالة الرفع السحابي الفعلي
     let qrDrawingXml = "";
-    const activeCloud = cloudPdfUrl;
-    if (isValidCloudDocUrl(activeCloud)) {
-      try {
-        const qrDataUrl = await QRCode.toDataURL(activeCloud, {
-          width: 600,
-          margin: 2,
-          errorCorrectionLevel: "M",
-        });
-        const qrBase64 = qrDataUrl.split(",")[1];
-        const qrBinary = Uint8Array.from(atob(qrBase64), (c) => c.charCodeAt(0));
+    try {
+      const activeCloud = cloudPdfUrl;
+      const filename = `warranty_${registrationNumber || op.serialNumber || "doc"}.pdf`;
+      const qrPayload = await getStandardDocQrPayload(
+        activeCloud,
+        registrationNumber,
+        "شهادة الضمان والصيانة المعتمدة",
+        currentCompany?.name || "المجموعة الذهبية",
+        filename
+      );
+      const qrBinary = await generateHighResDocQrBuffer(qrPayload);
 
-        zip.file("word/media/doc_qr.png", qrBinary);
+      zip.file("word/media/doc_qr.png", qrBinary);
 
-        let relsXml = await zip.file("word/_rels/document.xml.rels")?.async("text");
-        if (relsXml && !relsXml.includes("rIdQR")) {
-          relsXml = relsXml.replace(
-            "</Relationships>",
-            '<Relationship Id="rIdQR" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/doc_qr.png"/></Relationships>'
-          );
-          zip.file("word/_rels/document.xml.rels", relsXml);
-        }
-
-        let ctXml = await zip.file("[Content_Types].xml")?.async("text");
-        if (ctXml && !ctXml.includes('Extension="png"')) {
-          ctXml = ctXml.replace("</Types>", '<Default Extension="png" ContentType="image/png"/></Types>');
-          zip.file("[Content_Types].xml", ctXml);
-        }
-
-        qrDrawingXml = buildQrAnchorXml();
-      } catch (e) {
-        console.warn("QR generation failed:", e);
+      let relsXml = await zip.file("word/_rels/document.xml.rels")?.async("text");
+      if (relsXml && !relsXml.includes("rIdQR")) {
+        relsXml = relsXml.replace(
+          "</Relationships>",
+          '<Relationship Id="rIdQR" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/doc_qr.png"/></Relationships>'
+        );
+        zip.file("word/_rels/document.xml.rels", relsXml);
       }
+
+      let ctXml = await zip.file("[Content_Types].xml")?.async("text");
+      if (ctXml && !ctXml.includes('Extension="png"')) {
+        ctXml = ctXml.replace("</Types>", '<Default Extension="png" ContentType="image/png"/></Types>');
+        zip.file("[Content_Types].xml", ctXml);
+      }
+
+      qrDrawingXml = buildQrAnchorXml();
+    } catch (e) {
+      console.warn("QR generation failed in WarrantyCertificateSection:", e);
     }
 
     // 1. استبدال محتوى word/document.xml
@@ -589,10 +621,19 @@ export function WarrantyCertificateSection({
     // مدة سريان الشهادة
     docXml = docXml.replace(/ستة أشهر/g, escapeXml(validityDuration));
 
-    // التوقيعات
-    docXml = docXml.replace(/أحمد محمد/g, escapeXml(engineerSpecialist));
-    docXml = docXml.replace(/<w:t>اسم<\/w:t>/g, `<w:t>${escapeXml(financeManager)}</w:t>`);
-    docXml = docXml.replace(/رئيس مجلس الإدارة/g, escapeXml(boardChairman));
+    // التوقيعات بأسفل الصفحة في جدول ثلاثي منضبط (المختص | المدير المالي | يعتمد رئيس مجلس الإدارة)
+    const warSigBlockRegex = /<w:p\b[^>]*>(?:(?!<w:p\b)[\s\S])*?(?:المختص|المهندس)[\s\S]*?رئيس مجلس[\s\S]*?<\/w:p>/;
+    if (warSigBlockRegex.test(docXml)) {
+      const sigTableXml = buildOfficialSignaturesTableXml({
+        specialistTitle: "المهندس المختص :",
+        specialistName: engineerSpecialist || " ",
+        financeManagerName: financeManager || " ",
+        boardChairman: boardChairman || "رئيس مجلس الإدارة",
+      });
+      docXml = docXml.replace(warSigBlockRegex, sigTableXml);
+    } else {
+      docXml = docXml.replace(/رئيس مجلس\s*ا?ل?[إا]دارة/g, escapeXml(boardChairman || "رئيس مجلس الإدارة"));
+    }
 
     // الملاحظات
     docXml = docXml.replace(/خانة لكتابة ملاحظة/g, escapeXml(warrantyNotes));
@@ -630,18 +671,13 @@ export function WarrantyCertificateSection({
 
   // ━━━ دالة تحميل المعاينة الرسمية ━━━
   const loadOfficialPreview = async (forceRefresh = false) => {
+    setPreviewModalOpen(true);
     if (previewPdfBlob && currentSnapshot === lastGeneratedSnapshot && !forceRefresh) {
-      setPreviewModalOpen(true);
       return;
     }
-
+    if (renderingDocx) return;
     setRenderingDocx(true);
-    setPreviewModalOpen(true);
     try {
-      if (previewPdfUrl) {
-        URL.revokeObjectURL(previewPdfUrl);
-        setPreviewPdfUrl(null);
-      }
       const docx = await generateWarrantyDocxBlob();
       setPreviewDocxBlob(docx);
 
@@ -666,20 +702,44 @@ export function WarrantyCertificateSection({
   };
 
   // ━━━ دالة الرفع السحابي ━━━
+  // ━━━ دالة الرفع السحابي ━━━
   const handleUploadToCloud = async (forceReupload = false) => {
-    if (cloudPdfUrl && !forceReupload) return;
+    if (cloudPdfUrl && !forceReupload) {
+      toast.info("تم رفع وتوثيق هذه الشهادة سحابياً مسبقاً وهي نشطة بالفعل ✓");
+      return;
+    }
     setUploadingCloud(true);
     try {
-      toast.info("جاري رفع وتوثيق شهادة الضمان سحابياً...");
-      const docx = previewDocxBlob || (await generateWarrantyDocxBlob());
-      const pdf = previewPdfBlob || (await getPdfBlobFromDocx(docx, `warranty_${registrationNumber}.docx`));
+      toast.info("جاري توثيق ورفع شهادة الضمان سحابياً (رابط PDF مباشر)...");
+      let docx = previewDocxBlob;
+      let pdf = previewPdfBlob;
+      if (!docx || !pdf || forceReupload) {
+        docx = await generateWarrantyDocxBlob();
+        pdf = await getPdfBlobFromDocx(docx, `warranty_${registrationNumber}.docx`);
+        setPreviewDocxBlob(docx);
+        setPreviewPdfBlob(pdf);
+      }
 
       const fileName = `warranty_certificate_${registrationNumber || op.serialNumber}.pdf`;
       const res = await uploadPdfToFreeCloud(pdf, fileName);
 
       if (res?.url) {
         setCloudPdfUrl(res.url);
-        toast.success("تم توثيق شهادة الضمان سحابياً وربط رمز الباركود بنجاح! ☁️✓");
+
+        // مزامنة المعاينة في الذاكرة فوراً لفتحها بـ 0ms بدون أي إعادة توليد
+        setPreviewPdfBlob(pdf);
+        if (previewPdfUrl) {
+          URL.revokeObjectURL(previewPdfUrl);
+        }
+        setPreviewPdfUrl(URL.createObjectURL(pdf));
+
+        const syncedSnapshot = JSON.stringify({
+          ...JSON.parse(currentSnapshot),
+          cloudPdfUrl: res.url,
+        });
+        setLastGeneratedSnapshot(syncedSnapshot);
+
+        toast.success("تم توثيق ورفع شهادة الضمان وتحديث المعاينة بنجاح! جاهز للمعاينة الفورية 🚀");
 
         let existingNotesObj: Record<string, any> = {};
         try {
@@ -695,7 +755,9 @@ export function WarrantyCertificateSection({
         onRefresh();
       }
     } catch (err: any) {
-      toast.error("فشل الرفع السحابي: " + (err?.message || ""));
+      if (forceReupload) {
+        toast.error("فشل الرفع السحابي: " + (err?.response?.data?.message || err?.message || ""));
+      }
     } finally {
       setUploadingCloud(false);
     }
@@ -725,6 +787,11 @@ export function WarrantyCertificateSection({
         printHistory,
         updatedAt: new Date().toISOString(),
       };
+
+      if (!existingNotesObj.letterRegistrationNumbers) {
+        existingNotesObj.letterRegistrationNumbers = {};
+      }
+      existingNotesObj.letterRegistrationNumbers["warranty_certificate"] = registrationNumber;
 
       await api.patch(`/operations/${op.id}`, {
         notes: JSON.stringify(existingNotesObj),
@@ -812,10 +879,6 @@ export function WarrantyCertificateSection({
   };
 
   const handleViewArchive = () => {
-    if (cloudPdfUrl) {
-      window.open(cloudPdfUrl, "_blank");
-      return;
-    }
     loadOfficialPreview();
   };
 
@@ -973,7 +1036,17 @@ export function WarrantyCertificateSection({
             </div>
 
             <div className="space-y-1.5 sm:col-span-2">
-              <Label className="text-xs font-bold text-foreground">رقم القيد الصادر بالشهادة *</Label>
+              <div className="flex items-center justify-between">
+                <Label className="text-xs font-bold text-foreground">رقم القيد الصادر بالشهادة *</Label>
+                <button
+                  type="button"
+                  onClick={handleRegenerateRef}
+                  className="text-[11px] font-bold text-emerald-600 hover:text-emerald-700 flex items-center gap-1 cursor-pointer"
+                >
+                  <RefreshCw className="h-3 w-3" />
+                  <span>توليد ذكي</span>
+                </button>
+              </div>
               <Input
                 value={registrationNumber}
                 onChange={(e) => setRegistrationNumber(e.target.value)}
@@ -1382,28 +1455,15 @@ export function WarrantyCertificateSection({
         </div>
       </SectionCard>
 
-      {/* ━━━ الباركود الذكي ورمز QR والرفع السحابي ━━━ */}
-      <LetterQrCloudCard
-        cloudPdfUrl={cloudPdfUrl}
-        registrationNumber={registrationNumber}
-        opId={op.id}
-        docType="warranty_certificate"
-        uploadingCloud={uploadingCloud}
-        onUploadToCloud={handleUploadToCloud}
-        title="الباركود الذكي ورمز QR لشهادة الضمان الرسمية"
-        subtitle="عند مسح الباركود بكاميرا الموبايل يتم فتح النسخة الرقمية المعتمدة لشهادة الضمان فوراً بدون تسجيل دخول."
-        badgeText="مدمج بموضع كلمة (الباركود) بالأعلى ورقم القيد بالتذييل"
-        gradientClass="from-emerald-500/10 via-teal-500/10 to-transparent border-emerald-500/25"
-        isModifiedAfterUpload={isDirty}
-      />
-
       {/* ━━━ شريط الإجراءات السفلي ━━━ */}
       <LetterBottomActionWidget
         title="شهادة الضمان المعتمدة للأصناف الموردة"
         registrationNumber={registrationNumber}
         isDirty={isDirty}
         printInfo={printHistory["warranty"]}
-        onPreview={() => loadOfficialPreview()}
+        onPreview={() => {
+          loadOfficialPreview();
+        }}
         onSave={handleSaveToSystem}
         onCancelEdits={() => {
           try {
@@ -1488,6 +1548,9 @@ export function WarrantyCertificateSection({
                     onDownloadDocx={handleDownloadDocx}
                     onDownloadPdf={handleDownloadPdf}
                     onPrint={handlePrintWordDocument}
+                    onAddToArchive={handleToggleArchive}
+                    isArchived={isArchived}
+                    addingToArchive={addingToArchive}
                   />
                 )}
               </div>
@@ -1512,6 +1575,16 @@ export function WarrantyCertificateSection({
       />
 
       <PdfExportLoadingModal open={downloadingPdf} />
+
+      {/* ━━━ STEP FOOTER NAVIGATION ━━━ */}
+      {onNavigate && (
+        <StepFooterNav
+          currentTabId="warranty_certificate"
+          onNavigate={onNavigate}
+          nextLabel="الانتقال إلى: #16 التأمين النهائي ➔"
+          prevLabel="← أمر التوريد والتعاقد الرسمي"
+        />
+      )}
     </div>
   );
 }

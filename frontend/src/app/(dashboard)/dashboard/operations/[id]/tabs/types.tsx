@@ -63,23 +63,25 @@ export const LIFECYCLE_TABS: TabDef[] = [
   { id: "overview", label: "البيانات الأساسية والشركات", shortLabel: "الأساسية", icon: FileText, order: 1, color: "slate", description: "بيانات العملية، جهة الإسناد، والشركات المشاركة بأكوادها المستقلة" },
   { id: "dates", label: "التواريخ والتنبيهات", shortLabel: "التواريخ", icon: Calendar, order: 2, color: "indigo", description: "المواعيد الرسمية، جلسات الفتح، والعد التنازلي للإنذارات الحرجة" },
   { id: "market_study", label: "دراسة السوق والجدوى", shortLabel: "دراسة السوق", icon: TrendingUp, order: 3, color: "blue", description: "أرشيف ملفات دراسة السوق، جدول بنود وعروض أسعار الموردين، ومقارنة التكاليف" },
-  { id: "booklet", label: "الكراسة والتأمين الابتدائي", shortLabel: "الكراسة والتأمين", icon: BookOpen, order: 4, color: "cyan", description: "طباعة خطابات السحب والتأمين، إيصالات السداد، رفع كراسة الشروط، وأرشيف صور المواصفات" },
-  { id: "clarification", label: "خطاب التوضيح والاستفسارات", shortLabel: "خطاب التوضيح", icon: HelpCircle, order: 5, color: "amber", description: "توليد وطباعة خطاب الاستفسارات الموجه لجهة الإسناد قبل تقديم العطاء الفني" },
-  { id: "technical", label: "العرض الفني والمواصفات", shortLabel: "الفني", icon: ClipboardCheck, order: 6, color: "purple", description: "تجهيز المظروف الفني، الكتالوجات، والغلاف الذكي المعتمد" },
-  { id: "financial", label: "العرض المالي وجدول الكميات", shortLabel: "المالي", icon: Coins, order: 7, color: "teal", description: "تسعير البنود، احتساب الهوامش، وتقديم العطاء رسمياً" },
-  { id: "declarations", label: "الإقرارات والخطابات الرسمية", shortLabel: "الإقرارات والخطابات", icon: FileCheck, order: 8, color: "emerald", description: "توليد وطباعة إقرار الالتزام بكراسة الشروط وإقرار التأمينات والعمالة والخطاب العام مطابقة لقوالب Word الرسمية" },
-  { id: "submission_package", label: "تجهيز وطباعة ملفات التقديم", shortLabel: "ملفات التقديم", icon: Package, order: 9, color: "blue", description: "تجميع وطباعة حزمة ملفات العطاء للمظروفين الفني والمالي وتحميلها بمجلد مضغوط ZIP" },
-  { id: "tech_opening", label: "نتيجة البت الفني والطعون", shortLabel: "البت الفني", icon: FolderOpen, order: 10, color: "indigo", description: "قرارات لجنة الفحص الفني، الاستيفاء، القبول، التظلم، واسترداد التأمين" },
-  { id: "fin_opening", label: "نتيجة البت المالي والترتيب", shortLabel: "البت المالي", icon: DollarSign, order: 11, color: "cyan", description: "جلسة الفتح المالي، الشراء، الترسية الجزئية، التظلم، واسترداد التأمين" },
-  { id: "award", label: "قرار الترسية الرسمي", shortLabel: "الترسية", icon: Trophy, order: 12, color: "amber", description: "إخطار الترسية الرسمي، اسم الشركة الفائزة، وقيمة الترسية المعتمدة" },
-  { id: "supply_order", label: "أمر التوريد والتعاقد الرسمي", shortLabel: "أمر التوريد", icon: Truck, order: 13, color: "blue", description: "تسجيل رقم وتاريخ أمر التوريد الصادر من الجهة، مدة التنفيذ، وشروط التوريد" },
-  { id: "guarantee_final", label: "التأمين النهائي (5%)", shortLabel: "التأمين النهائي", icon: ShieldCheck, order: 14, color: "emerald", description: "خطابات سداد التأمين النهائي، الخصم من المستحقات، الضمان البنكي، والباركود" },
-  { id: "supply", label: "حالة التوريد والتجهيز", shortLabel: "حالة التوريد", icon: Truck, order: 15, color: "blue", description: "حصر وتجهيز أصناف البت المالي، مقارنة أسعار دراسة السوق بالتوريد، وأذون الإضافة المخزنية" },
-  { id: "invoicing", label: "إصدار الفاتورة والتسليم", shortLabel: "الفاتورة والتسليم", icon: FileText, order: 16, color: "indigo", description: "إصدار الفاتورة الرسمية، ضريبة 14%، رفع ملف الفاتورة المعتمدة، وإذن ومحضر التسليم الفعلي" },
-  { id: "insurances_labor", label: "التأمينات والقوى العاملة وأمر الدفع", shortLabel: "التأمينات والعمالة", icon: ShieldCheck, order: 17, color: "amber", description: "سداد التأمينات والعمالة، تسليم الشهادات للجهة الإدارية، ومتابعة استخراج أمر الدفع الحكومي" },
-  { id: "certificates", label: "المستخلصات والاستقطاعات والضرائب", shortLabel: "المستخلصات والضرائب", icon: Calculator, order: 18, color: "teal", description: "أمر الدفع، بيان الاستقطاعات الضريبية (14% VAT + 1% أ.ت.ص) وصافي الصرف" },
-  { id: "finance", label: "الحسابات والمالية والأرباح", shortLabel: "المالية والأرباح", icon: BarChart3, order: 19, color: "emerald", description: "التكلفة الإجمالية الفعلية، التدفقات النقدية، وصافي أرباح العملية" },
-  { id: "close", label: "إغلاق العملية وفترة الضمان", shortLabel: "الضمان والإغلاق", icon: Archive, order: 20, color: "slate", description: "فترة الضمان، الزيارات الشهرية للصيانة، الاستلام النهائي، واسترداد التأمينات والأرشيف" },
+  { id: "general_letter", label: "خطاب عام رسمي للجهة", shortLabel: "خطاب عام", icon: FileText, order: 4, color: "indigo", description: "توليد وطباعة خطاب رسمي عام بموضوع ونص مخصص موجه لجهة الإسناد مع الباركود الذكي" },
+  { id: "booklet", label: "الكراسة والتأمين الابتدائي", shortLabel: "الكراسة والتأمين", icon: BookOpen, order: 5, color: "cyan", description: "طباعة خطابات السحب والتأمين، إيصالات السداد، رفع كراسة الشروط، وأرشيف صور المواصفات" },
+  { id: "clarification", label: "خطاب التوضيح والاستفسارات", shortLabel: "خطاب التوضيح", icon: HelpCircle, order: 6, color: "amber", description: "توليد وطباعة خطاب الاستفسارات الموجه لجهة الإسناد قبل تقديم العطاء الفني" },
+  { id: "technical", label: "العرض الفني والمواصفات", shortLabel: "الفني", icon: ClipboardCheck, order: 7, color: "purple", description: "تجهيز المظروف الفني، الكتالوجات، والغلاف الذكي المعتمد" },
+  { id: "financial", label: "العرض المالي وجدول الكميات", shortLabel: "المالي", icon: Coins, order: 8, color: "teal", description: "تسعير البنود، احتساب الهوامش، وتقديم العطاء رسمياً" },
+  { id: "declarations", label: "الإقرارات الرسمية المعتمدة", shortLabel: "الإقرارات الرسمية", icon: FileCheck, order: 9, color: "emerald", description: "توليد وطباعة إقرار الالتزام بكراسة الشروط وإقرار التأمينات والعمالة مطابقة لقوالب Word الرسمية" },
+  { id: "submission_package", label: "تجهيز وطباعة ملفات التقديم", shortLabel: "ملفات التقديم", icon: Package, order: 10, color: "blue", description: "تجميع وطباعة حزمة ملفات العطاء للمظروفين الفني والمالي وتحميلها بمجلد مضغوط ZIP" },
+  { id: "tech_opening", label: "نتيجة البت الفني والطعون", shortLabel: "البت الفني", icon: FolderOpen, order: 11, color: "indigo", description: "قرارات لجنة الفحص الفني، الاستيفاء، القبول، التظلم، واسترداد التأمين" },
+  { id: "fin_opening", label: "نتيجة البت المالي والترتيب", shortLabel: "البت المالي", icon: DollarSign, order: 12, color: "cyan", description: "جلسة الفتح المالي، الشراء، الترسية الجزئية، التظلم، واسترداد التأمين" },
+  { id: "award", label: "قرار الترسية الرسمي", shortLabel: "الترسية", icon: Trophy, order: 13, color: "amber", description: "إخطار الترسية الرسمي، اسم الشركة الفائزة، وقيمة الترسية المعتمدة" },
+  { id: "supply_order", label: "أمر التوريد والتعاقد الرسمي", shortLabel: "أمر التوريد", icon: Truck, order: 14, color: "blue", description: "تسجيل رقم وتاريخ أمر التوريد الصادر من الجهة، مدة التنفيذ، وشروط التوريد" },
+  { id: "warranty_certificate", label: "شهادة الضمان للأصناف الموردة", shortLabel: "شهادة الضمان", icon: ShieldCheck, order: 15, color: "emerald", description: "توليد وطباعة شهادة الضمان الرسمية المعتمدة للأصناف وفترة سريان الضمان والباركود الذكي" },
+  { id: "guarantee_final", label: "التأمين النهائي (5%)", shortLabel: "التأمين النهائي", icon: ShieldCheck, order: 16, color: "emerald", description: "خطابات سداد التأمين النهائي، الخصم من المستحقات، الضمان البنكي، والباركود" },
+  { id: "supply", label: "حالة التوريد والتجهيز", shortLabel: "حالة التوريد", icon: Truck, order: 17, color: "blue", description: "حصر وتجهيز أصناف البت المالي، مقارنة أسعار دراسة السوق بالتوريد، وأذون الإضافة المخزنية" },
+  { id: "invoicing", label: "إصدار الفاتورة والتسليم", shortLabel: "الفاتورة والتسليم", icon: FileText, order: 18, color: "indigo", description: "إصدار الفاتورة الرسمية، ضريبة 14%، رفع ملف الفاتورة المعتمدة، وإذن ومحضر التسليم الفعلي" },
+  { id: "insurances_labor", label: "التأمينات والقوى العاملة وأمر الدفع", shortLabel: "التأمينات والعمالة", icon: ShieldCheck, order: 19, color: "amber", description: "سداد التأمينات والعمالة، تسليم الشهادات للجهة الإدارية، ومتابعة استخراج أمر الدفع الحكومي" },
+  { id: "certificates", label: "المستخلصات والاستقطاعات والضرائب", shortLabel: "المستخلصات والضرائب", icon: Calculator, order: 20, color: "teal", description: "أمر الدفع، بيان الاستقطاعات الضريبية (14% VAT + 1% أ.ت.ص) وصافي الصرف" },
+  { id: "finance", label: "الحسابات والمالية والأرباح", shortLabel: "المالية والأرباح", icon: BarChart3, order: 21, color: "emerald", description: "التكلفة الإجمالية الفعلية، التدفقات النقدية، وصافي أرباح العملية" },
+  { id: "close", label: "إغلاق العملية وفترة الضمان", shortLabel: "الضمان والإغلاق", icon: Archive, order: 22, color: "slate", description: "فترة الضمان، الزيارات الشهرية للصيانة، الاستلام النهائي، واسترداد التأمينات والأرشيف" },
 ];
 
 export const STATUS_LABELS: Record<string, { label: string; badgeBg: string }> = {
@@ -130,18 +132,18 @@ export const DATE_TYPE_LABELS: Record<string, string> = {
    FORMATTING & TAFQEET HELPERS
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
 export function formatCurrency(n: number) {
-  return new Intl.NumberFormat("ar-EG", { style: "currency", currency: "EGP" }).format(n);
+  return new Intl.NumberFormat("ar-EG-u-nu-latn", { style: "currency", currency: "EGP" }).format(n);
 }
 
 export function formatDate(d: string) {
   if (!d) return "—";
-  return new Date(d).toLocaleDateString("ar-EG", { year: "numeric", month: "long", day: "numeric" });
+  return new Date(d).toLocaleDateString("ar-EG-u-nu-latn", { year: "numeric", month: "long", day: "numeric" });
 }
 
 export function formatDateTime(d: string) {
   if (!d) return "—";
   try {
-    return new Date(d).toLocaleDateString("ar-EG", {
+    return new Date(d).toLocaleDateString("ar-EG-u-nu-latn", {
       year: "numeric",
       month: "long",
       day: "numeric",
@@ -227,6 +229,7 @@ export function getTabCompletionStatus(tab: TabDef, op: Operation, manualOverrid
       const hasDocs = op.documents?.some((d: any) => d.type === "MARKET_STUDY");
       return hasDocs || ["BOOKLET_WITHDRAWN", "SUBMITTED", "TECHNICAL_OPENED", "TECHNICAL_ACCEPTED", "FINANCIAL_OPENED", "AWARDED", "SUPPLY_IN_PROGRESS", "COMPLETED", "CLOSED"].includes(op.status) ? "done" : "pending";
     }
+    case "general_letter": return op.notes?.includes("generalLetterDocx") ? "done" : "pending";
     case "booklet": {
       const hasBooklet = op.documents?.some((d: any) => d.type === "BOOKLET");
       const hasReceipt = op.documents?.some((d: any) => d.type === "RECEIPT");
@@ -247,6 +250,7 @@ export function getTabCompletionStatus(tab: TabDef, op: Operation, manualOverrid
     case "fin_opening": return op.financialOpenings?.length > 0 ? "done" : "pending";
     case "award": return op.awards?.length > 0 ? "done" : "pending";
     case "supply_order": return op.supplyOrders?.length > 0 ? "done" : "pending";
+    case "warranty_certificate": return op.notes?.includes("warrantyCertificate") ? "done" : "pending";
     case "guarantee_final": return op.guarantees?.some((g: any) => g.type === "FINAL") ? "done" : "pending";
     case "supply": {
       const receipts = op.supplyOrders?.flatMap((so: any) => so.goodsReceipts || []);

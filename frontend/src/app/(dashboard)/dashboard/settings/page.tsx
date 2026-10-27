@@ -247,7 +247,7 @@ const GUARANTEE_DAY_PRESETS = [
 ];
 
 export default function SettingsPage() {
-  const { currentCompany, selectedCompany } = useCompany();
+  const { currentCompany, selectedCompany, updateCompanyName } = useCompany();
   const isCompanyScoped = Boolean(selectedCompany && selectedCompany !== "ALL");
 
   // State
@@ -394,6 +394,30 @@ export default function SettingsPage() {
     });
   };
 
+  // Quick Save Single Company Name
+  const handleQuickSaveCompanyName = async (companyId: string) => {
+    const comp = companies.find((c) => c.id === companyId);
+    if (!comp) return;
+    try {
+      await api.patch(`/companies/${comp.id}`, { name: comp.name });
+      if (updateCompanyName && comp.code) {
+        await updateCompanyName(comp.code as any, comp.name);
+      }
+      setDirtyCompanyIds((prev) => {
+        const next = new Set(prev);
+        next.delete(comp.id);
+        return next;
+      });
+      setInitialCompaniesMap((prev) => ({
+        ...prev,
+        [comp.id]: { ...comp },
+      }));
+      toast.success(`تم تحديث اسم شركة (${comp.code}: ${comp.name}) بنجاح! ✓`);
+    } catch {
+      toast.error("فشل حفظ اسم الشركة في الخادم");
+    }
+  };
+
   // Save Everything (Settings + Dirty Companies)
   const handleSaveAll = async () => {
     setIsSaving(true);
@@ -434,6 +458,9 @@ export default function SettingsPage() {
                 bankAccountNumber: comp.bankAccountNumber,
               })
             );
+            if (updateCompanyName && comp.code) {
+              updateCompanyName(comp.code as any, comp.name);
+            }
           }
         });
       }
@@ -629,6 +656,84 @@ export default function SettingsPage() {
       {/* ========================================================================= */}
       {activeCategoryTab === "companies" && (
         <div className="space-y-5 animate-fade-in">
+          {/* Quick Edit Company Names Option (أوبشن تعديل أسماء الشركات الأربعة) */}
+          <div className="glass-card rounded-3xl p-5 sm:p-6 border border-blue-500/30 bg-gradient-to-br from-blue-500/5 via-indigo-500/5 to-transparent space-y-4 shadow-xl">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-border/60 pb-3">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-blue-600 text-white flex items-center justify-center shadow-md shadow-blue-500/20">
+                  <Building2 className="h-5 w-5" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-black text-foreground flex items-center gap-2">
+                    <span>تعديل أسماء الشركات الأربعة بالمنظومة</span>
+                    <Badge className="bg-blue-600/15 text-blue-600 dark:text-blue-400 border border-blue-500/30 text-[10px] font-bold">
+                      أوبشن تعديل اسم الشركة
+                    </Badge>
+                  </h3>
+                  <p className="text-[11px] text-muted-foreground">
+                    يمكنك تعديل وتخصيص المسمى التجاري المعتمد لكل شركة من الشركات الأربعة، ويتم تحديث الاسم تلقائياً في شريط التنقل العلوي والخطابات الرسمية والتقارير.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3.5">
+              {companies.map((comp) => {
+                const isDirty = dirtyCompanyIds.has(comp.id);
+                return (
+                  <div
+                    key={comp.id}
+                    className={`p-3.5 rounded-2xl border transition-all space-y-2.5 ${
+                      isDirty
+                        ? "bg-amber-500/10 border-amber-500/40 shadow-md"
+                        : "bg-muted/20 hover:bg-muted/30 border-border"
+                    }`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <span className="w-7 h-7 rounded-lg bg-blue-600 text-white font-mono font-black text-xs flex items-center justify-center">
+                          {comp.code}
+                        </span>
+                        <span className="text-xs font-bold text-foreground">شركة ({comp.code})</span>
+                      </div>
+                      {isDirty && (
+                        <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-amber-500/20 text-amber-600 dark:text-amber-400 font-bold animate-pulse">
+                          معدل
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-[11px] font-bold text-muted-foreground block">
+                        اسم الشركة المعتمد:
+                      </label>
+                      <Input
+                        value={comp.name || ""}
+                        onChange={(e) => handleCompanyFieldChange(comp.id, "name", e.target.value)}
+                        placeholder={`اسم شركة ${comp.code}`}
+                        className="h-8.5 text-xs font-bold rounded-xl bg-background border-border"
+                      />
+                    </div>
+
+                    <Button
+                      size="sm"
+                      onClick={() => handleQuickSaveCompanyName(comp.id)}
+                      disabled={!isDirty}
+                      className={`w-full h-7.5 rounded-xl text-[11px] font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
+                        isDirty
+                          ? "bg-blue-600 hover:bg-blue-700 text-white shadow-xs"
+                          : "bg-muted text-muted-foreground border border-border opacity-60 cursor-not-allowed"
+                      }`}
+                    >
+                      <Save className="h-3 w-3" />
+                      <span>حفظ الاسم فورياً</span>
+                    </Button>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
           {/* Company Selector Pills: If scoped to a specific company, ONLY show that company */}
           {isCompanyScoped ? (
             <div className="p-4 rounded-2xl bg-gradient-to-r from-blue-500/10 via-indigo-500/10 to-transparent border border-blue-500/25 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs">

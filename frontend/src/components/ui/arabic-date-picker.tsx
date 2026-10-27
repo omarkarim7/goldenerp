@@ -149,7 +149,7 @@ export function ArabicDateTimePicker({
 
     try {
       const d = new Date(year, month - 1, day, h24, parseInt(minute, 10));
-      return d.toLocaleDateString("ar-EG", {
+      return d.toLocaleDateString("ar-EG-u-nu-latn", {
         weekday: "long",
         day: "numeric",
         month: "long",
@@ -320,6 +320,219 @@ export function ArabicDateTimePicker({
           </>
         )}
       </div>
+    </div>
+  );
+}
+
+export interface SmartArabicDatePickerProps {
+  value: string;
+  onChange: (value: string) => void;
+  placeholder?: string;
+  className?: string;
+  label?: string;
+  disabled?: boolean;
+  required?: boolean;
+  showHelperPreview?: boolean;
+  outputFormat?: "display" | "iso";
+}
+
+/**
+ * حقل التاريخ الذكي المعتمد لكافة مراحل العمليات والخطابات:
+ * - يتيح الكتابة اليدوية المباشرة للأرقام (مثال: 26/10/2026 أو 2026-10-26)
+ * - يحتوي على زر تقويم منبثق (Calendar Picker) لاختيار التاريخ بنقرة واحدة
+ * - يعرض التحقق الفوري لليوم والشهر باللغة العربية (مثال: "الإثنين، 26 أكتوبر 2026")
+ *   لمنع أي خطأ مطبعي في إدخال التواريخ
+ */
+export function SmartArabicDatePicker({
+  value,
+  onChange,
+  placeholder,
+  className = "",
+  label,
+  disabled = false,
+  required = false,
+  showHelperPreview = true,
+  outputFormat = "display",
+}: SmartArabicDatePickerProps) {
+  const hiddenDateInputRef = React.useRef<HTMLInputElement>(null);
+  const defaultPlaceholder = placeholder || (outputFormat === "iso" ? "YYYY-MM-DD" : "DD/MM/YYYY");
+
+  // تحويل التاريخ من صيغة DD/MM/YYYY إلى YYYY-MM-DD لمتحكم التاريخ الأصلي
+  const toIsoDate = (val: string): string => {
+    if (!val) return "";
+    const trimmed = val.trim();
+    if (/^\d{4}-\d{2}-\d{2}/.test(trimmed)) {
+      return trimmed.substring(0, 10);
+    }
+    const parts = trimmed.split(/[\/\-.]/);
+    if (parts.length === 3) {
+      if (parts[0].length === 4) {
+        // YYYY/MM/DD
+        return `${parts[0]}-${parts[1].padStart(2, "0")}-${parts[2].padStart(2, "0")}`;
+      } else if (parts[2].length === 4) {
+        // DD/MM/YYYY
+        return `${parts[2]}-${parts[1].padStart(2, "0")}-${parts[0].padStart(2, "0")}`;
+      }
+    }
+    return "";
+  };
+
+  // تحويل من YYYY-MM-DD إلى DD/MM/YYYY
+  const toDisplayDate = (iso: string): string => {
+    if (!iso) return "";
+    const parts = iso.split("-");
+    if (parts.length === 3) {
+      return `${parts[2]}/${parts[1]}/${parts[0]}`;
+    }
+    return iso;
+  };
+
+  const isoValue = toIsoDate(value);
+
+  // المعاينة والتحقق اللفظي بالعربي لليوم والشهر
+  const arabicVerification = React.useMemo(() => {
+    if (!isoValue) return null;
+    try {
+      const parts = isoValue.split("-").map((n) => parseInt(n, 10));
+      if (parts.length === 3) {
+        const d = new Date(parts[0], parts[1] - 1, parts[2]);
+        if (!isNaN(d.getTime())) {
+          return d.toLocaleDateString("ar-EG-u-nu-latn", {
+            weekday: "long",
+            day: "numeric",
+            month: "long",
+            year: "numeric",
+          });
+        }
+      }
+    } catch {}
+    return null;
+  }, [isoValue]);
+
+  const handleCalendarPick = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const picked = e.target.value;
+    if (picked) {
+      if (outputFormat === "iso") {
+        onChange(picked);
+      } else {
+        onChange(toDisplayDate(picked));
+      }
+    }
+  };
+
+  const openCalendar = () => {
+    if (disabled) return;
+    const el = hiddenDateInputRef.current;
+    if (!el) return;
+    try {
+      if (typeof (el as any).showPicker === "function") {
+        (el as any).showPicker();
+      } else {
+        el.focus();
+        el.click();
+      }
+    } catch {
+      el.click();
+    }
+  };
+
+  // الاختصارات السريعة
+  const handleQuickAddDays = (days: number) => {
+    const d = new Date();
+    d.setDate(d.getDate() + days);
+    const day = String(d.getDate()).padStart(2, "0");
+    const month = String(d.getMonth() + 1).padStart(2, "0");
+    const year = d.getFullYear();
+    if (outputFormat === "iso") {
+      onChange(`${year}-${month}-${day}`);
+    } else {
+      onChange(`${day}/${month}/${year}`);
+    }
+  };
+
+  return (
+    <div className={`space-y-1 relative ${className}`}>
+      {label && (
+        <div className="flex items-center justify-between">
+          <label className="text-xs font-bold text-foreground">
+            {label} {required && <span className="text-rose-500">*</span>}
+          </label>
+        </div>
+      )}
+
+      <div className="relative flex items-center">
+        {/* حقل الإدخال اليدوي المباشر للأرقام */}
+        <input
+          type="text"
+          value={value || ""}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder={defaultPlaceholder}
+          disabled={disabled}
+          required={required}
+          dir="ltr"
+          className="w-full h-9.5 pl-3 pr-10 text-xs font-mono font-bold text-foreground bg-background border border-border rounded-xl focus:border-blue-500 focus:ring-1 focus:ring-blue-500/20 text-center transition-all disabled:opacity-50"
+        />
+
+        {/* زر التقويم المنبثق */}
+        <button
+          type="button"
+          onClick={openCalendar}
+          disabled={disabled}
+          className="absolute right-1 w-8 h-8 rounded-lg bg-blue-500/10 hover:bg-blue-600 text-blue-600 hover:text-white dark:text-blue-400 flex items-center justify-center transition-all cursor-pointer shadow-2xs"
+          title="فتح التقويم لاختيار التاريخ"
+        >
+          <CalendarIcon className="h-4 w-4" />
+        </button>
+
+        {/* حقل التاريخ المدمج المخفي لتفعيل منتقي المتصفح الأصلي */}
+        <input
+          ref={hiddenDateInputRef}
+          type="date"
+          value={isoValue}
+          onChange={handleCalendarPick}
+          tabIndex={-1}
+          className="sr-only"
+        />
+      </div>
+
+      {/* التحقق الفوري اللفظي بالعربي لمنع الأخطاء المطبعية */}
+      {showHelperPreview && (
+        <div className="flex items-center justify-between gap-1.5 text-[10.5px] px-1 pt-0.5">
+          {arabicVerification ? (
+            <span className="text-emerald-700 dark:text-emerald-300 font-bold truncate flex items-center gap-1">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 inline-block" />
+              {arabicVerification}
+            </span>
+          ) : value && value.trim().length > 3 ? (
+            <span className="text-amber-600 dark:text-amber-400 font-medium">
+              تنسيق التاريخ غير مكتمل (DD/MM/YYYY)
+            </span>
+          ) : (
+            <span className="text-muted-foreground text-[10px]">
+              اكتب يدوياً بالأرقام أو اختر من التقويم
+            </span>
+          )}
+
+          <div className="flex items-center gap-1 shrink-0">
+            <button
+              type="button"
+              onClick={() => handleQuickAddDays(0)}
+              className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-muted/60 hover:bg-blue-600 hover:text-white transition-colors cursor-pointer"
+              title="تاريخ اليوم"
+            >
+              اليوم
+            </button>
+            <button
+              type="button"
+              onClick={() => handleQuickAddDays(1)}
+              className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-muted/60 hover:bg-blue-600 hover:text-white transition-colors cursor-pointer"
+              title="تاريخ الغد"
+            >
+              غداً
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

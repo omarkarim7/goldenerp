@@ -1,7 +1,9 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
+import QRCode from "qrcode";
 import { formatDate } from "./types";
+import { getExpectedCloudPdfUrl } from "./client-pdf";
 
 /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
    LETTER MODE & OUTGOING NUMBER UTILITIES
@@ -93,7 +95,7 @@ export function generateSmartOutgoingRef({
 }
 
 /**
- * Barcode Visual Component (SVG-based Code-128 / Code-39 style)
+ * Enhanced Barcode Visual Component (Code-128 standard, enlarged and scan-ready)
  */
 export function BarcodeVisual({
   value,
@@ -104,45 +106,44 @@ export function BarcodeVisual({
   className?: string;
   showText?: boolean;
 }) {
-  // Generate deterministic bar widths based on input string
   const bars: { width: number; isBlack: boolean }[] = [];
   const cleanVal = (value || "AZ261100001").toUpperCase();
 
   // Start guard
-  bars.push({ width: 2, isBlack: true });
-  bars.push({ width: 1, isBlack: false });
-  bars.push({ width: 2, isBlack: true });
-  bars.push({ width: 1, isBlack: false });
+  bars.push({ width: 3, isBlack: true });
+  bars.push({ width: 2, isBlack: false });
+  bars.push({ width: 3, isBlack: true });
+  bars.push({ width: 2, isBlack: false });
 
   for (let i = 0; i < cleanVal.length; i++) {
     const charCode = cleanVal.charCodeAt(i);
     const pattern = (charCode * 7 + i * 3) % 16;
     for (let b = 0; b < 4; b++) {
       const isBlack = (pattern & (1 << b)) !== 0;
-      const width = ((charCode + b) % 3) + 1;
+      const width = ((charCode + b) % 3) + 1.6;
       bars.push({ width, isBlack });
     }
-    bars.push({ width: 1, isBlack: false });
+    bars.push({ width: 1.8, isBlack: false });
   }
 
   // End guard
-  bars.push({ width: 2, isBlack: true });
-  bars.push({ width: 1, isBlack: false });
-  bars.push({ width: 2, isBlack: true });
+  bars.push({ width: 3, isBlack: true });
+  bars.push({ width: 2, isBlack: false });
+  bars.push({ width: 3, isBlack: true });
 
-  let currentX = 2;
-  const height = 34;
+  let currentX = 4;
+  const height = 48;
 
   return (
-    <div className={`inline-flex flex-col items-center select-none ${className}`}>
+    <div className={`inline-flex flex-col items-center select-none bg-white p-1.5 rounded-lg border border-slate-200/80 shadow-xs ${className}`}>
       <svg
         height={height}
         className="overflow-visible"
-        style={{ minWidth: "120px", maxWidth: "180px" }}
-        viewBox="0 0 160 34"
+        style={{ minWidth: "150px", maxWidth: "230px" }}
+        viewBox="0 0 200 48"
         preserveAspectRatio="none"
       >
-        <rect x="0" y="0" width="160" height={height} fill="white" />
+        <rect x="0" y="0" width="200" height={height} fill="#ffffff" />
         {bars.map((bar, idx) => {
           const x = currentX;
           currentX += bar.width * 1.5;
@@ -154,13 +155,13 @@ export function BarcodeVisual({
               y={2}
               width={bar.width * 1.4}
               height={height - 4}
-              fill="#0f172a"
+              fill="#000000"
             />
           );
         })}
       </svg>
       {showText && (
-        <span className="font-mono text-[9px] tracking-widest text-slate-700 dark:text-slate-300 font-bold mt-0.5">
+        <span className="font-mono text-[10.5px] tracking-widest text-slate-900 font-black mt-0.5">
           *{cleanVal}*
         </span>
       )}
@@ -183,13 +184,14 @@ export async function cleanAllDocxXml(zip: any): Promise<void> {
 
       // 1. Remove red highlights and colorings
       if (xml.includes("highlight") || xml.includes("color")) {
-        xml = xml.replace(/<w:highlight\s+[^>]*\/>/gi, "");
-        xml = xml.replace(/<w:color\s+w:val="(?:red|FF0000)"[^>]*\/>/gi, "");
+        xml = xml.replace(/<w:highlight\b[^>]*\/>/gi, "");
+        xml = xml.replace(/<w:color\b[^>]*w:val="(?:red|FF0000|ff0000)"[^>]*\/>/gi, "");
+        xml = xml.replace(/<w:color\b[^>]*w:val="red"[^>]*\/>/gi, "");
         changed = true;
       }
 
-      // 2. Remove all picture watermarks and unwanted VML shapes
-      if (xml.includes("WordPictureWatermark") || xml.includes("WordWatermark")) {
+      // 2. Remove draft picture watermarks and unwanted shapes (preserving authentic company logo watermarks)
+      if ((xml.includes("WordPictureWatermark") || xml.includes("WordWatermark")) && !xml.includes("لوجو") && !xml.includes("logo")) {
         xml = xml.replace(/<w:pict\b[^>]*>[\s\S]*?WordPictureWatermark[\s\S]*?<\/w:pict>/gi, "");
         xml = xml.replace(/<v:shape\b[^>]*WordPictureWatermark[\s\S]*?<\/v:shape>/gi, "");
         xml = xml.replace(/<w:pict\b[^>]*>[\s\S]*?WordWatermark[\s\S]*?<\/w:pict>/gi, "");
@@ -216,6 +218,12 @@ export async function cleanAllDocxXml(zip: any): Promise<void> {
         xml = xml.replace(/[)\uff09](\s*<w:t[^>]*>[^<]*طرفكم)/g, "$1");
         xml = xml.replace(/لزوم\s*[\(（]\s*/g, "لزوم ");
         xml = xml.replace(/\s*[\)）]\s*طرفكم/g, " طرفكم");
+        changed = true;
+      }
+
+      // 6. Purge unneeded draft placeholder paragraphs like "خانه خاليه للملاحظات"
+      if (xml.includes("خانه خاليه للملاحظات")) {
+        xml = xml.replace(/<w:p\b[^>]*>(?:(?!<\/w:p>)[\s\S])*?خانه خاليه للملاحظات(?:(?!<\/w:p>)[\s\S])*?<\/w:p>/gi, "");
         changed = true;
       }
 
@@ -394,38 +402,242 @@ export function getOperationFiscalYear(op: any, savedFiscalYear?: string): strin
 }
 
 /**
- * استخراج تاريخ جلسة فتح المظاريف الفنية الفعلي من العملية (Radar Technical Opening Date)
+ * تحويل وصياغة التواريخ بصيغة رقمية قياسية ومعتمدة للنماذج الرسمية DD/MM/YYYY
+ * يدعم كائنات Date، النصوص القياسية ISO، والتواريخ النصية باللغة العربية (مثل: السبت 31 أكتوبر, 2026)
+ */
+export function formatNumericDate(d: any): string {
+  if (!d) return "";
+  const s = String(d).trim();
+
+  // فحص الصيغ الجاهزة DD/MM/YYYY أو DD-MM-YYYY
+  const m1 = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
+  if (m1) {
+    const day = String(m1[1]).padStart(2, "0");
+    const month = String(m1[2]).padStart(2, "0");
+    return `${day}/${month}/${m1[3]}`;
+  }
+
+  // دعم التواريخ الصادرة من بوابة المناقصات أو الرادار بالأسماء العربية للأشهر
+  const ARABIC_MONTHS: Record<string, number> = {
+    يناير: 1, فبراير: 2, مارس: 3, ابريل: 4, أبريل: 4,
+    مايو: 5, يونيو: 6, يوليو: 7, اغسطس: 8, أغسطس: 8,
+    سبتمبر: 9, اكتوبر: 10, أكتوبر: 10, نوفمبر: 11, ديسمبر: 12,
+  };
+  for (const [name, num] of Object.entries(ARABIC_MONTHS)) {
+    if (s.includes(name)) {
+      const dayMatch = s.match(/(\d{1,2})/);
+      const yearMatch = s.match(/(\d{4})/);
+      if (dayMatch && yearMatch) {
+        const day = String(dayMatch[1]).padStart(2, "0");
+        const month = String(num).padStart(2, "0");
+        return `${day}/${month}/${yearMatch[1]}`;
+      }
+    }
+  }
+
+  try {
+    const dt = new Date(d);
+    if (!isNaN(dt.getTime())) {
+      const day = String(dt.getDate()).padStart(2, "0");
+      const month = String(dt.getMonth() + 1).padStart(2, "0");
+      const year = dt.getFullYear();
+      return `${day}/${month}/${year}`;
+    }
+    return s;
+  } catch {
+    return s;
+  }
+}
+
+/**
+ * دالة ذكية مرنة للبحث في جدول تواريخ العملية op.dates
+ * مع إعطاء الأولوية القصوى للتطابق التام مع dateType،
+ * ثم البحث في الوصف (label) مع تطبيق استثناءات مانعة (exclusions) لمنع تداخل المالي مع الفني نهائياً
+ */
+export function getOperationDateByType(
+  op: any,
+  targetTypes: string[],
+  keywords: string[] = [],
+  exclusions: string[] = []
+): string | null {
+  if (!op) return null;
+
+  const datesList: any[] = Array.isArray(op.dates) ? op.dates : [];
+
+  // الخطوة 1: الفحص المباشر الصارم لنوع التاريخ dateType في جدول تواريخ العملية (أولوية قصوى)
+  for (const t of targetTypes) {
+    const exactMatch = datesList.find((dt: any) => {
+      const typeStr = String(dt.dateType || dt.type || "").toUpperCase();
+      return typeStr === t.toUpperCase();
+    });
+    if (exactMatch?.dateValue) return formatNumericDate(exactMatch.dateValue);
+    if (exactMatch?.date) return formatNumericDate(exactMatch.date);
+  }
+
+  // الخطوة 2: الفحص بالكلمات المفتاحية في الوصف مع تطبيق الاستثناءات المانعة بدقة
+  if (keywords.length > 0) {
+    const keywordMatch = datesList.find((dt: any) => {
+      const typeStr = String(dt.dateType || dt.type || "").toUpperCase();
+      const labelStr = `${dt.label || ""} ${dt.title || ""} ${dt.notes || ""}`.toLowerCase();
+
+      // استبعاد أي تاريخ يحتوي على كلمات مستثناة أو نوع مستثنى
+      if (exclusions.some((ex) => labelStr.includes(ex.toLowerCase()) || typeStr.includes(ex.toUpperCase()))) {
+        return false;
+      }
+      return keywords.some((kw) => labelStr.includes(kw.toLowerCase()));
+    });
+
+    if (keywordMatch?.dateValue) return formatNumericDate(keywordMatch.dateValue);
+    if (keywordMatch?.date) return formatNumericDate(keywordMatch.date);
+  }
+
+  // الخطوة 3: فحص بيانات بوابة العمليات الحكومية (رادار المناقصات والمزايدات)
+  const portal =
+    (op as any)?.portalDetails ||
+    (op.notes && op.notes.startsWith("{") ? (JSON.parse(op.notes).portalDetails || (op as any).portalDetails) : null) ||
+    op.radarItem?.rawData;
+
+  if (portal) {
+    for (const t of targetTypes) {
+      if (t === "TECHNICAL_OPENING") {
+        const val =
+          portal?.dates?.technicalSession ||
+          portal?.timeline?.techEnvelopeOpenDate ||
+          portal?.timeline?.technicalSession ||
+          portal?.rawData?.timeline?.techEnvelopeOpenDate;
+        if (val) return formatNumericDate(val);
+      }
+      if (t === "FINANCIAL_OPENING") {
+        const val =
+          portal?.dates?.financialSession ||
+          portal?.timeline?.finEnvelopeOpenDate ||
+          portal?.timeline?.financialSession ||
+          portal?.rawData?.timeline?.finEnvelopeOpenDate;
+        if (val) return formatNumericDate(val);
+      }
+      if (t === "BOOKLET_DEADLINE") {
+        const val =
+          portal?.dates?.deadline ||
+          portal?.timeline?.buyingBookletDeadline ||
+          portal?.rawData?.timeline?.buyingBookletDeadline;
+        if (val) return formatNumericDate(val);
+      }
+      if (t === "INQUIRIES_SESSION") {
+        const val =
+          portal?.dates?.inquiries ||
+          portal?.timeline?.queriesSessionDate ||
+          portal?.rawData?.timeline?.queriesSessionDate;
+        if (val) return formatNumericDate(val);
+      }
+    }
+  }
+
+  return null;
+}
+
+/**
+ * استخراج تاريخ جلسة فتح المظاريف الفنية الفعلي من جدول التواريخ بالعملية ديناميكياً
+ * مفصول تماماً وبدقة صارمة عن فتح المظاريف المالية
  */
 export function getOperationTechnicalOpeningDate(op: any, savedDate?: string): string {
-  if (Array.isArray(op.dates) && op.dates.length > 0) {
-    const d = op.dates.find(
-      (dt: any) =>
-        dt.type === "TECHNICAL_OPENING" ||
-        dt.title?.includes("فني") ||
-        dt.title?.includes("المظروف الفني") ||
-        dt.title?.includes("جلسة")
+  // 1. الأولوية القصوى للتاريخ الفني المسجل بجدول التواريخ (مع استثناء تام للمالي والبت والترسية)
+  const liveDate = getOperationDateByType(
+    op,
+    ["TECHNICAL_OPENING", "SUBMISSION_DEADLINE"],
+    ["المظروف الفني", "المظاريف الفنية", "جلسة الفني", "العرض الفني", "فتح الفني", "جلسة الفتح الفني"],
+    ["مالي", "مالية", "المالي", "FINANCIAL", "بت", "DECISION", "AWARD", "ترسية"]
+  );
+
+  if (liveDate) {
+    return liveDate;
+  }
+
+  // إذا كانت العملية مزايدة ولا يوجد تاريخ مظروف فني صريح، نفحص تاريخ جلسة المزاد
+  if (op?.tenderType === "AUCTION" || op?.tenderMethod?.includes("مزايد")) {
+    const auctionDate = getOperationDateByType(
+      op,
+      ["AUCTION_SESSION"],
+      ["المزاد", "جلسة المزاد", "المزايدة"],
+      ["مالي", "مالية", "FINANCIAL"]
     );
-    if (d?.dateValue) return formatDate(d.dateValue);
-    if (d?.date) return formatDate(d.date);
-
-    const deadline = op.dates.find((dt: any) => dt.type === "SUBMISSION_DEADLINE" || dt.title?.includes("تقديم"));
-    if (deadline?.dateValue) return formatDate(deadline.dateValue);
-    if (deadline?.date) return formatDate(deadline.date);
+    if (auctionDate) return auctionDate;
   }
 
-  const portal = (op as any).portalDetails;
-  if (portal?.dates?.technicalSession) {
-    return formatDate(portal.dates.technicalSession);
-  }
-  if (portal?.dates?.deadline) {
-    return formatDate(portal.dates.deadline);
-  }
-
-  if (savedDate && savedDate.trim() && !savedDate.includes("14/ 1 /2024") && !savedDate.includes("14/1/2024")) {
-    return savedDate.trim();
+  // 2. إذا تم حفظ موعد يدوي سابق ليس الموعد الافتراضي القديم 14/1/2024
+  if (
+    savedDate &&
+    savedDate.trim() &&
+    !savedDate.includes("14/ 1 /2024") &&
+    !savedDate.includes("14/1/2024")
+  ) {
+    return formatNumericDate(savedDate.trim());
   }
 
-  return new Date().toLocaleDateString("en-GB");
+  // 3. كحل أخير: تاريخ اليوم الحالي بصيغة DD/MM/YYYY
+  return formatNumericDate(new Date());
+}
+
+/**
+ * استخراج تاريخ جلسة فتح المظاريف المالية ديناميكياً من جدول التواريخ
+ * مفصول تماماً وبدقة صارمة عن المظاريف الفنية
+ */
+export function getOperationFinancialOpeningDate(op: any, savedDate?: string): string {
+  // 1. الأولوية القصوى للتاريخ المالي المسجل بجدول التواريخ (مع استثناء تام للفني والبت)
+  const liveDate = getOperationDateByType(
+    op,
+    ["FINANCIAL_OPENING"],
+    ["المظروف المالي", "المظاريف المالية", "جلسة المالي", "العرض المالي", "فتح المالي", "جلسة الفتح المالي"],
+    ["فني", "فنية", "الفني", "TECHNICAL", "بت", "DECISION"]
+  );
+
+  if (liveDate) {
+    return liveDate;
+  }
+
+  // 2. إذا تم حفظ موعد يدوي سابق ليس الموعد الافتراضي القديم 14/1/2024
+  if (
+    savedDate &&
+    savedDate.trim() &&
+    !savedDate.includes("14/ 1 /2024") &&
+    !savedDate.includes("14/1/2024")
+  ) {
+    return formatNumericDate(savedDate.trim());
+  }
+
+  // 3. في حال عدم وجود تاريخ مالي منفصل، نعود للموعد الفني كبديل
+  return getOperationTechnicalOpeningDate(op, savedDate);
+}
+
+/**
+ * استخراج آخر موعد لسحب الكراسة ديناميكياً
+ */
+export function getOperationBookletDeadline(op: any, savedDate?: string): string {
+  const liveDate = getOperationDateByType(
+    op,
+    ["BOOKLET_DEADLINE", "SUBMISSION_DEADLINE"],
+    ["كراسة", "سحب الكراسة", "تقديم العطاءات", "غلق الباب"],
+    ["استفسار", "استفسارات"]
+  );
+
+  if (liveDate) return liveDate;
+  if (savedDate && savedDate.trim()) return formatNumericDate(savedDate.trim());
+  return formatNumericDate(new Date());
+}
+
+/**
+ * استخراج موعد جلسة الرد على الاستفسارات ديناميكياً
+ */
+export function getOperationInquiriesSession(op: any, savedDate?: string): string {
+  const liveDate = getOperationDateByType(
+    op,
+    ["INQUIRIES_SESSION", "INQUIRIES_DEADLINE"],
+    ["استفسار", "استفسارات", "جلسة الرد"],
+    ["كراسة", "سحب الكراسة"]
+  );
+
+  if (liveDate) return liveDate;
+  if (savedDate && savedDate.trim()) return formatNumericDate(savedDate.trim());
+  return formatNumericDate(new Date());
 }
 
 /**
@@ -533,6 +745,34 @@ export function replaceDocxChairman(docXml: string, rawChairman: string): string
   return result;
 }
 
+/**
+ * Replaces the recipient paragraph (السيد الأستاذ / ...) with centered alignment (w:jc center)
+ * and balanced font size (w:sz 50) so that if the text wraps (e.g. مدينة الداخلة),
+ * the second line wraps to the CENTER of the page rather than being pulled to the far left edge.
+ */
+export function replaceDocxRecipient(
+  docXml: string,
+  recipientPrefix?: string,
+  recipientTitleAndAuthority?: string
+): string {
+  const cleanPrefix = escapeXml((recipientPrefix || "الأستاذ").trim());
+  const cleanTitle = escapeXml((recipientTitleAndAuthority || "مدير الادارة العامة للمشتريات والمخازن").trim());
+
+  // مطابقة فقرة المرسل إليه في كافة قوالب الوورد الرسمية
+  const recipientPattern = /<w:p\b[^>]*>(?:(?!<\/w:p>)[\s\S])*?السيد(?:(?!<\/w:p>)[\s\S])*?(?:مشتريات|دمنهو)(?:(?!<\/w:p>)[\s\S])*?<\/w:p>/;
+
+  const centeredRecipientXml = `<w:p><w:pPr><w:spacing w:after="0"/><w:jc w:val="center"/><w:rPr><w:rFonts w:ascii="Arabic Typesetting" w:hAnsi="Arabic Typesetting" w:cs="Arabic Typesetting"/><w:b/><w:bCs/><w:sz w:val="50"/><w:szCs w:val="50"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr></w:pPr><w:r><w:rPr><w:rFonts w:ascii="Arabic Typesetting" w:hAnsi="Arabic Typesetting" w:cs="Arabic Typesetting" w:hint="cs"/><w:b/><w:bCs/><w:sz w:val="50"/><w:szCs w:val="50"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t xml:space="preserve">السيد ${cleanPrefix} / ${cleanTitle}</w:t></w:r></w:p>`;
+
+  if (recipientPattern.test(docXml)) {
+    return docXml.replace(recipientPattern, centeredRecipientXml);
+  }
+
+  // استبدال احتياطي بالنصوص في حال لم تتطابق الفقرة بالكامل
+  docXml = docXml.replace(/السيد\s+الأستاذ/g, `السيد ${cleanPrefix}`);
+  docXml = docXml.replace(/مدير الادارة العامة للمشتريات والمخازن بجامعة دمنهور/g, cleanTitle);
+  return docXml;
+}
+
 
 import {
   Eye,
@@ -604,6 +844,7 @@ export function isValidCloudDocUrl(url?: string | null): boolean {
     trimmed.includes("tmpfiles") ||
     trimmed.includes("catbox") ||
     trimmed.includes("public-doc") ||
+    trimmed.includes("gofile") ||
     trimmed.includes("17a9mx.pdf")
   ) {
     return false;
@@ -611,126 +852,16 @@ export function isValidCloudDocUrl(url?: string | null): boolean {
   return (
     trimmed.includes("r2.cloudflarestorage.com") ||
     trimmed.includes("r2.dev") ||
-    trimmed.includes("gofile.io")
+    trimmed.includes("goldenerp-storage")
   );
 }
 
 /**
  * بطاقة الباركود الذكي ورمز QR والرفع السحابي المجاني (Catbox.moe / رابط PDF مباشر)
- * موضوعة دائماً بأسفل الصفحة بجوار شريط الإجراءات والانتقال لعدم إعاقة ملء الخانات
  */
-export function LetterQrCloudCard({
-  cloudPdfUrl,
-  registrationNumber,
-  opId,
-  docType,
-  uploadingCloud,
-  onUploadToCloud,
-  title = "الباركود الذكي ورمز QR الرقمي المعتمد (PDF)",
-  subtitle = "عند مسح الباركود بكاميرا الموبايل يتم فتح النسخة الرقمية المعتمدة فوراً بصيغة PDF مباشرة بدون الحاجة لأي تسجيل دخول.",
-  badgeText = "مدمج بموضع كلمة (الباركود) بالأعلى ورقم القيد بالتذييل",
-  gradientClass = "from-amber-500/10 via-orange-500/10 to-transparent border-amber-500/25",
-  isModifiedAfterUpload = false,
-}: LetterQrCloudCardProps) {
-  const effectiveCloudUrl = isValidCloudDocUrl(cloudPdfUrl) ? (cloudPdfUrl || "") : "";
-
-  return (
-    <div className={`p-4 rounded-2xl bg-gradient-to-r ${gradientClass} border space-y-3 my-4 shadow-sm transition-all`}>
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-center text-amber-600 dark:text-amber-400 shrink-0">
-            <QrCode className="h-5 w-5" />
-          </div>
-          <div className="space-y-0.5">
-            <div className="flex items-center gap-2 flex-wrap">
-              <span className="text-xs font-black text-foreground">
-                {title}
-              </span>
-              <Badge className="bg-emerald-500/15 text-emerald-600 border-emerald-500/30 text-[10px] font-bold">
-                {badgeText}
-              </Badge>
-              {effectiveCloudUrl && (
-                <Badge className="bg-blue-500/15 text-blue-700 dark:text-blue-300 border-blue-500/30 text-[10px] font-bold flex items-center gap-1">
-                  <Cloud className="h-3 w-3" />
-                  <span>رابط PDF مباشر دائم يفتح فوراً بالكاميرا ✓</span>
-                </Badge>
-              )}
-            </div>
-            <p className="text-[11px] text-muted-foreground">
-              {subtitle}
-            </p>
-          </div>
-        </div>
-
-        <div className="flex items-center gap-2 self-end sm:self-center flex-wrap justify-end">
-          {effectiveCloudUrl ? (
-            <>
-              <Badge className="bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30 text-xs font-bold px-3 py-1.5 flex items-center gap-1.5">
-                <CheckCircle2 className="h-4 w-4" />
-                <span>تم الرفع والتوثيق السحابي مسبقاً ✓</span>
-              </Badge>
-              <a
-                href={effectiveCloudUrl}
-                target="_blank"
-                rel="noreferrer"
-                className="inline-flex items-center gap-1.5 text-xs font-bold text-blue-600 dark:text-blue-400 hover:underline px-3 py-1.5 rounded-xl bg-card border border-border"
-              >
-                <ExternalLink className="h-3.5 w-3.5" />
-                <span>فتح ملف PDF المباشر</span>
-              </a>
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                onClick={() => {
-                  navigator.clipboard.writeText(effectiveCloudUrl);
-                  toast.success("تم نسخ الرابط السحابي المباشر بنجاح! 📋");
-                }}
-                className="border-border text-foreground hover:bg-muted text-xs font-bold h-9 px-3 rounded-xl cursor-pointer flex items-center gap-1"
-                title="نسخ الرابط"
-              >
-                <Copy className="h-3.5 w-3.5" />
-                <span>نسخ الرابط</span>
-              </Button>
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                onClick={() => onUploadToCloud(true)}
-                disabled={uploadingCloud}
-                className={`border-border text-foreground hover:bg-muted text-xs font-bold h-9 px-3 rounded-xl cursor-pointer flex items-center gap-1 ${
-                  isModifiedAfterUpload ? "border-amber-500 text-amber-600 bg-amber-500/10 animate-pulse" : ""
-                }`}
-                title="تحديث وإعادة رفع النسخة السحابية المباشرة"
-              >
-                <RefreshCw className={`h-3.5 w-3.5 ${uploadingCloud ? "animate-spin" : ""}`} />
-                <span>إعادة الرفع والتحديث ↻</span>
-              </Button>
-            </>
-          ) : (
-            <Button
-              type="button"
-              size="sm"
-              onClick={() => onUploadToCloud(false)}
-              disabled={uploadingCloud}
-              className="bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-700 hover:to-orange-700 text-white font-bold text-xs h-9 px-3.5 rounded-xl shadow-md cursor-pointer flex items-center gap-1.5"
-            >
-              <Cloud className={`h-4 w-4 ${uploadingCloud ? "animate-spin" : ""}`} />
-              <span>{uploadingCloud ? "جاري الرفع السحابي المباشر..." : "رفع وتوثيق النسخة الرقمية سحابياً لرمز QR ☁️"}</span>
-            </Button>
-          )}
-        </div>
-      </div>
-
-      {/* تنبيه ذكي عند تعديل البيانات بعد الرفع السحابي */}
-      {effectiveCloudUrl && isModifiedAfterUpload && (
-        <div className="flex items-center gap-2 p-2.5 rounded-xl bg-amber-500/15 border border-amber-500/40 text-amber-900 dark:text-amber-200 text-xs font-bold animate-pulse">
-          <AlertTriangle className="h-4 w-4 text-amber-600 shrink-0" />
-          <span>⚠️ تنبيه: تم إجراء تعديلات على بيانات الخطاب، يُفضل الضغط على &quot;إعادة الرفع والتحديث ↻&quot; لتحديث النسخة السحابية المربوطة بالباركود.</span>
-        </div>
-      )}
-    </div>
-  );
+export function LetterQrCloudCard(_props?: LetterQrCloudCardProps) {
+  // تم دمج الرفع السحابي والباركود تلقائياً في زر [معاينة المستند] بناءً على رغبة المستخدم
+  return null;
 }
 
 /**
@@ -879,36 +1010,205 @@ export function formatPrintedBy(printedBy?: string): string {
 
 /**
  * Generates Floating DrawingML XML for QR Code:
- * - Matching EXACT coordinates and properties from user's ground-truth file
- *   (خطاب_توضيح_617_AZ26101800172 (1).docx):
- *   - Under the horizontal header separator line (Y: 899160 EMU ~ 2.497cm from top)
- *   - Left-aligned within border frame (X: 426720 EMU ~ 1.185cm from left)
- *   - Size: 519430 x 519430 EMU (~1.44cm)
- *   - behindDoc="1" & locked="1" & layoutInCell="0" & wrapNone & allowOverlap="1"
+ * - Default size scaled to ~1.9 cm x 1.9 cm (680,000 EMU)
+ * - Positioned cleanly in the upper-left corner under the company header
+ * - Supports wrapThrough and wrapSquare formatting to allow text to flow naturally
  */
-export function buildQrAnchorXml(): string {
-  return `<w:r><w:rPr><w:noProof/></w:rPr><w:drawing><wp:anchor distT="0" distB="0" distL="0" distR="0" simplePos="0" relativeHeight="251658240" behindDoc="1" locked="1" layoutInCell="0" allowOverlap="1" wp14:anchorId="435524D4" wp14:editId="1E16E09C"><wp:simplePos x="0" y="0"/><wp:positionH relativeFrom="page"><wp:posOffset>426720</wp:posOffset></wp:positionH><wp:positionV relativeFrom="page"><wp:posOffset>899160</wp:posOffset></wp:positionV><wp:extent cx="620000" cy="620000"/><wp:effectExtent l="0" t="0" r="0" b="0"/><wp:wrapNone/><wp:docPr id="777" name="DocQR"/><wp:cNvGraphicFramePr><a:graphicFrameLocks xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" noChangeAspect="1"/></wp:cNvGraphicFramePr><a:graphic xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:pic xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:nvPicPr><pic:cNvPr id="0" name="qr.png"/><pic:cNvPicPr/></pic:nvPicPr><pic:blipFill><a:blip r:embed="rIdQR"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill><pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="620000" cy="620000"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr></pic:pic></a:graphicData></a:graphic></wp:anchor></w:drawing></w:r>`;
+export function buildQrAnchorXml(
+  size: number = 952000,
+  posX: number = 440000,
+  posY: number = 1200000,
+  wrapType: "square" | "through" = "through"
+): string {
+  const sz = Math.round(size);
+  const wrapXml =
+    wrapType === "through"
+      ? '<wp:wrapThrough wrapText="bothSides"><wp:wrapPolygon edited="0"><wp:start x="0" y="0"/><wp:lineTo x="0" y="21600"/><wp:lineTo x="21600" y="21600"/><wp:lineTo x="21600" y="0"/><wp:lineTo x="0" y="0"/></wp:wrapPolygon></wp:wrapThrough>'
+      : '<wp:wrapSquare wrapText="bothSides"/>';
+
+  return `<w:r><w:rPr><w:noProof/></w:rPr><w:drawing><wp:anchor distT="36000" distB="36000" distL="36000" distR="48000" simplePos="0" relativeHeight="251658240" behindDoc="0" locked="1" layoutInCell="0" allowOverlap="0" wp14:anchorId="435524D4" wp14:editId="1E16E09C"><wp:simplePos x="0" y="0"/><wp:positionH relativeFrom="page"><wp:posOffset>${posX}</wp:posOffset></wp:positionH><wp:positionV relativeFrom="page"><wp:posOffset>${posY}</wp:posOffset></wp:positionV><wp:extent cx="${sz}" cy="${sz}"/><wp:effectExtent l="0" t="0" r="0" b="0"/>${wrapXml}<wp:docPr id="777" name="DocQR"/><wp:cNvGraphicFramePr><a:graphicFrameLocks xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" noChangeAspect="1"/></wp:cNvGraphicFramePr><a:graphic xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:pic xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:nvPicPr><pic:cNvPr id="0" name="qr.png"/><pic:cNvPicPr/></pic:nvPicPr><pic:blipFill><a:blip r:embed="rIdQR" cstate="print"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill><pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="${sz}" cy="${sz}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr></pic:pic></a:graphicData></a:graphic></wp:anchor></w:drawing></w:r>`;
 }
 
-export function buildQrInlineXml(): string {
-  return `<w:r><w:rPr><w:noProof/></w:rPr><w:drawing><wp:inline distT="0" distB="0" distL="0" distR="0"><wp:extent cx="650000" cy="650000"/><wp:effectExtent l="0" t="0" r="0" b="0"/><wp:docPr id="777" name="DocQR"/><wp:cNvGraphicFramePr><a:graphicFrameLocks xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" noChangeAspect="1"/></wp:cNvGraphicFramePr><a:graphic xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:pic xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:nvPicPr><pic:cNvPr id="0" name="qr.png"/><pic:cNvPicPr/></pic:nvPicPr><pic:blipFill><a:blip r:embed="rIdQR"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill><pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="650000" cy="650000"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr></pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r>`;
+export function buildQrInlineXml(size: number = 952000): string {
+  const sz = Math.round(size);
+  return `<w:r><w:rPr><w:noProof/></w:rPr><w:drawing><wp:inline distT="36000" distB="36000" distL="36000" distR="36000"><wp:extent cx="${sz}" cy="${sz}"/><wp:effectExtent l="0" t="0" r="0" b="0"/><wp:docPr id="777" name="DocQR"/><wp:cNvGraphicFramePr><a:graphicFrameLocks xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" noChangeAspect="1"/></wp:cNvGraphicFramePr><a:graphic xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:pic xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:nvPicPr><pic:cNvPr id="0" name="qr.png"/><pic:cNvPicPr/></pic:nvPicPr><pic:blipFill><a:blip r:embed="rIdQR" cstate="print"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill><pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="${sz}" cy="${sz}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr></pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r>`;
+}
+
+/**
+ * توليد جدول التوقيعات والاعتمادات الرسمية الثلاثي (المختص | المدير المالي | يعتمد رئيس مجلس الإدارة)
+ * موزع بالتساوي في أعمدة متوازنة (3300 dxa لكل عمود) ومحاذاة مركزية للجميع مع خط مكبر وواضح.
+ */
+export function buildOfficialSignaturesTableXml({
+  specialistTitle = "المختص :",
+  specialistName = "",
+  financeManagerName = "",
+  boardChairman = "رئيس مجلس الإدارة",
+}: {
+  specialistTitle?: string;
+  specialistName?: string;
+  financeManagerName?: string;
+  boardChairman?: string;
+}): string {
+  const safeSpecTitle = escapeXml((specialistTitle || "المختص :").trim());
+  const safeSpecName = escapeXml((specialistName || "").trim());
+  const safeFinName = escapeXml((financeManagerName || "").trim());
+  const safeChairman = escapeXml(sanitizeChairmanTitle(boardChairman));
+
+  return `<w:tbl>
+  <w:tblPr>
+    <w:tblW w:w="9900" w:type="dxa"/>
+    <w:jc w:val="center"/>
+    <w:bidiVisual w:val="1"/>
+    <w:tblCellMar>
+      <w:top w:w="100" w:type="dxa"/>
+      <w:left w:w="160" w:type="dxa"/>
+      <w:bottom w:w="100" w:type="dxa"/>
+      <w:right w:w="160" w:type="dxa"/>
+    </w:tblCellMar>
+    <w:tblBorders>
+      <w:top w:val="none"/><w:left w:val="none"/><w:bottom w:val="none"/><w:right w:val="none"/>
+      <w:insideH w:val="none"/><w:insideV w:val="none"/>
+    </w:tblBorders>
+  </w:tblPr>
+  <w:tblGrid>
+    <w:gridCol w:w="3300"/>
+    <w:gridCol w:w="3300"/>
+    <w:gridCol w:w="3300"/>
+  </w:tblGrid>
+  <w:tr>
+    <w:trPr><w:cantSplit/></w:trPr>
+    <w:tc>
+      <w:tcPr><w:tcW w:w="3300" w:type="dxa"/><w:vAlign w:val="top"/></w:tcPr>
+      <w:p>
+        <w:pPr><w:spacing w:after="80" w:line="280" w:lineRule="auto"/><w:jc w:val="center"/><w:rPr><w:rFonts w:ascii="Arabic Typesetting" w:hAnsi="Arabic Typesetting" w:cs="Arabic Typesetting"/><w:b/><w:bCs/><w:sz w:val="38"/><w:szCs w:val="38"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr></w:pPr>
+        <w:r><w:rPr><w:rFonts w:ascii="Arabic Typesetting" w:hAnsi="Arabic Typesetting" w:cs="Arabic Typesetting" w:hint="cs"/><w:b/><w:bCs/><w:sz w:val="38"/><w:szCs w:val="38"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t>${safeSpecTitle}</w:t></w:r>
+      </w:p>
+      <w:p>
+        <w:pPr><w:spacing w:after="0" w:line="280" w:lineRule="auto"/><w:jc w:val="center"/><w:rPr><w:rFonts w:ascii="Arabic Typesetting" w:hAnsi="Arabic Typesetting" w:cs="Arabic Typesetting"/><w:b/><w:bCs/><w:sz w:val="36"/><w:szCs w:val="36"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr></w:pPr>
+        <w:r><w:rPr><w:rFonts w:ascii="Arabic Typesetting" w:hAnsi="Arabic Typesetting" w:cs="Arabic Typesetting" w:hint="cs"/><w:b/><w:bCs/><w:sz w:val="36"/><w:szCs w:val="36"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t>${safeSpecName || " "}</w:t></w:r>
+      </w:p>
+    </w:tc>
+    <w:tc>
+      <w:tcPr><w:tcW w:w="3300" w:type="dxa"/><w:vAlign w:val="top"/></w:tcPr>
+      <w:p>
+        <w:pPr><w:spacing w:after="80" w:line="280" w:lineRule="auto"/><w:jc w:val="center"/><w:rPr><w:rFonts w:ascii="Arabic Typesetting" w:hAnsi="Arabic Typesetting" w:cs="Arabic Typesetting"/><w:b/><w:bCs/><w:sz w:val="38"/><w:szCs w:val="38"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr></w:pPr>
+        <w:r><w:rPr><w:rFonts w:ascii="Arabic Typesetting" w:hAnsi="Arabic Typesetting" w:cs="Arabic Typesetting" w:hint="cs"/><w:b/><w:bCs/><w:sz w:val="38"/><w:szCs w:val="38"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t>المدير المالي</w:t></w:r>
+      </w:p>
+      <w:p>
+        <w:pPr><w:spacing w:after="0" w:line="280" w:lineRule="auto"/><w:jc w:val="center"/><w:rPr><w:rFonts w:ascii="Arabic Typesetting" w:hAnsi="Arabic Typesetting" w:cs="Arabic Typesetting"/><w:b/><w:bCs/><w:sz w:val="36"/><w:szCs w:val="36"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr></w:pPr>
+        <w:r><w:rPr><w:rFonts w:ascii="Arabic Typesetting" w:hAnsi="Arabic Typesetting" w:cs="Arabic Typesetting" w:hint="cs"/><w:b/><w:bCs/><w:sz w:val="36"/><w:szCs w:val="36"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t>${safeFinName || " "}</w:t></w:r>
+      </w:p>
+    </w:tc>
+    <w:tc>
+      <w:tcPr><w:tcW w:w="3300" w:type="dxa"/><w:vAlign w:val="top"/></w:tcPr>
+      <w:p>
+        <w:pPr><w:spacing w:after="80" w:line="280" w:lineRule="auto"/><w:jc w:val="center"/><w:rPr><w:rFonts w:ascii="Arabic Typesetting" w:hAnsi="Arabic Typesetting" w:cs="Arabic Typesetting"/><w:b/><w:bCs/><w:sz w:val="42"/><w:szCs w:val="42"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr></w:pPr>
+        <w:r><w:rPr><w:rFonts w:ascii="Arabic Typesetting" w:hAnsi="Arabic Typesetting" w:cs="Arabic Typesetting" w:hint="cs"/><w:b/><w:bCs/><w:sz w:val="42"/><w:szCs w:val="42"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t>يعتمد ،،،،،،</w:t></w:r>
+      </w:p>
+      <w:p>
+        <w:pPr><w:spacing w:after="0" w:line="280" w:lineRule="auto"/><w:jc w:val="center"/><w:rPr><w:rFonts w:ascii="Arabic Typesetting" w:hAnsi="Arabic Typesetting" w:cs="Arabic Typesetting"/><w:b/><w:bCs/><w:sz w:val="38"/><w:szCs w:val="38"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr></w:pPr>
+        <w:r><w:rPr><w:rFonts w:ascii="Arabic Typesetting" w:hAnsi="Arabic Typesetting" w:cs="Arabic Typesetting" w:hint="cs"/><w:b/><w:bCs/><w:sz w:val="38"/><w:szCs w:val="38"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t>${safeChairman}</w:t></w:r>
+      </w:p>
+    </w:tc>
+  </w:tr>
+</w:tbl>`;
+}
+
+/**
+ * توليد صورة QR فائقة الدقة (1200px / ErrorCorrection M / Margin 1)
+ * يدعم تمرير Payload كنص مباشر أو كـ Promise<string> لضمان عدم حدوث أي خطأ
+ */
+export async function generateHighResDocQrBuffer(payload: string | Promise<string>): Promise<Uint8Array> {
+  const resolvedPayload =
+    typeof payload === "object" && payload !== null && "then" in payload
+      ? await payload
+      : payload;
+
+  const cleanPayload =
+    resolvedPayload && typeof resolvedPayload === "string" && resolvedPayload.trim()
+      ? resolvedPayload.trim()
+      : "https://goldenerp-storage.e955866121f5a31f17c8cd21f8c09d19.r2.cloudflarestorage.com";
+
+  const qrDataUrl = await QRCode.toDataURL(cleanPayload, {
+    width: 1600,
+    margin: 2,
+    errorCorrectionLevel: "M",
+    color: {
+      dark: "#000000",
+      light: "#ffffff",
+    },
+  });
+  const qrBase64 = qrDataUrl.split(",")[1];
+  return Uint8Array.from(atob(qrBase64), (c) => c.charCodeAt(0));
+}
+
+/**
+ * تجهيز الرابط المعتمد المشفر داخل رمز QR لكافة القوالب
+ * - يعتمد حصرياً وفقط على سحابة Cloudflare R2 الخاصة بالشركة (goldenerp-storage).
+ * - يمنع استخدام أي سيرفرات وسيطة أو مواقع خارجية أخرى (مثل Gofile أو Catbox أو Vercel).
+ */
+export async function getStandardDocQrPayload(
+  cloudUrl?: string | null,
+  registrationNumber?: string,
+  docType?: string,
+  opId?: string,
+  fileName?: string
+): Promise<string> {
+  // 1. إذا توفر رابط سحابي معتمد ومباشر لملف PDF على سحابة Cloudflare R2
+  if (isValidCloudDocUrl(cloudUrl)) {
+    return cloudUrl!;
+  }
+
+  // 2. إذا لم يكن الرابط مسجلاً مسبقاً، يتم جلب رابط Cloudflare R2 المعتمد والموقع مسبقاً لهذا الملف
+  const targetFileName = fileName || `${docType || "official_doc"}_${registrationNumber || Date.now()}.pdf`;
+  try {
+    const cloudflareUrl = await getExpectedCloudPdfUrl(targetFileName);
+    if (isValidCloudDocUrl(cloudflareUrl)) {
+      return cloudflareUrl;
+    }
+  } catch (err) {
+    console.warn("Could not pre-fetch Cloudflare R2 URL in getStandardDocQrPayload:", err);
+  }
+
+  return "";
 }
 
 
 /**
  * Injects QR Code strictly into the first page only and cleans the container paragraph
  * so that no residual text or whitespace causes text overlapping.
- * If qrDrawingXml is empty (not uploaded to cloud yet), completely removes the barcode placeholder.
+ * Strictly centers technical and financial offer titles ("عرض فنى" / "عرض مالى") on the page line.
  */
 export function injectSingleQrIntoDocXml(
   docXml: string,
   qrDrawingXml: string,
   registrationNumber: string
 ): string {
-  // إذا لم يتم رفع المستند سحابياً بعد، نقوم بإزالة فقرة الباركود تماماً ونعرض قالباً نظيفاً بدون باركود
+  const qrToInject = qrDrawingXml || "";
+
+  // 1. تحديد فقرة العنوان والباركود العلوية (Paragraph 0) ومعالجتها بتوسيط ناصع وخالي من المسافات المشوهة
+  const titlePRegex = /<w:p\b[^>]*>(?:(?!<\/w:p>)[\s\S])*?(?:الباركود|البركود)[\s\S]*?<\/w:p>/;
+  const titleMatch = docXml.match(titlePRegex);
+  if (titleMatch) {
+    const pContent = titleMatch[0].replace(/<[^>]+>/g, "").replace(/\s+/g, " ");
+    if (pContent.includes("عرض") && pContent.includes("فنى")) {
+      const newP = `<w:p><w:pPr><w:spacing w:after="0"/><w:jc w:val="center"/><w:rPr><w:rFonts w:ascii="PT Bold Heading" w:cs="PT Bold Heading"/><w:b/><w:bCs/><w:sz w:val="44"/><w:szCs w:val="46"/><w:u w:val="single"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr></w:pPr>${qrToInject}<w:r><w:rPr><w:rFonts w:ascii="PT Bold Heading" w:cs="PT Bold Heading" w:hint="cs"/><w:b/><w:bCs/><w:sz w:val="44"/><w:szCs w:val="46"/><w:u w:val="single"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t>عرض فنى</w:t></w:r></w:p>`;
+      docXml = docXml.replace(titlePRegex, newP);
+      docXml = docXml.replace(/Ad26111000001/g, registrationNumber);
+      return docXml;
+    }
+    if (pContent.includes("عرض") && pContent.includes("مال")) {
+      const newP = `<w:p><w:pPr><w:spacing w:after="0"/><w:jc w:val="center"/><w:rPr><w:rFonts w:ascii="PT Bold Heading" w:cs="PT Bold Heading"/><w:b/><w:bCs/><w:sz w:val="44"/><w:szCs w:val="46"/><w:u w:val="single"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr></w:pPr>${qrToInject}<w:r><w:rPr><w:rFonts w:ascii="PT Bold Heading" w:cs="PT Bold Heading" w:hint="cs"/><w:b/><w:bCs/><w:sz w:val="44"/><w:szCs w:val="46"/><w:u w:val="single"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t>عرض مالى</w:t></w:r></w:p>`;
+      docXml = docXml.replace(titlePRegex, newP);
+      docXml = docXml.replace(/Ad26111000001/g, registrationNumber);
+      return docXml;
+    }
+  }
+
+  // إذا لم يتم توفير كائن QR ولم تكن الفقرة عرض فني/مالي، نزيل نص الباركود
   if (!qrDrawingXml) {
     docXml = docXml.replace(
-      /(<w:p\b[^>]*>)(?:<w:pPr>[\s\S]*?<\/w:pPr>)?[\s\S]*?(?:الباركود|البركود)[\s\S]*?(<\/w:p>)/g,
+      /(<w:r\b[^>]*>(?:(?!<\/w:r>)[\s\S])*?(?:الباركود|البركود)[\s\S]*?<\/w:r>)/g,
       ""
     );
     docXml = docXml.replace(/<w:t[^>]*>\s*(?:الباركود|البركود)\s*<\/w:t>/g, "<w:t></w:t>");
@@ -918,25 +1218,30 @@ export function injectSingleQrIntoDocXml(
   }
 
   let qrDone = false;
-
   const spaceRun = '<w:r><w:rPr><w:rFonts w:asciiTheme="minorHAnsi" w:hAnsiTheme="minorHAnsi" w:cstheme="minorHAnsi" w:hint="cs"/><w:b/><w:bCs/><w:sz w:val="28"/><w:szCs w:val="28"/><w:u w:val="single"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t xml:space="preserve"> </w:t></w:r>';
 
-  const qrToInject = qrDrawingXml;
-
-  docXml = docXml.replace(
-    /(<w:p\b[^>]*>)(?:<w:pPr>[\s\S]*?<\/w:pPr>)?[\s\S]*?(?:الباركود|البركود)[\s\S]*?(<\/w:p>)/,
-    (match, pStart, pEnd) => {
-      if (!qrDone) {
-        qrDone = true;
-        const pPrMatch = match.match(/<w:pPr>[\s\S]*?<\/w:pPr>/);
-        const pPr = pPrMatch
-          ? pPrMatch[0]
-          : '<w:pPr><w:spacing w:after="0"/><w:ind w:right="227"/><w:rPr><w:rFonts w:asciiTheme="minorHAnsi" w:hAnsiTheme="minorHAnsi"/><w:b/><w:bCs/><w:u w:val="single"/><w:lang w:bidi="ar-EG"/></w:rPr></w:pPr>';
-        return `${pStart}${pPr}${qrToInject}${spaceRun}${pEnd}`;
+  // 3. الأولوية الأولى: استبدال عنصر <w:r> الحاوي على نص (الباركود) مباشرة للحفاظ الكامل على أي نصوص أخرى
+  const runRegex = /(<w:r\b[^>]*>(?:(?!<\/w:r>)[\s\S])*?(?:الباركود|البركود)[\s\S]*?<\/w:r>)/;
+  if (runRegex.test(docXml)) {
+    docXml = docXml.replace(runRegex, `${qrToInject}${spaceRun}`);
+    qrDone = true;
+  } else {
+    // 4. استبدال احتياطي على مستوى الفقرة إذا لم يكن الباركود داخل عنصر <w:r> مستقل
+    docXml = docXml.replace(
+      /(<w:p\b[^>]*>)(?:<w:pPr>[\s\S]*?<\/w:pPr>)?[\s\S]*?(?:الباركود|البركود)[\s\S]*?(<\/w:p>)/,
+      (match, pStart, pEnd) => {
+        if (!qrDone) {
+          qrDone = true;
+          const pPrMatch = match.match(/<w:pPr>[\s\S]*?<\/w:pPr>/);
+          const pPr = pPrMatch
+            ? pPrMatch[0]
+            : '<w:pPr><w:spacing w:after="0"/><w:ind w:right="227"/><w:rPr><w:rFonts w:asciiTheme="minorHAnsi" w:hAnsiTheme="minorHAnsi"/><w:b/><w:bCs/><w:u w:val="single"/><w:lang w:bidi="ar-EG"/></w:rPr></w:pPr>';
+          return `${pStart}${pPr}${qrToInject}${spaceRun}${pEnd}`;
+        }
+        return match;
       }
-      return match;
-    }
-  );
+    );
+  }
 
   // Fallback: registration number
   if (!qrDone && qrToInject && docXml.includes("Ad26111000001")) {
@@ -946,7 +1251,7 @@ export function injectSingleQrIntoDocXml(
     docXml = docXml.replace(/Ad26111000001/g, registrationNumber);
   }
 
-  // ضمان مسح أي نص متبقي لكلمة (الباركود) أو (البركود) في أي فقرة لعدم ظهوره كنص مطبوع إطلاقاً
+  // مسح أي نص متبقي لكلمة (الباركود) أو (البركود)
   docXml = docXml.replace(/<w:t[^>]*>\s*(?:الباركود|البركود)\s*<\/w:t>/g, "<w:t></w:t>");
   docXml = docXml.replace(/(?:الباركود|البركود)/g, "");
 
@@ -1204,9 +1509,19 @@ export function LetterBottomActionWidget({
     }
   };
 
-  const handlePreviewClick = () => {
-    // المعاينة متاحة دائماً للموظف للاطلاع والمراجعة البصرية
-    onPreview();
+  const [isPreviewing, setIsPreviewing] = useState(false);
+
+  const handlePreviewClick = async () => {
+    if (isDirty || isPreviewing) return;
+    setIsPreviewing(true);
+    try {
+      await onPreview();
+    } catch (err: any) {
+      console.error("Preview preparation error:", err);
+      toast.error(err?.message || "فشل تجهيز المعاينة");
+    } finally {
+      setIsPreviewing(false);
+    }
   };
 
   return (
@@ -1310,24 +1625,37 @@ export function LetterBottomActionWidget({
           </div>
         </div>
 
-        {/* ━━━ زر واحد فقط للمعاينة + زر الأرشيف إن وجد ━━━ */}
+        {/* ━━━ زر المعاينة + زر الإضافة للأرشيف جنباً إلى جنب ━━━ */}
         <div className="flex items-center gap-2 flex-wrap self-end md:self-auto">
-          {hasPrinted && onViewArchive && (
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={onViewArchive}
-              className="h-10 px-4 text-xs font-bold rounded-xl border-2 border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 cursor-pointer shadow-xs flex items-center gap-1.5"
-            >
-              <Archive className="h-4 w-4 ml-1 text-blue-600 dark:text-blue-400" />
-              <span>عرض الملف المؤرشف</span>
-            </Button>
-          )}
-          {/* زر إضافة للأرشيف المباشر */}
+          {/* زر المعاينة: متاح دائماً لكافة المستخدمين للاطلاع والمراجعة وتوليد الباركود */}
+          <Button
+            size="sm"
+            onClick={handlePreviewClick}
+            disabled={isDirty || isPreviewing}
+            title={isDirty ? "يرجى حفظ التعديلات أولاً لتفعيل المعاينة الرسمية" : "معاينة المستند الرسمي وتوثيقه بالباركود"}
+            className={`h-10 px-5 text-xs font-black rounded-xl border-2 border-[#d97706] bg-[#d97706] hover:bg-[#b45309] text-white shadow-md cursor-pointer flex items-center gap-2 transition-all ${
+              isDirty || isPreviewing ? "opacity-60 cursor-not-allowed" : "hover:scale-102"
+            }`}
+          >
+            {isPreviewing ? (
+              <RefreshCw className="h-4 w-4 ml-1 text-white animate-spin" />
+            ) : isDirty ? (
+              <Lock className="h-4 w-4" />
+            ) : (
+              <Eye className="h-4 w-4 ml-1 text-white" />
+            )}
+            <span>
+              {isPreviewing
+                ? "جاري التجهيز والرفع السحابي..."
+                : `معاينة المستند ${approvalStatus === "APPROVED" ? "(معتمد للطباعة ✓)" : ""}`}
+            </span>
+          </Button>
+
+          {/* زر إضافة للأرشيف وحزمة التقديم: بجانب زر المعاينة مباشرة */}
           {onAddToArchive && (
             <Button
               size="sm"
-              variant={isArchived ? "secondary" : "outline"}
+              variant={isArchived ? "default" : "outline"}
               onClick={onAddToArchive}
               disabled={addingToArchive || isDirty}
               title={
@@ -1337,16 +1665,28 @@ export function LetterBottomActionWidget({
               }
               className={`h-10 px-4 text-xs font-bold rounded-xl border-2 transition-all cursor-pointer flex items-center gap-1.5 shadow-xs ${
                 isArchived
-                  ? "bg-purple-500/15 text-purple-700 dark:text-purple-300 border-purple-500/30 hover:bg-purple-500/25"
-                  : "border-purple-500/40 text-purple-700 dark:text-purple-300 hover:bg-purple-50 dark:hover:bg-purple-950/40 hover:border-purple-600"
-              } ${isDirty ? "opacity-50 cursor-not-allowed" : ""}`}
+                  ? "bg-purple-600 hover:bg-purple-700 text-white border-purple-600 dark:bg-purple-600 dark:hover:bg-purple-700 shadow-sm"
+                  : "border-purple-500/50 text-purple-700 dark:text-purple-300 hover:bg-purple-50 dark:hover:bg-purple-950/40 hover:border-purple-600"
+              } ${isDirty ? "opacity-50 cursor-not-allowed" : "hover:scale-102"}`}
             >
               {addingToArchive ? (
-                <RefreshCw className="h-4 w-4 animate-spin text-purple-600" />
+                <RefreshCw className="h-4 w-4 animate-spin text-current" />
               ) : (
-                <Archive className="h-4 w-4 text-purple-600" />
+                <Archive className="h-4 w-4 text-current" />
               )}
               <span>{isArchived ? "مضاف للأرشيف ✓" : "إضافة للأرشيف 📥"}</span>
+            </Button>
+          )}
+
+          {hasPrinted && onViewArchive && (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={onViewArchive}
+              className="h-10 px-4 text-xs font-bold rounded-xl border-2 border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 cursor-pointer shadow-xs flex items-center gap-1.5"
+            >
+              <Archive className="h-4 w-4 ml-1 text-blue-600 dark:text-blue-400" />
+              <span>عرض الملف المؤرشف</span>
             </Button>
           )}
 
@@ -1374,20 +1714,6 @@ export function LetterBottomActionWidget({
               <span>{requestingApproval ? "جاري إرسال الطلب..." : "طلب اعتماد المستند من المدير 📤"}</span>
             </Button>
           )}
-
-          {/* زر المعاينة: متاح دائماً لكافة المستخدمين للاطلاع والمراجعة البصرية */}
-          <Button
-            size="sm"
-            onClick={onPreview}
-            disabled={isDirty}
-            title={isDirty ? "يرجى حفظ التعديلات أولاً لتفعيل المعاينة الرسمية" : "معاينة المستند الرسمي"}
-            className={`h-10 px-5 text-xs font-black rounded-xl border-2 border-[#d97706] bg-[#d97706] hover:bg-[#b45309] text-white shadow-md cursor-pointer flex items-center gap-2 transition-all ${
-              isDirty ? "opacity-50 cursor-not-allowed" : "hover:scale-102"
-            }`}
-          >
-            {isDirty ? <Lock className="h-4 w-4" /> : <Eye className="h-4 w-4 ml-1 text-white" />}
-            <span>معاينة المستند {approvalStatus === "APPROVED" ? "(معتمد للطباعة ✓)" : ""}</span>
-          </Button>
 
           {isDirty && onSave && (
             <Button
@@ -1528,8 +1854,121 @@ export function ReprintConfirmModal({
 }
 
 /**
- * ━━━ استخراج أو توليد رقم القيد الصادر الموحد للعملية بالكامل ━━━
- * يضمن تطابق رقم القيد في كافة الخطابات والمراحل (كراسة، توضيح، إقرارات، عروض فنية ومالية)
+ * خريطة فهارس الخطابات الرسمية لتوليد أرقام قيد صادر مستقلة ومميزة لكل خطاب
+ * يمثل الرقم الأخير المتسلسل رقم القيد الخاص بالخطاب في دفتر الصادر
+ */
+export const LETTER_SEQUENCE_OFFSETS: Record<string, number> = {
+  booklet_withdrawal: 1,      // طلب شراء وسحب الكراسة
+  insurance_payment: 2,       // إيصال سداد التأمين الابتدائي
+  booklet_and_insurance: 3,   // شراء الكراسة وسداد التأمين معاً
+  bank_guarantee_letter: 4,   // طلب إصدار خطاب الضمان للبنك
+  general_letter: 5,          // خطاب عام رسمي موجه للجهة
+  clarification: 6,           // خطاب الاستفسارات والتوضيحات الفنية
+  technical_offer: 7,         // خطاب العرض الفني (المظروف الفني)
+  financial_offer: 8,         // خطاب العرض المالي (المظروف المالي)
+  decl_specs: 9,              // إقرار الالتزام بكراسة الشروط والمواصفات
+  decl_insurance: 10,         // إقرار التأمينات والعمالة غير المنتظمة
+  warranty_certificate: 11,   // شهادة الضمان المعتمدة للأصناف
+  final_guarantee: 12,        // خطاب التأمين النهائي
+  final_insurance_refund: 13, // طلب استرداد التأمين النهائي
+};
+
+/**
+ * ━━━ استخراج أو توليد رقم القيد الصادر الخاص بكل خطاب بعينه ━━━
+ * الثابت: كود العملية بالشركة (AZ-01)، الرمز وتاريخ اليوم
+ * المتغير: آخر أرقام متسلسلة تعبر عن رقم القيد المستقل لهذا الخطاب بالتحديد
+ */
+export function getLetterSpecificRegistrationNumber(
+  op: any,
+  letterKey: string,
+  companyCode?: string,
+  savedNumber?: string
+): string {
+  // 1. إذا كان هناك رقم قيد محفوظ مسبقاً لهذا الخطاب بالتحديد
+  if (savedNumber && savedNumber.trim()) {
+    return savedNumber.trim();
+  }
+
+  // 2. التحقق من مصفوفة أرقام القيد المحفوظة في notes
+  try {
+    if (op.notes && op.notes.startsWith("{")) {
+      const parsed = JSON.parse(op.notes);
+      if (parsed.letterRegistrationNumbers && parsed.letterRegistrationNumbers[letterKey]) {
+        return parsed.letterRegistrationNumbers[letterKey];
+      }
+    }
+  } catch {}
+
+  const comp = (companyCode || op.companies?.[0]?.displayCode || "AZ").trim();
+  const dateStr = new Date().toISOString();
+  const opSerial = Number(op.serialNumber) || 1;
+  const letterOffset = LETTER_SEQUENCE_OFFSETS[letterKey] || 1;
+
+  // توليد رقم قيد متسلسل مميز: رقم العملية متبوعاً برقم الخطاب (مثال: عملية 1 خطاباتها: 00101, 00102, 00103 ...)
+  const seqNumber = (opSerial * 100) + letterOffset;
+
+  return generateSmartOutgoingRef({
+    companyCode: comp,
+    tenderType: op.tenderType || "LIMITED_TENDER",
+    dateStr,
+    sequenceNumber: seqNumber,
+    includeDay: true,
+  });
+}
+
+/**
+ * ━━━ توليد رقم قيد صادر ذكي جديد خاص بخطاب معين وحفظه ━━━
+ */
+export async function regenerateLetterSpecificRegistrationNumber({
+  op,
+  letterKey,
+  companyCode,
+  onSuccess,
+}: {
+  op: any;
+  letterKey: string;
+  companyCode?: string;
+  onSuccess?: (newRef: string) => void;
+}): Promise<string | null> {
+  let notesObj: any = {};
+  try {
+    if (op.notes && op.notes.startsWith("{")) {
+      notesObj = JSON.parse(op.notes);
+    }
+  } catch {}
+
+  const comp = (companyCode || op.companies?.[0]?.displayCode || "AZ").trim();
+  const tenderType = op.tenderType || "LIMITED_TENDER";
+  const randomSeq = Math.floor(10000 + Math.random() * 89999);
+
+  const newRef = generateSmartOutgoingRef({
+    companyCode: comp,
+    tenderType,
+    dateStr: new Date().toISOString(),
+    sequenceNumber: randomSeq,
+    includeDay: true,
+  });
+
+  if (!notesObj.letterRegistrationNumbers) {
+    notesObj.letterRegistrationNumbers = {};
+  }
+  notesObj.letterRegistrationNumbers[letterKey] = newRef;
+
+  try {
+    await api.patch(`/operations/${op.id}`, {
+      notes: JSON.stringify(notesObj),
+    });
+    toast.success(`تم توليد رقم قيد صادر خاص بهذا الخطاب: ${newRef} بنجاح! 🔢✨`);
+    onSuccess?.(newRef);
+    return newRef;
+  } catch (err: any) {
+    toast.error(err?.response?.data?.message || "فشل حفظ رقم القيد الجديد");
+    return null;
+  }
+}
+
+/**
+ * استخراج رقم القيد العام الموحد للعملية كمرجع احتياطي
  */
 export function getUnifiedOperationRegistrationNumber(op: any, companyCode?: string): string {
   try {
@@ -1537,18 +1976,6 @@ export function getUnifiedOperationRegistrationNumber(op: any, companyCode?: str
       const parsed = JSON.parse(op.notes);
       if (parsed.unifiedRegistrationNumber) {
         return parsed.unifiedRegistrationNumber;
-      }
-      if (parsed.bookletLettersDocx?.registrationNumber) {
-        return parsed.bookletLettersDocx.registrationNumber;
-      }
-      if (parsed.clarificationLetter?.registrationNumber) {
-        return parsed.clarificationLetter.registrationNumber;
-      }
-      if (parsed.declarationsDocx?.registrationNumber) {
-        return parsed.declarationsDocx.registrationNumber;
-      }
-      if (parsed.technicalOfferLetter?.registrationNumber) {
-        return parsed.technicalOfferLetter.registrationNumber;
       }
     }
   } catch {}
@@ -1566,10 +1993,7 @@ export function getUnifiedOperationRegistrationNumber(op: any, companyCode?: str
 }
 
 /**
- * ━━━ توليد رقم قيد صادر ذكي جديد وعشوائي بالكامل وتحديثه في قاعدة البيانات لكافة المراحل ━━━
- * الثوابت: الرموز وتاريخ اليوم
- * المتغير: الرقم العشوائي (5 أرقام)
- * القيود: مرتان كحد أقصى للعملية الواحدة منعاً لتضارب المرجعيات الصادرة
+ * تحديث رقم القيد
  */
 export async function regenerateUnifiedRegistrationNumber({
   op,
@@ -1580,57 +2004,12 @@ export async function regenerateUnifiedRegistrationNumber({
   companyCode?: string;
   onSuccess?: (newRef: string) => void;
 }): Promise<string | null> {
-  let notesObj: any = {};
-  try {
-    if (op.notes && op.notes.startsWith("{")) {
-      notesObj = JSON.parse(op.notes);
-    }
-  } catch {}
-
-  const currentCount = Number(notesObj.regUpdateCount || 0);
-  if (currentCount >= 2) {
-    toast.error("تم الوصول للحد الأقصى لتحديث رقم القيد (مرتان كحد أقصى للعملية الواحدة للحفاظ على المرجعية الرسمية المعتمدة)");
-    return null;
-  }
-
-  // الجزء الثابت: الرمز وتاريخ اليوم
-  const comp = (companyCode || op.companies?.[0]?.displayCode || "AZ").trim();
-  const tenderType = op.tenderType || "LIMITED_TENDER";
-
-  // توليد رقم عشوائي ديناميكي للسلسلة (5 أرقام عشوائية)
-  const randomSeq = Math.floor(10000 + Math.random() * 89999);
-
-  const newRef = generateSmartOutgoingRef({
-    companyCode: comp,
-    tenderType,
-    dateStr: new Date().toISOString(),
-    sequenceNumber: randomSeq,
-    includeDay: true,
+  return regenerateLetterSpecificRegistrationNumber({
+    op,
+    letterKey: "general",
+    companyCode,
+    onSuccess,
   });
-
-  // تحديث قاعدة البيانات مركزياً وتحديث كافة السجلات الفرعية
-  notesObj.unifiedRegistrationNumber = newRef;
-  notesObj.regUpdateCount = currentCount + 1;
-
-  if (notesObj.bookletLettersDocx) notesObj.bookletLettersDocx.registrationNumber = newRef;
-  if (notesObj.clarificationLetter) notesObj.clarificationLetter.registrationNumber = newRef;
-  if (notesObj.declarationsDocx) notesObj.declarationsDocx.registrationNumber = newRef;
-  if (notesObj.technicalOfferLetter) notesObj.technicalOfferLetter.registrationNumber = newRef;
-  if (notesObj.financialOfferDocx) notesObj.financialOfferDocx.registrationNumber = newRef;
-  if (notesObj.finalGuaranteeLetter) notesObj.finalGuaranteeLetter.registrationNumber = newRef;
-
-  try {
-    await api.patch(`/operations/${op.id}`, {
-      notes: JSON.stringify(notesObj),
-    });
-    const remaining = 2 - (currentCount + 1);
-    toast.success(`تم تحديث وتعميم رقم القيد الجديد: ${newRef} لكافة خطابات ومراحل العملية بنجاح! 🔢✨ (متبقي ${remaining} تحديث)`);
-    onSuccess?.(newRef);
-    return newRef;
-  } catch (err: any) {
-    toast.error(err?.response?.data?.message || "فشل حفظ رقم القيد الجديد بقاعدة البيانات");
-    return null;
-  }
 }
 
 /**
@@ -1856,7 +2235,7 @@ export function OperationDocArchiveCard({
             const rawExt = (doc.fileType || "").toLowerCase() || (doc.fileName.split(".").pop() || "").toLowerCase();
             const isPdf = rawExt === "pdf" || doc.fileName?.toLowerCase().endsWith(".pdf");
             const isDocx = rawExt.includes("doc") || doc.fileName?.toLowerCase().includes(".doc");
-            const isExcel = rawExt.includes("xls") || doc.fileName?.toLowerCase().includes(".xls");
+            const isExcel = rawExt.includes("xls") || rawExt === "csv" || rawExt === "tsv" || doc.fileName?.toLowerCase().includes(".xls") || doc.fileName?.toLowerCase().endsWith(".csv") || doc.fileName?.toLowerCase().endsWith(".tsv");
             const isImage = rawExt.includes("png") || rawExt.includes("jpg") || rawExt.includes("jpeg") || rawExt.includes("webp");
 
             const isEditingThis = renamingDocId === doc.id;

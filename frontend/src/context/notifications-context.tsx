@@ -3,7 +3,7 @@
 import React, { createContext, useContext, useState, useEffect, useMemo, useCallback } from "react";
 import { toast } from "sonner";
 import { useCompany, CompanyCode } from "./company-context";
-import { API_BASE_URL } from "@/lib/api";
+import api, { API_BASE_URL } from "@/lib/api";
 
 export interface SystemNotification {
   id: string;
@@ -226,16 +226,11 @@ export function NotificationsProvider({ children }: { children: React.ReactNode 
   // Sync with Backend API per active company
   const refreshNotifications = useCallback(async () => {
     try {
-      const token = localStorage.getItem("accessToken");
-      if (!token) return;
-      const apiBase = API_BASE_URL;
       const compParam = selectedCompany && selectedCompany !== "ALL" ? `?company=${selectedCompany}` : "";
-      const res = await fetch(`${apiBase}/api/notifications${compParam}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      const res = await api.get(`/notifications${compParam}`);
 
-      if (res.ok) {
-        const serverData = await res.json();
+      if (res.data) {
+        const serverData = res.data;
         if (Array.isArray(serverData) && serverData.length > 0) {
           // Merge server notifications with current local notifications
           setAllNotifications((prev) => {
@@ -311,14 +306,7 @@ export function NotificationsProvider({ children }: { children: React.ReactNode 
 
     // Patch to server asynchronously
     try {
-      const token = localStorage.getItem("accessToken");
-      if (token) {
-        const apiBase = API_BASE_URL;
-        fetch(`${apiBase}/api/notifications/${id}/read`, {
-          method: "PATCH",
-          headers: { Authorization: `Bearer ${token}` },
-        }).catch(() => {});
-      }
+      api.patch(`/notifications/${id}/read`).catch(() => {});
     } catch {}
   };
 
@@ -336,15 +324,8 @@ export function NotificationsProvider({ children }: { children: React.ReactNode 
 
     // Patch to server
     try {
-      const token = localStorage.getItem("accessToken");
-      if (token) {
-        const apiBase = API_BASE_URL;
-        const query = targetComp ? `?company=${targetComp}` : "";
-        fetch(`${apiBase}/api/notifications/read-all${query}`, {
-          method: "PATCH",
-          headers: { Authorization: `Bearer ${token}` },
-        }).catch(() => {});
-      }
+      const query = targetComp ? `?company=${targetComp}` : "";
+      api.patch(`/notifications/read-all${query}`).catch(() => {});
     } catch {}
   };
 

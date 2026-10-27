@@ -379,40 +379,8 @@ export async function uploadPdfToFreeCloud(
     console.warn("Backend cloud upload failed, falling back to direct browser upload...", backendErr?.message);
   }
 
-  // 3. المحاولة الثالثة: رفع مباشر من المتصفح إلى Gofile.io كخيار احتياطي
-  try {
-    const srvRes = await fetch("https://api.gofile.io/servers", {
-      signal: AbortSignal.timeout(5000),
-    });
-    if (srvRes.ok) {
-      const srvData = await srvRes.json();
-      const serverName = srvData?.data?.servers?.[0]?.name || "store1";
-
-      const gofileForm = new FormData();
-      gofileForm.append("file", pdfBlob, fileName);
-
-      const upRes = await fetch(`https://${serverName}.gofile.io/contents/uploadfile`, {
-        method: "POST",
-        body: gofileForm,
-        signal: AbortSignal.timeout(15000),
-      });
-
-      if (upRes.ok) {
-        const upData = await upRes.json();
-        if (upData?.status === "ok" && upData?.data?.downloadPage) {
-          return {
-            success: true,
-            url: upData.data.downloadPage,
-            provider: "Gofile Cloud (تخزين سحابي)",
-          };
-        }
-      }
-    }
-  } catch (gofileErr: any) {
-    console.warn("Direct browser Gofile failed:", gofileErr?.message);
-  }
-
-  throw new Error("تعذر الرفع إلى مراكز التخزين السحابي (Cloudflare R2 / Gofile). يرجى التحقق من اتصال الإنترنت والمحاولة مجدداً.");
+  // إذا تعذر الرفع عبر المسارين المعتمدين لـ Cloudflare R2
+  throw new Error("تعذر الرفع إلى سحابة Cloudflare R2 المعتمدة. يرجى التحقق من اتصال الإنترنت والمحاولة مجدداً.");
 }
 
 /**

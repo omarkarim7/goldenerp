@@ -12,7 +12,7 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { useTheme } from "next-themes";
 import { toast } from "sonner";
 import { useCompany, CompanyCode } from "@/context/company-context";
-import { API_BASE_URL } from "@/lib/api";
+import api from "@/lib/api";
 
 interface UserData {
   id: string;
@@ -51,15 +51,9 @@ export default function SelectCompanyPage() {
 
     // Always fetch fresh profile from backend so updated allowedCompanies take immediate effect
     if (token) {
-      const apiBase = API_BASE_URL;
-      fetch(`${apiBase}/api/auth/me`, {
-        headers: { Authorization: `Bearer ${token}` },
-      })
+      api.get("/auth/me")
         .then((res) => {
-          if (res.ok) return res.json();
-          throw new Error("Failed to fetch user");
-        })
-        .then((freshUser) => {
+          const freshUser = res.data;
           if (freshUser && freshUser.id) {
             setUser(freshUser);
             localStorage.setItem("user", JSON.stringify(freshUser));

@@ -32,6 +32,8 @@ import {
   PdfExportLoadingModal,
   getUnifiedOperationRegistrationNumber,
   regenerateUnifiedRegistrationNumber,
+  getLetterSpecificRegistrationNumber,
+  regenerateLetterSpecificRegistrationNumber,
   FiscalYearSelect,
   replaceDocxFiscalAndDate,
   replaceDocxChairman,
@@ -39,9 +41,14 @@ import {
   getOperationRecipientTitle,
   getOperationFiscalYear,
   getOperationTechnicalOpeningDate,
+  getOperationFinancialOpeningDate,
   getOperationTenderMethod,
   getSharedOperationScope,
   isValidCloudDocUrl,
+  generateHighResDocQrBuffer,
+  getStandardDocQrPayload,
+  replaceDocxRecipient,
+  buildOfficialSignaturesTableXml,
 } from "./letter-utils";
 import JSZip from "jszip";
 import QRCode from "qrcode";
@@ -52,10 +59,10 @@ import { OnlyOfficeDocViewer } from "@/components/OnlyOfficeDocViewer";
 export interface FinancialVariant {
   id: string;
   variantType: "basic" | "alternative";
-  variantLabel: string;
-  description: string;
-  subDescription: string;
-  branch1: string;
+  variantLabel: string; // مسمى البديل: أساسي، بديل 1، بديل 2، بديل 3 (بحد أقصى 3)
+  description: string;  // الوصف الفني (مدمج الوصف والوصف الفرعي)
+  subDescription?: string;
+  branch1?: string;
   unitPrice: number;
   totalPrice: number;
   notes: string;
@@ -79,7 +86,7 @@ function escapeXml(str: string): string {
     .replace(/'/g, "&apos;");
 }
 
-// بناء صفوف جدول العرض المالي في الوورد (12 عمود بدقة ومطابقة تامة للقالب الأصلي)
+// بناء صفوف جدول العرض المالي في الوورد (11 عمود بدقة وتوافق 100% مع الهيكل الجديد للقالب)
 function buildFinancialTableRowsXml(itemsList: FinancialOfferItem[]): string {
   let rowsXml = "";
 
@@ -91,8 +98,6 @@ function buildFinancialTableRowsXml(itemsList: FinancialOfferItem[]): string {
           variantType: "basic" as const,
           variantLabel: "أساسى",
           description: "",
-          subDescription: "",
-          branch1: "",
           unitPrice: 0,
           totalPrice: 0,
           notes: "",
@@ -105,7 +110,6 @@ function buildFinancialTableRowsXml(itemsList: FinancialOfferItem[]): string {
       const isFirst = vIdx === 0;
       const isLast = vIdx === nVariants - 1;
 
-      // إزالة w:jc center لضمان تطابق محاذاة وهوامش الصفوف بدقة 100% مع صفي الرأس 0 و 1
       const trHeight = isFirst ? 165 : 90;
       const trPr = `<w:trPr><w:trHeight w:val="${trHeight}"/></w:trPr>`;
 
@@ -164,27 +168,38 @@ function buildFinancialTableRowsXml(itemsList: FinancialOfferItem[]): string {
       const tPounds = Math.floor(tPrice);
       const tPiasters = Math.round((tPrice - tPounds) * 100);
 
+      // دمج نص الوصف المدمج مع الحفاظ على البيانات السابقة
+      const mergedDescription = [
+        variant.description,
+        variant.subDescription,
+        variant.branch1,
+      ]
+        .filter((s) => s && s.trim())
+        .join(" - ");
+
+      const offerTypeLabel = variant.variantLabel || (variant.variantType === "basic" ? "أساسى" : `بديل ${vIdx}`);
+
+      // 11 عمود متطابقة تماماً مع أعمدة جدول العرض الفني مضافاً إليها الأسعار
       const c0 = makeCell(561, String(itemIdx + 1), true, "center");
       const c1 = makeCell(2072, item.itemName, true, "right");
-      const c2 = makeCell(1115, variant.description, false, "right");
-      const c3 = makeCell(1115, variant.subDescription, false, "right");
-      const c4 = makeCell(973, variant.branch1, false, "right");
-      const c5 = makeCell(723, item.unit, true, "center");
-      const c6 = makeCell(676, item.quantity, true, "center");
-      const c7 = makeCell(555, uPiasters > 0 ? (uPiasters < 10 ? `0${uPiasters}` : String(uPiasters)) : "00", false, "center");
-      const c8 = makeCell(600, uPounds > 0 ? String(uPounds) : "0", false, "center");
-      const c9 = makeCell(570, tPiasters > 0 ? (tPiasters < 10 ? `0${tPiasters}` : String(tPiasters)) : "00", false, "center");
-      const c10 = makeCell(542, tPounds > 0 ? String(tPounds) : "0", false, "center");
-      const c11 = makeCell(1064, variant.notes, false, "right");
+      const c2 = makeCell(2230, mergedDescription, false, "right");
+      const c3 = makeCell(973, offerTypeLabel, false, "center");
+      const c4 = makeCell(723, item.unit, true, "center");
+      const c5 = makeCell(676, item.quantity, true, "center");
+      const c6 = makeCell(555, uPiasters > 0 ? (uPiasters < 10 ? `0${uPiasters}` : String(uPiasters)) : "00", false, "center");
+      const c7 = makeCell(600, uPounds > 0 ? String(uPounds) : "0", false, "center");
+      const c8 = makeCell(570, tPiasters > 0 ? (tPiasters < 10 ? `0${tPiasters}` : String(tPiasters)) : "00", false, "center");
+      const c9 = makeCell(542, tPounds > 0 ? String(tPounds) : "0", false, "center");
+      const c10 = makeCell(1064, variant.notes, false, "right");
 
-      rowsXml += `<w:tr>${trPr}${c0}${c1}${c2}${c3}${c4}${c5}${c6}${c7}${c8}${c9}${c10}${c11}</w:tr>`;
+      rowsXml += `<w:tr>${trPr}${c0}${c1}${c2}${c3}${c4}${c5}${c6}${c7}${c8}${c9}${c10}</w:tr>`;
     });
   });
 
   return rowsXml;
 }
 
-// بناء صف الإجمالي العام والتفقيط في أسفل الجدول (مطابق للصف 14 في القالب الأصلي 100%)
+// بناء صف الإجمالي العام والتفقيط في أسفل الجدول (gridSpan=8 للإجمالي مع 11 عمود)
 function buildTotalRowXml(grandTotal: number, tafqeetText: string): string {
   const gPounds = Math.floor(grandTotal);
   const gPiasters = Math.round((grandTotal - gPounds) * 100);
@@ -200,7 +215,7 @@ function buildTotalRowXml(grandTotal: number, tafqeetText: string): string {
     <w:trPr><w:trHeight w:val="233"/></w:trPr>
     <w:tc>
       <w:tcPr>
-        <w:tcW w:w="8390" w:type="dxa"/><w:gridSpan w:val="9"/>
+        <w:tcW w:w="8390" w:type="dxa"/><w:gridSpan w:val="8"/>
         <w:tcBorders>
           <w:top w:val="thinThickSmallGap" w:sz="24" w:space="0" w:color="auto"/>
           <w:left w:val="thinThickSmallGap" w:sz="24" w:space="0" w:color="auto"/>
@@ -215,16 +230,46 @@ function buildTotalRowXml(grandTotal: number, tafqeetText: string): string {
       </w:p>
     </w:tc>
     <w:tc>
-      <w:tcPr><w:tcW w:w="570" w:type="dxa"/><w:tcBorders><w:top w:val="thinThickSmallGap" w:sz="24" w:space="0" w:color="auto"/><w:left w:val="thinThickSmallGap" w:sz="24" w:space="0" w:color="auto"/><w:bottom w:val="thinThickSmallGap" w:sz="24" w:space="0" w:color="auto"/><w:right w:val="thinThickSmallGap" w:sz="24" w:space="0" w:color="auto"/></w:tcBorders><w:hideMark/></w:tcPr>
-      <w:p><w:pPr><w:spacing w:before="40" w:after="40" w:line="240" w:lineRule="auto"/><w:jc w:val="center"/><w:rPr><w:rFonts w:ascii="Arabic Typesetting" w:hAnsi="Arabic Typesetting" w:cs="Arabic Typesetting"/><w:b/><w:bCs/><w:sz w:val="28"/><w:szCs w:val="28"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr></w:pPr><w:r><w:rPr><w:rFonts w:ascii="Arabic Typesetting" w:hAnsi="Arabic Typesetting" w:cs="Arabic Typesetting"/><w:b/><w:bCs/><w:sz w:val="28"/><w:szCs w:val="28"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t>${gPiasters > 0 ? (gPiasters < 10 ? `0${gPiasters}` : String(gPiasters)) : "00"}</w:t></w:r></w:p>
+      <w:tcPr>
+        <w:tcW w:w="570" w:type="dxa"/>
+        <w:tcBorders>
+          <w:top w:val="thinThickSmallGap" w:sz="24" w:space="0" w:color="auto"/>
+          <w:left w:val="thinThickSmallGap" w:sz="24" w:space="0" w:color="auto"/>
+          <w:bottom w:val="thinThickSmallGap" w:sz="24" w:space="0" w:color="auto"/>
+          <w:right w:val="thinThickSmallGap" w:sz="24" w:space="0" w:color="auto"/>
+        </w:tcBorders>
+      </w:tcPr>
+      <w:p>
+        <w:pPr><w:spacing w:before="40" w:after="40" w:line="240" w:lineRule="auto"/><w:jc w:val="center"/><w:rPr><w:rFonts w:ascii="Arabic Typesetting" w:hAnsi="Arabic Typesetting" w:cs="Arabic Typesetting"/><w:b/><w:bCs/><w:sz w:val="28"/><w:szCs w:val="28"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr></w:pPr>
+        <w:r><w:rPr><w:rFonts w:ascii="Arabic Typesetting" w:hAnsi="Arabic Typesetting" w:cs="Arabic Typesetting"/><w:b/><w:bCs/><w:sz w:val="28"/><w:szCs w:val="28"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t>${gPiasters > 0 ? (gPiasters < 10 ? `0${gPiasters}` : String(gPiasters)) : "00"}</w:t></w:r>
+      </w:p>
     </w:tc>
     <w:tc>
-      <w:tcPr><w:tcW w:w="542" w:type="dxa"/><w:tcBorders><w:top w:val="thinThickSmallGap" w:sz="24" w:space="0" w:color="auto"/><w:left w:val="thinThickSmallGap" w:sz="24" w:space="0" w:color="auto"/><w:bottom w:val="thinThickSmallGap" w:sz="24" w:space="0" w:color="auto"/><w:right w:val="thinThickSmallGap" w:sz="24" w:space="0" w:color="auto"/></w:tcBorders><w:hideMark/></w:tcPr>
-      <w:p><w:pPr><w:spacing w:before="40" w:after="40" w:line="240" w:lineRule="auto"/><w:jc w:val="center"/><w:rPr><w:rFonts w:ascii="Arabic Typesetting" w:hAnsi="Arabic Typesetting" w:cs="Arabic Typesetting"/><w:b/><w:bCs/><w:sz w:val="28"/><w:szCs w:val="28"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr></w:pPr><w:r><w:rPr><w:rFonts w:ascii="Arabic Typesetting" w:hAnsi="Arabic Typesetting" w:cs="Arabic Typesetting"/><w:b/><w:bCs/><w:sz w:val="28"/><w:szCs w:val="28"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t>${gPounds > 0 ? String(gPounds) : "0"}</w:t></w:r></w:p>
+      <w:tcPr>
+        <w:tcW w:w="542" w:type="dxa"/>
+        <w:tcBorders>
+          <w:top w:val="thinThickSmallGap" w:sz="24" w:space="0" w:color="auto"/>
+          <w:left w:val="thinThickSmallGap" w:sz="24" w:space="0" w:color="auto"/>
+          <w:bottom w:val="thinThickSmallGap" w:sz="24" w:space="0" w:color="auto"/>
+          <w:right w:val="thinThickSmallGap" w:sz="24" w:space="0" w:color="auto"/>
+        </w:tcBorders>
+      </w:tcPr>
+      <w:p>
+        <w:pPr><w:spacing w:before="40" w:after="40" w:line="240" w:lineRule="auto"/><w:jc w:val="center"/><w:rPr><w:rFonts w:ascii="Arabic Typesetting" w:hAnsi="Arabic Typesetting" w:cs="Arabic Typesetting"/><w:b/><w:bCs/><w:sz w:val="28"/><w:szCs w:val="28"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr></w:pPr>
+        <w:r><w:rPr><w:rFonts w:ascii="Arabic Typesetting" w:hAnsi="Arabic Typesetting" w:cs="Arabic Typesetting"/><w:b/><w:bCs/><w:sz w:val="28"/><w:szCs w:val="28"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t>${gPounds > 0 ? String(gPounds) : "0"}</w:t></w:r>
+      </w:p>
     </w:tc>
     <w:tc>
-      <w:tcPr><w:tcW w:w="1064" w:type="dxa"/><w:tcBorders><w:top w:val="thinThickSmallGap" w:sz="24" w:space="0" w:color="auto"/><w:left w:val="single" w:sz="4" w:space="0" w:color="auto"/><w:bottom w:val="thinThickSmallGap" w:sz="24" w:space="0" w:color="auto"/><w:right w:val="thinThickSmallGap" w:sz="24" w:space="0" w:color="auto"/></w:tcBorders><w:hideMark/></w:tcPr>
-      <w:p><w:pPr><w:spacing w:before="40" w:after="40" w:line="240" w:lineRule="auto"/><w:jc w:val="center"/><w:rPr><w:b/><w:bCs/><w:sz w:val="28"/><w:szCs w:val="28"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr></w:pPr></w:p>
+      <w:tcPr>
+        <w:tcW w:w="1064" w:type="dxa"/>
+        <w:tcBorders>
+          <w:top w:val="thinThickSmallGap" w:sz="24" w:space="0" w:color="auto"/>
+          <w:left w:val="single" w:sz="4" w:space="0" w:color="auto"/>
+          <w:bottom w:val="thinThickSmallGap" w:sz="24" w:space="0" w:color="auto"/>
+          <w:right w:val="thinThickSmallGap" w:sz="24" w:space="0" w:color="auto"/>
+        </w:tcBorders>
+      </w:tcPr>
+      <w:p><w:pPr><w:spacing w:after="0" w:line="240" w:lineRule="auto"/><w:jc w:val="right"/><w:rPr><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr></w:pPr></w:p>
     </w:tc>
   </w:tr>`;
 }
@@ -264,10 +309,14 @@ export function TabFinancial({
 
   const currentCompany = currentCompanyLink?.company;
 
-  // رقم القيد الصادر الذكي الموحد للعملية
+  // رقم القيد الصادر الذكي الخاص بالعرض المالي
   const [registrationNumber, setRegistrationNumber] = useState(() => {
-    if (savedFin?.registrationNumber) return savedFin.registrationNumber;
-    return getUnifiedOperationRegistrationNumber(op, currentCompanyLink?.displayCode);
+    return getLetterSpecificRegistrationNumber(
+      op,
+      "financial_offer",
+      currentCompanyLink?.displayCode,
+      savedFin?.registrationNumber
+    );
   });
 
   // كود العملية بالشركة
@@ -333,7 +382,7 @@ export function TabFinancial({
     return getOperationFiscalYear(op, savedFin?.fiscalYear);
   });
   const [financialOpeningDate, setFinancialOpeningDate] = useState(() => {
-    return getOperationTechnicalOpeningDate(op, savedFin?.financialOpeningDate);
+    return getOperationFinancialOpeningDate(op, savedFin?.financialOpeningDate);
   });
 
   // مزامنة تلقائية للبيانات إذا تغيرت العملية الأصلية دون وجود تعديل يدوي محفوظ
@@ -347,10 +396,9 @@ export function TabFinancial({
     if (!savedFin?.recipientTitleAndAuthority && op.authority) {
       setRecipientTitleAndAuthority(`مدير الادارة العامة للمشتريات والمخازن بـ ${op.authority}`);
     }
-    if (!savedFin?.financialOpeningDate) {
-      const d = op.dates?.find((dt: any) => dt.type === "FINANCIAL_OPENING" || dt.title?.includes("مالي") || dt.type === "TECHNICAL_OPENING");
-      if (d?.dateValue) setFinancialOpeningDate(formatDate(d.dateValue));
-      else if (d?.date) setFinancialOpeningDate(formatDate(d.date));
+    const freshFinDate = getOperationFinancialOpeningDate(op);
+    if (freshFinDate && (!savedFin?.financialOpeningDate || freshFinDate !== "—")) {
+      setFinancialOpeningDate(freshFinDate);
     }
   }, [op.name, op.externalNumber, op.serialNumber, op.authority, op.dates, savedFin]);
 
@@ -474,10 +522,10 @@ export function TabFinancial({
     return savedFin?.specialistTitle || "المهندس المختص :";
   });
   const [specialistName, setSpecialistName] = useState(() => {
-    return savedFin?.specialistName || "أحمد محمد";
+    return savedFin?.specialistName || "";
   });
   const [financeManagerName, setFinanceManagerName] = useState(() => {
-    return savedFin?.financeManagerName || "محمود إبراهيم";
+    return savedFin?.financeManagerName || "";
   });
   const [boardChairman, setBoardChairman] = useState(() => {
     return sanitizeChairmanTitle(savedFin?.boardChairman);
@@ -598,20 +646,60 @@ export function TabFinancial({
     );
   };
 
+  const handleSetAlternativeCount = (itemId: string, targetCount: number) => {
+    const targetItem = items.find((i) => i.id === itemId);
+    if (!targetItem) return;
+    const basic = targetItem.variants.filter((v) => v.variantType === "basic");
+    const currentAlts = targetItem.variants.filter((v) => v.variantType === "alternative");
+    if (currentAlts.length === targetCount) return;
+
+    if (targetCount < currentAlts.length) {
+      const keptAlts = currentAlts.slice(0, targetCount).map((v, idx) => ({
+        ...v,
+        variantLabel: `بديل ${idx + 1}`,
+      }));
+      setItems(items.map((it) => (it.id === itemId ? { ...it, variants: [...basic, ...keptAlts] } : it)));
+      toast.info(`تم ضبط عدد البدائل إلى (${targetCount})`);
+    } else {
+      const countToAdd = Math.min(3, targetCount) - currentAlts.length;
+      const newAlts: FinancialVariant[] = [];
+      for (let i = 0; i < countToAdd; i++) {
+        const nextAltNum = currentAlts.length + i + 1;
+        newAlts.push({
+          id: "v-" + Date.now() + "-" + Math.random().toString(36).substring(2, 5) + "-" + i,
+          variantType: "alternative",
+          variantLabel: `بديل ${nextAltNum}`,
+          description: "",
+          unitPrice: 0,
+          totalPrice: 0,
+          notes: `بديل رقم ${nextAltNum} مطابق للمواصفات`,
+        });
+      }
+      setItems(items.map((it) => (it.id === itemId ? { ...it, variants: [...basic, ...currentAlts, ...newAlts] } : it)));
+      toast.success(`تم ضبط عدد البدائل إلى (${targetCount}) ✨`);
+    }
+  };
+
   const handleAddAlternative = (itemId: string) => {
+    const targetItem = items.find((i) => i.id === itemId);
+    if (!targetItem) return;
+    const currentAlts = targetItem.variants.filter((v) => v.variantType === "alternative");
+    if (currentAlts.length >= 3) {
+      toast.error("الحد الأقصى للبدائل هو 3 بدائل فقط لكل صنف (بديل 1، بديل 2، بديل 3)");
+      return;
+    }
+
     setItems(
       items.map((item) => {
         if (item.id !== itemId) return item;
-        const currentAlts = item.variants.filter((v) => v.variantType === "alternative");
-        const nextAltNum = currentAlts.length + 1;
+        const alts = item.variants.filter((v) => v.variantType === "alternative");
+        const nextAltNum = alts.length + 1;
         const q = Number(item.quantity || 1);
         const newVariant: FinancialVariant = {
           id: "v-" + Date.now() + "-" + Math.random().toString(36).substring(2, 5),
           variantType: "alternative",
           variantLabel: `بديل ${nextAltNum}`,
           description: "",
-          subDescription: "",
-          branch1: "",
           unitPrice: 0,
           totalPrice: 0,
           notes: `بديل رقم ${nextAltNum} مطابق للمواصفات`,
@@ -705,8 +793,9 @@ export function TabFinancial({
 
   // إعادة توليد رقم القيد
   const handleRegenerateRef = async () => {
-    await regenerateUnifiedRegistrationNumber({
+    await regenerateLetterSpecificRegistrationNumber({
       op,
+      letterKey: "financial_offer",
       companyCode: currentCompanyLink?.displayCode || "AZ",
       onSuccess: (fresh) => {
         setRegistrationNumber(fresh);
@@ -723,52 +812,41 @@ export function TabFinancial({
 
     const zip = await JSZip.loadAsync(templateBuffer);
 
-    // توليد رمز التحقق الرقمي المباشر - فقط في حالة الرفع السحابي الفعلي
+    // توليد رمز التحقق الرقمي المباشر بحجم مكبر وجودة فائقة
     let qrDrawingXml = "";
-    const activeCloud = cloudPdfUrl;
-    if (isValidCloudDocUrl(activeCloud)) {
-      try {
-        const qrDataUrl = await QRCode.toDataURL(activeCloud, {
-          width: 600,
-          margin: 2,
-          errorCorrectionLevel: "M",
-        });
-        const qrBase64 = qrDataUrl.split(",")[1];
-        const qrBinary = Uint8Array.from(atob(qrBase64), (c) => c.charCodeAt(0));
+    try {
+      const filename = `financial_offer_${registrationNumber || op.serialNumber || "doc"}.pdf`;
+      const qrPayload = await getStandardDocQrPayload(cloudPdfUrl, registrationNumber, "financial", op.id, filename);
+      const qrBinary = await generateHighResDocQrBuffer(qrPayload);
 
-        zip.file("word/media/doc_qr.png", qrBinary);
+      zip.file("word/media/doc_qr.png", qrBinary);
 
-        let relsXml = await zip.file("word/_rels/document.xml.rels")?.async("text");
-        if (relsXml && !relsXml.includes("rIdQR")) {
-          relsXml = relsXml.replace(
-            "</Relationships>",
-            '<Relationship Id="rIdQR" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/doc_qr.png"/></Relationships>'
-          );
-          zip.file("word/_rels/document.xml.rels", relsXml);
-        }
-
-        let ctXml = await zip.file("[Content_Types].xml")?.async("text");
-        if (ctXml && !ctXml.includes('Extension="png"')) {
-          ctXml = ctXml.replace("</Types>", '<Default Extension="png" ContentType="image/png"/></Types>');
-          zip.file("[Content_Types].xml", ctXml);
-        }
-
-        qrDrawingXml = buildQrAnchorXml();
-      } catch (e) {
-        console.warn("QR generation failed:", e);
+      let relsXml = await zip.file("word/_rels/document.xml.rels")?.async("text");
+      if (relsXml && !relsXml.includes("rIdQR")) {
+        relsXml = relsXml.replace(
+          "</Relationships>",
+          '<Relationship Id="rIdQR" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/doc_qr.png"/></Relationships>'
+        );
+        zip.file("word/_rels/document.xml.rels", relsXml);
       }
+
+      let ctXml = await zip.file("[Content_Types].xml")?.async("text");
+      if (ctXml && !ctXml.includes('Extension="png"')) {
+        ctXml = ctXml.replace("</Types>", '<Default Extension="png" ContentType="image/png"/></Types>');
+        zip.file("[Content_Types].xml", ctXml);
+      }
+
+      qrDrawingXml = buildQrAnchorXml();
+    } catch (e) {
+      console.warn("QR generation failed:", e);
     }
 
     // 1. استبدال كافة المتغيرات في word/document.xml
     let docXml = await zip.file("word/document.xml")!.async("text");
     docXml = injectSingleQrIntoDocXml(docXml, qrDrawingXml, escapeXml(registrationNumber));
 
-    // صفة ولقب المرسل إليه والجهة الإدارية
-    docXml = docXml.replace(/الأستاذ/g, escapeXml(recipientPrefix));
-    docXml = docXml.replace(
-      /مدير الادارة العامة للمشتريات والمخازن بجامعة دمنهور/g,
-      escapeXml(recipientTitleAndAuthority)
-    );
+    // صفة ولقب المرسل إليه والجهة الإدارية بتوسيط وتنسيق متوازن
+    docXml = replaceDocxRecipient(docXml, recipientPrefix, recipientTitleAndAuthority);
 
     // الموضوع وبيانات العملية
     docXml = docXml.replace(/للأصناف/g, escapeXml(subjectTarget));
@@ -805,13 +883,19 @@ export function TabFinancial({
       escapeXml(taxCondition)
     );
 
-    // الاعتمادات والتوقيعات
-    docXml = docXml.replace(/المهندس\s*المختص\s*:/g, escapeXml(specialistTitle));
-    docXml = docXml.replace(/أحمد محمد/g, escapeXml(specialistName));
-    docXml = docXml.replace(/اسم/g, escapeXml(financeManagerName || " "));
-
-    // اعتماد رئيس مجلس الإدارة (الاعتماد النهائي) مع الحفاظ التام على "يعتمد ،،،،،،" في سطرها المستقل
-    docXml = replaceDocxChairman(docXml, boardChairman);
+    // صفة واسم المختص والمدير المالي ورئيس مجلس الإدارة في جدول ثلاثي منضبط (مطابق لخطاب التوضيح)
+    const finSigBlockRegex = /<w:p\b[^>]*>(?:(?!<\/w:p>)[\s\S])*?(?:المختص|المهندس|المدير المالى)[\s\S]*?يعتمد[\s\S]*?<\/w:p>\s*<w:p\b[^>]*>(?:(?!<\/w:p>)[\s\S])*?رئيس مجلس[\s\S]*?<\/w:p>/;
+    if (finSigBlockRegex.test(docXml)) {
+      const sigTableXml = buildOfficialSignaturesTableXml({
+        specialistTitle: specialistTitle || "المختص :",
+        specialistName: specialistName || " ",
+        financeManagerName: financeManagerName || " ",
+        boardChairman: boardChairman || "رئيس مجلس الإدارة",
+      });
+      docXml = docXml.replace(finSigBlockRegex, sigTableXml);
+    } else {
+      docXml = replaceDocxChairman(docXml, boardChairman);
+    }
 
     // استبدال جدول الأصناف والأسعار بالكامل (Table 0)
     const tblStart = docXml.indexOf("<w:tbl>");
@@ -894,6 +978,10 @@ export function TabFinancial({
         printHistory,
         updatedAt: new Date().toISOString(),
       };
+      if (!currentNotesObj.letterRegistrationNumbers) {
+        currentNotesObj.letterRegistrationNumbers = {};
+      }
+      currentNotesObj.letterRegistrationNumbers["financial_offer"] = registrationNumber;
       currentNotesObj.fiscalYear = fiscalYear;
 
       await api.patch(`/operations/${op.id}`, {
@@ -1026,18 +1114,15 @@ export function TabFinancial({
 
     setUploadingCloud(true);
     try {
+      toast.info("جاري توثيق ورفع العرض المالي سحابياً (رابط PDF مباشر)...");
+
+      // 1. توليد المستند الأحدث مباشرة
       let pdfBlob = existingBlob;
-      if (!pdfBlob) {
-        if (previewPdfBlob && currentSnapshot === lastGeneratedSnapshot) {
-          pdfBlob = previewPdfBlob;
-        } else {
-          pdfBlob = await generateFinancialPdfBlob();
-          setPreviewPdfBlob(pdfBlob);
-          setLastGeneratedSnapshot(currentSnapshot);
-        }
+      if (!pdfBlob || forceReupload) {
+        pdfBlob = await generateFinancialPdfBlob();
       }
 
-      toast.info("جاري توثيق ورفع العرض المالي سحابياً (رابط PDF مباشر)...");
+      // 2. الرفع إلى السحابة
       const res = await uploadPdfToFreeCloud(
         pdfBlob,
         `financial_offer_${registrationNumber || op.serialNumber || "doc"}.pdf`
@@ -1045,7 +1130,50 @@ export function TabFinancial({
 
       if (res?.url) {
         setCloudPdfUrl(res.url);
-        toast.success("تم توثيق ورفع العرض المالي للسحابة بنجاح! الرابط جاهز ومتاح عالمياً لأي هاتف محمول 🚀");
+
+        // 3. مزامنة المعاينة في الذاكرة فوراً لفتحها بـ 0ms بدون أي إعادة توليد
+        setPreviewPdfBlob(pdfBlob);
+        if (previewPdfUrl) {
+          URL.revokeObjectURL(previewPdfUrl);
+        }
+        setPreviewPdfUrl(URL.createObjectURL(pdfBlob));
+
+        const syncedSnapshot = JSON.stringify({
+          selectedCompanyId,
+          registrationNumber,
+          companyOpCode,
+          companyCommercialRegister,
+          companyTaxCard,
+          phoneWhatsapp,
+          phoneMobile,
+          companyAddress,
+          issueDate,
+          barcodeRef,
+          cloudPdfUrl: res.url,
+          recipientPrefix,
+          recipientTitleAndAuthority,
+          subjectTarget,
+          operationRegisteredName,
+          operationNumber,
+          fiscalYear,
+          financialOpeningDate,
+          items,
+          taxCondition,
+          vatRate,
+          warrantyDuration,
+          warrantyTerms,
+          condition1,
+          condition2,
+          condition3,
+          condition4,
+          specialistTitle,
+          specialistName,
+          financeManagerName,
+          boardChairman,
+        });
+        setLastGeneratedSnapshot(syncedSnapshot);
+
+        toast.success("تم توثيق ورفع العرض المالي وتحديث المعاينة بنجاح! جاهز للمعاينة الفورية 🚀");
 
         try {
           let existingNotesObj: any = {};
@@ -1070,18 +1198,15 @@ export function TabFinancial({
 
   // ━━━ تحميل المعاينة الرسمية من محرك Word الأصيل ━━━
   const loadOfficialPreview = async (forceRefresh = false) => {
-    if (previewPdfBlob && currentSnapshot === lastGeneratedSnapshot && !forceRefresh) {
-      setPreviewModalOpen(true);
+    setPreviewModalOpen(true);
+    if (!forceRefresh && previewPdfBlob && currentSnapshot === lastGeneratedSnapshot) {
       return;
     }
 
+    if (renderingDocx) return;
+
     setRenderingDocx(true);
-    setPreviewModalOpen(true);
     try {
-      if (previewPdfUrl) {
-        URL.revokeObjectURL(previewPdfUrl);
-        setPreviewPdfUrl(null);
-      }
       const docx = await generateFinancialDocxBlob();
       setPreviewDocxBlob(docx);
 
@@ -1094,6 +1219,26 @@ export function TabFinancial({
       setPreviewPdfUrl(url);
 
       setLastGeneratedSnapshot(currentSnapshot);
+
+      // رفع تلقائي هادئ في الخلفية للسحابة (Gofile / R2) لضمان توفر الرابط دائماً
+      if (!cloudPdfUrl) {
+        uploadPdfToFreeCloud(
+          pdfBlob,
+          `financial_offer_${registrationNumber || op.serialNumber || "doc"}.pdf`
+        ).then((res) => {
+          if (res?.url) {
+            setCloudPdfUrl(res.url);
+            try {
+              let existingNotesObj: any = {};
+              if (op.notes && op.notes.startsWith("{")) existingNotesObj = JSON.parse(op.notes);
+              if (!existingNotesObj.financialOfferDocx) existingNotesObj.financialOfferDocx = {};
+              existingNotesObj.financialOfferDocx.cloudPdfUrl = res.url;
+              api.patch(`/operations/${op.id}`, { notes: JSON.stringify(existingNotesObj) }).catch(() => {});
+            } catch {}
+          }
+        }).catch(() => {});
+      }
+
       if (forceRefresh) {
         toast.success("تم تحديث المعاينة الرسمية بنجاح! 🔄✨");
       }
@@ -1214,29 +1359,7 @@ export function TabFinancial({
 
   // ━━━ دالة عرض الملف المؤرشف فوراً (0ms) بدون إعادة تحويل ━━━
   const handleViewArchive = () => {
-    // 1. إذا كان رابط السحابة متاحاً، افتح النسخة السحابية المعتمدة فوراً
-    if (cloudPdfUrl) {
-      window.open(cloudPdfUrl, "_blank");
-      return;
-    }
-    // 2. إذا كان ملف الـ PDF متوفراً في الذاكرة مسبقاً، افتح نافذة المعاينة فوراً
-    if (previewPdfBlob) {
-      setPreviewModalOpen(true);
-      return;
-    }
-    // 3. التحقق من وجود مستند مؤرشف في أرشيف العملية
-    const archivedDoc = op.documents?.find(
-      (d: any) =>
-        d.type?.toLowerCase().includes("financial") ||
-        d.name?.toLowerCase().includes("financial") ||
-        d.name?.includes("مالي")
-    );
-    if (archivedDoc?.fileUrl) {
-      window.open(archivedDoc.fileUrl, "_blank");
-      return;
-    }
-    // 4. فتح المعاينة
-    setPreviewModalOpen(true);
+    loadOfficialPreview(false);
   };
 
   // ━━━ تحميل ملف Word الأصلي (.docx) ━━━
@@ -1378,11 +1501,6 @@ export function TabFinancial({
     if (previewModalOpen) {
       loadOfficialPreview();
     }
-    return () => {
-      if (previewPdfUrl) {
-        URL.revokeObjectURL(previewPdfUrl);
-      }
-    };
   }, [previewModalOpen]);
 
   // ━━━ طباعة العرض المالي مباشرة ━━━
@@ -1624,11 +1742,29 @@ export function TabFinancial({
               label="العام المالي"
             />
             <div className="space-y-1">
-              <Label className="text-[11px] font-bold">جلسة فتح المظروف</Label>
+              <div className="flex items-center justify-between">
+                <Label className="text-[11px] font-bold">جلسة فتح المظروف</Label>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const fresh = getOperationFinancialOpeningDate(op);
+                    if (fresh) {
+                      setFinancialOpeningDate(fresh);
+                      toast.success(`تمت مزامنة موعد الجلسة: ${fresh}`);
+                    }
+                  }}
+                  className="text-[10px] font-bold text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-0.5 cursor-pointer"
+                  title="مزامنة موعد الجلسة من التواريخ"
+                >
+                  <RefreshCw className="h-3 w-3" />
+                  <span>تحديث</span>
+                </button>
+              </div>
               <Input
                 value={financialOpeningDate}
                 onChange={(e) => setFinancialOpeningDate(e.target.value)}
-                className="h-9 text-xs font-mono text-center"
+                placeholder="24/10/2026"
+                className="h-9 text-xs font-mono text-center font-bold"
               />
             </div>
           </div>
@@ -1688,16 +1824,30 @@ export function TabFinancial({
                       </span>
                     </div>
 
-                    <div className="flex items-center gap-2">
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => handleAddAlternative(item.id)}
-                        className="h-7 px-2 text-[11px] font-bold text-teal-600 hover:bg-teal-500/10 rounded-lg cursor-pointer flex items-center gap-1"
-                      >
-                        <Plus className="h-3 w-3" />
-                        <span>إضافة بديل تسعير</span>
-                      </Button>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      {/* محدد عدد البدائل السريع (0، 1، 2، 3) بحد أقصى 3 */}
+                      <div className="inline-flex items-center bg-muted/60 p-0.5 rounded-xl border border-border">
+                        <span className="text-[10px] font-bold text-muted-foreground px-1.5 hidden sm:inline">البدائل:</span>
+                        {[0, 1, 2, 3].map((count) => {
+                          const alts = item.variants.filter((v) => v.variantType === "alternative");
+                          const isSelected = alts.length === count;
+                          return (
+                            <button
+                              key={count}
+                              type="button"
+                              onClick={() => handleSetAlternativeCount(item.id, count)}
+                              className={`px-2 py-0.5 text-[11px] font-bold rounded-lg transition-all cursor-pointer ${
+                                isSelected
+                                  ? "bg-teal-600 text-white shadow-xs"
+                                  : "text-muted-foreground hover:text-foreground hover:bg-muted"
+                              }`}
+                              title={`تحديد ${count === 0 ? "بدون بدائل" : count + " بدائل"} لهذا الصنف`}
+                            >
+                              {count === 0 ? "بدون (0)" : count === 1 ? "بديل 1" : count === 2 ? "بديلين (2)" : "3 بدائل (3)"}
+                            </button>
+                          );
+                        })}
+                      </div>
 
                       {items.length > 1 && (
                         <Button
@@ -1790,35 +1940,17 @@ export function TabFinancial({
                             )}
                           </div>
 
-                          {/* أعمدة المواصفات الفنية: الوصف، الفرعي، فرعي 1 */}
-                          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                            <div className="space-y-0.5">
-                              <Label className="text-[10px] text-muted-foreground">الوصف</Label>
-                              <Input
-                                value={v.description}
-                                onChange={(e) => handleUpdateVariantField(item.id, v.id, "description", e.target.value)}
-                                placeholder="الماركة والمواصفات"
-                                className="h-8 text-xs"
-                              />
-                            </div>
-                            <div className="space-y-0.5">
-                              <Label className="text-[10px] text-muted-foreground">الوصف الفرعي</Label>
-                              <Input
-                                value={v.subDescription}
-                                onChange={(e) => handleUpdateVariantField(item.id, v.id, "subDescription", e.target.value)}
-                                placeholder="المقاس / الجهد / السعة"
-                                className="h-8 text-xs"
-                              />
-                            </div>
-                            <div className="space-y-0.5">
-                              <Label className="text-[10px] text-muted-foreground">فرعي 1</Label>
-                              <Input
-                                value={v.branch1}
-                                onChange={(e) => handleUpdateVariantField(item.id, v.id, "branch1", e.target.value)}
-                                placeholder="بلد المنشأ / الطراز"
-                                className="h-8 text-xs"
-                              />
-                            </div>
+                          {/* عمود الوصف الفني المدمج طبقا للهيكل الجديد المعتمد */}
+                          <div className="space-y-1">
+                            <Label className="text-[10px] font-bold text-foreground">
+                              الوصف الفني (المواصفات الفنية المدمجة) *
+                            </Label>
+                            <Input
+                              value={v.description}
+                              onChange={(e) => handleUpdateVariantField(item.id, v.id, "description", e.target.value)}
+                              placeholder="مثلاً: إطارات ماركة ميشلان فرنسي إنتاج 2026 حمولة 18PR سرعة K نقشة شجري"
+                              className="h-8 text-xs font-medium"
+                            />
                           </div>
 
                           {/* أعمدة التسعير: سعر الوحدة، إجمالي الكمية، ملاحظات */}
@@ -2013,6 +2145,7 @@ export function TabFinancial({
                 <Input
                   value={specialistName}
                   onChange={(e) => setSpecialistName(e.target.value)}
+                  placeholder="أحمد محمد (أو اسم المهندس المختص)"
                   className="flex-1 h-9 text-xs font-bold"
                 />
               </div>
@@ -2023,7 +2156,7 @@ export function TabFinancial({
               <Input
                 value={financeManagerName}
                 onChange={(e) => setFinanceManagerName(e.target.value)}
-                placeholder="اسم المدير المالي"
+                placeholder="محمود إبراهيم (أو اسم المدير المالي)"
                 className="h-9 text-xs font-bold"
               />
             </div>
@@ -2110,6 +2243,9 @@ export function TabFinancial({
                     onDownloadDocx={handleDownloadDocx}
                     onDownloadPdf={handleDownloadPdf}
                     onPrint={handlePrintWordDocument}
+                    onAddToArchive={handleToggleArchive}
+                    isArchived={isArchived}
+                    addingToArchive={addingToArchive}
                   />
                 )}
               </div>
@@ -2118,21 +2254,6 @@ export function TabFinancial({
         </Portal>
       )}
 
-      {/* ━━━ الباركود الذكي ورمز QR والرفع السحابي المجاني للنسخة الرقمية بأسفل الصفحة ━━━ */}
-      <LetterQrCloudCard
-        cloudPdfUrl={cloudPdfUrl}
-        registrationNumber={registrationNumber}
-        opId={op.id}
-        docType="financial"
-        uploadingCloud={uploadingCloud}
-        onUploadToCloud={handleUploadToCloud}
-        title="الباركود الذكي ورمز QR الرقمي المعتمد (PDF)"
-        subtitle="عند مسح الباركود بكاميرا الموبايل يتم فتح صفحة النسخة الرقمية المعتمدة للعرض المالي فوراً بدون الحاجة لأي تسجيل دخول."
-        badgeText="مدمج بموضع كلمة (الباركود) بالأعلى ورقم القيد بالتذييل"
-        gradientClass="from-teal-500/10 via-emerald-500/10 to-transparent border-teal-500/25"
-        isModifiedAfterUpload={isDirty}
-      />
-
       {/* ━━━ BOTTOM ACTION BAR: التوليد والطباعة والمعاينة بأسفل مرحلة العرض المالي ━━━ */}
       <LetterBottomActionWidget
         title="العرض المالي وجدول الأسعار والكميات"
@@ -2140,7 +2261,6 @@ export function TabFinancial({
         isDirty={isDirty}
         printInfo={printHistory["financial"] || printHistory["financialOffer"]}
         onPreview={() => {
-          setPreviewModalOpen(true);
           loadOfficialPreview();
         }}
         onSave={handleSaveOffer}

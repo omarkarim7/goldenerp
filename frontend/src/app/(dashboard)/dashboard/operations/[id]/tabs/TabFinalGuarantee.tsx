@@ -32,6 +32,8 @@ import {
   PdfExportLoadingModal,
   getUnifiedOperationRegistrationNumber,
   regenerateUnifiedRegistrationNumber,
+  getLetterSpecificRegistrationNumber,
+  regenerateLetterSpecificRegistrationNumber,
   getSharedOperationScope,
   replaceDocxScope,
   replaceDocxFiscalAndDate,
@@ -43,11 +45,15 @@ import {
   getOperationTechnicalOpeningDate,
   getOperationTenderMethod,
   isValidCloudDocUrl,
+  generateHighResDocQrBuffer,
+  getStandardDocQrPayload,
+  buildOfficialSignaturesTableXml,
 } from "./letter-utils";
 import JSZip from "jszip";
 import QRCode from "qrcode";
 import { getPdfBlobFromDocx, uploadPdfToFreeCloud, getExpectedCloudPdfUrl } from "./client-pdf";
 import { OnlyOfficeDocViewer } from "@/components/OnlyOfficeDocViewer";
+import { SmartArabicDatePicker } from "@/components/ui/arabic-date-picker";
 
 export type FinalGuaranteeLetterType =
   | "CASH"
@@ -117,10 +123,14 @@ export function TabFinalGuarantee({
 
   const currentCompany = currentCompanyLink?.company;
 
-  // Smart Outgoing Registration Number (Unified across operation)
+  // Smart Outgoing Registration Number (Letter-specific for Final Guarantee)
   const [registrationNumber, setRegistrationNumber] = useState(() => {
-    if (savedSettings?.registrationNumber) return savedSettings.registrationNumber;
-    return getUnifiedOperationRegistrationNumber(op, currentCompanyLink?.displayCode);
+    return getLetterSpecificRegistrationNumber(
+      op,
+      "final_guarantee",
+      currentCompanyLink?.displayCode,
+      savedSettings?.registrationNumber
+    );
   });
 
   // Header & Footer fields
@@ -195,10 +205,9 @@ export function TabFinalGuarantee({
     return d.toLocaleDateString("en-GB");
   });
 
-  // Signatures & Notes
   const [specialistTitle, setSpecialistTitle] = useState(() => savedSettings?.specialistTitle || "المختص / المندوب :");
-  const [specialistName, setSpecialistName] = useState(() => savedSettings?.specialistName || "أحمد محمد");
-  const [financeManagerName, setFinanceManagerName] = useState(() => savedSettings?.financeManagerName || "محمود إبراهيم");
+  const [specialistName, setSpecialistName] = useState(() => savedSettings?.specialistName || "");
+  const [financeManagerName, setFinanceManagerName] = useState(() => savedSettings?.financeManagerName || "");
   const [boardChairman, setBoardChairman] = useState(() => {
     if (savedSettings?.boardChairman) return sanitizeChairmanTitle(savedSettings.boardChairman);
     const comp = currentCompanyLink?.company || op.companies?.[0]?.company;
@@ -333,8 +342,9 @@ export function TabFinalGuarantee({
   };
 
   const handleRegenerateRef = async () => {
-    await regenerateUnifiedRegistrationNumber({
+    await regenerateLetterSpecificRegistrationNumber({
       op,
+      letterKey: "final_guarantee",
       companyCode: currentCompanyLink?.displayCode || "AZ",
       onSuccess: (fresh) => {
         setRegistrationNumber(fresh);
@@ -359,38 +369,46 @@ export function TabFinalGuarantee({
 
     // QR Code Generation - فقط في حالة الرفع السحابي الفعلي
     let qrDrawingXml = "";
-    const activeCloud = cloudUrls[type];
-    if (isValidCloudDocUrl(activeCloud)) {
-      try {
-        const qrDataUrl = await QRCode.toDataURL(activeCloud, {
-          width: 600,
-          margin: 2,
-          errorCorrectionLevel: "M",
-        });
-        const qrBase64 = qrDataUrl.split(",")[1];
-        const qrBinary = Uint8Array.from(atob(qrBase64), (c) => c.charCodeAt(0));
+    try {
+      const activeCloud = cloudUrls[type];
+      const filename = `final_guarantee_${type}_${registrationNumber || op.serialNumber || "doc"}.pdf`;
+      const qrPayload = await getStandardDocQrPayload(
+        activeCloud,
+        registrationNumber,
+        type === "BANK_GUARANTEE"
+          ? "خطاب إصدار خطاب ضمان بنكي نهائي"
+          : type === "DEDUCTION"
+          ? "خطاب خصم التأمين النهائي من المستحقات"
+          : type === "DEDUCTION_AND_INITIAL"
+          ? "خطاب خصم النهائي من المستحقات والتأمين الابتدائي"
+          : type === "INITIAL_TRANSFER"
+          ? "خطاب تحويل التأمين الابتدائي إلى نهائي"
+          : "خطاب سداد التأمين النهائي نقداً بالخزينة",
+        currentCompany?.name || "المجموعة الذهبية",
+        filename
+      );
+      const qrBinary = await generateHighResDocQrBuffer(qrPayload);
 
-        zip.file("word/media/doc_qr.png", qrBinary);
+      zip.file("word/media/doc_qr.png", qrBinary);
 
-        let relsXml = await zip.file("word/_rels/document.xml.rels")?.async("text");
-        if (relsXml && !relsXml.includes("rIdQR")) {
-          relsXml = relsXml.replace(
-            "</Relationships>",
-            '<Relationship Id="rIdQR" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/doc_qr.png"/></Relationships>'
-          );
-          zip.file("word/_rels/document.xml.rels", relsXml);
-        }
-
-        let ctXml = await zip.file("[Content_Types].xml")?.async("text");
-        if (ctXml && !ctXml.includes('Extension="png"')) {
-          ctXml = ctXml.replace("</Types>", '<Default Extension="png" ContentType="image/png"/></Types>');
-          zip.file("[Content_Types].xml", ctXml);
-        }
-
-        qrDrawingXml = buildQrAnchorXml();
-      } catch (e) {
-        console.warn("QR generation failed:", e);
+      let relsXml = await zip.file("word/_rels/document.xml.rels")?.async("text");
+      if (relsXml && !relsXml.includes("rIdQR")) {
+        relsXml = relsXml.replace(
+          "</Relationships>",
+          '<Relationship Id="rIdQR" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/doc_qr.png"/></Relationships>'
+        );
+        zip.file("word/_rels/document.xml.rels", relsXml);
       }
+
+      let ctXml = await zip.file("[Content_Types].xml")?.async("text");
+      if (ctXml && !ctXml.includes('Extension="png"')) {
+        ctXml = ctXml.replace("</Types>", '<Default Extension="png" ContentType="image/png"/></Types>');
+        zip.file("[Content_Types].xml", ctXml);
+      }
+
+      qrDrawingXml = buildQrAnchorXml();
+    } catch (e) {
+      console.warn("QR generation failed in TabFinalGuarantee:", e);
     }
 
     let docXml = await zip.file("word/document.xml")!.async("text");
@@ -468,13 +486,19 @@ export function TabFinalGuarantee({
       docXml = docXml.replace(initialRegex, `$1<w:r><w:rPr><w:rFonts w:hint="cs"/><w:b/><w:bCs/><w:sz w:val="32"/><w:szCs w:val="32"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t xml:space="preserve"> ${String(numInitial)} فقط وقدره : ${tafqeetInitial} </w:t></w:r>$3`);
     }
 
-    // 9. التوقيعات واعتماد رئيس مجلس الإدارة
-    docXml = docXml.replace(/المختص\s*\/\s*المندوب\s*:/g, escapeXml(specialistTitle));
-    docXml = docXml.replace(/المختص\s*:/g, escapeXml(specialistTitle));
-    docXml = docXml.replace(/أحمد محمد/g, escapeXml(specialistName));
-    docXml = docXml.replace(/توقيع صورة أو اسم/g, escapeXml(financeManagerName || " "));
-    docXml = docXml.replace(/توقيع صورة/g, escapeXml(financeManagerName || " "));
-    docXml = replaceDocxChairman(docXml, boardChairman);
+    // 9. التوقيعات واعتماد رئيس مجلس الإدارة بأسفل الصفحة في جدول ثلاثي منضبط (بدون أي التفاف Wrap)
+    const finalGuarSigRegex = /<w:p\b[^>]*>(?:(?!<w:p\b)[\s\S])*?المختص[\s\S]*?رئيس مجلس[\s\S]*?<\/w:p>/;
+    if (finalGuarSigRegex.test(docXml)) {
+      const sigTableXml = buildOfficialSignaturesTableXml({
+        specialistTitle: specialistTitle || "المختص / المندوب :",
+        specialistName: specialistName || " ",
+        financeManagerName: financeManagerName || " ",
+        boardChairman: boardChairman || "رئيس مجلس الإدارة",
+      });
+      docXml = docXml.replace(finalGuarSigRegex, sigTableXml);
+    } else {
+      docXml = replaceDocxChairman(docXml, boardChairman);
+    }
 
     // إزالة خانة الملاحظات تماماً من أسفل الخطاب كما طلب المستخدم
     docXml = docXml.replace(/<w:p\b[^>]*>(?:(?!<w:p\b)[\s\S])*?خان[ةه]\s*خالي[ةه]\s*للملاحظات[\s\S]*?<\/w:p>/g, "");
@@ -535,17 +559,13 @@ export function TabFinalGuarantee({
   };
 
   const loadOfficialPreview = async (type: FinalGuaranteeLetterType = activeLetterType, forceRefresh = false) => {
+    setPreviewModalOpen(true);
     if (previewPdfBlob && lastGeneratedSnapshot === currentSnapshot && previewDocxBlob && !forceRefresh) {
-      setPreviewModalOpen(true);
       return;
     }
+    if (renderingDocx) return;
     setRenderingDocx(true);
-    setPreviewModalOpen(true);
     try {
-      if (previewPdfUrl) {
-        URL.revokeObjectURL(previewPdfUrl);
-        setPreviewPdfUrl(null);
-      }
       const docx = await generateGuaranteeDocxBlob(type);
       setPreviewDocxBlob(docx);
 
@@ -580,14 +600,16 @@ export function TabFinalGuarantee({
     existingBlob?: Blob
   ) => {
     if (cloudUrls[type] && !cloudUrls[type].includes("tmpfiles") && !cloudUrls[type].includes("tmpfile") && !cloudUrls[type].includes("catbox") && !forceReupload) {
+      toast.info("تم رفع وتوثيق هذا الخطاب سحابياً مسبقاً وهو نشط بالفعل ✓");
       return;
     }
     setUploadingCloud(true);
     try {
+      toast.info("جاري توثيق ورفع خطاب التأمين النهائي سحابياً (رابط PDF مباشر)...");
       let pdfBlob: Blob;
       if (existingBlob) {
         pdfBlob = existingBlob;
-      } else if (previewPdfBlob && lastGeneratedSnapshot === currentSnapshot) {
+      } else if (previewPdfBlob && lastGeneratedSnapshot === currentSnapshot && !forceReupload) {
         pdfBlob = previewPdfBlob;
       } else {
         pdfBlob = await generateGuaranteePdfBlob(type);
@@ -600,6 +622,16 @@ export function TabFinalGuarantee({
         const updatedUrls = { ...cloudUrls, [type]: cloudRes.url };
         setCloudUrls(updatedUrls);
 
+        // مزامنة المعاينة في الذاكرة فوراً لفتحها بـ 0ms بدون أي إعادة توليد
+        setPreviewPdfBlob(pdfBlob);
+        if (previewPdfUrl) {
+          URL.revokeObjectURL(previewPdfUrl);
+        }
+        setPreviewPdfUrl(URL.createObjectURL(pdfBlob));
+        setLastGeneratedSnapshot(currentSnapshot);
+
+        toast.success("تم توثيق ورفع خطاب التأمين النهائي وتحديث المعاينة بنجاح! جاهز للمعاينة الفورية 🚀");
+
         try {
           let existingNotes: any = {};
           if (op.notes && op.notes.startsWith("{")) existingNotes = JSON.parse(op.notes);
@@ -609,7 +641,9 @@ export function TabFinalGuarantee({
         } catch {}
       }
     } catch (err: any) {
-      console.warn("Cloud upload background note:", err?.message);
+      if (forceReupload) {
+        toast.error("فشل الرفع السحابي: " + (err?.response?.data?.message || err?.message || ""));
+      }
     } finally {
       setUploadingCloud(false);
     }
@@ -730,31 +764,8 @@ export function TabFinalGuarantee({
 
   // ━━━ دالة عرض الملف المؤرشف فوراً (0ms) بدون إعادة تحويل ━━━
   const handleViewArchive = () => {
-    // 1. إذا كان رابط السحابة متاحاً، افتح النسخة السحابية المعتمدة فوراً
-    const activeCloud = cloudUrls[activeLetterType];
-    if (activeCloud) {
-      window.open(activeCloud, "_blank");
-      return;
-    }
-    // 2. إذا كان ملف الـ PDF متوفراً في الذاكرة مسبقاً، افتح نافذة المعاينة فوراً
-    if (previewPdfBlob) {
-      setPreviewModalOpen(true);
-      return;
-    }
-    // 3. التحقق من وجود مستند مؤرشف في أرشيف العملية
-    const archivedDoc = op.documents?.find(
-      (d: any) =>
-        d.type?.toLowerCase().includes("guarantee") ||
-        d.name?.toLowerCase().includes("guarantee") ||
-        d.name?.includes("ضمان") ||
-        d.name?.includes("تأمين")
-    );
-    if (archivedDoc?.fileUrl) {
-      window.open(archivedDoc.fileUrl, "_blank");
-      return;
-    }
-    // 4. فتح المعاينة
     setPreviewModalOpen(true);
+    loadOfficialPreview(activeLetterType, false);
   };
 
   // ━━━ حالة وإجراء الإضافة المباشرة للأرشيف ━━━
@@ -909,6 +920,12 @@ export function TabFinalGuarantee({
         cloudUrls,
         printHistory,
       };
+
+      if (!existingNotes.letterRegistrationNumbers) {
+        existingNotes.letterRegistrationNumbers = {};
+      }
+      existingNotes.letterRegistrationNumbers["final_guarantee"] = registrationNumber;
+
       existingNotes.operationScope = operationScope;
       existingNotes.fiscalYear = fiscalYear;
 
@@ -1211,12 +1228,11 @@ export function TabFinalGuarantee({
               </div>
 
               <div className="space-y-1.5">
-                <Label className="text-xs font-bold text-foreground">تاريخ الصادر (التذييل) *</Label>
-                <Input
+                <SmartArabicDatePicker
+                  label="تاريخ الصادر (التذييل)"
                   value={outgoingDate}
-                  onChange={(e) => setOutgoingDate(e.target.value)}
-                  placeholder="15/10/2026"
-                  className="h-9.5 text-xs font-mono rounded-xl text-center font-bold bg-background"
+                  onChange={(val) => setOutgoingDate(val)}
+                  required
                 />
               </div>
             </div>
@@ -1639,12 +1655,11 @@ export function TabFinalGuarantee({
               </div>
 
               <div className="space-y-1.5">
-                <Label className="text-xs font-bold text-foreground">تاريخ السداد / الإصدار *</Label>
-                <Input
-                  type="date"
+                <SmartArabicDatePicker
+                  label="تاريخ السداد / الإصدار"
+                  required
                   value={receiptDate}
-                  onChange={(e) => setReceiptDate(e.target.value)}
-                  className="h-10 text-xs rounded-xl"
+                  onChange={(val) => setReceiptDate(val)}
                 />
               </div>
             </div>
@@ -1662,12 +1677,11 @@ export function TabFinalGuarantee({
                 </div>
 
                 <div className="space-y-1.5">
-                  <Label className="text-xs font-bold text-foreground">تاريخ انتهاء سريان خطاب الضمان (الاستلام النهائي) *</Label>
-                  <Input
-                    type="date"
+                  <SmartArabicDatePicker
+                    label="تاريخ انتهاء سريان خطاب الضمان (الاستلام النهائي)"
+                    required
                     value={validUntilDate}
-                    onChange={(e) => setValidUntilDate(e.target.value)}
-                    className="h-10 text-xs rounded-xl"
+                    onChange={(val) => setValidUntilDate(val)}
                   />
                 </div>
               </div>
@@ -1998,9 +2012,20 @@ export function TabFinalGuarantee({
                     documentTitle={`تأمين_نهائي_${activeLetterType}_${op.externalNumber || op.serialNumber}_${registrationNumber}.docx`}
                     docxBlob={previewDocxBlob}
                     pdfBlob={previewPdfBlob}
+                    pdfUrl={previewPdfUrl}
                     onDownloadDocx={() => handleDownloadDocx(activeLetterType)}
                     onDownloadPdf={() => handleDownloadPdf(activeLetterType)}
                     onPrint={handlePrintWordDocument}
+                    onAddToArchive={handleToggleArchive}
+                    isArchived={isArchived}
+                    addingToArchive={addingToArchive}
+                    cloudUploadWarning={
+                      !currentCloudUrl || isDirty
+                        ? "⚠️ تنبيه هام: هذا الخطاب يحتوي على تعديلات جديدة لم يتم رفعها سحابياً — يرجى الضغط على 'إعادة الرفع والتحديث' لكي يتطابق الباركود مع أحدث بيانات!"
+                        : null
+                    }
+                    onUploadCloud={() => handleUploadToCloud(activeLetterType, true)}
+                    isUploadingCloud={uploadingCloud}
                   />
                 )}
               </div>
@@ -2008,21 +2033,6 @@ export function TabFinalGuarantee({
           </div>
         </Portal>
       )}
-
-      {/* ━━━ الباركود الذكي ورمز QR والرفع السحابي المجاني للنسخة الرقمية بأسفل الصفحة ━━━ */}
-      <LetterQrCloudCard
-        cloudPdfUrl={currentCloudUrl}
-        registrationNumber={registrationNumber}
-        opId={op.id}
-        docType={`final_guarantee_${activeLetterType}`}
-        uploadingCloud={uploadingCloud}
-        onUploadToCloud={(force) => handleUploadToCloud(activeLetterType, force)}
-        title="الباركود الذكي ورمز QR الرقمي المعتمد (PDF)"
-        subtitle="عند مسح الباركود بكاميرا الموبايل يتم فتح النسخة الرقمية المعتمدة لخطاب التأمين النهائي فوراً بدون الحاجة لأي تسجيل دخول."
-        badgeText="مدمج بموضع كلمة (الباركود) بالأعلى ورقم القيد بالتذييل"
-        gradientClass="from-emerald-500/10 via-teal-500/10 to-transparent border-emerald-500/25"
-        isModifiedAfterUpload={isDirty}
-      />
 
       {/* ━━━ BOTTOM ACTION BAR: التوليد والطباعة والمعاينة بأسفل مرحلة التأمين النهائي ━━━ */}
       <LetterBottomActionWidget
@@ -2040,7 +2050,9 @@ export function TabFinalGuarantee({
         registrationNumber={registrationNumber}
         isDirty={isDirty}
         printInfo={printHistory[activeLetterType]}
-        onPreview={() => loadOfficialPreview(activeLetterType)}
+        onPreview={() => {
+          loadOfficialPreview(activeLetterType);
+        }}
         onPreviewPdfDirect={handleOpenDirectPdfPreview}
         onSave={handleSaveToSystem}
         onCancelEdits={handleCancelEdits}

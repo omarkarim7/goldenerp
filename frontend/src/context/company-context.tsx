@@ -1,7 +1,7 @@
 "use client";
 
 import React, { createContext, useContext, useEffect, useState, useMemo, useCallback } from "react";
-import { API_BASE_URL } from "@/lib/api";
+import api from "@/lib/api";
 
 export type CompanyCode = "ALL" | "A" | "B" | "C" | "D";
 
@@ -53,6 +53,7 @@ interface CompanyContextType {
   overviewData: CompanyOverviewItem[];
   loadingOverview: boolean;
   refreshOverview: () => Promise<void>;
+  updateCompanyName: (code: CompanyCode, newName: string, newFullName?: string) => Promise<void>;
   isCompanyLocked: boolean;
   userRole: string | null;
   allowedCompanyCodes: string[];
@@ -121,6 +122,29 @@ const CompanyContext = createContext<CompanyContextType | undefined>(undefined);
 
 export function CompanyProvider({ children }: { children: React.ReactNode }) {
   const [selectedCompany, setSelectedCompanyState] = useState<CompanyCode>("ALL");
+  const [companies, setCompanies] = useState<CompanyInfo[]>(() => {
+    if (typeof window !== "undefined") {
+      try {
+        const saved = localStorage.getItem("company_names_custom");
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          return STATIC_COMPANIES.map((c) => {
+            if (parsed[c.code]) {
+              const customName = parsed[c.code].name || c.name;
+              return {
+                ...c,
+                name: customName,
+                shortName: `${customName} (${c.code})`,
+                fullName: parsed[c.code].fullName || `${customName} (${c.code})`,
+              };
+            }
+            return c;
+          });
+        }
+      } catch {}
+    }
+    return STATIC_COMPANIES;
+  });
   const [overviewData, setOverviewData] = useState<CompanyOverviewItem[]>([]);
   const [loadingOverview, setLoadingOverview] = useState<boolean>(true);
   const [userRole, setUserRole] = useState<string | null>(null);
@@ -144,12 +168,9 @@ function parseAllowedCodes(role?: string | null, allowedStr?: string | null): st
     try {
       const token = localStorage.getItem("accessToken");
       if (!token) return;
-      const apiBase = API_BASE_URL;
-      const res = await fetch(`${apiBase}/api/auth/me`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (res.ok) {
-        const freshUser = await res.json();
+      const res = await api.get("/auth/me");
+      if (res.data) {
+        const freshUser = res.data;
         localStorage.setItem("user", JSON.stringify(freshUser));
         setUserRole(freshUser.role || null);
         const freshAllowed = parseAllowedCodes(freshUser.role, freshUser.allowedCompanies);
@@ -232,18 +253,34 @@ function parseAllowedCodes(role?: string | null, allowedStr?: string | null): st
   const fetchOverview = async () => {
     setLoadingOverview(true);
     try {
-      const token = localStorage.getItem("accessToken");
-      const apiBase = API_BASE_URL;
-      const res = await fetch(`${apiBase}/api/companies/overview`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-
-      if (res.ok) {
-        const data = await res.json();
-        if (Array.isArray(data) && data.length > 0) {
-          setOverviewData(data);
-          return;
+      // 1. Fetch real companies from backend DB and sync customized names
+      try {
+        const compRes = await api.get("/companies");
+        const compData = compRes.data;
+        if (Array.isArray(compData) && compData.length > 0) {
+          setCompanies((prev) =>
+            prev.map((c) => {
+              const found = compData.find((dbComp: any) => dbComp.code === c.code);
+              if (found && found.name) {
+                return {
+                  ...c,
+                  id: found.id || c.id,
+                  name: found.name,
+                  shortName: `${found.name} (${c.code})`,
+                  fullName: `${found.name} (${c.code})`,
+                };
+              }
+              return c;
+            })
+          );
         }
+      } catch {}
+
+      // 2. Fetch company overview telemetry
+      const res = await api.get("/companies/overview");
+      if (Array.isArray(res.data) && res.data.length > 0) {
+        setOverviewData(res.data);
+        return;
       }
     } catch {
       // Fallback below
@@ -344,10 +381,72 @@ function parseAllowedCodes(role?: string | null, allowedStr?: string | null): st
     fetchOverview();
   }, []);
 
+  const updateCompanyName = useCallback(
+    async (code: CompanyCode, newName: string, newFullName?: string) => {
+      const cleanName = newName.trim();
+      if (!cleanName) return;
+
+      // Optimistic update to companies state
+      setCompanies((prev) => {
+        const next = prev.map((c) => {
+          if (c.code === code) {
+            return {
+              ...c,
+              name: cleanName,
+              shortName: `${cleanName} (${code})`,
+              fullName: newFullName?.trim() || `${cleanName} (${code})`,
+            };
+          }
+          return c;
+        });
+
+        // Persist to localStorage for immediate resilience
+        try {
+          const customMap: Record<string, { name: string; fullName: string }> = {};
+          next.forEach((c) => {
+            customMap[c.code] = { name: c.name, fullName: c.fullName };
+          });
+          localStorage.setItem("company_names_custom", JSON.stringify(customMap));
+        } catch {}
+
+        return next;
+      });
+
+      // Update overview item
+      setOverviewData((prev) =>
+        prev.map((item) => {
+          if (item.code === code) {
+            return {
+              ...item,
+              name: cleanName,
+              fullName: newFullName?.trim() || `${cleanName} (${code})`,
+            };
+          }
+          return item;
+        })
+      );
+
+      // Persist to DB via PATCH /api/companies/:id
+      try {
+        const compRes = await api.get("/companies");
+        const compList = compRes.data;
+        if (Array.isArray(compList)) {
+          const target = compList.find((c: any) => c.code === code);
+          if (target) {
+            await api.patch(`/companies/${target.id}`, { name: cleanName });
+          }
+        }
+      } catch (err) {
+        console.warn("تعذر مزامنة اسم الشركة مع الخادم:", err);
+      }
+    },
+    []
+  );
+
   const currentCompany = useMemo(() => {
     if (selectedCompany === "ALL") return null;
-    return STATIC_COMPANIES.find((c) => c.code === selectedCompany) || null;
-  }, [selectedCompany]);
+    return companies.find((c) => c.code === selectedCompany) || null;
+  }, [selectedCompany, companies]);
 
   const isCompanyLocked = userRole !== "GENERAL_MANAGER" && !allowedCompanyCodes.includes(selectedCompany);
 
@@ -363,10 +462,11 @@ function parseAllowedCodes(role?: string | null, allowedStr?: string | null): st
         selectedCompany,
         setSelectedCompany,
         currentCompany,
-        companies: STATIC_COMPANIES,
+        companies,
         overviewData,
         loadingOverview,
         refreshOverview: fetchOverview,
+        updateCompanyName,
         isCompanyLocked,
         userRole,
         allowedCompanyCodes,

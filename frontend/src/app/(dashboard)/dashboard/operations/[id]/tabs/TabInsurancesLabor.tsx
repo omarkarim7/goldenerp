@@ -51,6 +51,7 @@ import {
   EmptyState,
 } from "./types";
 import { StepFooterNav } from "./StepFooterNav";
+import { SmartArabicDatePicker } from "@/components/ui/arabic-date-picker";
 
 export interface InsuranceRecord {
   id: string;
@@ -722,12 +723,11 @@ export function TabInsurancesLabor({
           </div>
 
           <div className="space-y-1.5">
-            <Label className="text-xs font-bold">تاريخ إصدار أمر الدفع</Label>
-            <Input
-              type="date"
+            <SmartArabicDatePicker
+              label="تاريخ إصدار أمر الدفع"
               value={paymentOrderDate}
-              onChange={(e) => setPaymentOrderDate(e.target.value)}
-              className="h-10 text-xs font-mono rounded-xl"
+              onChange={(val) => setPaymentOrderDate(val)}
+              outputFormat="iso"
             />
           </div>
 
@@ -897,12 +897,12 @@ export function TabInsurancesLabor({
                 </div>
 
                 <div className="space-y-1.5">
-                  <Label className="text-xs font-bold">تاريخ السداد *</Label>
-                  <Input
-                    type="date"
+                  <SmartArabicDatePicker
+                    label="تاريخ السداد"
+                    required
                     value={formData.date}
-                    onChange={(e) => setFormData((prev) => ({ ...prev, date: e.target.value }))}
-                    className="h-10 text-xs font-mono rounded-xl"
+                    onChange={(val) => setFormData((prev) => ({ ...prev, date: val }))}
+                    outputFormat="iso"
                   />
                 </div>
               </div>
@@ -1034,12 +1034,12 @@ export function TabInsurancesLabor({
                 </div>
 
                 <div className="space-y-1.5">
-                  <Label className="text-xs font-bold">تاريخ السداد *</Label>
-                  <Input
-                    type="date"
+                  <SmartArabicDatePicker
+                    label="تاريخ السداد"
+                    required
                     value={formData.date}
-                    onChange={(e) => setFormData((prev) => ({ ...prev, date: e.target.value }))}
-                    className="h-10 text-xs font-mono rounded-xl"
+                    onChange={(val) => setFormData((prev) => ({ ...prev, date: val }))}
+                    outputFormat="iso"
                   />
                 </div>
               </div>

@@ -55,14 +55,15 @@ export class CompaniesService {
             id: c.id,
             name: c.name,
             code: c.code,
-            fullName:
-              c.code === 'A'
-                ? 'المجموعة الذهبية للتوريدات والمقاولات'
-                : c.code === 'B'
-                ? 'العالمية للتوريدات العمومية'
-                : c.code === 'C'
-                ? 'المتحدة للمقاولات والتجارة'
-                : 'الحديثة للتجارة العامة والتوريدات',
+            fullName: c.name
+              ? `${c.name} (${c.code})`
+              : c.code === 'A'
+              ? 'المجموعة الذهبية للتوريدات والمقاولات'
+              : c.code === 'B'
+              ? 'العالمية للتوريدات العمومية'
+              : c.code === 'C'
+              ? 'المتحدة للمقاولات والتجارة'
+              : 'الحديثة للتجارة العامة والتوريدات',
             commercialRegister: '••••••',
             taxCard: '••••••••••',
             totalOperations: 0,
@@ -228,14 +229,15 @@ export class CompaniesService {
           id: c.id,
           name: c.name,
           code: c.code,
-          fullName:
-            c.code === 'A'
-              ? 'المجموعة الذهبية للتوريدات والمقاولات'
-              : c.code === 'B'
-              ? 'العالمية للتوريدات العمومية'
-              : c.code === 'C'
-              ? 'المتحدة للمقاولات والتجارة'
-              : 'الحديثة للتجارة العامة والتوريدات',
+          fullName: c.name
+            ? `${c.name} (${c.code})`
+            : c.code === 'A'
+            ? 'المجموعة الذهبية للتوريدات والمقاولات'
+            : c.code === 'B'
+            ? 'العالمية للتوريدات العمومية'
+            : c.code === 'C'
+            ? 'المتحدة للمقاولات والتجارة'
+            : 'الحديثة للتجارة العامة والتوريدات',
           commercialRegister: c.commercialRegister || '102948',
           taxCard: c.taxCard || '402-182-991',
           totalOperations: Math.max(totalOperations, c.code === 'A' ? 5 : c.code === 'B' ? 4 : c.code === 'C' ? 4 : 3),

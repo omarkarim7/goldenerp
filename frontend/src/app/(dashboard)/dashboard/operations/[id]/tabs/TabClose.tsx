@@ -45,6 +45,7 @@ import {
 } from "./types";
 import { StepFooterNav } from "./StepFooterNav";
 import { FinalInsuranceRefundSection } from "./FinalInsuranceRefundSection";
+import { SmartArabicDatePicker } from "@/components/ui/arabic-date-picker";
 
 /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
    1. WARRANTY & MAINTENANCE PERIOD (فترة الضمان والصيانة)
@@ -218,22 +219,22 @@ export function TabWarrantyAndVisits({
         </div>
 
         <div className="space-y-1.5">
-          <Label className="text-xs font-bold">تاريخ بدء سريان الضمان *</Label>
-          <Input
-            type="date"
+          <SmartArabicDatePicker
+            label="تاريخ بدء سريان الضمان"
+            required
             value={warrantyStartDate}
-            onChange={(e) => setWarrantyStartDate(e.target.value)}
-            className="h-9 text-xs font-medium rounded-xl"
+            onChange={(val) => setWarrantyStartDate(val)}
+            outputFormat="iso"
           />
         </div>
 
         <div className="space-y-1.5">
-          <Label className="text-xs font-bold">تاريخ انتهاء فترة الضمان *</Label>
-          <Input
-            type="date"
+          <SmartArabicDatePicker
+            label="تاريخ انتهاء فترة الضمان"
+            required
             value={warrantyEndDate}
-            onChange={(e) => setWarrantyEndDate(e.target.value)}
-            className="h-9 text-xs font-mono font-bold rounded-xl"
+            onChange={(val) => setWarrantyEndDate(val)}
+            outputFormat="iso"
           />
         </div>
       </div>
@@ -251,12 +252,11 @@ export function TabWarrantyAndVisits({
           <div className="p-4 rounded-xl bg-card border-2 border-amber-500/40 space-y-3 animate-fade-in shadow-md">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="space-y-1">
-                <Label className="text-xs">تاريخ الزيارة</Label>
-                <Input
-                  type="date"
+                <SmartArabicDatePicker
+                  label="تاريخ الزيارة"
                   value={newVisitDate}
-                  onChange={(e) => setNewVisitDate(e.target.value)}
-                  className="h-9 text-xs"
+                  onChange={(val) => setNewVisitDate(val)}
+                  outputFormat="iso"
                 />
               </div>
               <div className="space-y-1">
@@ -424,12 +424,12 @@ export function TabFinalHandover({ op, onRefresh }: { op: Operation; onRefresh: 
         </div>
 
         <div className="space-y-1.5">
-          <Label className="text-xs font-bold">تاريخ توقيع محضر الاستلام النهائي *</Label>
-          <Input
-            type="date"
+          <SmartArabicDatePicker
+            label="تاريخ توقيع محضر الاستلام النهائي"
+            required
             value={handoverDate}
-            onChange={(e) => setHandoverDate(e.target.value)}
-            className="h-9.5 text-xs font-medium rounded-xl"
+            onChange={(val) => setHandoverDate(val)}
+            outputFormat="iso"
           />
         </div>
       </div>
@@ -615,12 +615,11 @@ export function TabRecovery({ op, onRefresh }: { op: Operation; onRefresh: () =>
                   <div className="mt-3 pt-3 border-t border-border space-y-3 animate-fade-in">
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       <div className="space-y-1">
-                        <Label className="text-xs">تاريخ الإجراء</Label>
-                        <Input
-                          type="date"
+                        <SmartArabicDatePicker
+                          label="تاريخ الإجراء"
                           value={actionDate}
-                          onChange={(e) => setActionDate(e.target.value)}
-                          className="h-9 text-xs"
+                          onChange={(val) => setActionDate(val)}
+                          outputFormat="iso"
                         />
                       </div>
                       {st.num === 3 && (

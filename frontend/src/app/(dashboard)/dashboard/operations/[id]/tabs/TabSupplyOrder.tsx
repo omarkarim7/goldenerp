@@ -19,6 +19,7 @@ import {
   formatCurrency, formatDate, formatDocFileSize, tafqeetArabic, getCountdown
 } from "./types";
 import { StepFooterNav } from "./StepFooterNav";
+import { SmartArabicDatePicker } from "@/components/ui/arabic-date-picker";
 
 export function TabSupplyOrder({
   op,
@@ -303,12 +304,12 @@ export function TabSupplyOrder({
             </div>
 
             <div className="space-y-1.5">
-              <Label className="text-xs font-bold text-foreground">تاريخ صدور أمر التوريد *</Label>
-              <Input
-                type="date"
+              <SmartArabicDatePicker
+                label="تاريخ صدور أمر التوريد"
+                required
                 value={orderDate}
-                onChange={(e) => setOrderDate(e.target.value)}
-                className="h-10 text-xs rounded-xl"
+                onChange={(val) => setOrderDate(val)}
+                outputFormat="iso"
               />
             </div>
 
@@ -537,12 +538,11 @@ export function TabSupplyOrder({
                 </div>
 
                 <div className="space-y-1">
-                  <Label className="text-xs font-bold text-foreground">تاريخ أمر التوريد</Label>
-                  <Input
-                    type="date"
+                  <SmartArabicDatePicker
+                    label="تاريخ أمر التوريد"
                     value={editingSupplyOrder.orderDate ? editingSupplyOrder.orderDate.split("T")[0] : ""}
-                    onChange={(e) => setEditingSupplyOrder({ ...editingSupplyOrder, orderDate: e.target.value })}
-                    className="h-9.5 text-xs rounded-xl"
+                    onChange={(val) => setEditingSupplyOrder({ ...editingSupplyOrder, orderDate: val })}
+                    outputFormat="iso"
                   />
                 </div>
 

@@ -32,6 +32,8 @@ import {
   PdfExportLoadingModal,
   getUnifiedOperationRegistrationNumber,
   regenerateUnifiedRegistrationNumber,
+  getLetterSpecificRegistrationNumber,
+  regenerateLetterSpecificRegistrationNumber,
   FiscalYearSelect,
   replaceDocxFiscalAndDate,
   replaceDocxChairman,
@@ -42,21 +44,24 @@ import {
   getOperationTenderMethod,
   getSharedOperationScope,
   isValidCloudDocUrl,
+  generateHighResDocQrBuffer,
+  getStandardDocQrPayload,
+  replaceDocxRecipient,
+  buildOfficialSignaturesTableXml,
 } from "./letter-utils";
 import JSZip from "jszip";
 import QRCode from "qrcode";
 import { getPdfBlobFromDocx, uploadPdfToFreeCloud, getExpectedCloudPdfUrl } from "./client-pdf";
 import { OnlyOfficeDocViewer } from "@/components/OnlyOfficeDocViewer";
-import { WarrantyCertificateSection } from "./WarrantyCertificateSection";
 
 // ━━━ تعريف بيانات البدائل والمواصفات الفنية ━━━
 export interface TechnicalVariant {
   id: string;
   variantType: "basic" | "alternative"; // أساسي أو بديل
-  variantLabel: string;                 // مسمى البديل مثل: أساسي، بديل 1، بديل 2
-  description: string;                  // الوصف الفني
-  subDescription: string;               // الوصف الفرعى
-  branch1: string;                      // فرعى 1
+  variantLabel: string;                 // مسمى البديل: أساسي، بديل 1، بديل 2، بديل 3 (بحد أقصى 3)
+  description: string;                  // الوصف الفني (مدمج الوصف والوصف الفرعي)
+  subDescription?: string;              // للتوافق العكسي مع البيانات السابقة
+  branch1?: string;                     // للتوافق العكسي
   notes: string;                        // ملاحظات
 }
 
@@ -78,7 +83,7 @@ function escapeXml(str: string): string {
     .replace(/'/g, "&apos;");
 }
 
-// بناء صفوف جدول العرض الفني في الوورد بدقة هندسية وتوافق كامل مع Microsoft Word
+// بناء صفوف جدول العرض الفني في الوورد (7 أعمدة بعد دمج الوصف وتحديث نوع العرض)
 function buildTechnicalTableRowsXml(itemsList: TechnicalOfferItem[]): string {
   let rowsXml = "";
 
@@ -90,8 +95,6 @@ function buildTechnicalTableRowsXml(itemsList: TechnicalOfferItem[]): string {
           variantType: "basic" as const,
           variantLabel: "أساسى",
           description: "",
-          subDescription: "",
-          branch1: "",
           notes: ""
         }];
 
@@ -148,16 +151,27 @@ function buildTechnicalTableRowsXml(itemsList: TechnicalOfferItem[]): string {
         return `<w:tc><w:tcPr><w:tcW w:w="${width}" w:type="dxa"/>${vMergeStr}<w:tcBorders>${borderStr}</w:tcBorders></w:tcPr><w:p><w:pPr><w:spacing w:before="40" w:after="40" w:line="280" w:lineRule="auto"/><w:jc w:val="${align}"/><w:rPr><w:rFonts w:ascii="Arabic Typesetting" w:hAnsi="Arabic Typesetting" w:cs="Arabic Typesetting"/><w:b/><w:bCs/><w:sz w:val="32"/><w:szCs w:val="32"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr></w:pPr>${textXml}</w:p></w:tc>`;
       };
 
-      const c0 = makeCell(576, String(itemIdx + 1), true, "center");
-      const c1 = makeCell(3240, item.itemName, true, "right");
-      const c2 = makeCell(1530, variant.description, false, "right");
-      const c3 = makeCell(1204, variant.subDescription, false, "right");
-      const c4 = makeCell(983, variant.branch1, false, "right");
-      const c5 = makeCell(845, item.unit, true, "center");
-      const c6 = makeCell(982, item.quantity, true, "center");
-      const c7 = makeCell(1026, variant.notes, false, "right");
+      // دمج نص الوصف المدمج مع الحفاظ على البيانات القديمة
+      const mergedDescription = [
+        variant.description,
+        variant.subDescription,
+        variant.branch1,
+      ]
+        .filter((s) => s && s.trim())
+        .join(" - ");
 
-      rowsXml += `<w:tr>${trPr}${c0}${c1}${c2}${c3}${c4}${c5}${c6}${c7}</w:tr>`;
+      const offerTypeLabel = variant.variantLabel || (variant.variantType === "basic" ? "أساسى" : `بديل ${vIdx}`);
+
+      // 7 أعمدة متطابقة بدقة 100% مع قالب العرض الفني الجديد (إجمالي 10,566 dxa)
+      const c0 = makeCell(576, String(itemIdx + 1), true, "center");
+      const c1 = makeCell(1694, item.itemName, true, "right");
+      const c2 = makeCell(4252, mergedDescription, false, "right");
+      const c3 = makeCell(1011, offerTypeLabel, false, "center");
+      const c4 = makeCell(845, item.unit, true, "center");
+      const c5 = makeCell(982, item.quantity, true, "center");
+      const c6 = makeCell(1206, variant.notes, false, "right");
+
+      rowsXml += `<w:tr>${trPr}${c0}${c1}${c2}${c3}${c4}${c5}${c6}</w:tr>`;
     });
   });
 
@@ -201,11 +215,27 @@ export function TabTechnical({
 
   const currentCompany = currentCompanyLink?.company;
 
-  // رقم القيد الصادر الذكي الموحد للعملية
+  // رقم القيد الصادر الذكي الخاص بالعرض الفني
   const [registrationNumber, setRegistrationNumber] = useState(() => {
-    if (savedTech?.registrationNumber) return savedTech.registrationNumber;
-    return getUnifiedOperationRegistrationNumber(op, currentCompanyLink?.displayCode);
+    return getLetterSpecificRegistrationNumber(
+      op,
+      "technical_offer",
+      currentCompanyLink?.displayCode,
+      savedTech?.registrationNumber
+    );
   });
+
+  const handleRegenerateRef = async () => {
+    await regenerateLetterSpecificRegistrationNumber({
+      op,
+      letterKey: "technical_offer",
+      companyCode: currentCompanyLink?.displayCode || "AZ",
+      onSuccess: (fresh) => {
+        setRegistrationNumber(fresh);
+        onRefresh();
+      },
+    });
+  };
 
   // كود العملية بالشركة
   const [companyOpCode, setCompanyOpCode] = useState(() => {
@@ -248,9 +278,6 @@ export function TabTechnical({
   });
   const [uploadingCloud, setUploadingCloud] = useState(false);
 
-  // ━━━ الخطوة الحالية: الخطوة 1 (العرض الفني) أو الخطوة 2 (شهادة الضمان) ━━━
-  const [activeStep, setActiveStep] = useState<"OFFER" | "WARRANTY">("OFFER");
-
   // ━━━ 2. جهة الإسناد وبيانات العملية في الموضوع ━━━
   const [recipientPrefix, setRecipientPrefix] = useState(() => {
     return savedTech?.recipientPrefix || "الأستاذ";
@@ -286,10 +313,9 @@ export function TabTechnical({
     if (!savedTech?.recipientTitleAndAuthority && op.authority) {
       setRecipientTitleAndAuthority(`مدير الادارة العامة للمشتريات والمخازن بـ ${op.authority}`);
     }
-    if (!savedTech?.technicalOpeningDate) {
-      const d = op.dates?.find((dt: any) => dt.type === "TECHNICAL_OPENING" || dt.title?.includes("فني"));
-      if (d?.dateValue) setTechnicalOpeningDate(formatDate(d.dateValue));
-      else if (d?.date) setTechnicalOpeningDate(formatDate(d.date));
+    const freshTechDate = getOperationTechnicalOpeningDate(op);
+    if (freshTechDate && (!savedTech?.technicalOpeningDate || freshTechDate !== "—")) {
+      setTechnicalOpeningDate(freshTechDate);
     }
   }, [op.name, op.externalNumber, op.serialNumber, op.authority, op.dates, savedTech]);
 
@@ -383,10 +409,10 @@ export function TabTechnical({
     return savedTech?.specialistTitle || "المهندس المختص :";
   });
   const [specialistName, setSpecialistName] = useState(() => {
-    return savedTech?.specialistName || "أحمد محمد";
+    return savedTech?.specialistName || "";
   });
   const [financeManagerName, setFinanceManagerName] = useState(() => {
-    return savedTech?.financeManagerName || "محمود إبراهيم";
+    return savedTech?.financeManagerName || "";
   });
   const [boardChairman, setBoardChairman] = useState(() => {
     return sanitizeChairmanTitle(savedTech?.boardChairman);
@@ -530,19 +556,57 @@ export function TabTechnical({
     setItems(items.map((i) => (i.id === itemId ? { ...i, [field]: val } : i)));
   };
 
+  const handleSetAlternativeCount = (itemId: string, targetCount: number) => {
+    const targetItem = items.find((i) => i.id === itemId);
+    if (!targetItem) return;
+    const basic = targetItem.variants.filter((v) => v.variantType === "basic");
+    const currentAlts = targetItem.variants.filter((v) => v.variantType === "alternative");
+    if (currentAlts.length === targetCount) return;
+
+    if (targetCount < currentAlts.length) {
+      const keptAlts = currentAlts.slice(0, targetCount).map((v, idx) => ({
+        ...v,
+        variantLabel: `بديل ${idx + 1}`,
+      }));
+      setItems(items.map((it) => (it.id === itemId ? { ...it, variants: [...basic, ...keptAlts] } : it)));
+      toast.info(`تم ضبط عدد البدائل إلى (${targetCount})`);
+    } else {
+      const countToAdd = Math.min(3, targetCount) - currentAlts.length;
+      const newAlts: TechnicalVariant[] = [];
+      for (let i = 0; i < countToAdd; i++) {
+        const nextAltNum = currentAlts.length + i + 1;
+        newAlts.push({
+          id: "v-" + Date.now() + "-" + Math.random().toString(36).substring(2, 5) + "-" + i,
+          variantType: "alternative",
+          variantLabel: `بديل ${nextAltNum}`,
+          description: "",
+          notes: `بديل رقم ${nextAltNum} مطابق للمواصفات`,
+        });
+      }
+      setItems(items.map((it) => (it.id === itemId ? { ...it, variants: [...basic, ...currentAlts, ...newAlts] } : it)));
+      toast.success(`تم ضبط عدد البدائل إلى (${targetCount}) ✨`);
+    }
+  };
+
   const handleAddAlternative = (itemId: string) => {
+    const targetItem = items.find((i) => i.id === itemId);
+    if (!targetItem) return;
+    const currentAlts = targetItem.variants.filter((v) => v.variantType === "alternative");
+    if (currentAlts.length >= 3) {
+      toast.error("الحد الأقصى للبدائل هو 3 بدائل فقط لكل صنف (بديل 1، بديل 2، بديل 3)");
+      return;
+    }
+
     setItems(
       items.map((item) => {
         if (item.id !== itemId) return item;
-        const currentAlts = item.variants.filter((v) => v.variantType === "alternative");
-        const nextAltNum = currentAlts.length + 1;
+        const alts = item.variants.filter((v) => v.variantType === "alternative");
+        const nextAltNum = alts.length + 1;
         const newVariant: TechnicalVariant = {
           id: "v-" + Date.now() + "-" + Math.random().toString(36).substring(2, 5),
           variantType: "alternative",
           variantLabel: `بديل ${nextAltNum}`,
           description: "",
-          subDescription: "",
-          branch1: "",
           notes: `بديل رقم ${nextAltNum} مطابق للمواصفات`,
         };
         return {
@@ -623,17 +687,6 @@ export function TabTechnical({
     toast.success(`تم استيراد ${imported.length} أصناف بنجاح من جدول الكميات! 🚀`);
   };
 
-  // إعادة توليد رقم القيد
-  const handleRegenerateRef = async () => {
-    await regenerateUnifiedRegistrationNumber({
-      op,
-      companyCode: currentCompanyLink?.displayCode || "AZ",
-      onSuccess: (fresh) => {
-        setRegistrationNumber(fresh);
-        onRefresh();
-      },
-    });
-  };
 
   // ━━━ محرك استبدال المتغيرات مباشرة في قالب الوورد الأصلي (عرض فنى.docx) ━━━
   const generateTechnicalDocxBlob = async (): Promise<Blob> => {
@@ -643,39 +696,31 @@ export function TabTechnical({
 
     const zip = await JSZip.loadAsync(templateBuffer);
 
-    // توليد رمز التحقق الرقمي والباركود للنسخة الرقمية
+    // توليد رمز التحقق الرقمي والباركود للنسخة الرقمية بجودة فائقة وحجم مكبر
     let qrDrawingXml = "";
     try {
-      const activeCloud = cloudPdfUrl;
-      // يولد رمز QR بدقة فائقة فقط إذا تم رفع المستند مسبقاً على السحابة
-      if (isValidCloudDocUrl(activeCloud)) {
-        const qrDataUrl = await QRCode.toDataURL(activeCloud, {
-          width: 600,
-          margin: 2,
-          errorCorrectionLevel: "M",
-        });
-        const qrBase64 = qrDataUrl.split(",")[1];
-        const qrBinary = Uint8Array.from(atob(qrBase64), (c) => c.charCodeAt(0));
+      const filename = `technical_offer_${registrationNumber || op.serialNumber || "doc"}.pdf`;
+      const qrPayload = await getStandardDocQrPayload(cloudPdfUrl, registrationNumber, "technical", op.id, filename);
+      const qrBinary = await generateHighResDocQrBuffer(qrPayload);
 
-        zip.file("word/media/doc_qr.png", qrBinary);
+      zip.file("word/media/doc_qr.png", qrBinary);
 
-        let relsXml = await zip.file("word/_rels/document.xml.rels")?.async("text");
-        if (relsXml && !relsXml.includes("rIdQR")) {
-          relsXml = relsXml.replace(
-            "</Relationships>",
-            '<Relationship Id="rIdQR" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/doc_qr.png"/></Relationships>'
-          );
-          zip.file("word/_rels/document.xml.rels", relsXml);
-        }
-
-        let ctXml = await zip.file("[Content_Types].xml")?.async("text");
-        if (ctXml && !ctXml.includes('Extension="png"')) {
-          ctXml = ctXml.replace("</Types>", '<Default Extension="png" ContentType="image/png"/></Types>');
-          zip.file("[Content_Types].xml", ctXml);
-        }
-
-        qrDrawingXml = buildQrAnchorXml();
+      let relsXml = await zip.file("word/_rels/document.xml.rels")?.async("text");
+      if (relsXml && !relsXml.includes("rIdQR")) {
+        relsXml = relsXml.replace(
+          "</Relationships>",
+          '<Relationship Id="rIdQR" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/doc_qr.png"/></Relationships>'
+        );
+        zip.file("word/_rels/document.xml.rels", relsXml);
       }
+
+      let ctXml = await zip.file("[Content_Types].xml")?.async("text");
+      if (ctXml && !ctXml.includes('Extension="png"')) {
+        ctXml = ctXml.replace("</Types>", '<Default Extension="png" ContentType="image/png"/></Types>');
+        zip.file("[Content_Types].xml", ctXml);
+      }
+
+      qrDrawingXml = buildQrAnchorXml();
     } catch (e) {
       console.warn("QR generation failed:", e);
     }
@@ -684,12 +729,8 @@ export function TabTechnical({
     let docXml = await zip.file("word/document.xml")!.async("text");
     docXml = injectSingleQrIntoDocXml(docXml, qrDrawingXml, escapeXml(registrationNumber));
 
-    // صفة ولقب المرسل إليه والجهة الإدارية
-    docXml = docXml.replace(/الأستاذ/g, escapeXml(recipientPrefix));
-    docXml = docXml.replace(
-      /مدير الادارة العامة للمشتريات والمخازن بجامعة دمنهور/g,
-      escapeXml(recipientTitleAndAuthority)
-    );
+    // صفة ولقب المرسل إليه والجهة الإدارية بتوسيط وتنسيق متوازن
+    docXml = replaceDocxRecipient(docXml, recipientPrefix, recipientTitleAndAuthority);
 
     // الموضوع وبيانات العملية
     docXml = docXml.replace(/للأصناف/g, escapeXml(subjectTarget));
@@ -723,13 +764,19 @@ export function TabTechnical({
       escapeXml(condition4)
     );
 
-    // الاعتمادات والتوقيعات
-    docXml = docXml.replace(/المهندس\s*المختص\s*:/g, escapeXml(specialistTitle));
-    docXml = docXml.replace(/أحمد محمد/g, escapeXml(specialistName));
-    docXml = docXml.replace(/أو اسم/g, escapeXml(financeManagerName || " "));
-
-    // اعتماد رئيس مجلس الإدارة مع الحفاظ التام على "يعتمد ،،،،،،" في سطرها المستقل
-    docXml = replaceDocxChairman(docXml, boardChairman);
+    // صفة واسم المختص والمدير المالي ورئيس مجلس الإدارة في جدول ثلاثي منضبط (مطابق لخطاب التوضيح)
+    const techSigBlockRegex = /<w:p\b[^>]*>(?:(?!<\/w:p>)[\s\S])*?(?:المختص|المهندس|المدير المالى)[\s\S]*?يعتمد[\s\S]*?<\/w:p>\s*<w:p\b[^>]*>(?:(?!<\/w:p>)[\s\S])*?رئيس مجلس[\s\S]*?<\/w:p>/;
+    if (techSigBlockRegex.test(docXml)) {
+      const sigTableXml = buildOfficialSignaturesTableXml({
+        specialistTitle: specialistTitle || "المهندس / القانونى المختص :",
+        specialistName: specialistName || " ",
+        financeManagerName: financeManagerName || " ",
+        boardChairman: boardChairman || "رئيس مجلس الإدارة",
+      });
+      docXml = docXml.replace(techSigBlockRegex, sigTableXml);
+    } else {
+      docXml = replaceDocxChairman(docXml, boardChairman);
+    }
 
     // استبدال جدول الأصناف والمواصفات الفنية بالكامل (Table 0)
     const tblStart = docXml.indexOf("<w:tbl>");
@@ -811,18 +858,15 @@ export function TabTechnical({
 
     setUploadingCloud(true);
     try {
+      toast.info("جاري توثيق ورفع العرض الفني سحابياً (رابط PDF مباشر)...");
+
+      // 1. توليد المستند الأحدث مباشرة
       let pdfBlob = existingBlob;
-      if (!pdfBlob) {
-        if (previewPdfBlob && currentSnapshot === lastGeneratedSnapshot) {
-          pdfBlob = previewPdfBlob;
-        } else {
-          pdfBlob = await generateTechnicalPdfBlob();
-          setPreviewPdfBlob(pdfBlob);
-          setLastGeneratedSnapshot(currentSnapshot);
-        }
+      if (!pdfBlob || forceReupload) {
+        pdfBlob = await generateTechnicalPdfBlob();
       }
 
-      toast.info("جاري توثيق ورفع العرض الفني سحابياً (رابط PDF مباشر)...");
+      // 2. الرفع إلى السحابة
       const res = await uploadPdfToFreeCloud(
         pdfBlob,
         `technical_offer_${registrationNumber || op.serialNumber || "doc"}.pdf`
@@ -830,7 +874,48 @@ export function TabTechnical({
 
       if (res?.url) {
         setCloudPdfUrl(res.url);
-        toast.success("تم توثيق ورفع العرض الفني للسحابة بنجاح! الرابط جاهز ومتاح عالمياً لأي هاتف محمول 🚀");
+
+        // 3. مزامنة المعاينة في الذاكرة فوراً لفتحها بـ 0ms بدون أي إعادة توليد
+        setPreviewPdfBlob(pdfBlob);
+        if (previewPdfUrl) {
+          URL.revokeObjectURL(previewPdfUrl);
+        }
+        setPreviewPdfUrl(URL.createObjectURL(pdfBlob));
+
+        const syncedSnapshot = JSON.stringify({
+          selectedCompanyId,
+          registrationNumber,
+          companyOpCode,
+          companyCommercialRegister,
+          companyTaxCard,
+          phoneWhatsapp,
+          phoneMobile,
+          companyAddress,
+          issueDate,
+          barcodeRef,
+          cloudPdfUrl: res.url,
+          recipientPrefix,
+          recipientTitleAndAuthority,
+          subjectTarget,
+          operationRegisteredName,
+          operationNumber,
+          fiscalYear,
+          technicalOpeningDate,
+          items,
+          warrantyDuration,
+          warrantyTerms,
+          condition1,
+          condition2,
+          condition3,
+          condition4,
+          specialistTitle,
+          specialistName,
+          financeManagerName,
+          boardChairman,
+        });
+        setLastGeneratedSnapshot(syncedSnapshot);
+
+        toast.success("تم توثيق ورفع العرض الفني وتحديث المعاينة بنجاح! جاهز للمعاينة الفورية 🚀");
 
         // حفظ الرابط السحابي في notes العملية تلقائياً لمنع التكرار
         try {
@@ -861,15 +946,13 @@ export function TabTechnical({
       return;
     }
 
+    if (renderingDocx) return;
+
     setRenderingDocx(true);
     if (forceRefresh) {
       toast.info("جاري تحديث المعاينة الرسمية...");
     }
     try {
-      if (previewPdfUrl) {
-        URL.revokeObjectURL(previewPdfUrl);
-        setPreviewPdfUrl(null);
-      }
       const docx = await generateTechnicalDocxBlob();
       setPreviewDocxBlob(docx);
 
@@ -882,6 +965,26 @@ export function TabTechnical({
       setPreviewPdfUrl(url);
 
       setLastGeneratedSnapshot(currentSnapshot);
+
+      // رفع تلقائي هادئ في الخلفية للسحابة (Gofile / R2) لضمان توفر الرابط دائماً
+      if (!cloudPdfUrl) {
+        uploadPdfToFreeCloud(
+          pdfBlob,
+          `technical_offer_${registrationNumber || op.serialNumber || "doc"}.pdf`
+        ).then((res) => {
+          if (res?.url) {
+            setCloudPdfUrl(res.url);
+            try {
+              let existingNotesObj: any = {};
+              if (op.notes && op.notes.startsWith("{")) existingNotesObj = JSON.parse(op.notes);
+              if (!existingNotesObj.technicalOfferDocx) existingNotesObj.technicalOfferDocx = {};
+              existingNotesObj.technicalOfferDocx.cloudPdfUrl = res.url;
+              api.patch(`/operations/${op.id}`, { notes: JSON.stringify(existingNotesObj) }).catch(() => {});
+            } catch {}
+          }
+        }).catch(() => {});
+      }
+
       if (forceRefresh) {
         toast.success("تم تحديث المعاينة بنجاح ✓");
       }
@@ -998,29 +1101,7 @@ export function TabTechnical({
 
   // ━━━ دالة عرض الملف المؤرشف فوراً (0ms) بدون إعادة تحويل ━━━
   const handleViewArchive = () => {
-    // 1. إذا كان رابط السحابة متاحاً، افتح النسخة السحابية المعتمدة فوراً
-    if (cloudPdfUrl) {
-      window.open(cloudPdfUrl, "_blank");
-      return;
-    }
-    // 2. إذا كان ملف الـ PDF متوفراً في الذاكرة مسبقاً، افتح نافذة المعاينة فوراً
-    if (previewPdfBlob) {
-      setPreviewModalOpen(true);
-      return;
-    }
-    // 3. التحقق من وجود مستند مؤرشف في أرشيف العملية
-    const archivedDoc = op.documents?.find(
-      (d: any) =>
-        d.type?.toLowerCase().includes("technical") ||
-        d.name?.toLowerCase().includes("technical") ||
-        d.name?.includes("فني")
-    );
-    if (archivedDoc?.fileUrl) {
-      window.open(archivedDoc.fileUrl, "_blank");
-      return;
-    }
-    // 4. فتح المعاينة
-    setPreviewModalOpen(true);
+    loadOfficialPreview(false);
   };
 
   const handleDirectPrint = handlePrintWordDocument;
@@ -1164,11 +1245,6 @@ export function TabTechnical({
     if (previewModalOpen) {
       loadOfficialPreview();
     }
-    return () => {
-      if (previewPdfUrl) {
-        URL.revokeObjectURL(previewPdfUrl);
-      }
-    };
   }, [previewModalOpen]);
 
   // حفظ العرض الفني في قاعدة بيانات النظام
@@ -1209,82 +1285,6 @@ export function TabTechnical({
 
   return (
     <div className="space-y-6 animate-fade-in text-foreground print:m-0 print:p-0">
-      {/* ━━━ شريط التنقل بين خطوات العرض الفني (الخطوة 1: العرض الفني | الخطوة 2: شهادة الضمان) ━━━ */}
-      <div className="bg-card/90 backdrop-blur-md border border-border p-2.5 rounded-2xl shadow-sm flex items-center justify-between gap-3 flex-wrap">
-        <div className="flex items-center gap-2">
-          <Button
-            type="button"
-            variant={activeStep === "OFFER" ? "default" : "outline"}
-            size="sm"
-            onClick={() => setActiveStep("OFFER")}
-            className={`h-10 px-4 rounded-xl font-bold text-xs flex items-center gap-2 transition-all cursor-pointer ${
-              activeStep === "OFFER"
-                ? "bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-md shadow-blue-500/25 hover:from-blue-700 hover:to-indigo-700"
-                : "border-border hover:bg-muted text-muted-foreground hover:text-foreground"
-            }`}
-          >
-            <ClipboardCheck className="h-4 w-4" />
-            <span>الخطوة 1: العرض الفني وجدول المواصفات والبدائل (Word)</span>
-            <Badge className={`text-[10px] font-bold px-1.5 py-0.2 ${activeStep === "OFFER" ? "bg-white/20 text-white" : "bg-muted text-foreground"}`}>
-              {items.length} أصناف
-            </Badge>
-          </Button>
-
-          <Button
-            type="button"
-            variant={activeStep === "WARRANTY" ? "default" : "outline"}
-            size="sm"
-            onClick={() => setActiveStep("WARRANTY")}
-            className={`h-10 px-4 rounded-xl font-bold text-xs flex items-center gap-2 transition-all cursor-pointer ${
-              activeStep === "WARRANTY"
-                ? "bg-gradient-to-r from-emerald-600 to-teal-600 text-white shadow-md shadow-emerald-500/25 hover:from-emerald-700 hover:to-teal-700"
-                : "border-border hover:bg-muted text-muted-foreground hover:text-foreground"
-            }`}
-          >
-            <ShieldCheck className="h-4 w-4" />
-            <span>الخطوة 2: شهادة الضمان المعتمدة للأصناف (Word)</span>
-            <Badge className={`text-[10px] font-bold px-1.5 py-0.2 ${activeStep === "WARRANTY" ? "bg-white/20 text-white" : "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30"}`}>
-              جديد
-            </Badge>
-          </Button>
-        </div>
-
-        <div className="flex items-center gap-2 text-xs text-muted-foreground mr-auto">
-          {activeStep === "OFFER" ? (
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              onClick={() => setActiveStep("WARRANTY")}
-              className="h-8.5 text-xs font-bold text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/10 rounded-xl cursor-pointer flex items-center gap-1.5"
-            >
-              <span>متابعة إلى: شهادة الضمان للأصناف</span>
-              <ArrowRight className="h-3.5 w-3.5 rotate-180" />
-            </Button>
-          ) : (
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              onClick={() => setActiveStep("OFFER")}
-              className="h-8.5 text-xs font-bold text-blue-600 dark:text-blue-400 hover:bg-blue-500/10 rounded-xl cursor-pointer flex items-center gap-1.5"
-            >
-              <ArrowRight className="h-3.5 w-3.5" />
-              <span>العودة للعرض الفني والبدائل</span>
-            </Button>
-          )}
-        </div>
-      </div>
-
-      {activeStep === "WARRANTY" ? (
-        <WarrantyCertificateSection
-          op={op}
-          onRefresh={onRefresh}
-          initialItems={items}
-          onGoBackToOffer={() => setActiveStep("OFFER")}
-        />
-      ) : (
-        <>
       {/* ━━━ SECTION 1: بيانات الشركة المصدرة وكود العملية ورقم القيد والباركود ━━━ */}
       <SectionCard
         title="1. بيانات الشركة المصدرة وكود العملية ورقم القيد والباركود الرقمي"
@@ -1494,12 +1494,29 @@ export function TabTechnical({
               label="العام المالي المذكور بالعرض *"
             />
             <div className="space-y-1.5">
-              <Label className="text-xs font-bold text-foreground">موعد جلسة فتح المظروف الفني *</Label>
+              <div className="flex items-center justify-between">
+                <Label className="text-xs font-bold text-foreground">موعد جلسة فتح المظروف الفني *</Label>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const fresh = getOperationTechnicalOpeningDate(op);
+                    if (fresh) {
+                      setTechnicalOpeningDate(fresh);
+                      toast.success(`تمت مزامنة موعد الجلسة من مرحلة التواريخ: ${fresh}`);
+                    }
+                  }}
+                  className="text-[10.5px] font-bold text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-1 cursor-pointer transition-colors"
+                  title="مزامنة فورية مع تاريخ الجلسة المسجل في مرحلة التواريخ"
+                >
+                  <RefreshCw className="h-3 w-3" />
+                  <span>مزامنة مع التواريخ</span>
+                </button>
+              </div>
               <Input
                 value={technicalOpeningDate}
                 onChange={(e) => setTechnicalOpeningDate(e.target.value)}
-                placeholder="14/ 1 /2024"
-                className="h-9.5 text-xs font-mono rounded-xl"
+                placeholder="24/10/2026"
+                className="h-9.5 text-xs font-mono rounded-xl font-bold"
               />
             </div>
           </div>
@@ -1565,15 +1582,29 @@ export function TabTechnical({
                     </div>
                   </div>
 
-                  <div className="flex items-center gap-2">
-                    <Button
-                      size="sm"
-                      onClick={() => handleAddAlternative(item.id)}
-                      className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-[11px] h-8 px-3 rounded-xl cursor-pointer shadow-xs flex items-center gap-1"
-                    >
-                      <Plus className="h-3.5 w-3.5" />
-                      <span>إضافة بديل</span>
-                    </Button>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    {/* محدد عدد البدائل السريع (0، 1، 2، 3) بحد أقصى 3 */}
+                    <div className="inline-flex items-center bg-muted/60 p-0.5 rounded-xl border border-border">
+                      <span className="text-[10px] font-bold text-muted-foreground px-1.5 hidden sm:inline">البدائل:</span>
+                      {[0, 1, 2, 3].map((count) => {
+                        const isSelected = alternatives.length === count;
+                        return (
+                          <button
+                            key={count}
+                            type="button"
+                            onClick={() => handleSetAlternativeCount(item.id, count)}
+                            className={`px-2 py-0.5 text-[11px] font-bold rounded-lg transition-all cursor-pointer ${
+                              isSelected
+                                ? "bg-indigo-600 text-white shadow-xs"
+                                : "text-muted-foreground hover:text-foreground hover:bg-muted"
+                            }`}
+                            title={`تحديد ${count === 0 ? "بدون بدائل" : count + " بدائل"} لهذا الصنف`}
+                          >
+                            {count === 0 ? "بدون (0)" : count === 1 ? "بديل 1" : count === 2 ? "بديلين (2)" : "3 بدائل (3)"}
+                          </button>
+                        );
+                      })}
+                    </div>
 
                     <Button
                       size="icon"
@@ -1624,52 +1655,32 @@ export function TabTechnical({
                 {basicVariant && (
                   <div className="p-3.5 rounded-2xl bg-emerald-500/5 border border-emerald-500/25 space-y-3">
                     <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-1.5">
-                        <Badge className="bg-emerald-600 text-white text-[10px] font-bold px-2 py-0.5">
-                          المواصفة الأساسية (أساسى)
+                      <div className="flex items-center gap-2">
+                        <Badge className="bg-emerald-600 text-white text-[11px] font-bold px-2.5 py-0.5">
+                          نوع العرض: أساسى
                         </Badge>
                         <span className="text-[11px] text-muted-foreground font-semibold">
-                          البيانات المقابلة لأول صف فرعي للصنف
+                          المواصفة الأساسية المقدمة للصنف #{itemIdx + 1}
                         </span>
                       </div>
                     </div>
 
-                    <div className="grid grid-cols-1 sm:grid-cols-4 gap-2.5">
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
                       <div className="space-y-1 sm:col-span-2">
-                        <Label className="text-[10px] font-bold text-foreground">الوصف الفني الأساسي *</Label>
+                        <Label className="text-[10px] font-bold text-foreground">
+                          الوصف الفني (المواصفات الفنية المدمجة) *
+                        </Label>
                         <Input
                           value={basicVariant.description}
                           onChange={(e) =>
                             handleUpdateVariantField(item.id, basicVariant.id, "description", e.target.value)
                           }
-                          placeholder="مثلاً: إطارات ماركة ميشلان فرنسي إنتاج 2026"
+                          placeholder="مثلاً: إطارات ماركة ميشلان فرنسي إنتاج 2026 حمولة 18PR سرعة K نقشة شجري"
                           className="h-8.5 text-xs rounded-lg"
                         />
                       </div>
                       <div className="space-y-1 sm:col-span-1">
-                        <Label className="text-[10px] font-bold text-foreground">الوصف الفرعى</Label>
-                        <Input
-                          value={basicVariant.subDescription}
-                          onChange={(e) =>
-                            handleUpdateVariantField(item.id, basicVariant.id, "subDescription", e.target.value)
-                          }
-                          placeholder="حمولة 18PR سرعة K"
-                          className="h-8.5 text-xs rounded-lg"
-                        />
-                      </div>
-                      <div className="space-y-1 sm:col-span-1">
-                        <Label className="text-[10px] font-bold text-foreground">فرعى 1</Label>
-                        <Input
-                          value={basicVariant.branch1}
-                          onChange={(e) =>
-                            handleUpdateVariantField(item.id, basicVariant.id, "branch1", e.target.value)
-                          }
-                          placeholder="نقشة شجري"
-                          className="h-8.5 text-xs rounded-lg"
-                        />
-                      </div>
-                      <div className="space-y-1 sm:col-span-4">
-                        <Label className="text-[10px] font-bold text-foreground">ملاحظات المواصفة الأساسية</Label>
+                        <Label className="text-[10px] font-bold text-foreground">ملاحظات</Label>
                         <Input
                           value={basicVariant.notes}
                           onChange={(e) =>
@@ -1683,12 +1694,28 @@ export function TabTechnical({
                   </div>
                 )}
 
-                {/* قائمة البدائل (Alternative Variants) */}
+                {/* قائمة البدائل (Alternative Variants - بحد أقصى 3 بدائل) */}
                 {alternatives.length > 0 ? (
                   <div className="space-y-3 pt-1">
-                    <div className="text-[11px] font-extrabold text-foreground flex items-center gap-1.5">
-                      <Layers className="h-3.5 w-3.5 text-indigo-600" />
-                      <span>البدائل الفنية التابعة لهذا الصنف ({alternatives.length} بدائل):</span>
+                    <div className="text-[11px] font-extrabold text-foreground flex items-center justify-between">
+                      <div className="flex items-center gap-1.5">
+                        <Layers className="h-3.5 w-3.5 text-indigo-600" />
+                        <span>البدائل الفنية التابعة لهذا الصنف ({alternatives.length} من 3 كحد أقصى):</span>
+                      </div>
+                      {alternatives.length < 3 ? (
+                        <button
+                          type="button"
+                          onClick={() => handleAddAlternative(item.id)}
+                          className="text-xs text-indigo-600 hover:text-indigo-700 font-bold cursor-pointer flex items-center gap-1"
+                        >
+                          <Plus className="h-3 w-3" />
+                          <span>إضافة بديل آخر</span>
+                        </button>
+                      ) : (
+                        <span className="text-[10px] text-amber-600 font-bold bg-amber-500/10 px-2 py-0.5 rounded-full border border-amber-500/20">
+                          تم استيفاء الحد الأقصى (3 بدائل) ✓
+                        </span>
+                      )}
                     </div>
 
                     {alternatives.map((alt, altIdx) => (
@@ -1698,11 +1725,11 @@ export function TabTechnical({
                       >
                         <div className="flex items-center justify-between">
                           <div className="flex items-center gap-2">
-                            <Badge className="bg-indigo-600 text-white text-[10px] font-bold px-2 py-0.5">
-                              {alt.variantLabel || `بديل ${altIdx + 1}`}
+                            <Badge className="bg-indigo-600 text-white text-[11px] font-bold px-2.5 py-0.5">
+                              نوع العرض: {alt.variantLabel || `بديل ${altIdx + 1}`}
                             </Badge>
                             <span className="text-[11px] text-muted-foreground">
-                              صف فرعي مدمج مع نفس الصنف #{itemIdx + 1}
+                              بديل مطابق معتمد للصنف #{itemIdx + 1}
                             </span>
                           </div>
 
@@ -1717,48 +1744,28 @@ export function TabTechnical({
                           </Button>
                         </div>
 
-                        <div className="grid grid-cols-1 sm:grid-cols-4 gap-2.5">
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
                           <div className="space-y-1 sm:col-span-2">
-                            <Label className="text-[10px] font-bold text-foreground">الوصف الفني للبديل *</Label>
+                            <Label className="text-[10px] font-bold text-foreground">
+                              الوصف الفني للبديل (المواصفات الفنية المدمجة) *
+                            </Label>
                             <Input
                               value={alt.description}
                               onChange={(e) =>
                                 handleUpdateVariantField(item.id, alt.id, "description", e.target.value)
                               }
-                              placeholder="مثلاً: إطارات ماركة بريدجستون ياباني إنتاج 2026"
+                              placeholder="مثلاً: إطارات ماركة بريدجستون ياباني إنتاج 2026 حمولة 18PR سرعة L"
                               className="h-8.5 text-xs rounded-lg"
                             />
                           </div>
                           <div className="space-y-1 sm:col-span-1">
-                            <Label className="text-[10px] font-bold text-foreground">الوصف الفرعى</Label>
-                            <Input
-                              value={alt.subDescription}
-                              onChange={(e) =>
-                                handleUpdateVariantField(item.id, alt.id, "subDescription", e.target.value)
-                              }
-                              placeholder="حمولة 18PR سرعة L"
-                              className="h-8.5 text-xs rounded-lg"
-                            />
-                          </div>
-                          <div className="space-y-1 sm:col-span-1">
-                            <Label className="text-[10px] font-bold text-foreground">فرعى 1</Label>
-                            <Input
-                              value={alt.branch1}
-                              onChange={(e) =>
-                                handleUpdateVariantField(item.id, alt.id, "branch1", e.target.value)
-                              }
-                              placeholder="نقشة خطوط طولية"
-                              className="h-8.5 text-xs rounded-lg"
-                            />
-                          </div>
-                          <div className="space-y-1 sm:col-span-4">
                             <Label className="text-[10px] font-bold text-foreground">ملاحظات البديل</Label>
                             <Input
                               value={alt.notes}
                               onChange={(e) =>
                                 handleUpdateVariantField(item.id, alt.id, "notes", e.target.value)
                               }
-                              placeholder="بديل رقم 1 مطابق بالكامل للكراسة..."
+                              placeholder="بديل مطابق بالكامل للكراسة..."
                               className="h-8.5 text-xs rounded-lg"
                             />
                           </div>
@@ -1774,7 +1781,7 @@ export function TabTechnical({
                       onClick={() => handleAddAlternative(item.id)}
                       className="text-indigo-600 hover:underline font-bold cursor-pointer"
                     >
-                      + أضف بديل الآن
+                      + أضف بديل الآن (حد أقصى 3)
                     </button>
                   </div>
                 )}
@@ -1866,19 +1873,21 @@ export function TabTechnical({
         <div className="space-y-4">
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div className="space-y-1.5">
-              <Label className="text-xs font-bold text-foreground">المهندس المختص (الاسم) *</Label>
+              <Label className="text-xs font-bold text-foreground">المهندس المختص (الاسم)</Label>
               <Input
                 value={specialistName}
                 onChange={(e) => setSpecialistName(e.target.value)}
+                placeholder="أحمد محمد (أو اسم المهندس المختص)"
                 className="h-9.5 text-xs font-bold rounded-xl"
               />
             </div>
 
             <div className="space-y-1.5">
-              <Label className="text-xs font-bold text-foreground">المدير المالي (الاسم) *</Label>
+              <Label className="text-xs font-bold text-foreground">المدير المالي (الاسم)</Label>
               <Input
                 value={financeManagerName}
                 onChange={(e) => setFinanceManagerName(e.target.value)}
+                placeholder="محمود إبراهيم (أو اسم المدير المالي)"
                 className="h-9.5 text-xs font-bold rounded-xl"
               />
             </div>
@@ -1965,6 +1974,9 @@ export function TabTechnical({
                     onDownloadDocx={handleDownloadDocx}
                     onDownloadPdf={handleDownloadPdf}
                     onPrint={handlePrintWordDocument}
+                    onAddToArchive={handleToggleArchive}
+                    isArchived={isArchived}
+                    addingToArchive={addingToArchive}
                   />
                 )}
               </div>
@@ -1973,21 +1985,6 @@ export function TabTechnical({
         </Portal>
       )}
 
-      {/* ━━━ الباركود الذكي ورمز QR والرفع السحابي المجاني للنسخة الرقمية بأسفل الصفحة ━━━ */}
-      <LetterQrCloudCard
-        cloudPdfUrl={cloudPdfUrl}
-        registrationNumber={registrationNumber}
-        opId={op.id}
-        docType="technical"
-        uploadingCloud={uploadingCloud}
-        onUploadToCloud={handleUploadToCloud}
-        title="الباركود الذكي ورمز QR الرقمي المعتمد (PDF)"
-        subtitle="عند مسح الباركود بكاميرا الموبايل يتم فتح صفحة النسخة الرقمية المعتمدة للعرض الفني فوراً بدون الحاجة لأي تسجيل دخول."
-        badgeText="مدمج بموضع كلمة (الباركود) بالأعلى ورقم القيد بالتذييل"
-        gradientClass="from-blue-500/10 via-purple-500/10 to-transparent border-blue-500/25"
-        isModifiedAfterUpload={isDirty}
-      />
-
       {/* ━━━ BOTTOM ACTION BAR: التوليد والطباعة والمعاينة بأسفل مرحلة العرض الفني ━━━ */}
       <LetterBottomActionWidget
         title="العرض الفني والمواصفات الفنية والبدائل"
@@ -1995,7 +1992,6 @@ export function TabTechnical({
         isDirty={isDirty}
         printInfo={printHistory["technical"]}
         onPreview={() => {
-          setPreviewModalOpen(true);
           loadOfficialPreview();
         }}
         onSave={handleSaveToSystem}
@@ -2026,27 +2022,7 @@ export function TabTechnical({
       {/* ━━━ نافذة التحميل العائمة المبتكرة عند تنزيل PDF ━━━ */}
       <PdfExportLoadingModal open={downloadingPdf} />
 
-      {/* زر الانتقال السلس إلى شهادة الضمان للأصناف */}
-      <div className="bg-gradient-to-r from-emerald-500/10 via-teal-500/10 to-transparent border border-emerald-500/25 p-4 rounded-2xl flex items-center justify-between flex-wrap gap-3">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 flex items-center justify-center font-bold">
-            <ShieldCheck className="h-5 w-5" />
-          </div>
-          <div>
-            <h4 className="text-sm font-bold text-foreground">الخطوة التالية: شهادة الضمان المعتمدة للأصناف الموردة</h4>
-            <p className="text-xs text-muted-foreground">توليد وطباعة شهادة الضمان المعتمدة (Word/PDF) وفقاً للشروط وفترة الضمان مع دمج الباركود الذكي للأصناف.</p>
-          </div>
-        </div>
-        <Button
-          type="button"
-          onClick={() => setActiveStep("WARRANTY")}
-          className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs h-9.5 px-4 rounded-xl shadow-md shadow-emerald-600/20 cursor-pointer flex items-center gap-1.5"
-        >
-          <span>الانتقال إلى الخطوة 2: شهادة الضمان ➔</span>
-        </Button>
-      </div>
-        </>
-      )}
+
 
       {/* ━━━ STEP FOOTER NAVIGATION ━━━ */}
       <StepFooterNav

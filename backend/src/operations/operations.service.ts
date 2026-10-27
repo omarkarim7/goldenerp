@@ -120,7 +120,7 @@ export class OperationsService {
       return cached.data;
     }
 
-    const [operation, radarItem] = await Promise.all([
+    let [operation, radarItem] = await Promise.all([
       this.prisma.operation.findUnique({
         where: { id },
         include: {
@@ -185,6 +185,12 @@ export class OperationsService {
       throw new NotFoundException('العملية غير موجودة');
     }
 
+    if (!radarItem && operation.externalNumber) {
+      radarItem = await this.prisma.radarItem.findFirst({
+        where: { referenceNumber: operation.externalNumber },
+      });
+    }
+
     let portalDetails: any = null;
     if (radarItem?.rawData) {
       try {
@@ -196,12 +202,15 @@ export class OperationsService {
       ...operation,
       radarItem: radarItem ? {
         id: radarItem.id,
+        externalId: radarItem.externalId,
         sourceUrl: radarItem.sourceUrl,
         publicationDate: radarItem.publicationDate,
         deadline: radarItem.deadline,
         category: radarItem.category,
         referenceNumber: radarItem.referenceNumber,
         matchedCompanyCode: radarItem.matchedCompanyCode,
+        rawData: radarItem.rawData,
+        attachments: Array.isArray(portalDetails?.attachments) ? portalDetails.attachments : [],
       } : null,
       portalDetails,
     };
@@ -621,14 +630,62 @@ export class OperationsService {
     const operation = await this.findOne(id);
     const companyId = data.companyId || operation.companies[0]?.companyId;
 
+    // Search for linked RadarItem
+    const radarItem = await this.prisma.radarItem.findFirst({
+      where: {
+        OR: [
+          { operationId: id },
+          ...(operation.externalNumber ? [{ referenceNumber: operation.externalNumber }] : []),
+          ...(operation.serialNumber ? [{ referenceNumber: operation.serialNumber }] : []),
+        ],
+      },
+    });
+
+    const targetDocId = 'booklet';
+    const targetTenderId = radarItem?.id;
+
+    let downloaded: any = null;
+    try {
+      downloaded = await this.radarService.downloadDocument(targetDocId, targetTenderId);
+    } catch (radarErr: any) {
+      this.logger.warn(`Radar downloadDocument failed in addBooklet: ${radarErr?.message}`);
+      throw new BadRequestException(
+        radarErr?.message ||
+          'لم تقم الجهة الحكومية برفع ملف كراسة الشروط إلكترونياً على بوابة التعاقدات لهذه العملية، حيث يتطلب شراؤها واستلام النسخة الورقية من مقر الجهة. يمكنك فتح رابط البوابة الرسمي والاطلاع على التفاصيل، ثم رفع النسخة الممسوحة ضوئياً (Scan) عبر زر "رفع كراسة بديلة أو ملحق".'
+      );
+    }
+
+    if (!downloaded || !downloaded.buffer || downloaded.buffer.length === 0) {
+      throw new BadRequestException(
+        'لم تقم الجهة الحكومية برفع ملف كراسة الشروط إلكترونياً على بوابة التعاقدات لهذه العملية، حيث يتطلب شراؤها واستلام النسخة الورقية من مقر الجهة. يمكنك فتح رابط البوابة الرسمي والاطلاع على التفاصيل، ثم رفع النسخة الممسوحة ضوئياً (Scan) عبر زر "رفع كراسة بديلة أو ملحق".'
+      );
+    }
+
+    // Detect extension
+    let ext = 'pdf';
+    if (downloaded.filename?.toLowerCase().endsWith('.docx') || downloaded.contentType?.includes('word')) {
+      ext = 'docx';
+    } else if (downloaded.filename?.toLowerCase().endsWith('.doc')) {
+      ext = 'doc';
+    }
+
+    const uploadsDir = path.resolve(process.cwd(), 'uploads/operations');
+    if (!existsSync(uploadsDir)) mkdirSync(uploadsDir, { recursive: true });
+    const savedFilename = `booklet-${id}-${Date.now()}.${ext}`;
+    const diskPath = path.join(uploadsDir, savedFilename);
+    writeFileSync(diskPath, downloaded.buffer);
+
+    const docName = data.fileName || downloaded.filename || `كراسة_شروط_${operation.externalNumber || operation.serialNumber || id}.${ext}`;
+
     await this.prisma.operationDocument.create({
       data: {
         operationId: id,
         companyId,
         type: 'BOOKLET',
-        fileName: data.fileName || 'كراسة_الشروط.pdf',
-        filePath: `/uploads/booklets/${id}_${Date.now()}.pdf`,
-        fileType: 'application/pdf',
+        fileName: docName,
+        filePath: `uploads/operations/${savedFilename}`,
+        fileType: ext,
+        fileSize: downloaded.buffer.length,
       },
     });
 
@@ -1842,26 +1899,13 @@ export class OperationsService {
           };
         }
       } catch (radarErr: any) {
-        console.warn('Radar download attempt failed, proceeding to synthesized specification document:', radarErr?.message);
+        console.warn('Radar download attempt failed:', radarErr?.message);
       }
     }
 
-    // 3. Fallback Synthesizer: Generate official tender specification & booklet document so user NEVER sees 404
-    const op = await this.prisma.operation.findUnique({
-      where: { id: operationId },
-      include: { companies: { include: { company: true } }, dates: true },
-    });
-
-    const fallbackHtml = this.generateFallbackBookletHtml(op, doc);
-    const fallbackBuffer = Buffer.from(fallbackHtml, 'utf-8');
-
-    return {
-      buffer: fallbackBuffer,
-      fileName: `${doc.fileName || 'كراسة_الشروط_والمواصفات'}.html`,
-      fileType: 'html',
-      contentType: 'text/html; charset=utf-8',
-      size: fallbackBuffer.length,
-    };
+    throw new NotFoundException(
+      'ملف كراسة الشروط الأصلي غير متوفر على القرص أو البوابة الحكومية. يرجى رفع ملف الكراسة الفعلي بصيغة Word أو PDF.'
+    );
   }
 
   /**
@@ -2684,52 +2728,11 @@ try {
       this.logger.log(`تم رفع المستند بنجاح إلى Cloudflare R2 الخاص بالشركة: ${finalUrl}`);
       return { success: true, url: finalUrl, provider: 'Cloudflare R2 Storage (حساب الشركة المعتمد)' };
     } catch (r2Err: any) {
-      this.logger.warn(`Cloudflare R2 upload failed, falling back to Gofile: ${r2Err?.message}`);
+      this.logger.error(`Cloudflare R2 upload error: ${r2Err?.message}`);
+      throw new BadRequestException(
+        `تعذر الرفع إلى سحابة Cloudflare R2 الخاصة بالشركة: ${r2Err?.message || 'خطأ في الاتصال'}`
+      );
     }
-
-    // 2. المحرك الاحتياطي الثاني: Gofile.io
-    try {
-      const srvRes = await fetch('https://api.gofile.io/servers', {
-        headers: { 'User-Agent': 'Mozilla/5.0' },
-        signal: AbortSignal.timeout(8000),
-      });
-      if (srvRes.ok) {
-        const srvData = await srvRes.json();
-        const serverName = srvData?.data?.servers?.[0]?.name || 'store1';
-
-        const gofileForm = new FormData();
-        gofileForm.append(
-          'file',
-          new Blob([new Uint8Array(pdfBuffer)], { type: 'application/pdf' }),
-          finalName
-        );
-
-        const upRes = await fetch(`https://${serverName}.gofile.io/contents/uploadfile`, {
-          method: 'POST',
-          body: gofileForm,
-          headers: { 'User-Agent': 'Mozilla/5.0' },
-          signal: AbortSignal.timeout(20000),
-        });
-
-        if (upRes.ok) {
-          const upData = await upRes.json();
-          if (upData?.status === 'ok' && upData?.data?.downloadPage) {
-            this.logger.log(`تم رفع المستند سحابياً بنجاح عبر Gofile: ${upData.data.downloadPage}`);
-            return {
-              success: true,
-              url: upData.data.downloadPage,
-              provider: 'Gofile Cloud (تخزين سحابي)',
-            };
-          }
-        }
-      }
-    } catch (gofileErr: any) {
-      this.logger.warn(`Gofile upload failed: ${gofileErr?.message}`);
-    }
-
-    throw new BadRequestException(
-      'تعذر الرفع إلى مراكز التخزين السحابي (Cloudflare R2 / Gofile). يرجى التحقق من اتصال الإنترنت.'
-    );
   }
 
   async getExpectedCloudUrl(fileName: string): Promise<string> {

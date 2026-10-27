@@ -48,6 +48,7 @@ import { toast } from "sonner";
 import api from "@/lib/api";
 import { StepFooterNav } from "./tabs/StepFooterNav";
 import { FinalInsuranceRefundSection } from "./tabs/FinalInsuranceRefundSection";
+import { GrievanceLetterSection } from "./tabs/GrievanceLetterSection";
 
 /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
    HELPERS & FORMATTERS
@@ -1028,6 +1029,7 @@ export function TabTechOpening({
   // Refund Letter Modal state
   const [refundLetterModalOpen, setRefundLetterModalOpen] = useState(false);
   const [showFinalRefundSection, setShowFinalRefundSection] = useState(false);
+  const [showOfficialGrievanceDoc, setShowOfficialGrievanceDoc] = useState(false);
 
   // Optional Fulfillment
   const [fulfillmentOpen, setFulfillmentOpen] = useState(false);
@@ -1316,20 +1318,43 @@ export function TabTechOpening({
           </div>
         </div>
 
-        <div className="flex items-center gap-1.5 text-xs font-bold flex-wrap">
-          <Badge className={isDecisionLocked ? "bg-emerald-600 text-white" : "bg-amber-500 text-white"}>
-            1. تسجيل القرار {isDecisionLocked ? "✓" : "✍️"}
-          </Badge>
-          <span className="text-muted-foreground">⬅️</span>
-          <Badge variant="outline" className={effectiveResult === "ACCEPTED" ? "border-emerald-500 text-emerald-700 bg-emerald-500/10" : "border-muted-foreground/30 text-muted-foreground"}>
-            2. الفتح المالي
-          </Badge>
-          <span className="text-muted-foreground">أو</span>
-          <Badge variant="outline" className={effectiveResult === "REJECTED" ? "border-rose-500 text-rose-700 bg-rose-500/10" : "border-muted-foreground/30 text-muted-foreground"}>
-            التظلم والاسترداد
-          </Badge>
+        <div className="flex items-center gap-2 flex-wrap">
+          <div className="flex items-center gap-1.5 text-xs font-bold flex-wrap">
+            <Badge className={isDecisionLocked ? "bg-emerald-600 text-white" : "bg-amber-500 text-white"}>
+              1. تسجيل القرار {isDecisionLocked ? "✓" : "✍️"}
+            </Badge>
+            <span className="text-muted-foreground">⬅️</span>
+            <Badge variant="outline" className={effectiveResult === "ACCEPTED" ? "border-emerald-500 text-emerald-700 bg-emerald-500/10" : "border-muted-foreground/30 text-muted-foreground"}>
+              2. الفتح المالي
+            </Badge>
+            <span className="text-muted-foreground">أو</span>
+            <Badge variant="outline" className={effectiveResult === "REJECTED" ? "border-rose-500 text-rose-700 bg-rose-500/10" : "border-muted-foreground/30 text-muted-foreground"}>
+              التظلم والاسترداد
+            </Badge>
+          </div>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => setShowOfficialGrievanceDoc(!showOfficialGrievanceDoc)}
+            className="text-xs h-7.5 px-3 rounded-xl border-indigo-300 dark:border-indigo-700 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 flex items-center gap-1.5 font-bold shadow-2xs"
+          >
+            <FileText className="h-3.5 w-3.5" />
+            <span>{showOfficialGrievanceDoc ? "إخفاء خطاب التظلم" : "خطاب التظلم الفني الرسمي (.docx) 📄"}</span>
+          </Button>
         </div>
       </div>
+
+      {/* Official Technical Grievance Letter Section */}
+      {showOfficialGrievanceDoc && (
+        <div className="animate-in fade-in slide-in-from-top-2 duration-300">
+          <GrievanceLetterSection
+            op={op}
+            stage="technical"
+            onRefresh={onRefresh}
+            onClose={() => setShowOfficialGrievanceDoc(false)}
+          />
+        </div>
+      )}
 
       {/* 2. Main Technical Opening Management Card */}
       <SectionCard
@@ -1813,18 +1838,27 @@ export function TabTechOpening({
                 </div>
               </div>
 
-              {savedGrievance && (
-                <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
+                <Button
+                  size="sm"
+                  onClick={() => setShowOfficialGrievanceDoc(true)}
+                  className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs h-8.5 px-3.5 rounded-xl flex items-center gap-1.5 cursor-pointer shadow-md"
+                >
+                  <FileText className="h-3.5 w-3.5" />
+                  <span>خطاب التظلم الفني الرسمي المعتمد (.docx) 📄</span>
+                </Button>
+                {savedGrievance && (
                   <Button
                     size="sm"
+                    variant="outline"
                     onClick={() => setGrievanceModalOpen(true)}
-                    className="bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs h-8.5 px-3.5 rounded-xl flex items-center gap-1.5 cursor-pointer shadow-md"
+                    className="border-rose-300 text-rose-700 hover:bg-rose-100 dark:border-rose-700 dark:text-rose-300 font-bold text-xs h-8.5 px-3 rounded-xl flex items-center gap-1.5 cursor-pointer shadow-2xs"
                   >
                     <Printer className="h-3.5 w-3.5" />
-                    <span>معاينة وطباعة مذكرة التظلم الرسمية</span>
+                    <span>المذكرة السريعة</span>
                   </Button>
-                </div>
-              )}
+                )}
+              </div>
             </div>
 
             {/* If Grievance ALREADY FILED */}
@@ -2233,6 +2267,7 @@ export function TabFinOpening({
   }, [savedFinGrievance]);
 
   const [showFinalRefundSection, setShowFinalRefundSection] = useState(false);
+  const [showFinOfficialGrievanceDoc, setShowFinOfficialGrievanceDoc] = useState(false);
 
   // Competitors registration
   const [adding, setAdding] = useState(false);
@@ -2743,20 +2778,43 @@ export function TabFinOpening({
           </div>
         </div>
 
-        <div className="flex items-center gap-1.5 text-xs font-bold flex-wrap">
-          <Badge className={isSessionLocked ? "bg-emerald-600 text-white" : "bg-amber-500 text-white"}>
-            1. تقييم الأسعار {isSessionLocked ? "✓" : "✍️"}
-          </Badge>
-          <span className="text-muted-foreground">⬅️</span>
-          <Badge variant="outline" className={evalOutcome === "ACCEPT_ALL" ? "border-emerald-500 text-emerald-700 bg-emerald-500/10" : "border-muted-foreground/30 text-muted-foreground"}>
-            2. الترسية والتوريد
-          </Badge>
-          <span className="text-muted-foreground">أو</span>
-          <Badge variant="outline" className={evalOutcome === "REJECTED" ? "border-rose-500 text-rose-700 bg-rose-500/10" : "border-muted-foreground/30 text-muted-foreground"}>
-            التظلم والاسترداد
-          </Badge>
+        <div className="flex items-center gap-2 flex-wrap">
+          <div className="flex items-center gap-1.5 text-xs font-bold flex-wrap">
+            <Badge className={isSessionLocked ? "bg-emerald-600 text-white" : "bg-amber-500 text-white"}>
+              1. تقييم الأسعار {isSessionLocked ? "✓" : "✍️"}
+            </Badge>
+            <span className="text-muted-foreground">⬅️</span>
+            <Badge variant="outline" className={evalOutcome === "ACCEPT_ALL" ? "border-emerald-500 text-emerald-700 bg-emerald-500/10" : "border-muted-foreground/30 text-muted-foreground"}>
+              2. الترسية والتوريد
+            </Badge>
+            <span className="text-muted-foreground">أو</span>
+            <Badge variant="outline" className={evalOutcome === "REJECTED" ? "border-rose-500 text-rose-700 bg-rose-500/10" : "border-muted-foreground/30 text-muted-foreground"}>
+              التظلم والاسترداد
+            </Badge>
+          </div>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => setShowFinOfficialGrievanceDoc(!showFinOfficialGrievanceDoc)}
+            className="text-xs h-7.5 px-3 rounded-xl border-indigo-300 dark:border-indigo-700 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 flex items-center gap-1.5 font-bold shadow-2xs"
+          >
+            <FileText className="h-3.5 w-3.5" />
+            <span>{showFinOfficialGrievanceDoc ? "إخفاء خطاب التظلم" : "خطاب التظلم المالي الرسمي (.docx) 📄"}</span>
+          </Button>
         </div>
       </div>
+
+      {/* Official Financial Grievance Letter Section */}
+      {showFinOfficialGrievanceDoc && (
+        <div className="animate-in fade-in slide-in-from-top-2 duration-300">
+          <GrievanceLetterSection
+            op={op}
+            stage="financial"
+            onRefresh={onRefresh}
+            onClose={() => setShowFinOfficialGrievanceDoc(false)}
+          />
+        </div>
+      )}
 
       {/* ━━━ التنبيه المنطقي الإلزامي المرتبط بمرحلة البت الفني ━━━ */}
       {isTechPartiallyAccepted && (
@@ -3290,14 +3348,25 @@ export function TabFinOpening({
               )
             }
             actions={
-              <Button
-                size="sm"
-                onClick={() => setFinGrievanceModalOpen(true)}
-                className="bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs h-8 px-3 rounded-xl flex items-center gap-1.5 cursor-pointer shadow-xs"
-              >
-                <Printer className="h-3.5 w-3.5" />
-                <span>معاينة وطباعة مذكرة التظلم المالي</span>
-              </Button>
+              <div className="flex items-center gap-2 flex-wrap">
+                <Button
+                  size="sm"
+                  onClick={() => setShowFinOfficialGrievanceDoc(true)}
+                  className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs h-8 px-3 rounded-xl flex items-center gap-1.5 cursor-pointer shadow-md"
+                >
+                  <FileText className="h-3.5 w-3.5" />
+                  <span>خطاب التظلم المالي الرسمي المعتمد (.docx) 📄</span>
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setFinGrievanceModalOpen(true)}
+                  className="border-rose-300 text-rose-700 hover:bg-rose-100 dark:border-rose-700 dark:text-rose-300 font-bold text-xs h-8 px-3 rounded-xl flex items-center gap-1.5 cursor-pointer shadow-2xs"
+                >
+                  <Printer className="h-3.5 w-3.5" />
+                  <span>المذكرة السريعة</span>
+                </Button>
+              </div>
             }
           >
             <div className="p-4 rounded-2xl bg-rose-50 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-800/60 text-xs space-y-1">

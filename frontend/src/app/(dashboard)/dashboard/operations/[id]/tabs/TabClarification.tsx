@@ -32,6 +32,8 @@ import {
   PdfExportLoadingModal,
   getUnifiedOperationRegistrationNumber,
   regenerateUnifiedRegistrationNumber,
+  getLetterSpecificRegistrationNumber,
+  regenerateLetterSpecificRegistrationNumber,
   FiscalYearSelect,
   OperationDocArchiveCard,
   getSharedOperationScope,
@@ -44,12 +46,17 @@ import {
   getOperationTechnicalOpeningDate,
   getOperationTenderMethod,
   isValidCloudDocUrl,
+  generateHighResDocQrBuffer,
+  getStandardDocQrPayload,
+  buildOfficialSignaturesTableXml,
+  replaceDocxRecipient,
 } from "./letter-utils";
 import { GOLDEN_STAMP_BASE64, GOLDEN_LOGO_BASE64 } from "./stamp-assets";
 import JSZip from "jszip";
 import QRCode from "qrcode";
 import { getPdfBlobFromDocx, uploadPdfToFreeCloud, getExpectedCloudPdfUrl } from "./client-pdf";
 import { OnlyOfficeDocViewer } from "@/components/OnlyOfficeDocViewer";
+import { SmartArabicDatePicker } from "@/components/ui/arabic-date-picker";
 
 export interface ClarificationInquiryItem {
   id: string;
@@ -158,10 +165,14 @@ export function TabClarification({
     return `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}/${d.getFullYear()}`;
   });
 
-  // رقم القيد الذكي الموحد للعملية بالكامل
+  // رقم القيد الذكي الخاص بخطاب التوضيح والاستفسارات
   const [registrationNumber, setRegistrationNumber] = useState<string>(() => {
-    if (savedLetter?.registrationNumber) return savedLetter.registrationNumber;
-    return getUnifiedOperationRegistrationNumber(op, currentCompanyLink?.displayCode);
+    return getLetterSpecificRegistrationNumber(
+      op,
+      "clarification",
+      currentCompanyLink?.displayCode,
+      savedLetter?.registrationNumber
+    );
   });
 
   const [companyCommercialRegister, setCompanyCommercialRegister] = useState(
@@ -277,9 +288,7 @@ export function TabClarification({
       setRecipientTitleAndAuthority(`مدير الادارة العامة للمشتريات والمخازن بـ ${op.authority}`);
     }
     if (!savedLetter?.technicalOpeningDate) {
-      const d = op.dates?.find((dt: any) => dt.type === "TECHNICAL_OPENING" || dt.title?.includes("فني"));
-      if (d?.dateValue) setTechnicalOpeningDate(formatDate(d.dateValue));
-      else if (d?.date) setTechnicalOpeningDate(formatDate(d.date));
+      setTechnicalOpeningDate(getOperationTechnicalOpeningDate(op));
     }
   }, [op.name, op.externalNumber, op.serialNumber, op.authority, op.dates, savedLetter]);
 
@@ -318,9 +327,9 @@ export function TabClarification({
 
   // ━━━ 5. التوقيعات والاعتماد (Signatures & Approvals) ━━━
   const [specialistTitle, setSpecialistTitle] = useState("المهندس / القانونى المختص");
-  const [specialistName, setSpecialistName] = useState("أحمد محمد");
+  const [specialistName, setSpecialistName] = useState(() => savedLetter?.specialistName || "");
   const [financeManagerName, setFinanceManagerName] = useState(() => {
-    return savedLetter?.financeManagerName || savedLetter?.financeManagerSignature || "محمود إبراهيم";
+    return savedLetter?.financeManagerName || savedLetter?.financeManagerSignature || "";
   });
   const [boardChairman, setBoardChairman] = useState(() => {
     return sanitizeChairmanTitle(savedLetter?.boardChairman);
@@ -457,10 +466,11 @@ export function TabClarification({
   const [responseRefNo, setResponseRefNo] = useState("");
   const [uploadingResponse, setUploadingResponse] = useState(false);
 
-  // إعادة توليد رقم القيد الموحد للعملية مع الحفاظ على التوابت وتحديث الباك إند
+  // إعادة توليد رقم القيد الخاص بخطاب الاستفسارات
   const handleRegenerateRef = async () => {
-    await regenerateUnifiedRegistrationNumber({
+    await regenerateLetterSpecificRegistrationNumber({
       op,
+      letterKey: "clarification",
       companyCode: currentCompanyLink?.displayCode || "AZ",
       onSuccess: (fresh) => {
         setRegistrationNumber(fresh);
@@ -513,50 +523,46 @@ export function TabClarification({
 
     // توليد رمز التحقق الرقمي والباركود للنسخة الرقمية - فقط في حالة الرفع السحابي الفعلي
     let qrDrawingXml = "";
-    const activeCloud = cloudPdfUrl;
-    if (isValidCloudDocUrl(activeCloud)) {
-      try {
-        const qrDataUrl = await QRCode.toDataURL(activeCloud, {
-          width: 600,
-          margin: 2,
-          errorCorrectionLevel: "M",
-        });
-        const qrBase64 = qrDataUrl.split(",")[1];
-        const qrBinary = Uint8Array.from(atob(qrBase64), (c) => c.charCodeAt(0));
+    try {
+      const activeCloud = cloudPdfUrl;
+      const filename = `clarification_${registrationNumber || op.serialNumber || "doc"}.pdf`;
+      const qrPayload = await getStandardDocQrPayload(
+        activeCloud,
+        registrationNumber,
+        op.name ? `استفسارات عملية ${op.name}` : "خطاب استفسارات وتوضيحات فنية",
+        currentCompany?.name || "المجموعة الذهبية",
+        filename
+      );
+      const qrBinary = await generateHighResDocQrBuffer(qrPayload);
 
-        zip.file("word/media/doc_qr.png", qrBinary);
+      zip.file("word/media/doc_qr.png", qrBinary);
 
-        let relsXml = await zip.file("word/_rels/document.xml.rels")?.async("text");
-        if (relsXml && !relsXml.includes("rIdQR")) {
-          relsXml = relsXml.replace(
-            "</Relationships>",
-            '<Relationship Id="rIdQR" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/doc_qr.png"/></Relationships>'
-          );
-          zip.file("word/_rels/document.xml.rels", relsXml);
-        }
-
-        let ctXml = await zip.file("[Content_Types].xml")?.async("text");
-        if (ctXml && !ctXml.includes('Extension="png"')) {
-          ctXml = ctXml.replace("</Types>", '<Default Extension="png" ContentType="image/png"/></Types>');
-          zip.file("[Content_Types].xml", ctXml);
-        }
-
-        qrDrawingXml = buildQrAnchorXml();
-      } catch (e) {
-        console.warn("QR generation failed:", e);
+      let relsXml = await zip.file("word/_rels/document.xml.rels")?.async("text");
+      if (relsXml && !relsXml.includes("rIdQR")) {
+        relsXml = relsXml.replace(
+          "</Relationships>",
+          '<Relationship Id="rIdQR" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/doc_qr.png"/></Relationships>'
+        );
+        zip.file("word/_rels/document.xml.rels", relsXml);
       }
+
+      let ctXml = await zip.file("[Content_Types].xml")?.async("text");
+      if (ctXml && !ctXml.includes('Extension="png"')) {
+        ctXml = ctXml.replace("</Types>", '<Default Extension="png" ContentType="image/png"/></Types>');
+        zip.file("[Content_Types].xml", ctXml);
+      }
+
+      qrDrawingXml = buildQrAnchorXml();
+    } catch (e) {
+      console.warn("QR generation failed in TabClarification:", e);
     }
 
     // 1. استبدال كافة المتغيرات في word/document.xml
     let docXml = await zip.file("word/document.xml")!.async("text");
     docXml = injectSingleQrIntoDocXml(docXml, qrDrawingXml, escapeXml(registrationNumber));
 
-    // لقب وصفة المرسل إليه
-    docXml = docXml.replace(/الأستاذ/g, escapeXml(recipientPrefix));
-    docXml = docXml.replace(
-      /مدير الادارة العامة للمشتريات والمخازن بجامعة دمنهور/g,
-      escapeXml(recipientTitleAndAuthority)
-    );
+    // لقب وصفة المرسل إليه بتوسيط وتنسيق متوازن
+    docXml = replaceDocxRecipient(docXml, recipientPrefix, recipientTitleAndAuthority);
 
     // الموضوع وبيانات العملية
     docXml = docXml.replace(/للأصناف/g, escapeXml(subjectTarget));
@@ -595,17 +601,19 @@ export function TabClarification({
       docXml = docXml.replace(/\.{15,}/g, escapeXml(companyRequest));
     }
 
-    // صفة واسم المهندس / القانوني المختص
-    docXml = docXml.replace(/المهندس\s*\/ القانونى\s*المختص/g, escapeXml(specialistTitle));
-    docXml = docXml.replace(/أحمد محمد/g, escapeXml(specialistName));
-
-    // اسم المدير المالي (مكتوب "اسم" أو "توقيع صورة أو اسم")
-    docXml = docXml.replace(/توقيع صورة\s*أو اسم/g, escapeXml(financeManagerName || " "));
-    docXml = docXml.replace(/توقيع صورة/g, escapeXml(financeManagerName || " "));
-    docXml = docXml.replace(/أو اسم/g, "");
-
-    // اعتماد رئيس مجلس الإدارة (الاعتماد النهائي) مع الحفاظ التام على "يعتمد ،،،،،،" في سطرها المستقل
-    docXml = replaceDocxChairman(docXml, boardChairman);
+    // صفة واسم المهندس / القانوني المختص والمدير المالي ورئيس مجلس الإدارة في جدول ثلاثي منضبط (بدون التفاف Wrap)
+    const clarSigBlockRegex = /<w:p\b[^>]*>(?:(?!<w:p\b)[\s\S])*?(?:المختص|المهندس)[\s\S]*?رئيس مجلس[\s\S]*?<\/w:p>/;
+    if (clarSigBlockRegex.test(docXml)) {
+      const sigTableXml = buildOfficialSignaturesTableXml({
+        specialistTitle: specialistTitle || "المهندس / القانونى المختص :",
+        specialistName: specialistName || " ",
+        financeManagerName: financeManagerName || " ",
+        boardChairman: boardChairman || "رئيس مجلس الإدارة",
+      });
+      docXml = docXml.replace(clarSigBlockRegex, sigTableXml);
+    } else {
+      docXml = replaceDocxChairman(docXml, boardChairman);
+    }
 
     // مسمى البند بترويسة الجدول (البند / الصنف / ...)
     docXml = docXml.replace("<w:t>البند</w:t>", `<w:t>${escapeXml(itemHeaderLabel || "البند")}</w:t>`);
@@ -692,18 +700,15 @@ export function TabClarification({
 
     setUploadingCloud(true);
     try {
+      toast.info("جاري توثيق ورفع خطاب التوضيح سحابياً (رابط PDF مباشر)...");
+
+      // 1. توليد المستند الأحدث مباشرة
       let pdfBlob = existingBlob;
-      if (!pdfBlob) {
-        if (previewPdfBlob && currentSnapshot === lastGeneratedSnapshot) {
-          pdfBlob = previewPdfBlob;
-        } else {
-          pdfBlob = await generateClarificationPdfBlob();
-          setPreviewPdfBlob(pdfBlob);
-          setLastGeneratedSnapshot(currentSnapshot);
-        }
+      if (!pdfBlob || forceReupload) {
+        pdfBlob = await generateClarificationPdfBlob();
       }
 
-      toast.info("جاري توثيق ورفع المستند سحابياً (رابط PDF مباشر)...");
+      // 2. الرفع إلى السحابة
       const res = await uploadPdfToFreeCloud(
         pdfBlob,
         `clarification_${registrationNumber || op.serialNumber || "doc"}.pdf`
@@ -711,7 +716,48 @@ export function TabClarification({
 
       if (res?.url) {
         setCloudPdfUrl(res.url);
-        toast.success("تم رفع وتوثيق خطاب التوضيح سحابياً بنجاح! الرابط جاهز ومتاح عالمياً لأي هاتف محمول 🚀");
+
+        // 3. مزامنة المعاينة في الذاكرة فوراً لفتحها بـ 0ms بدون أي إعادة توليد
+        setPreviewPdfBlob(pdfBlob);
+        if (previewPdfUrl) {
+          URL.revokeObjectURL(previewPdfUrl);
+        }
+        setPreviewPdfUrl(URL.createObjectURL(pdfBlob));
+
+        const syncedSnapshot = JSON.stringify({
+          selectedCompanyId,
+          registrationNumber,
+          outgoingDate,
+          companyCommercialRegister,
+          companyTaxCard,
+          companyOpCode,
+          companyWhatsapp,
+          companyMobile,
+          companyEmail,
+          companyAddress,
+          recipientPrefix,
+          recipientTitleAndAuthority,
+          subjectTarget,
+          operationRegisteredName,
+          operationNumber,
+          tenderMethod,
+          operationScope,
+          fiscalYear,
+          technicalOpeningDate,
+          inquiryAspect,
+          companyRequest,
+          inquiries,
+          itemHeaderLabel,
+          inquiryColumnLabel,
+          specialistTitle,
+          specialistName,
+          financeManagerName,
+          boardChairman,
+          cloudPdfUrl: res.url,
+        });
+        setLastGeneratedSnapshot(syncedSnapshot);
+
+        toast.success("تم توثيق ورفع خطاب التوضيح وتحديث المعاينة بنجاح! جاهز للمعاينة الفورية 🚀");
 
         // حفظ الرابط السحابي في notes العملية تلقائياً
         try {
@@ -834,6 +880,8 @@ export function TabClarification({
       return;
     }
 
+    if (renderingDocx) return;
+
     setRenderingDocx(true);
     try {
       const docx = await generateClarificationDocxBlob();
@@ -841,13 +889,28 @@ export function TabClarification({
 
       const pdf = await getPdfBlobFromDocx(docx, `clarification_${registrationNumber}.docx`);
       setPreviewPdfBlob(pdf);
-      if (previewPdfUrl) {
-        URL.revokeObjectURL(previewPdfUrl);
-      }
       const url = URL.createObjectURL(pdf);
       setPreviewPdfUrl(url);
 
       setLastGeneratedSnapshot(currentSnapshot);
+
+      // رفع تلقائي فوري لسحابة Cloudflare R2 حصرياً لضمان توفر الملف دائماً عند مسح الباركود
+      const cloudFilename = `clarification_${registrationNumber || op.serialNumber || "doc"}.pdf`;
+      uploadPdfToFreeCloud(pdf, cloudFilename)
+        .then((res) => {
+          if (res?.url) {
+            setCloudPdfUrl(res.url);
+            try {
+              let existingNotesObj: any = {};
+              if (op.notes && op.notes.startsWith("{")) existingNotesObj = JSON.parse(op.notes);
+              if (!existingNotesObj.clarificationLetter) existingNotesObj.clarificationLetter = {};
+              existingNotesObj.clarificationLetter.cloudPdfUrl = res.url;
+              api.patch(`/operations/${op.id}`, { notes: JSON.stringify(existingNotesObj) }).catch(() => {});
+            } catch {}
+          }
+        })
+        .catch((e) => console.warn("Background Cloudflare R2 upload:", e));
+
       if (forceRefresh) {
         toast.success("تم تحديث المعاينة الرسمية بنجاح! 🔄✨");
       }
@@ -963,29 +1026,7 @@ export function TabClarification({
 
   // ━━━ دالة عرض الملف المؤرشف فوراً (0ms) بدون إعادة تحويل ━━━
   const handleViewArchive = () => {
-    // 1. إذا كان رابط السحابة متاحاً، افتح النسخة السحابية المعتمدة فوراً
-    if (cloudPdfUrl) {
-      window.open(cloudPdfUrl, "_blank");
-      return;
-    }
-    // 2. إذا كان ملف الـ PDF متوفراً في الذاكرة مسبقاً، افتح نافذة المعاينة فوراً
-    if (previewPdfBlob) {
-      setPreviewModalOpen(true);
-      return;
-    }
-    // 3. التحقق من وجود مستند مؤرشف في أرشيف العملية
-    const archivedDoc = op.documents?.find(
-      (d: any) =>
-        d.type?.toLowerCase().includes("clarification") ||
-        d.name?.toLowerCase().includes("clarification") ||
-        d.name?.includes("توضيح")
-    );
-    if (archivedDoc?.fileUrl) {
-      window.open(archivedDoc.fileUrl, "_blank");
-      return;
-    }
-    // 4. فتح المعاينة
-    setPreviewModalOpen(true);
+    loadOfficialPreview(false);
   };
 
   // ━━━ حالة إضافة خطاب التوضيح إلى مستندات الأرشيف ━━━
@@ -1040,11 +1081,6 @@ export function TabClarification({
     if (previewModalOpen) {
       loadOfficialPreview();
     }
-    return () => {
-      if (previewPdfUrl) {
-        URL.revokeObjectURL(previewPdfUrl);
-      }
-    };
   }, [previewModalOpen]);
 
   // حفظ الخطاب في قاعدة بيانات النظام
@@ -1070,6 +1106,11 @@ export function TabClarification({
         cloudPdfUrl,
         printHistory,
       };
+
+      if (!existingNotesObj.letterRegistrationNumbers) {
+        existingNotesObj.letterRegistrationNumbers = {};
+      }
+      existingNotesObj.letterRegistrationNumbers["clarification"] = registrationNumber;
 
       existingNotesObj.operationScope = operationScope;
       existingNotesObj.fiscalYear = fiscalYear;
@@ -1212,12 +1253,11 @@ export function TabClarification({
             </div>
 
             <div className="space-y-1.5">
-              <Label className="text-xs font-bold text-foreground">تاريخ الصادر (التذييل) *</Label>
-              <Input
+              <SmartArabicDatePicker
+                label="تاريخ الصادر (التذييل)"
                 value={outgoingDate}
-                onChange={(e) => setOutgoingDate(e.target.value)}
-                placeholder="15/10/2026"
-                className="h-9.5 text-xs font-mono rounded-xl text-center font-bold"
+                onChange={(val) => setOutgoingDate(val)}
+                required
               />
             </div>
           </div>
@@ -1370,14 +1410,27 @@ export function TabClarification({
             </div>
 
             <div className="space-y-1.5">
-              <Label className="text-xs font-bold text-foreground">
-                تاريخ جلسة فتح المظروف الفني *
-              </Label>
-              <Input
+              <div className="flex items-center justify-between">
+                <Label className="text-xs font-bold text-foreground">
+                  تاريخ جلسة فتح المظروف الفني *
+                </Label>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const d = getOperationTechnicalOpeningDate(op);
+                    setTechnicalOpeningDate(d);
+                    toast.success(`تمت مزامنة موعد الجلسة الفنية (${d}) مع التواريخ بنجاح 🔄`);
+                  }}
+                  className="text-[10px] text-amber-700 dark:text-amber-300 font-bold hover:underline flex items-center gap-1 cursor-pointer"
+                >
+                  <span>مزامنة مع التواريخ</span>
+                  <RefreshCw className="h-3 w-3" />
+                </button>
+              </div>
+              <SmartArabicDatePicker
                 value={technicalOpeningDate}
-                onChange={(e) => setTechnicalOpeningDate(e.target.value)}
-                placeholder="14/ 1 /2024"
-                className="h-9.5 text-xs font-mono rounded-xl text-center"
+                onChange={(val) => setTechnicalOpeningDate(val)}
+                required
               />
             </div>
           </div>
@@ -1800,9 +1853,20 @@ export function TabClarification({
                     documentTitle={`خطاب_توضيح_${op.externalNumber || op.serialNumber}_${registrationNumber}.docx`}
                     docxBlob={previewDocxBlob}
                     pdfBlob={previewPdfBlob}
+                    pdfUrl={previewPdfUrl}
                     onDownloadDocx={handleDownloadDocx}
                     onDownloadPdf={handleDownloadPdf}
                     onPrint={handlePrintWordDocument}
+                    onAddToArchive={handleToggleArchive}
+                    isArchived={isArchived}
+                    addingToArchive={addingToArchive}
+                    cloudUploadWarning={
+                      !cloudPdfUrl || (lastGeneratedSnapshot !== "" && lastGeneratedSnapshot !== currentSnapshot)
+                        ? "⚠️ تنبيه هام: هذا الخطاب يحتوي على تعديلات جديدة لم يتم رفعها سحابياً — يرجى الضغط على 'إعادة الرفع والتحديث' لكي يتطابق الباركود مع أحدث بيانات!"
+                        : null
+                    }
+                    onUploadCloud={() => handleUploadToCloud(true)}
+                    isUploadingCloud={uploadingCloud}
                   />
                 )}
               </div>
@@ -1811,28 +1875,12 @@ export function TabClarification({
         </Portal>
       )}
 
-      {/* ━━━ الباركود الذكي ورمز QR والرفع السحابي المجاني للنسخة الرقمية بأسفل الصفحة ━━━ */}
-      <LetterQrCloudCard
-        cloudPdfUrl={cloudPdfUrl}
-        registrationNumber={registrationNumber}
-        opId={op.id}
-        docType="clarification"
-        uploadingCloud={uploadingCloud}
-        onUploadToCloud={handleUploadToCloud}
-        title="الباركود الذكي ورمز QR الرقمي المعتمد (PDF)"
-        subtitle="عند مسح الباركود بكاميرا الموبايل يتم فتح النسخة الرقمية المعتمدة لخطاب التوضيح فوراً بدون الحاجة لأي تسجيل دخول."
-        badgeText="مدمج بموضع كلمة (الباركود) بالأعلى ورقم القيد بالتذييل"
-        gradientClass="from-amber-500/10 via-orange-500/10 to-transparent border-amber-500/25"
-        isModifiedAfterUpload={isDirty}
-      />
-
       {/* ━━━ BOTTOM ACTION BAR: التوليد والطباعة والمعاينة بأسفل مرحلة خطاب التوضيح ━━━ */}
       <LetterBottomActionWidget
         title="خطاب التوضيح والاستفسارات الفنية والقانونية الرسمية"
         registrationNumber={registrationNumber}
         isDirty={isDirty}
         onPreview={() => {
-          setPreviewModalOpen(true);
           loadOfficialPreview();
         }}
         onSave={handleSaveToSystem}

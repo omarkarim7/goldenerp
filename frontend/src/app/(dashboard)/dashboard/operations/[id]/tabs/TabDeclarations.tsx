@@ -32,6 +32,8 @@ import {
   PdfExportLoadingModal,
   getUnifiedOperationRegistrationNumber,
   regenerateUnifiedRegistrationNumber,
+  getLetterSpecificRegistrationNumber,
+  regenerateLetterSpecificRegistrationNumber,
   FiscalYearSelect,
   getSharedOperationScope,
   replaceDocxScope,
@@ -43,13 +45,16 @@ import {
   getOperationTechnicalOpeningDate,
   getOperationTenderMethod,
   isValidCloudDocUrl,
+  generateHighResDocQrBuffer,
+  getStandardDocQrPayload,
+  buildOfficialSignaturesTableXml,
 } from "./letter-utils";
 import JSZip from "jszip";
 import QRCode from "qrcode";
 import { getPdfBlobFromDocx, uploadPdfToFreeCloud, getExpectedCloudPdfUrl } from "./client-pdf";
 import { OnlyOfficeDocViewer } from "@/components/OnlyOfficeDocViewer";
 
-export type DeclarationType = "specs" | "insurance" | "general_letter";
+export type DeclarationType = "specs" | "insurance";
 
 function escapeXml(str: string): string {
   return (str || "")
@@ -102,11 +107,27 @@ export function TabDeclarations({
 
   const currentCompany = currentCompanyLink?.company;
 
-  // رقم القيد الصادر الذكي الموحد للعملية
-  const [registrationNumber, setRegistrationNumber] = useState(() => {
-    if (savedDec?.registrationNumber) return savedDec.registrationNumber;
-    return getUnifiedOperationRegistrationNumber(op, currentCompanyLink?.displayCode);
+  // رقم القيد الصادر الذكي الخاص بكل إقرار على حدة
+  const [letterRegNumbers, setLetterRegNumbers] = useState<Record<DeclarationType, string>>(() => {
+    const saved = savedDec?.letterRegNumbers || {};
+    return {
+      specs: saved.specs || getLetterSpecificRegistrationNumber(op, "decl_specs", currentCompanyLink?.displayCode, savedDec?.registrationNumber),
+      insurance: saved.insurance || getLetterSpecificRegistrationNumber(op, "decl_insurance", currentCompanyLink?.displayCode),
+    };
   });
+
+  const registrationNumber = letterRegNumbers[activeDeclType] || getLetterSpecificRegistrationNumber(
+    op,
+    activeDeclType === "specs" ? "decl_specs" : "decl_insurance",
+    currentCompanyLink?.displayCode
+  );
+
+  const setRegistrationNumber = (val: string) => {
+    setLetterRegNumbers((prev) => ({
+      ...prev,
+      [activeDeclType]: val,
+    }));
+  };
 
   // كود العملية بالشركة
   const [companyOpCode, setCompanyOpCode] = useState(() => {
@@ -181,9 +202,7 @@ export function TabDeclarations({
       setRecipientTitleAndAuthority(`مدير الادارة العامة للمشتريات والمخازن بـ ${op.authority}`);
     }
     if (!savedDec?.technicalOpeningDate) {
-      const d = op.dates?.find((dt: any) => dt.type === "TECHNICAL_OPENING" || dt.title?.includes("فني"));
-      if (d?.dateValue) setTechnicalOpeningDate(formatDate(d.dateValue));
-      else if (d?.date) setTechnicalOpeningDate(formatDate(d.date));
+      setTechnicalOpeningDate(getOperationTechnicalOpeningDate(op));
     }
   }, [op.name, op.externalNumber, op.serialNumber, op.authority, op.dates, savedDec]);
 
@@ -192,10 +211,10 @@ export function TabDeclarations({
     return savedDec?.specialistTitle || "المختص :";
   });
   const [specialistName, setSpecialistName] = useState(() => {
-    return savedDec?.specialistName || "أحمد محمد";
+    return savedDec?.specialistName || "";
   });
   const [financeManagerName, setFinanceManagerName] = useState(() => {
-    return savedDec?.financeManagerName || "محمود إبراهيم";
+    return savedDec?.financeManagerName || "";
   });
   const [boardChairman, setBoardChairman] = useState(() => {
     return sanitizeChairmanTitle(savedDec?.boardChairman);
@@ -210,24 +229,8 @@ export function TabDeclarations({
   };
   const [cloudPdfUrlSpecs, setCloudPdfUrlSpecs] = useState<string>(() => cleanCloudUrl(savedDec?.cloudPdfUrlSpecs));
   const [cloudPdfUrlInsurance, setCloudPdfUrlInsurance] = useState<string>(() => cleanCloudUrl(savedDec?.cloudPdfUrlInsurance));
-  const [cloudPdfUrlGeneral, setCloudPdfUrlGeneral] = useState<string>(() => cleanCloudUrl(savedDec?.cloudPdfUrlGeneral));
   const [uploadingCloud, setUploadingCloud] = useState(false);
   const [lastGeneratedSnapshot, setLastGeneratedSnapshot] = useState<string | null>(null);
-
-  // ━━━ 5. بيانات الخطاب العام ━━━
-  const [generalSubject, setGeneralSubject] = useState(() => {
-    return savedDec?.generalSubject || (op.name ? `بشأن عملية ${op.name}` : "طلب إفادة رسمية بشأن العملية");
-  });
-  const [generalLetterBody, setGeneralLetterBody] = useState(() => {
-    const tm = getOperationTenderMethod(op);
-    const sc = getSharedOperationScope(op, savedDec?.operationScope);
-    const fy = getOperationFiscalYear(op, savedDec?.fiscalYear);
-    const tod = getOperationTechnicalOpeningDate(op, savedDec?.technicalOpeningDate);
-    return (
-      savedDec?.generalLetterBody ||
-      `الرجاء من سيادتكم التكرم بالموافقة على سحب كراسة الشروط والمواصفات والخاصة (${tm}) لزوم ${sc} طرفكم للعام المالى ${fy} والمحدد لها جلسة ( ${tod} ) لفتح المظروف الفنى . وتفوض الشركة السيد / (أحمد محمد أحمد ) وصفته ( مندوب التعاقدات المفوض ) قومى رقم : 23056289523202 في تمثيل الشركة في كل ما يلزم من استلام المستندات وسداد المبالغ واستلام الايصالات وحضور الجلسات وجميع الأوراق والتوقيع على العقود واستلام الخطابات والمكاتبات الرسميه .`
-    );
-  });
 
   // Modals & Document state
   const [previewModalOpen, setPreviewModalOpen] = useState(false);
@@ -268,9 +271,6 @@ export function TabDeclarations({
       additionalNotes,
       cloudPdfUrlSpecs,
       cloudPdfUrlInsurance,
-      cloudPdfUrlGeneral,
-      generalSubject,
-      generalLetterBody,
     });
   }, [
     selectedCompanyId, registrationNumber, companyOpCode, companyCommercialRegister,
@@ -278,7 +278,7 @@ export function TabDeclarations({
     outgoingDate, recipientPrefix, recipientTitleAndAuthority, operationRegisteredName,
     operationNumber, tenderMethod, operationScope, fiscalYear, technicalOpeningDate,
     specialistTitle, specialistName, financeManagerName, boardChairman, additionalNotes,
-    cloudPdfUrlSpecs, cloudPdfUrlInsurance, cloudPdfUrlGeneral, generalSubject, generalLetterBody,
+    cloudPdfUrlSpecs, cloudPdfUrlInsurance,
   ]);
 
   const [savedSnapshot, setSavedSnapshot] = useState<string>(() => currentSnapshot);
@@ -312,9 +312,6 @@ export function TabDeclarations({
       setAdditionalNotes(snap.additionalNotes);
       setCloudPdfUrlSpecs(snap.cloudPdfUrlSpecs);
       setCloudPdfUrlInsurance(snap.cloudPdfUrlInsurance);
-      setCloudPdfUrlGeneral(snap.cloudPdfUrlGeneral || "");
-      if (snap.generalSubject) setGeneralSubject(snap.generalSubject);
-      if (snap.generalLetterBody) setGeneralLetterBody(snap.generalLetterBody);
       toast.info("تم التراجع عن التعديلات وإعادة الإقرارات للحالة السابقة ↺");
     } catch {
       toast.error("تعذر التراجع عن التعديلات");
@@ -333,14 +330,14 @@ export function TabDeclarations({
   const currentCloudUrl =
     activeDeclType === "specs"
       ? cloudPdfUrlSpecs
-      : activeDeclType === "insurance"
-      ? cloudPdfUrlInsurance
-      : cloudPdfUrlGeneral;
+      : cloudPdfUrlInsurance;
 
-  // إعادة توليد رقم القيد
+  // إعادة توليد رقم القيد الخاص بالإقرار المختار
   const handleRegenerateRef = async () => {
-    await regenerateUnifiedRegistrationNumber({
+    const letterKey = activeDeclType === "specs" ? "decl_specs" : "decl_insurance";
+    await regenerateLetterSpecificRegistrationNumber({
       op,
+      letterKey,
       companyCode: currentCompanyLink?.displayCode || "AZ",
       onSuccess: (fresh) => {
         setRegistrationNumber(fresh);
@@ -354,9 +351,7 @@ export function TabDeclarations({
     const templatePath =
       type === "specs"
         ? "/templates/declaration_specs_template.docx"
-        : type === "insurance"
-        ? "/templates/declaration_insurance_template.docx"
-        : "/templates/general_letter_template.docx";
+        : "/templates/declaration_insurance_template.docx";
 
     const response = await fetch(templatePath);
     if (!response.ok) throw new Error(`فشل قراءة قالب الإقرار (${type}) من الخادم`);
@@ -364,48 +359,48 @@ export function TabDeclarations({
 
     const zip = await JSZip.loadAsync(templateBuffer);
 
-    // توليد رمز التحقق الرقمي والباركود للنسخة الرقمية
     let qrDrawingXml = "";
     try {
       let activeCloud =
         type === "specs"
           ? cloudPdfUrlSpecs
-          : type === "insurance"
-          ? cloudPdfUrlInsurance
-          : cloudPdfUrlGeneral;
+          : cloudPdfUrlInsurance;
 
-      // يولد رمز QR بدقة فائقة فقط إذا تم رفع المستند مسبقاً على السحابة
-      // وفي حالة عدم الرفع يعرض المستند بدون باركود تماماً
-      if (isValidCloudDocUrl(activeCloud)) {
-        const qrDataUrl = await QRCode.toDataURL(activeCloud, {
-          width: 600,
-          margin: 2,
-          errorCorrectionLevel: "M",
-        });
-        const qrBase64 = qrDataUrl.split(",")[1];
-        const qrBinary = Uint8Array.from(atob(qrBase64), (c) => c.charCodeAt(0));
+      const docTitle =
+        type === "specs"
+          ? "إقرار المواصفات الفنية والشروط"
+          : "إقرار سداد وقيمة التأمين الابتدائي";
 
-        zip.file("word/media/doc_qr.png", qrBinary);
+      const filename = `declaration_${type}_${registrationNumber || op.serialNumber || "doc"}.pdf`;
+      const qrPayload = await getStandardDocQrPayload(
+        activeCloud,
+        registrationNumber,
+        docTitle,
+        currentCompany?.name || "المجموعة الذهبية",
+        filename
+      );
+      const qrBinary = await generateHighResDocQrBuffer(qrPayload);
 
-        let relsXml = await zip.file("word/_rels/document.xml.rels")?.async("text");
-        if (relsXml && !relsXml.includes("rIdQR")) {
-          relsXml = relsXml.replace(
-            "</Relationships>",
-            '<Relationship Id="rIdQR" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/doc_qr.png"/></Relationships>'
-          );
-          zip.file("word/_rels/document.xml.rels", relsXml);
-        }
+      zip.file("word/media/doc_qr.png", qrBinary);
 
-        let ctXml = await zip.file("[Content_Types].xml")?.async("text");
-        if (ctXml && !ctXml.includes('Extension="png"')) {
-          ctXml = ctXml.replace("</Types>", '<Default Extension="png" ContentType="image/png"/></Types>');
-          zip.file("[Content_Types].xml", ctXml);
-        }
-
-        qrDrawingXml = buildQrAnchorXml();
+      let relsXml = await zip.file("word/_rels/document.xml.rels")?.async("text");
+      if (relsXml && !relsXml.includes("rIdQR")) {
+        relsXml = relsXml.replace(
+          "</Relationships>",
+          '<Relationship Id="rIdQR" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/doc_qr.png"/></Relationships>'
+        );
+        zip.file("word/_rels/document.xml.rels", relsXml);
       }
+
+      let ctXml = await zip.file("[Content_Types].xml")?.async("text");
+      if (ctXml && !ctXml.includes('Extension="png"')) {
+        ctXml = ctXml.replace("</Types>", '<Default Extension="png" ContentType="image/png"/></Types>');
+        zip.file("[Content_Types].xml", ctXml);
+      }
+
+      qrDrawingXml = buildQrAnchorXml();
     } catch (e) {
-      console.warn("QR generation failed:", e);
+      console.warn("QR generation failed in TabDeclarations:", e);
     }
 
 
@@ -420,40 +415,27 @@ export function TabDeclarations({
       escapeXml(recipientTitleAndAuthority)
     );
 
-    if (type === "general_letter") {
-      // ━━━ استبدال متغيرات الخطاب العام ━━━
-      docXml = docXml.replace(/الموضوع بخصوص\s*:\s*\.{3,}/g, `الموضوع بخصوص : ${escapeXml(generalSubject)}`);
-      docXml = docXml.replace(/\.{3,}/g, escapeXml(generalSubject));
+    // ━━━ استبدال متغيرات إقرارات الشروط والتأمينات ━━━
+    docXml = docXml.replace(/اسم العملية المسجله[\s\.]*/g, escapeXml(operationRegisteredName) + " ");
+    docXml = docXml.replace(/365/g, escapeXml(operationNumber));
+    docXml = docXml.replace(/المناقصة المحدودة/g, escapeXml(tenderMethod));
+    docXml = replaceDocxScope(docXml, operationScope);
+    docXml = replaceDocxFiscalAndDate(docXml, fiscalYear, technicalOpeningDate);
 
-      // استبدال متن الخطاب العام بالكامل
-      const bodyPattern = /<w:p\b[^>]*>(?:(?!<\/w:p>)[\s\S])*?الرجاء من سيادتكم(?:(?!<\/w:p>)[\s\S])*?<\/w:p>/;
-      if (bodyPattern.test(docXml)) {
-        const newBodyXml = `<w:p><w:pPr><w:spacing w:after="0" w:line="240" w:lineRule="auto"/><w:ind w:left="-567" w:hanging="283"/><w:jc w:val="both"/><w:rPr><w:rFonts w:ascii="Arabic Typesetting" w:hAnsi="Arabic Typesetting" w:cs="Arabic Typesetting"/><w:b/><w:bCs/><w:sz w:val="36"/><w:szCs w:val="36"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr></w:pPr><w:r><w:rPr><w:rFonts w:ascii="Arabic Typesetting" w:hAnsi="Arabic Typesetting" w:cs="Arabic Typesetting" w:hint="cs"/><w:b/><w:bCs/><w:sz w:val="36"/><w:szCs w:val="36"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t xml:space="preserve">${escapeXml(generalLetterBody)}</w:t></w:r></w:p>`;
-        docXml = docXml.replace(bodyPattern, newBodyXml);
-      } else {
-        docXml = docXml.replace(/الرجاء من سيادتكم[\s\S]*?المكاتبات الرسميه\s*\./g, escapeXml(generalLetterBody));
-      }
-
-      docXml = docXml.replace(/أحمد محمد/g, escapeXml(specialistName));
-      docXml = docXml.replace(/توقيع صورة أو اسم/g, escapeXml(financeManagerName || " "));
-      docXml = docXml.replace(/توقيع صورة/g, escapeXml(financeManagerName || " "));
-      docXml = docXml.replace(/المختص\s*:/g, escapeXml(specialistTitle));
+    // التوقيعات والاعتمادات بأسفل الصفحة
+    // التوقيعات بأسفل الصفحة في جدول ثلاثي منضبط (المختص | المدير المالي | يعتمد رئيس مجلس الإدارة)
+    const decSigBlockRegex = /<w:p\b[^>]*>(?:(?!<w:p\b)[\s\S])*?المختص[\s\S]*?رئيس مجلس[\s\S]*?<\/w:p>/;
+    if (decSigBlockRegex.test(docXml)) {
+      const sigTableXml = buildOfficialSignaturesTableXml({
+        specialistTitle: specialistTitle || "المختص :",
+        specialistName: specialistName || " ",
+        financeManagerName: financeManagerName || " ",
+        boardChairman: boardChairman || "رئيس مجلس الإدارة",
+      });
+      docXml = docXml.replace(decSigBlockRegex, sigTableXml);
     } else {
-      // ━━━ استبدال متغيرات إقرارات الشروط والتأمينات ━━━
-      docXml = docXml.replace(/اسم العملية المسجله[\s\.]*/g, escapeXml(operationRegisteredName) + " ");
-      docXml = docXml.replace(/365/g, escapeXml(operationNumber));
-      docXml = docXml.replace(/المناقصة المحدودة/g, escapeXml(tenderMethod));
-      docXml = replaceDocxScope(docXml, operationScope);
-      docXml = replaceDocxFiscalAndDate(docXml, fiscalYear, technicalOpeningDate);
-
-      // التوقيعات والاعتمادات
-      docXml = docXml.replace(/المختص\s*:/g, escapeXml(specialistTitle));
-      docXml = docXml.replace(/أحمد محمد/g, escapeXml(specialistName));
-      docXml = docXml.replace(/توقيع صورة/g, escapeXml(financeManagerName || " "));
+      docXml = replaceDocxChairman(docXml, boardChairman);
     }
-
-    // اعتماد رئيس مجلس الإدارة مع الحفاظ التام على "يعتمد ،،،،،،" في سطرها المستقل
-    docXml = replaceDocxChairman(docXml, boardChairman);
 
     // خانة الملاحظات
     if (additionalNotes.trim()) {
@@ -468,34 +450,40 @@ export function TabDeclarations({
 
     zip.file("word/document.xml", docXml);
 
-    // 2. ترويسة الصفحة (word/header2.xml)
-    let hdrXml = await zip.file("word/header2.xml")?.async("text");
-    if (hdrXml) {
-      hdrXml = hdrXml.replace(/110200700036620/g, escapeXml(companyCommercialRegister));
-      hdrXml = hdrXml.replace(/658369652/g, escapeXml(companyTaxCard));
-      hdrXml = hdrXml.replace(/\(\s*كود العملية بالشركه\s*\)/g, `( ${escapeXml(companyOpCode)} )`);
-      hdrXml = hdrXml.replace(/كود العملية بالشركه/g, escapeXml(companyOpCode));
-      hdrXml = hdrXml.replace(/<w:highlight\s+[^>]*\/>/g, "");
-      hdrXml = hdrXml.replace(/<w:color\s+w:val=\"(red|FF0000)\"[^>]*\/>/g, "");
-      zip.file("word/header2.xml", hdrXml);
+    // 2. ترويسات الصفحة بكافة أجزائها (header1, header2, header3)
+    const headerParts = ["word/header1.xml", "word/header2.xml", "word/header3.xml"];
+    for (const hp of headerParts) {
+      if (zip.file(hp)) {
+        let hdrXml = await zip.file(hp)!.async("text");
+        hdrXml = hdrXml.replace(/110200700036620/g, escapeXml(companyCommercialRegister));
+        hdrXml = hdrXml.replace(/658369652/g, escapeXml(companyTaxCard));
+        hdrXml = hdrXml.replace(/\(\s*كود العملية بالشركه\s*\)/g, `( ${escapeXml(companyOpCode)} )`);
+        hdrXml = hdrXml.replace(/كود العملية بالشركه/g, escapeXml(companyOpCode));
+        hdrXml = hdrXml.replace(/<w:highlight\s+[^>]*\/>/g, "");
+        hdrXml = hdrXml.replace(/<w:color\s+w:val=\"(red|FF0000)\"[^>]*\/>/g, "");
+        zip.file(hp, hdrXml);
+      }
     }
 
-    // 3. تذييل الصفحة (word/footer1.xml)
-    let ftrXml = await zip.file("word/footer1.xml")?.async("text");
-    if (ftrXml) {
-      ftrXml = ftrXml.replace(/15\/10\/2026/g, escapeXml(outgoingDate));
-      if (ftrXml.includes("رقم القيد")) {
-        ftrXml = ftrXml.replace(/رقم القيد/g, `رقم القيد : ${escapeXml(registrationNumber)}`);
+    // 3. تذييلات الصفحة بكافة أجزائها (footer1, footer2, footer3)
+    const footerParts = ["word/footer1.xml", "word/footer2.xml", "word/footer3.xml"];
+    for (const fp of footerParts) {
+      if (zip.file(fp)) {
+        let ftrXml = await zip.file(fp)!.async("text");
+        ftrXml = ftrXml.replace(/15\/10\/2026/g, escapeXml(outgoingDate));
+        if (ftrXml.includes("رقم القيد")) {
+          ftrXml = ftrXml.replace(/رقم القيد/g, `رقم القيد : ${escapeXml(registrationNumber)}`);
+        }
+        ftrXml = ftrXml.replace(/\(\s*باركود المستند أو العمليه/g, `رقم القيد : ${escapeXml(registrationNumber)}`);
+        ftrXml = ftrXml.replace(/01091708818/g, escapeXml(phoneWhatsapp));
+        ftrXml = ftrXml.replace(/01557018818/g, escapeXml(phoneMobile));
+        ftrXml = ftrXml.replace(/بجوار مستشفى ليدى كير\s*-\s*بدمنهور\s*-\s*البح\s*يره/g, escapeXml(companyAddress));
+        ftrXml = ftrXml.replace(/بجوار مستشفى ليدى كير\s*-\s*بدمنهور\s*-\s*البحيره/g, escapeXml(companyAddress));
+        ftrXml = ftrXml.replace(/goldengolden8818@gmail.com/g, escapeXml(companyEmail));
+        ftrXml = ftrXml.replace(/<w:highlight\s+[^>]*\/>/g, "");
+        ftrXml = ftrXml.replace(/<w:color\s+w:val=\"(red|FF0000)\"[^>]*\/>/g, "");
+        zip.file(fp, ftrXml);
       }
-      ftrXml = ftrXml.replace(/\(\s*باركود المستند أو العمليه/g, `رقم القيد : ${escapeXml(registrationNumber)}`);
-      ftrXml = ftrXml.replace(/01091708818/g, escapeXml(phoneWhatsapp));
-      ftrXml = ftrXml.replace(/01557018818/g, escapeXml(phoneMobile));
-      ftrXml = ftrXml.replace(/بجوار مستشفى ليدى كير\s*-\s*بدمنهور\s*-\s*البح\s*يره/g, escapeXml(companyAddress));
-      ftrXml = ftrXml.replace(/بجوار مستشفى ليدى كير\s*-\s*بدمنهور\s*-\s*البحيره/g, escapeXml(companyAddress));
-      ftrXml = ftrXml.replace(/goldengolden8818@gmail.com/g, escapeXml(companyEmail));
-      ftrXml = ftrXml.replace(/<w:highlight\s+[^>]*\/>/g, "");
-      ftrXml = ftrXml.replace(/<w:color\s+w:val=\"(red|FF0000)\"[^>]*\/>/g, "");
-      zip.file("word/footer1.xml", ftrXml);
     }
 
     // تفريغ كافة التحديدات الحمراء في سائر ملفات القالب
@@ -522,9 +510,7 @@ export function TabDeclarations({
     const existingUrl =
       type === "specs"
         ? cloudPdfUrlSpecs
-        : type === "insurance"
-        ? cloudPdfUrlInsurance
-        : cloudPdfUrlGeneral;
+        : cloudPdfUrlInsurance;
     if (existingUrl && !existingUrl.includes("tmpfiles") && !existingUrl.includes("tmpfile") && !existingUrl.includes("catbox") && !forceReupload) {
       toast.info("تم رفع وتوثيق هذا المستند سحابياً مسبقاً وهو نشط بالفعل ✓");
       return;
@@ -532,32 +518,64 @@ export function TabDeclarations({
 
     setUploadingCloud(true);
     try {
+      toast.info("جاري توثيق ورفع الإقرار سحابياً (رابط PDF مباشر)...");
       let pdfBlob = existingBlob;
-      if (!pdfBlob) {
-        if (previewPdfBlob && currentSnapshot === lastGeneratedSnapshot) {
-          pdfBlob = previewPdfBlob;
-        } else {
-          pdfBlob = await generateDeclarationPdfBlob(type);
-          setPreviewPdfBlob(pdfBlob);
-          setLastGeneratedSnapshot(currentSnapshot);
-        }
+      if (!pdfBlob || forceReupload) {
+        pdfBlob = await generateDeclarationPdfBlob(type);
       }
 
-      toast.info("جاري توثيق ورفع المستند سحابياً (Cloudflare R2)...");
       const res = await uploadPdfToFreeCloud(
         pdfBlob,
         `declaration_${type}_${registrationNumber || op.serialNumber}.pdf`
       );
 
       if (res?.url) {
+        const nextSpecs = type === "specs" ? res.url : cloudPdfUrlSpecs;
+        const nextIns = type === "insurance" ? res.url : cloudPdfUrlInsurance;
+
         if (type === "specs") {
           setCloudPdfUrlSpecs(res.url);
-        } else if (type === "insurance") {
-          setCloudPdfUrlInsurance(res.url);
         } else {
-          setCloudPdfUrlGeneral(res.url);
+          setCloudPdfUrlInsurance(res.url);
         }
-        toast.success("تم رفع النسخة الرقمية للسحابة بنجاح! الرابط جاهز ومتاح عالمياً لأي هاتف محمول 🚀");
+
+        // مزامنة المعاينة في الذاكرة فوراً لفتحها بـ 0ms بدون أي إعادة توليد
+        setPreviewPdfBlob(pdfBlob);
+        if (previewPdfUrl) {
+          URL.revokeObjectURL(previewPdfUrl);
+        }
+        setPreviewPdfUrl(URL.createObjectURL(pdfBlob));
+
+        const syncedSnapshot = JSON.stringify({
+          selectedCompanyId,
+          registrationNumber,
+          companyOpCode,
+          companyCommercialRegister,
+          companyTaxCard,
+          phoneWhatsapp,
+          phoneMobile,
+          companyAddress,
+          companyEmail,
+          outgoingDate,
+          recipientPrefix,
+          recipientTitleAndAuthority,
+          operationRegisteredName,
+          operationNumber,
+          tenderMethod,
+          operationScope,
+          fiscalYear,
+          technicalOpeningDate,
+          specialistTitle,
+          specialistName,
+          financeManagerName,
+          boardChairman,
+          additionalNotes,
+          cloudPdfUrlSpecs: nextSpecs,
+          cloudPdfUrlInsurance: nextIns,
+        });
+        setLastGeneratedSnapshot(syncedSnapshot);
+
+        toast.success("تم توثيق ورفع الإقرار وتحديث المعاينة بنجاح! جاهز للمعاينة الفورية 🚀");
 
         // حفظ في notes العملية تلقائياً
         try {
@@ -567,10 +585,8 @@ export function TabDeclarations({
           if (!existingNotesObj.declarationsDocx) existingNotesObj.declarationsDocx = {};
           if (type === "specs") {
             existingNotesObj.declarationsDocx.cloudPdfUrlSpecs = res.url;
-          } else if (type === "insurance") {
-            existingNotesObj.declarationsDocx.cloudPdfUrlInsurance = res.url;
           } else {
-            existingNotesObj.declarationsDocx.cloudPdfUrlGeneral = res.url;
+            existingNotesObj.declarationsDocx.cloudPdfUrlInsurance = res.url;
           }
           await api.patch(`/operations/${op.id}`, { notes: JSON.stringify(existingNotesObj) });
         } catch (e) {
@@ -588,7 +604,16 @@ export function TabDeclarations({
 
   // تحميل المعاينة الرسمية من محرك Word الأصيل
   const loadOfficialPreview = async (forceRefresh = false) => {
+    // 1. فتح نافذة المعاينة فوراً للمستخدم
+    setPreviewModalOpen(true);
+
+    // 2. إذا كان المستند مولداً ومطابقاً لآخر تعديل بدون أي تغيير -> فتح فوري بـ 0ms
     if (!forceRefresh && previewPdfBlob && currentSnapshot === lastGeneratedSnapshot) {
+      return;
+    }
+
+    // منع أي تحويل مزدوج متزامن
+    if (renderingDocx) {
       return;
     }
 
@@ -597,10 +622,6 @@ export function TabDeclarations({
       toast.info("جاري تحديث المعاينة الرسمية...");
     }
     try {
-      if (previewPdfUrl) {
-        URL.revokeObjectURL(previewPdfUrl);
-        setPreviewPdfUrl(null);
-      }
       const docx = await generateDeclarationDocxBlob(activeDeclType);
       setPreviewDocxBlob(docx);
 
@@ -730,29 +751,8 @@ export function TabDeclarations({
 
   // ━━━ دالة عرض الملف المؤرشف فوراً (0ms) بدون إعادة تحويل ━━━
   const handleViewArchive = () => {
-    // 1. إذا كان رابط السحابة متاحاً، افتح النسخة السحابية المعتمدة فوراً
-    if (currentCloudUrl) {
-      window.open(currentCloudUrl, "_blank");
-      return;
-    }
-    // 2. إذا كان ملف الـ PDF متوفراً في الذاكرة مسبقاً، افتح نافذة المعاينة فوراً
-    if (previewPdfBlob) {
-      setPreviewModalOpen(true);
-      return;
-    }
-    // 3. التحقق من وجود مستند مؤرشف في أرشيف العملية
-    const archivedDoc = op.documents?.find(
-      (d: any) =>
-        d.type?.toLowerCase().includes("declaration") ||
-        d.name?.toLowerCase().includes("declaration") ||
-        d.name?.includes("إقرار")
-    );
-    if (archivedDoc?.fileUrl) {
-      window.open(archivedDoc.fileUrl, "_blank");
-      return;
-    }
-    // 4. فتح المعاينة
     setPreviewModalOpen(true);
+    loadOfficialPreview(false);
   };
 
   // تنزيل ملف Word (.docx)
@@ -891,13 +891,49 @@ export function TabDeclarations({
     notesObj.archivedDocIds = updated;
 
     try {
+      if (!exists) {
+        const docTitle =
+          activeDeclType === "specs"
+            ? "إقرار الالتزام بكراسة الشروط والمواصفات"
+            : "إقرار الالتزام بالتأمينات والعمالة والمساواة";
+        toast.info(`جاري تجهيز وتوثيق نسخة PDF الرسمية لـ ${docTitle}...`);
+        try {
+          const docx = await generateDeclarationDocxBlob(activeDeclType);
+          const pdf = await getPdfBlobFromDocx(
+            docx,
+            `declaration_${activeDeclType}_${registrationNumber || op.serialNumber}.docx`
+          );
+          const cloudFilename = `declaration_${activeDeclType}_${registrationNumber || op.serialNumber || "doc"}.pdf`;
+          const cloudRes = await uploadPdfToFreeCloud(pdf, cloudFilename).catch(() => null);
+
+          if (!notesObj.declarationsDocx) notesObj.declarationsDocx = {};
+          if (cloudRes?.url) {
+            if (activeDeclType === "specs") {
+              notesObj.declarationsDocx.cloudPdfUrlSpecs = cloudRes.url;
+              setCloudPdfUrlSpecs(cloudRes.url);
+            } else {
+              notesObj.declarationsDocx.cloudPdfUrlInsurance = cloudRes.url;
+              setCloudPdfUrlInsurance(cloudRes.url);
+            }
+          }
+
+          // رفع ملف الـ PDF كوثيقة رسمية للعملية
+          const formData = new FormData();
+          formData.append("file", pdf, `${docTitle}.pdf`);
+          formData.append("type", "DECLARATION");
+          api.post(`/operations/${op.id}/documents`, formData).catch(() => {});
+        } catch (pdfErr) {
+          console.warn("Archival PDF generation error in TabDeclarations:", pdfErr);
+        }
+      }
+
       await api.patch(`/operations/${op.id}`, {
         notes: JSON.stringify(notesObj),
       });
       toast.success(
         exists
           ? "تمت إزالة الإقرار من مستندات الأرشيف وحزمة التقديم 📂"
-          : "تمت إضافة الإقرار إلى مستندات الأرشيف وحزمة التقديم بنجاح! 📦✨"
+          : "تمت إضافة الإقرار وتوثيق نسخة PDF في الأرشيف بنجاح! 📦✨"
       );
       onRefresh();
     } catch (err: any) {
@@ -911,11 +947,6 @@ export function TabDeclarations({
     if (previewModalOpen) {
       loadOfficialPreview();
     }
-    return () => {
-      if (previewPdfUrl) {
-        URL.revokeObjectURL(previewPdfUrl);
-      }
-    };
   }, [previewModalOpen, activeDeclType]);
 
   // حفظ الإقرارات في قاعدة بيانات النظام
@@ -938,10 +969,16 @@ export function TabDeclarations({
       existingNotesObj.declarationsDocx = {
         ...(existingNotesObj.declarationsDocx || {}),
         ...JSON.parse(snapToSave),
+        letterRegNumbers,
         cloudPdfUrlSpecs,
         cloudPdfUrlInsurance,
-        cloudPdfUrlGeneral,
       };
+
+      if (!existingNotesObj.letterRegistrationNumbers) {
+        existingNotesObj.letterRegistrationNumbers = {};
+      }
+      existingNotesObj.letterRegistrationNumbers["decl_specs"] = letterRegNumbers.specs;
+      existingNotesObj.letterRegistrationNumbers["decl_insurance"] = letterRegNumbers.insurance;
 
       existingNotesObj.operationScope = operationScope;
       existingNotesObj.fiscalYear = fiscalYear;
@@ -962,8 +999,8 @@ export function TabDeclarations({
 
 
 
-      {/* ━━━ SUB-TAB SWITCHER (اختيار نوع الإقرار أو الخطاب) ━━━ */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+      {/* ━━━ SUB-TAB SWITCHER (اختيار نوع الإقرار) ━━━ */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <button
           type="button"
           onClick={() => setActiveDeclType("specs")}
@@ -1008,29 +1045,6 @@ export function TabDeclarations({
             </p>
           </div>
           <ShieldCheck className={`h-6 w-6 shrink-0 ${activeDeclType === "insurance" ? "text-teal-600" : "text-muted-foreground"}`} />
-        </button>
-
-        <button
-          type="button"
-          onClick={() => setActiveDeclType("general_letter")}
-          className={`p-4 rounded-2xl border text-right transition-all flex items-center justify-between cursor-pointer ${
-            activeDeclType === "general_letter"
-              ? "bg-indigo-500/15 border-indigo-500 text-indigo-900 dark:text-indigo-200 shadow-sm"
-              : "bg-card border-border hover:bg-muted/60 text-muted-foreground"
-          }`}
-        >
-          <div className="space-y-1">
-            <div className="flex items-center gap-2">
-              <span className="font-extrabold text-sm">3. خطاب عام رسمي للجهة</span>
-              {cloudPdfUrlGeneral && (
-                <Badge className="bg-indigo-600 text-white text-[10px] py-0 px-1.5">سحابي ✓</Badge>
-              )}
-            </div>
-            <p className="text-[11px] text-muted-foreground">
-              كتابة خطاب رسمي عام بموضوع ونص مخصص للجهة
-            </p>
-          </div>
-          <FileText className={`h-6 w-6 shrink-0 ${activeDeclType === "general_letter" ? "text-indigo-600" : "text-muted-foreground"}`} />
         </button>
       </div>
 
@@ -1191,11 +1205,11 @@ export function TabDeclarations({
         </div>
       </SectionCard>
 
-      {/* ━━━ SECTION 2: جهة الإسناد وبيانات العملية في موضوع ومتن الإقرار / الخطاب ━━━ */}
+      {/* ━━━ SECTION 2: جهة الإسناد وبيانات العملية في موضوع ومتن الإقرار الرسمي ━━━ */}
       <SectionCard
-        title={activeDeclType === "general_letter" ? "2. جهة الإسناد، وموضوع ونص الخطاب العام الرسمي" : "2. جهة الإسناد وبيانات العملية في موضوع ومتن الإقرار الرسمي"}
+        title="2. جهة الإسناد وبيانات العملية في موضوع ومتن الإقرار الرسمي"
         icon={FileText}
-        iconColor={activeDeclType === "general_letter" ? "text-indigo-600" : "text-teal-600"}
+        iconColor="text-teal-600"
       >
         <div className="space-y-4">
           <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
@@ -1217,73 +1231,34 @@ export function TabDeclarations({
             </div>
           </div>
 
-          {activeDeclType === "general_letter" ? (
-            /* ━━━ حقول الخطاب العام: الموضوع والنص الكامل الكبير ━━━ */
-            <div className="space-y-4 pt-2 border-t border-border">
-              <div className="space-y-1.5">
-                <div className="flex items-center justify-between">
-                  <Label className="text-xs font-bold text-indigo-700 dark:text-indigo-300 flex items-center gap-1.5">
-                    <Sparkles className="h-3.5 w-3.5 text-indigo-500" />
-                    موضوع الخطاب الرسمي (الموضوع بخصوص : ......) *
-                  </Label>
-                  <span className="text-[10px] text-muted-foreground font-mono">يحل محل النقط الحمراء بالقالب</span>
-                </div>
-                <Input
-                  value={generalSubject}
-                  onChange={(e) => setGeneralSubject(e.target.value)}
-                  placeholder="مثال: سحب كراسة الشروط والمواصفات لعملية توريد كاوتش وبطاريات"
-                  className="h-9.5 text-xs font-bold rounded-xl border-indigo-400/50 focus:border-indigo-600"
-                />
-              </div>
-
-              <div className="space-y-1.5">
-                <div className="flex items-center justify-between">
-                  <Label className="text-xs font-bold text-indigo-700 dark:text-indigo-300 flex items-center gap-1.5">
-                    <FileText className="h-3.5 w-3.5 text-indigo-500" />
-                    نص الخطاب العام الكامل (الخانة الكبيرة للخطاب) *
-                  </Label>
-                  <span className="text-[10px] text-muted-foreground font-mono">يحل محل الفقرة الكبيرة المحددة بالأحمر</span>
-                </div>
-                <Textarea
-                  value={generalLetterBody}
-                  onChange={(e) => setGeneralLetterBody(e.target.value)}
-                  placeholder="اكتب هنا نص الخطاب الرسمي المطلوب توجيهه للجهة..."
-                  rows={6}
-                  className="text-xs leading-relaxed rounded-xl border-indigo-400/50 focus:border-indigo-600 min-h-[140px] font-medium"
-                />
-              </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+            <div className="space-y-1.5">
+              <Label className="text-xs font-bold text-foreground">اسم العملية المسجلة *</Label>
+              <Input
+                value={operationRegisteredName}
+                onChange={(e) => setOperationRegisteredName(e.target.value)}
+                className="h-9.5 text-xs font-bold rounded-xl"
+              />
             </div>
-          ) : (
-            /* ━━━ حقول إقرارات الشروط والتأمينات ━━━ */
-            <>
-              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
-                <div className="space-y-1.5">
-                  <Label className="text-xs font-bold text-foreground">اسم العملية المسجلة *</Label>
-                  <Input
-                    value={operationRegisteredName}
-                    onChange={(e) => setOperationRegisteredName(e.target.value)}
-                    className="h-9.5 text-xs font-bold rounded-xl"
-                  />
-                </div>
 
-                <div className="space-y-1.5">
-                  <Label className="text-xs font-bold text-foreground">رقم العملية / المناقصة *</Label>
-                  <Input
-                    value={operationNumber}
-                    onChange={(e) => setOperationNumber(e.target.value)}
-                    className="h-9.5 text-xs font-mono font-bold rounded-xl text-center"
-                  />
-                </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs font-bold text-foreground">رقم العملية / المناقصة *</Label>
+              <Input
+                value={operationNumber}
+                onChange={(e) => setOperationNumber(e.target.value)}
+                className="h-9.5 text-xs font-mono font-bold rounded-xl text-center"
+              />
+            </div>
 
-                <div className="space-y-1.5">
-                  <Label className="text-xs font-bold text-foreground">طريقة الطرح والتعاقد *</Label>
-                  <Input
-                    value={tenderMethod}
-                    onChange={(e) => setTenderMethod(e.target.value)}
-                    className="h-9.5 text-xs font-bold rounded-xl text-center"
-                  />
-                </div>
-              </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs font-bold text-foreground">طريقة الطرح والتعاقد *</Label>
+              <Input
+                value={tenderMethod}
+                onChange={(e) => setTenderMethod(e.target.value)}
+                className="h-9.5 text-xs font-bold rounded-xl text-center"
+              />
+            </div>
+          </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div className="space-y-1.5">
@@ -1310,8 +1285,6 @@ export function TabDeclarations({
                   />
                 </div>
               </div>
-            </>
-          )}
         </div>
       </SectionCard>
 
@@ -1439,9 +1412,20 @@ export function TabDeclarations({
                     documentTitle={`${activeDeclType === "specs" ? "إقرار_شروط" : activeDeclType === "insurance" ? "إقرار_تأمينات" : "خطاب_عام"}_${op.externalNumber || op.serialNumber}_${registrationNumber}.docx`}
                     docxBlob={previewDocxBlob}
                     pdfBlob={previewPdfBlob}
+                    pdfUrl={previewPdfUrl}
                     onDownloadDocx={() => handleDownloadDocx(activeDeclType)}
                     onDownloadPdf={() => handleDownloadPdf(activeDeclType)}
                     onPrint={handlePrintWordDocument}
+                    onAddToArchive={handleToggleArchive}
+                    isArchived={isCurrentArchived}
+                    addingToArchive={addingToArchive}
+                    cloudUploadWarning={
+                      !(activeDeclType === "specs" ? cloudPdfUrlSpecs : cloudPdfUrlInsurance) || currentSnapshot !== lastGeneratedSnapshot
+                        ? "⚠️ تنبيه هام: هذا الإقرار يحتوي على تعديلات جديدة لم يتم رفعها سحابياً — يرجى الضغط على 'إعادة الرفع والتحديث' لكي يتطابق الباركود مع أحدث بيانات!"
+                        : null
+                    }
+                    onUploadCloud={() => handleUploadToCloud(activeDeclType, true)}
+                    isUploadingCloud={uploadingCloud}
                   />
                 )}
               </div>
@@ -1450,34 +1434,19 @@ export function TabDeclarations({
         </Portal>
       )}
 
-      {/* ━━━ الباركود الذكي ورمز QR والرفع السحابي المجاني للنسخة الرقمية بأسفل الصفحة ━━━ */}
-      <LetterQrCloudCard
-        cloudPdfUrl={currentCloudUrl}
-        registrationNumber={registrationNumber}
-        opId={op.id}
-        docType={`declaration_${activeDeclType}`}
-        uploadingCloud={uploadingCloud}
-        onUploadToCloud={(force) => handleUploadToCloud(activeDeclType, force)}
-        title="الباركود الذكي ورمز QR الرقمي المعتمد (PDF)"
-        subtitle="عند مسح الباركود بكاميرا الموبايل يتم فتح النسخة الرقمية المعتمدة للإقرار فوراً بدون الحاجة لأي تسجيل دخول."
-        badgeText="مدمج بموضع كلمة (الباركود) بالأعلى ورقم القيد بالتذييل"
-        gradientClass="from-emerald-500/10 via-teal-500/10 to-transparent border-emerald-500/25"
-        isModifiedAfterUpload={isDirty}
-      />
-
       {/* ━━━ BOTTOM ACTION BAR: التوليد والطباعة والمعاينة بأسفل مرحلة الإقرارات ━━━ */}
       <LetterBottomActionWidget
         title={
           activeDeclType === "specs"
             ? "إقرار الالتزام بكراسة الشروط والمواصفات الفنية"
-            : activeDeclType === "insurance"
-            ? "إقرار سداد التأمينات الاجتماعية والعمالة غير المنتظمة"
-            : "الخطاب الرسمي العام الموجه لجهة الإسناد"
+            : "إقرار سداد التأمينات الاجتماعية والعمالة غير المنتظمة"
         }
         registrationNumber={registrationNumber}
         isDirty={isDirty}
         printInfo={printHistory[activeDeclType]}
-        onPreview={() => loadOfficialPreview()}
+        onPreview={() => {
+          loadOfficialPreview();
+        }}
         onSave={handleSaveToSystem}
         onCancelEdits={handleCancelEdits}
         saving={savingState}

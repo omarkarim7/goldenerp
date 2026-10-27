@@ -18,6 +18,7 @@ import {
   formatCurrency, formatDate, formatDocFileSize, tafqeetArabic
 } from "./types";
 import { StepFooterNav } from "./StepFooterNav";
+import { SmartArabicDatePicker } from "@/components/ui/arabic-date-picker";
 
 export function TabAward({
   op,
@@ -305,12 +306,12 @@ export function TabAward({
             </div>
 
             <div className="space-y-1">
-              <Label className="text-xs font-bold text-foreground">تاريخ إخطار / قرار الترسية *</Label>
-              <Input
-                type="date"
+              <SmartArabicDatePicker
+                label="تاريخ إخطار / قرار الترسية"
+                required
                 value={awardDate}
-                onChange={(e) => setAwardDate(e.target.value)}
-                className="h-10 text-sm"
+                onChange={(val) => setAwardDate(val)}
+                outputFormat="iso"
               />
             </div>
           </div>
@@ -594,12 +595,11 @@ export function TabAward({
                     />
                   </div>
                   <div>
-                    <label className="text-xs font-semibold text-muted-foreground block mb-1">تاريخ كتاب الترسية</label>
-                    <input
-                      type="date"
+                    <SmartArabicDatePicker
+                      label="تاريخ كتاب الترسية"
                       value={editingAward.awardDate ? editingAward.awardDate.split("T")[0] : ""}
-                      onChange={(e) => setEditingAward({ ...editingAward, awardDate: e.target.value })}
-                      className="w-full bg-background border border-border rounded-xl px-3 py-2 text-xs text-foreground"
+                      onChange={(val) => setEditingAward({ ...editingAward, awardDate: val })}
+                      outputFormat="iso"
                     />
                   </div>
                 </div>

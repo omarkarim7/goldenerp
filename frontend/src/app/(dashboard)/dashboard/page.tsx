@@ -17,7 +17,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useNotifications } from "@/context/notifications-context";
 import { useCompany, CompanyCode } from "@/context/company-context";
-import { API_BASE_URL } from "@/lib/api";
+import api from "@/lib/api";
 import { toast } from "sonner";
 
 interface Stats {
@@ -161,28 +161,20 @@ export default function DashboardPage() {
     const fetchCompanyData = async () => {
       setLoading(true);
       try {
-        const token = localStorage.getItem("accessToken");
-        const apiBase = API_BASE_URL;
-
         // 1. Fetch stats
         try {
-          const statsRes = await fetch(`${apiBase}/api/operations/stats`, {
-            headers: { Authorization: `Bearer ${token}` },
-          });
-          if (statsRes.ok) {
-            const data = await statsRes.json();
-            setStats(data);
+          const statsRes = await api.get("/operations/stats");
+          if (statsRes.data) {
+            setStats(statsRes.data);
           }
         } catch {}
 
         // 2. Fetch company-scoped pending approvals count
         try {
           const appParam = selectedCompany && selectedCompany !== "ALL" ? `?company=${selectedCompany}` : "";
-          const appRes = await fetch(`${apiBase}/api/approvals/pending-count${appParam}`, {
-            headers: { Authorization: `Bearer ${token}` },
-          });
-          if (appRes.ok) {
-            const c = await appRes.json();
+          const appRes = await api.get(`/approvals/pending-count${appParam}`);
+          if (appRes.data !== undefined) {
+            const c = appRes.data;
             setPendingApprovalsCount(typeof c === "number" ? c : c?.count ?? 0);
           }
         } catch {}
@@ -190,12 +182,9 @@ export default function DashboardPage() {
         // 3. Fetch company-scoped operations from DB
         try {
           const compParam = selectedCompany && selectedCompany !== "ALL" ? `&company=${selectedCompany}` : "";
-          const opRes = await fetch(`${apiBase}/api/operations?limit=15${compParam}`, {
-            headers: { Authorization: `Bearer ${token}` },
-          });
-          if (opRes.ok) {
-            const ops = await opRes.json();
-            if (Array.isArray(ops) && ops.length > 0) {
+          const opRes = await api.get(`/operations?limit=15${compParam}`);
+          const ops = opRes.data;
+          if (Array.isArray(ops) && ops.length > 0) {
               const sampleRevenues = [2850000, 1800000, 1450000, 1200000, 2100000, 1650000, 3200000, 950000];
               setRecentOperations(
                 ops.map((o: any, idx: number) => {
@@ -229,7 +218,6 @@ export default function DashboardPage() {
                 })
               );
             }
-          }
         } catch {}
       } finally {
         setLoading(false);

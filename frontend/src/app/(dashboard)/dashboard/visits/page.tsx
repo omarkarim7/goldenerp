@@ -263,7 +263,7 @@ export default function VisitsPage() {
 
   // Format currency
   const formatCurrency = (n: number) =>
-    new Intl.NumberFormat("ar-EG", { style: "currency", currency: "EGP", maximumFractionDigits: 0 }).format(n);
+    new Intl.NumberFormat("ar-EG-u-nu-latn", { style: "currency", currency: "EGP", maximumFractionDigits: 0 }).format(n);
 
   // 1. Strict Company Scoping for Site Visits
   const companyScopedVisits = useMemo(() => {

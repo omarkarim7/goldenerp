@@ -13,6 +13,9 @@ import {
   FileDown,
   Clock,
   Lock,
+  Archive,
+  Check,
+  ExternalLink,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
@@ -31,6 +34,12 @@ export interface OnlyOfficeDocViewerProps {
   isApproved?: boolean;
   isApprovalPending?: boolean;
   onRequestApproval?: () => void;
+  cloudUploadWarning?: string | null;
+  onUploadCloud?: () => void;
+  isUploadingCloud?: boolean;
+  onAddToArchive?: () => void;
+  isArchived?: boolean;
+  addingToArchive?: boolean;
 }
 
 /**
@@ -51,6 +60,12 @@ export const OnlyOfficeDocViewer: React.FC<OnlyOfficeDocViewerProps> = ({
   isApproved = false,
   isApprovalPending = false,
   onRequestApproval,
+  cloudUploadWarning,
+  onUploadCloud,
+  isUploadingCloud = false,
+  onAddToArchive,
+  isArchived = false,
+  addingToArchive = false,
 }) => {
   const [pdfObjectUrl, setPdfObjectUrl] = useState<string | null>(null);
   const [internalPdfBlob, setInternalPdfBlob] = useState<Blob | null>(null);
@@ -72,30 +87,33 @@ export const OnlyOfficeDocViewer: React.FC<OnlyOfficeDocViewerProps> = ({
   useEffect(() => {
     let cancelled = false;
 
-    // تنظيف أي رابط سابق تم إنشاؤه
+    // تنظيف أي رابط سابق تم إنشاؤه بواسطة هذا المكون حصراً
     const cleanupPreviousUrl = () => {
       if (generatedUrlRef.current) {
-        URL.revokeObjectURL(generatedUrlRef.current);
+        try {
+          URL.revokeObjectURL(generatedUrlRef.current);
+        } catch {}
         generatedUrlRef.current = null;
       }
     };
 
-    // 1. إذا توفر رابط مباشر (URL)
-    if (pdfUrl) {
-      cleanupPreviousUrl();
-      setPdfObjectUrl(pdfUrl);
-      setIsGeneratingPdf(false);
-      setPdfError(null);
-      return;
-    }
-
-    // 2. إذا توفر ملف PDF جاهز من الخصائص (Prop)
+    // 1. الأولوية القصوى: إذا توفر ملف PDF جاهز من الخصائص (Prop) كـ Blob ننشئ رابط مباشر خاص بهذا المكون
+    // هذا يمنع تماماً خطأ Chromium (It may have been moved, edited, or deleted) الناتج عن إلغاء روابط blob في المكون الأب
     if (pdfBlob && pdfBlob.size > 100) {
       cleanupPreviousUrl();
       const url = URL.createObjectURL(pdfBlob);
       generatedUrlRef.current = url;
       setInternalPdfBlob(pdfBlob);
       setPdfObjectUrl(url);
+      setIsGeneratingPdf(false);
+      setPdfError(null);
+      return;
+    }
+
+    // 2. إذا توفر رابط مباشر (URL) صالح وليس فارغاً
+    if (pdfUrl && typeof pdfUrl === "string" && pdfUrl.trim()) {
+      cleanupPreviousUrl();
+      setPdfObjectUrl(pdfUrl);
       setIsGeneratingPdf(false);
       setPdfError(null);
       return;
@@ -309,13 +327,28 @@ export const OnlyOfficeDocViewer: React.FC<OnlyOfficeDocViewerProps> = ({
             <p className="text-[11px] text-slate-400 hidden sm:block">
               {isEmployee && !isApproved
                 ? "يمكنك فحص ومراجعة كافة البيانات في المستند بحرية. عند طلب الطباعة أو التحميل يتم إرسال طلب الاعتماد للمدير أو النائب."
-                : "معاينة طبق الأصل لملف الـ PDF الرسمي مطابقة تماماً لما يظهر على السحابة وGitHub"}
+                : "معاينة طبق الأصل لملف الـ PDF الرسمي مطابقة تماماً لما يظهر على سحابة Cloudflare المعتمدة"}
             </p>
           </div>
         </div>
 
         {/* أزرار التحكم والتحميل والطباعة */}
         <div className="flex items-center gap-2 flex-wrap">
+          {/* فتح في تبويب مستقل جديد */}
+          {pdfObjectUrl && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={() => window.open(pdfObjectUrl, "_blank")}
+              className="h-8 px-2.5 text-xs text-slate-300 hover:text-white hover:bg-slate-800 rounded-xl cursor-pointer flex items-center gap-1 font-bold"
+              title="فتح المستند في نافذة / تبويب جديد مستقل"
+            >
+              <ExternalLink className="w-3.5 h-3.5 ml-1 text-slate-400" />
+              <span className="hidden md:inline">نافذة جديدة</span>
+            </Button>
+          )}
+
           {/* ملء الشاشة */}
           <Button
             type="button"
@@ -369,8 +402,60 @@ export const OnlyOfficeDocViewer: React.FC<OnlyOfficeDocViewerProps> = ({
             <Printer className="w-3.5 h-3.5 ml-1.5" />
             <span>طباعة</span>
           </Button>
+
+          {/* إضافة للأرشيف وحزمة التقديم من داخل نافذة المعاينة */}
+          {onAddToArchive && (
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={onAddToArchive}
+              disabled={addingToArchive}
+              className={`text-xs h-8 px-3 rounded-xl cursor-pointer font-bold transition-all active:scale-95 flex items-center gap-1.5 ${
+                isArchived
+                  ? "bg-purple-600 text-white border-purple-500 hover:bg-purple-700 shadow-sm"
+                  : "bg-purple-950/60 border-purple-500/40 text-purple-300 hover:bg-purple-900/80 hover:text-white"
+              }`}
+              title={
+                isArchived
+                  ? "المستند مضاف حالياً إلى مستندات الأرشيف وحزمة التقديم (انقر للإلغاء)"
+                  : "إضافة هذا المستند مباشرة إلى مستندات الأرشيف وحزمة التقديم"
+              }
+            >
+              {addingToArchive ? (
+                <RefreshCw className="w-3.5 h-3.5 animate-spin ml-1 text-current" />
+              ) : isArchived ? (
+                <Check className="w-3.5 h-3.5 ml-1 text-current" />
+              ) : (
+                <Archive className="w-3.5 h-3.5 ml-1 text-current" />
+              )}
+              <span>{isArchived ? "مضاف للأرشيف ✓" : "إضافة للأرشيف 📥"}</span>
+            </Button>
+          )}
         </div>
       </div>
+
+      {/* ━━━ شريط تنبيه الرفع السحابي وتحديث الباركود ━━━ */}
+      {cloudUploadWarning && (
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 px-4 py-2 bg-gradient-to-r from-amber-950/80 via-amber-900/60 to-amber-950/80 border-b border-amber-500/40 text-amber-200 text-xs font-medium animate-in fade-in slide-in-from-top-1 select-none shrink-0 shadow-md">
+          <div className="flex items-center gap-2">
+            <AlertCircle className="w-4 h-4 text-amber-400 shrink-0 animate-pulse" />
+            <span className="leading-relaxed">{cloudUploadWarning}</span>
+          </div>
+          {onUploadCloud && (
+            <Button
+              type="button"
+              size="sm"
+              disabled={isUploadingCloud}
+              onClick={onUploadCloud}
+              className="bg-amber-600 hover:bg-amber-500 text-white font-bold h-7 px-3 rounded-lg text-xs flex items-center gap-1.5 shrink-0 shadow-sm cursor-pointer transition-all active:scale-95 border border-amber-400/40"
+            >
+              <RefreshCw className={`w-3 h-3 ${isUploadingCloud ? "animate-spin" : ""}`} />
+              <span>{isUploadingCloud ? "جارٍ التحديث والرفع..." : "إعادة الرفع والتحديث السحابي ↻"}</span>
+            </Button>
+          )}
+        </div>
+      )}
 
       {/* ━━━ نافذة العرض الرئيسية للمستند الرسمي المعتمد (PDF فقط) ━━━ */}
       <div className="flex-1 min-h-0 w-full bg-slate-950 relative flex overflow-hidden">
@@ -414,8 +499,9 @@ export const OnlyOfficeDocViewer: React.FC<OnlyOfficeDocViewerProps> = ({
 
         {/* عارض الـ PDF الرسمي الدقيق */}
         {pdfObjectUrl && (
-          <div className="w-full h-full flex flex-col bg-slate-900 overflow-hidden">
+          <div className="w-full h-full flex flex-col bg-slate-900 overflow-hidden relative">
             <iframe
+              key={pdfObjectUrl}
               src={`${pdfObjectUrl}#toolbar=1&navpanes=0&view=FitH`}
               className="w-full h-full border-0 bg-slate-900"
               title={cleanBaseName}

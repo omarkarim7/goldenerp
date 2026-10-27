@@ -17,6 +17,7 @@ import {
   Receipt,
   FileCheck2,
   Copy,
+  RotateCw,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -34,6 +35,7 @@ import api from "@/lib/api";
 import { Portal } from "@/components/ui/portal";
 import { OnlyOfficeDocViewer } from "@/components/OnlyOfficeDocViewer";
 import { Operation, SectionCard, tafqeetArabic } from "./types";
+import { SmartArabicDatePicker } from "@/components/ui/arabic-date-picker";
 import {
   isValidCloudDocUrl,
   escapeXml,
@@ -41,6 +43,8 @@ import {
   buildQrAnchorXml,
   injectSingleQrIntoDocXml,
   getUnifiedOperationRegistrationNumber,
+  getLetterSpecificRegistrationNumber,
+  regenerateLetterSpecificRegistrationNumber,
   getOperationRecipientTitle,
   LetterQrCloudCard,
   LetterBottomActionWidget,
@@ -49,6 +53,9 @@ import {
   PrintHistoryEntry,
   getCurrentUserName,
   sanitizeChairmanTitle,
+  generateHighResDocQrBuffer,
+  getStandardDocQrPayload,
+  buildOfficialSignaturesTableXml,
 } from "./letter-utils";
 import { getPdfBlobFromDocx, uploadPdfToFreeCloud, getExpectedCloudPdfUrl } from "./client-pdf";
 
@@ -95,9 +102,25 @@ export function FinalInsuranceRefundSection({
   const currentCompany = currentCompanyLink?.company;
 
   const [registrationNumber, setRegistrationNumber] = useState(() => {
-    if (savedLetter?.registrationNumber) return savedLetter.registrationNumber;
-    return getUnifiedOperationRegistrationNumber(op, currentCompanyLink?.displayCode);
+    return getLetterSpecificRegistrationNumber(
+      op,
+      "final_insurance_refund",
+      currentCompanyLink?.displayCode,
+      savedLetter?.registrationNumber
+    );
   });
+
+  const handleRegenerateRef = async () => {
+    const fresh = await regenerateLetterSpecificRegistrationNumber({
+      op,
+      letterKey: "final_insurance_refund",
+      companyCode: currentCompanyLink?.displayCode,
+    });
+    if (fresh) {
+      setRegistrationNumber(fresh);
+      toast.info(`تم توليد رقم قيد صادر مخصص لخطاب استرداد التأمين النهائي: ${fresh} 🔢✨`);
+    }
+  };
 
   const [companyOpCode, setCompanyOpCode] = useState(() => {
     return (
@@ -221,11 +244,11 @@ export function FinalInsuranceRefundSection({
 
   // التوقيعات والملاحظات
   const [specialistName, setSpecialistName] = useState(() => {
-    return savedLetter?.specialistName || "أحمد محمد";
+    return savedLetter?.specialistName || "";
   });
 
   const [financeManagerName, setFinanceManagerName] = useState(() => {
-    return savedLetter?.financeManagerName || "المدير المالي";
+    return savedLetter?.financeManagerName || "";
   });
 
   const [boardChairman, setBoardChairman] = useState(() => {
@@ -371,40 +394,39 @@ export function FinalInsuranceRefundSection({
 
     const zip = await JSZip.loadAsync(templateBuffer);
 
-    // توليد رمز التحقق الرقمي المباشر - فقط في حالة الرفع السحابي الفعلي
     let qrDrawingXml = "";
-    const activeCloud = cloudPdfUrl;
-    if (isValidCloudDocUrl(activeCloud)) {
-      try {
-        const qrDataUrl = await QRCode.toDataURL(activeCloud, {
-          width: 600,
-          margin: 2,
-          errorCorrectionLevel: "M",
-        });
-        const qrBase64 = qrDataUrl.split(",")[1];
-        const qrBinary = Uint8Array.from(atob(qrBase64), (c) => c.charCodeAt(0));
+    try {
+      const activeCloud = cloudPdfUrl;
+      const filename = `refund_${registrationNumber || op.serialNumber || "doc"}.pdf`;
+      const qrPayload = await getStandardDocQrPayload(
+        activeCloud,
+        registrationNumber,
+        "طلب استرداد التأمين النهائي",
+        currentCompany?.name || "المجموعة الذهبية",
+        filename
+      );
+      const qrBinary = await generateHighResDocQrBuffer(qrPayload);
 
-        zip.file("word/media/doc_qr.png", qrBinary);
+      zip.file("word/media/doc_qr.png", qrBinary);
 
-        let relsXml = await zip.file("word/_rels/document.xml.rels")?.async("text");
-        if (relsXml && !relsXml.includes("rIdQR")) {
-          relsXml = relsXml.replace(
-            "</Relationships>",
-            '<Relationship Id="rIdQR" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/doc_qr.png"/></Relationships>'
-          );
-          zip.file("word/_rels/document.xml.rels", relsXml);
-        }
-
-        let ctXml = await zip.file("[Content_Types].xml")?.async("text");
-        if (ctXml && !ctXml.includes('Extension="png"')) {
-          ctXml = ctXml.replace("</Types>", '<Default Extension="png" ContentType="image/png"/></Types>');
-          zip.file("[Content_Types].xml", ctXml);
-        }
-
-        qrDrawingXml = buildQrAnchorXml();
-      } catch (e) {
-        console.warn("QR generation failed:", e);
+      let relsXml = await zip.file("word/_rels/document.xml.rels")?.async("text");
+      if (relsXml && !relsXml.includes("rIdQR")) {
+        relsXml = relsXml.replace(
+          "</Relationships>",
+          '<Relationship Id="rIdQR" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/doc_qr.png"/></Relationships>'
+        );
+        zip.file("word/_rels/document.xml.rels", relsXml);
       }
+
+      let ctXml = await zip.file("[Content_Types].xml")?.async("text");
+      if (ctXml && !ctXml.includes('Extension="png"')) {
+        ctXml = ctXml.replace("</Types>", '<Default Extension="png" ContentType="image/png"/></Types>');
+        zip.file("[Content_Types].xml", ctXml);
+      }
+
+      qrDrawingXml = buildQrAnchorXml();
+    } catch (e) {
+      console.warn("QR generation failed in FinalInsuranceRefundSection:", e);
     }
 
     // 1. استبدال محتوى word/document.xml
@@ -465,17 +487,18 @@ export function FinalInsuranceRefundSection({
     );
     docXml = docXml.replace(/28912111802623/g, escapeXml(accountNationalId));
 
-    // التوقيعات
-    docXml = docXml.replace(/أحمد محمد/g, escapeXml(specialistName));
-    docXml = docXml.replace(/توقيع صورة/g, escapeXml(financeManagerName));
-    const chairIdx = docXml.indexOf("رئيس مجلس");
-    if (chairIdx !== -1) {
-      const pStart = Math.max(docXml.lastIndexOf("<w:p ", chairIdx), docXml.lastIndexOf("<w:p>", chairIdx));
-      const pEnd = docXml.indexOf("</w:p>", chairIdx);
-      if (pStart !== -1 && pEnd !== -1 && pStart < chairIdx && chairIdx < pEnd) {
-        const newP13 = `<w:p><w:pPr><w:spacing w:after="0" w:line="240" w:lineRule="auto"/><w:rPr><w:b/><w:bCs/><w:sz w:val="32"/><w:szCs w:val="32"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr></w:pPr><w:r><w:rPr><w:rFonts w:ascii="Arabic Typesetting" w:hAnsi="Arabic Typesetting" w:cs="Arabic Typesetting" w:hint="cs"/><w:b/><w:bCs/><w:sz w:val="32"/><w:szCs w:val="32"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t xml:space="preserve">                                                                    ${escapeXml(boardChairman)}</w:t></w:r></w:p>`;
-        docXml = docXml.substring(0, pStart) + newP13 + docXml.substring(pEnd + 6);
-      }
+    // التوقيعات بأسفل الصفحة في جدول ثلاثي منضبط (المختص | المدير المالي | يعتمد رئيس مجلس الإدارة)
+    const refSigBlockRegex = /<w:p\b[^>]*>(?:(?!<w:p\b)[\s\S])*?المختص[\s\S]*?رئيس مجلس[\s\S]*?<\/w:p>/;
+    if (refSigBlockRegex.test(docXml)) {
+      const sigTableXml = buildOfficialSignaturesTableXml({
+        specialistTitle: "المختص :",
+        specialistName: specialistName || " ",
+        financeManagerName: financeManagerName || " ",
+        boardChairman: boardChairman || "رئيس مجلس الإدارة",
+      });
+      docXml = docXml.replace(refSigBlockRegex, sigTableXml);
+    } else {
+      docXml = docXml.replace(/رئيس مجلس\s*ا?ل?[إا]دارة/g, escapeXml(boardChairman || "رئيس مجلس الإدارة"));
     }
 
     // ━━━ استبدال فقرة المرفقات (صورة أو أصل من إيصال السداد) بالكامل كفقرة XML منضبطة 100% ━━━
@@ -532,18 +555,13 @@ export function FinalInsuranceRefundSection({
 
   // ━━━ دالة تحميل المعاينة الرسمية ━━━
   const loadOfficialPreview = async (forceRefresh = false) => {
+    setPreviewModalOpen(true);
     if (previewPdfBlob && currentSnapshot === lastGeneratedSnapshot && !forceRefresh) {
-      setPreviewModalOpen(true);
       return;
     }
-
+    if (renderingDocx) return;
     setRenderingDocx(true);
-    setPreviewModalOpen(true);
     try {
-      if (previewPdfUrl) {
-        URL.revokeObjectURL(previewPdfUrl);
-        setPreviewPdfUrl(null);
-      }
       const docx = await generateRefundDocxBlob();
       setPreviewDocxBlob(docx);
 
@@ -570,19 +588,42 @@ export function FinalInsuranceRefundSection({
 
   // ━━━ دالة الرفع السحابي ━━━
   const handleUploadToCloud = async (forceReupload = false) => {
-    if (cloudPdfUrl && !forceReupload) return;
+    if (cloudPdfUrl && !forceReupload) {
+      toast.info("تم رفع وتوثيق هذا الخطاب سحابياً مسبقاً وهو نشط بالفعل ✓");
+      return;
+    }
     setUploadingCloud(true);
     try {
-      toast.info("جاري رفع وتوثيق خطاب استرداد التأمين النهائي سحابياً...");
-      const docx = previewDocxBlob || (await generateRefundDocxBlob());
-      const pdf = previewPdfBlob || (await getPdfBlobFromDocx(docx, `final_insurance_refund_${registrationNumber}.docx`));
+      toast.info("جاري توثيق ورفع خطاب استرداد التأمين النهائي سحابياً (رابط PDF مباشر)...");
+      let docx = previewDocxBlob;
+      let pdf = previewPdfBlob;
+      if (!docx || !pdf || forceReupload) {
+        docx = await generateRefundDocxBlob();
+        pdf = await getPdfBlobFromDocx(docx, `final_insurance_refund_${registrationNumber}.docx`);
+        setPreviewDocxBlob(docx);
+        setPreviewPdfBlob(pdf);
+      }
 
       const fileName = `final_insurance_refund_${registrationNumber || op.serialNumber}.pdf`;
       const res = await uploadPdfToFreeCloud(pdf, fileName);
 
       if (res?.url) {
         setCloudPdfUrl(res.url);
-        toast.success("تم توثيق الخطاب سحابياً وربط رمز الباركود بنجاح! ☁️✓");
+
+        // مزامنة المعاينة في الذاكرة فوراً لفتحها بـ 0ms بدون أي إعادة توليد
+        setPreviewPdfBlob(pdf);
+        if (previewPdfUrl) {
+          URL.revokeObjectURL(previewPdfUrl);
+        }
+        setPreviewPdfUrl(URL.createObjectURL(pdf));
+
+        const syncedSnapshot = JSON.stringify({
+          ...JSON.parse(currentSnapshot),
+          cloudPdfUrl: res.url,
+        });
+        setLastGeneratedSnapshot(syncedSnapshot);
+
+        toast.success("تم توثيق ورفع خطاب استرداد التأمين النهائي وتحديث المعاينة بنجاح! جاهز للمعاينة الفورية 🚀");
 
         // حفظ الرابط تلقائياً
         let existingNotesObj: Record<string, any> = {};
@@ -598,9 +639,10 @@ export function FinalInsuranceRefundSection({
         await api.patch(`/operations/${op.id}`, { notes: JSON.stringify(existingNotesObj) });
         onRefresh();
       }
-
     } catch (err: any) {
-      toast.error("فشل الرفع السحابي: " + (err?.message || ""));
+      if (forceReupload) {
+        toast.error("فشل الرفع السحابي: " + (err?.message || ""));
+      }
     } finally {
       setUploadingCloud(false);
     }
@@ -630,6 +672,10 @@ export function FinalInsuranceRefundSection({
         printHistory,
         updatedAt: new Date().toISOString(),
       };
+
+      const existingRegs = existingNotesObj.letterRegistrationNumbers || {};
+      existingRegs["final_insurance_refund"] = registrationNumber;
+      existingNotesObj.letterRegistrationNumbers = existingRegs;
 
       await api.patch(`/operations/${op.id}`, {
         notes: JSON.stringify(existingNotesObj),
@@ -718,15 +764,7 @@ export function FinalInsuranceRefundSection({
   };
 
   const handleViewArchive = () => {
-    if (cloudPdfUrl) {
-      window.open(cloudPdfUrl, "_blank");
-      return;
-    }
-    if (previewPdfBlob) {
-      setPreviewModalOpen(true);
-      return;
-    }
-    setPreviewModalOpen(true);
+    loadOfficialPreview();
   };
 
   // ━━━ حالة وإجراء الإضافة المباشرة للأرشيف ━━━
@@ -903,7 +941,17 @@ export function FinalInsuranceRefundSection({
             </div>
 
             <div className="space-y-1.5 sm:col-span-2">
-              <Label className="text-xs font-bold text-foreground">رقم القيد الصادر بالخطاب *</Label>
+              <div className="flex items-center justify-between">
+                <Label className="text-xs font-bold text-foreground">رقم القيد الصادر بالخطاب *</Label>
+                <button
+                  type="button"
+                  onClick={handleRegenerateRef}
+                  className="text-[11px] font-bold text-primary hover:underline flex items-center gap-1"
+                >
+                  <RotateCw className="w-3 h-3" />
+                  توليد ذكي
+                </button>
+              </div>
               <Input
                 value={registrationNumber}
                 onChange={(e) => setRegistrationNumber(e.target.value)}
@@ -938,38 +986,12 @@ export function FinalInsuranceRefundSection({
               />
             </div>
             <div className="space-y-1.5">
-              <div className="flex items-center justify-between">
-                <Label className="text-xs font-bold text-foreground">التاريخ الصادر (Footer) *</Label>
-                <button
-                  type="button"
-                  onClick={() => setIssueDate(new Date().toLocaleDateString("en-GB"))}
-                  className="text-[10px] text-blue-600 font-bold hover:underline cursor-pointer"
-                >
-                  اليوم
-                </button>
-              </div>
-              <div className="relative flex items-center">
-                <Input
-                  value={issueDate}
-                  onChange={(e) => setIssueDate(e.target.value)}
-                  className="h-9.5 text-xs font-mono rounded-xl pl-9"
-                  placeholder="DD/MM/YYYY"
-                />
-                <div className="absolute left-2.5 top-1/2 -translate-y-1/2 flex items-center justify-center">
-                  <input
-                    type="date"
-                    aria-label="اختر التاريخ من التقويم"
-                    className="w-5 h-5 opacity-0 absolute cursor-pointer z-10"
-                    onChange={(e) => {
-                      if (e.target.value) {
-                        const [y, m, d] = e.target.value.split("-");
-                        setIssueDate(`${d}/${m}/${y}`);
-                      }
-                    }}
-                  />
-                  <Calendar className="w-4 h-4 text-blue-600 pointer-events-none" />
-                </div>
-              </div>
+              <SmartArabicDatePicker
+                label="التاريخ الصادر (Footer)"
+                value={issueDate}
+                onChange={(val) => setIssueDate(val)}
+                required
+              />
             </div>
           </div>
         </div>
@@ -1243,38 +1265,12 @@ export function FinalInsuranceRefundSection({
                   />
                 </div>
                 <div className="space-y-1.5">
-                  <div className="flex items-center justify-between">
-                    <Label className="text-xs font-bold text-foreground">تاريخ إيصال السداد *</Label>
-                    <button
-                      type="button"
-                      onClick={() => setReceiptDate(new Date().toLocaleDateString("en-GB"))}
-                      className="text-[10px] text-blue-600 font-bold hover:underline cursor-pointer"
-                    >
-                      تاريخ اليوم
-                    </button>
-                  </div>
-                  <div className="relative flex items-center">
-                    <Input
-                      value={receiptDate}
-                      onChange={(e) => setReceiptDate(e.target.value)}
-                      placeholder="DD/MM/YYYY"
-                      className="h-9.5 text-xs font-mono rounded-xl pl-9 bg-background"
-                    />
-                    <div className="absolute left-2.5 top-1/2 -translate-y-1/2 flex items-center justify-center">
-                      <input
-                        type="date"
-                        aria-label="اختر التاريخ من التقويم"
-                        className="w-5 h-5 opacity-0 absolute cursor-pointer z-10"
-                        onChange={(e) => {
-                          if (e.target.value) {
-                            const [y, m, d] = e.target.value.split("-");
-                            setReceiptDate(`${d}/${m}/${y}`);
-                          }
-                        }}
-                      />
-                      <Calendar className="w-4 h-4 text-blue-600 pointer-events-none" />
-                    </div>
-                  </div>
+                  <SmartArabicDatePicker
+                    label="تاريخ إيصال السداد"
+                    value={receiptDate}
+                    onChange={(val) => setReceiptDate(val)}
+                    required
+                  />
                 </div>
               </div>
 
@@ -1348,38 +1344,12 @@ export function FinalInsuranceRefundSection({
             </div>
 
             <div className="space-y-1.5">
-              <div className="flex items-center justify-between">
-                <Label className="text-xs font-bold text-foreground">موعد جلسة المظروف الفني *</Label>
-                <button
-                  type="button"
-                  onClick={() => setTechnicalOpeningDate(new Date().toLocaleDateString("en-GB"))}
-                  className="text-[10px] text-blue-600 font-bold hover:underline cursor-pointer"
-                >
-                  اليوم
-                </button>
-              </div>
-              <div className="relative flex items-center">
-                <Input
-                  value={technicalOpeningDate}
-                  onChange={(e) => setTechnicalOpeningDate(e.target.value)}
-                  placeholder="DD/MM/YYYY"
-                  className="h-9 text-xs font-mono rounded-xl pl-9 bg-background"
-                />
-                <div className="absolute left-2.5 top-1/2 -translate-y-1/2 flex items-center justify-center">
-                  <input
-                    type="date"
-                    aria-label="اختر التاريخ من التقويم"
-                    className="w-5 h-5 opacity-0 absolute cursor-pointer z-10"
-                    onChange={(e) => {
-                      if (e.target.value) {
-                        const [y, m, d] = e.target.value.split("-");
-                        setTechnicalOpeningDate(`${d}/${m}/${y}`);
-                      }
-                    }}
-                  />
-                  <Calendar className="w-4 h-4 text-blue-600 pointer-events-none" />
-                </div>
-              </div>
+              <SmartArabicDatePicker
+                label="موعد جلسة المظروف الفني"
+                value={technicalOpeningDate}
+                onChange={(val) => setTechnicalOpeningDate(val)}
+                required
+              />
             </div>
           </div>
         </div>
@@ -1598,28 +1568,15 @@ export function FinalInsuranceRefundSection({
         </div>
       </SectionCard>
 
-      {/* ━━━ الباركود الذكي ورمز QR والرفع السحابي ━━━ */}
-      <LetterQrCloudCard
-        cloudPdfUrl={cloudPdfUrl}
-        registrationNumber={registrationNumber}
-        opId={op.id}
-        docType="final_insurance_refund"
-        uploadingCloud={uploadingCloud}
-        onUploadToCloud={handleUploadToCloud}
-        title="الباركود الذكي ورمز QR لخطاب استرداد التأمين النهائي"
-        subtitle="عند مسح الباركود بكاميرا الموبايل يتم فتح النسخة الرقمية المعتمدة لخطاب الاسترداد فوراً بدون تسجيل دخول."
-        badgeText="مدمج بموضع كلمة (الباركود) بالأعلى ورقم القيد بالتذييل"
-        gradientClass="from-emerald-500/10 via-teal-500/10 to-transparent border-emerald-500/25"
-        isModifiedAfterUpload={isDirty}
-      />
-
       {/* ━━━ شريط الإجراءات السفلي ━━━ */}
       <LetterBottomActionWidget
         title="خطاب استرداد التأمين النهائي الرسمي المعتمد"
         registrationNumber={registrationNumber}
         isDirty={isDirty}
         printInfo={printHistory["refund"]}
-        onPreview={() => setPreviewModalOpen(true)}
+        onPreview={() => {
+          loadOfficialPreview();
+        }}
         onSave={handleSaveToSystem}
         onCancelEdits={() => {
           try {
@@ -1705,6 +1662,9 @@ export function FinalInsuranceRefundSection({
                     onDownloadDocx={handleDownloadDocx}
                     onDownloadPdf={handleDownloadPdf}
                     onPrint={handlePrintWordDocument}
+                    onAddToArchive={handleToggleArchive}
+                    isArchived={isArchived}
+                    addingToArchive={addingToArchive}
                   />
                 )}
               </div>

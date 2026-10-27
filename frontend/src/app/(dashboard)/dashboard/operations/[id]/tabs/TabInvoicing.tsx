@@ -48,6 +48,7 @@ import {
   tafqeetArabic,
 } from "./types";
 import { StepFooterNav } from "./StepFooterNav";
+import { SmartArabicDatePicker } from "@/components/ui/arabic-date-picker";
 
 export interface InvoiceItem {
   id: string;
@@ -490,12 +491,12 @@ export function TabInvoicing({
           </div>
 
           <div className="space-y-1.5">
-            <Label className="text-xs font-bold">تاريخ إصدار الفاتورة *</Label>
-            <Input
-              type="date"
+            <SmartArabicDatePicker
+              label="تاريخ إصدار الفاتورة"
+              required
               value={invoiceDate}
-              onChange={(e) => setInvoiceDate(e.target.value)}
-              className="h-9.5 text-xs font-medium rounded-xl"
+              onChange={(val) => setInvoiceDate(val)}
+              outputFormat="iso"
             />
           </div>
 
@@ -715,12 +716,12 @@ export function TabInvoicing({
           </div>
 
           <div className="space-y-1.5">
-            <Label className="text-xs font-bold">تاريخ الاستلام والتسليم *</Label>
-            <Input
-              type="date"
+            <SmartArabicDatePicker
+              label="تاريخ الاستلام والتسليم"
+              required
               value={deliveryDate}
-              onChange={(e) => setDeliveryDate(e.target.value)}
-              className="h-9.5 text-xs font-medium rounded-xl"
+              onChange={(val) => setDeliveryDate(val)}
+              outputFormat="iso"
             />
           </div>
 

@@ -43,7 +43,8 @@ import {
 import { toast } from "sonner";
 import api, { API_BASE_URL } from "@/lib/api";
 import { useCompany, CompanyCode } from "@/context/company-context";
-import { DocxViewer } from "@/components/docx-viewer";
+import { ClientDocxViewer } from "@/components/ClientDocxViewer";
+import { ClientExcelViewer } from "@/components/ClientExcelViewer";
 import { Portal } from "@/components/ui/portal";
 import { StageLockProvider, useStageLock } from "./StageLockContext";
 import { CrossStageConsistencyAlert } from "./CrossStageConsistencyAlert";
@@ -66,9 +67,11 @@ import {
 import { TabOverview } from "./tabs/TabOverview";
 import { TabDates } from "./tabs/TabDates";
 import { TabMarketStudy } from "./tabs/TabMarketStudy";
+import { TabGeneralLetter } from "./tabs/TabGeneralLetter";
 import { TabBooklet } from "./tabs/TabBooklet";
 import { TabClarification } from "./tabs/TabClarification";
 import { TabTechnical } from "./tabs/TabTechnical";
+import { WarrantyCertificateSection } from "./tabs/WarrantyCertificateSection";
 import { TabFinancial } from "./tabs/TabFinancial";
 import { TabDeclarations } from "./tabs/TabDeclarations";
 import { TabSubmissionPackage } from "./tabs/TabSubmissionPackage";
@@ -226,7 +229,7 @@ function OperationDetailContent({ id }: { id: string }) {
   // معاينة وتحميل مستندات العملية وكراسة الشروط ودراسة السوق (يدعم PDF و Word والصور والنصوص والويب)
   const [previewDocUrl, setPreviewDocUrl] = useState<string | null>(null);
   const [previewDocBlob, setPreviewDocBlob] = useState<Blob | null>(null);
-  const [previewDocType, setPreviewDocType] = useState<"pdf" | "docx" | "image" | "text" | "html" | "other" | null>(null);
+  const [previewDocType, setPreviewDocType] = useState<"pdf" | "docx" | "excel" | "image" | "text" | "html" | "other" | null>(null);
   const [previewDocTitle, setPreviewDocTitle] = useState<string>("");
   const [previewTextContent, setPreviewTextContent] = useState<string>("");
   const [isTextWrap, setIsTextWrap] = useState<boolean>(true);
@@ -234,7 +237,7 @@ function OperationDetailContent({ id }: { id: string }) {
   const [isFullscreenDoc, setIsFullscreenDoc] = useState<boolean>(false);
   const [, setIsProcessingDoc] = useState<boolean>(false);
 
-  const handlePreviewDocument = async (doc: { id?: string; fileName?: string; filePath?: string; title?: string; fileType?: string; size?: number }) => {
+  const handlePreviewDocument = async (doc: { id?: string; fileName?: string; filePath?: string; title?: string; fileType?: string; size?: number; type?: string }) => {
     try {
       setIsProcessingDoc(true);
       setPreviewDocItem(doc);
@@ -269,27 +272,7 @@ function OperationDetailContent({ id }: { id: string }) {
         }
       }
 
-      // Tier 1A: If company document
-      if (!blobData && ((doc as any).companyId || (doc as any).companyDocRef)) {
-        try {
-          const compId = (doc as any).companyId || (doc as any).companyDocRef?.companyId || (doc as any).companyDocRef?.company?.id;
-          const docId = (doc as any).companyDocRef?.id || doc.id;
-          if (compId && docId) {
-            const res = await api.get(`/companies/${compId}/documents/${docId}/file`, { responseType: "blob" });
-            if (res.data && res.data.size > 0) {
-              const peek = await res.data.slice(0, 150).text().catch(() => "");
-              if (!peek.includes('"statusCode":')) {
-                blobData = res.data;
-                contentType = String(res.headers?.["content-type"] || "").toLowerCase();
-              }
-            }
-          }
-        } catch (compErr) {
-          console.warn("Company doc stream failed:", compErr);
-        }
-      }
-
-      // Tier 1B: Try fetching via operation documents endpoint (with Bearer token via api client)
+      // Tier 1A: Fetch via operation documents endpoint (Primary for operation-specific files)
       if (!blobData && doc.id && currentOpId) {
         try {
           const res = await api.get(`/operations/${currentOpId}/documents/${doc.id}/file`, { responseType: "blob" });
@@ -303,7 +286,27 @@ function OperationDetailContent({ id }: { id: string }) {
             }
           }
         } catch (opErr) {
-          console.warn("Direct document stream failed, trying fallback URL:", opErr);
+          console.warn("Direct operation document stream failed:", opErr);
+        }
+      }
+
+      // Tier 1B: If linked company document
+      if (!blobData && (doc as any).companyDocRef) {
+        try {
+          const compId = (doc as any).companyDocRef?.companyId || (doc as any).companyDocRef?.company?.id;
+          const docId = (doc as any).companyDocRef?.id;
+          if (compId && docId) {
+            const res = await api.get(`/companies/${compId}/documents/${docId}/file`, { responseType: "blob" });
+            if (res.data && res.data.size > 0) {
+              const peek = await res.data.slice(0, 150).text().catch(() => "");
+              if (!peek.includes('"statusCode":')) {
+                blobData = res.data;
+                contentType = String(res.headers?.["content-type"] || "").toLowerCase();
+              }
+            }
+          }
+        } catch (compErr) {
+          console.warn("Company doc stream failed:", compErr);
         }
       }
 
@@ -344,17 +347,26 @@ function OperationDetailContent({ id }: { id: string }) {
         }
       }
 
-      // Tier 3: If still no blob, try radar download doc as last resort
-      if (!blobData) {
-        try {
-          const res = await api.get(`/radar/download-doc?docId=booklet`, { responseType: "blob" });
-          blobData = res.data;
-          contentType = String(res.headers?.["content-type"] || "").toLowerCase();
-        } catch {}
+      // Tier 3: If still no blob and this is a booklet, try radar download doc with tenderId
+      if (!blobData && (doc.type === "BOOKLET" || (doc.filePath || "").includes("booklet"))) {
+        const tenderTarget = op?.radarItem?.id || (op?.radarItem as any)?.externalId;
+        if (tenderTarget) {
+          try {
+            const res = await api.get(`/radar/download-doc?docId=booklet&tenderId=${tenderTarget}`, { responseType: "blob" });
+            if (res.data && res.data.size > 0) {
+              const peek = await res.data.slice(0, 150).text().catch(() => "");
+              if (!peek.includes('"statusCode":')) {
+                blobData = res.data;
+                contentType = String(res.headers?.["content-type"] || "").toLowerCase();
+              }
+            }
+          } catch {}
+        }
       }
 
       if (!blobData) {
-        throw new Error("لم يتم استلام محتوى صالح للمستند");
+        toast.warning("هذا المستند غير متوفر على الخادم حالياً — يرجى إعادة رفع الملف أو التأكد من مساره.");
+        return;
       }
 
       const fileExt = (doc.fileType || "").toLowerCase() || (title.split(".").pop() || "").toLowerCase();
@@ -362,34 +374,43 @@ function OperationDetailContent({ id }: { id: string }) {
       const isPkZip = firstBytes.startsWith("PK");
       const isPdfHeader = firstBytes.startsWith("%PDF");
 
-      // 1. Text & Code extensions and formats
-      const textExtensions = ["txt", "log", "csv", "tsv", "json", "xml", "md", "markdown", "sql", "ini", "conf", "env", "yml", "yaml", "sh", "bat"];
-      const isTextByExt = textExtensions.includes(fileExt) || Boolean(title.match(/\.(txt|log|csv|tsv|json|xml|md|sql|ini|conf|env|ya?ml)$/i));
+      // 1. Excel Spreadsheets (.xlsx, .xls, .csv, .tsv)
+      const isExcelExt = ["xlsx", "xls", "csv", "tsv"].includes(fileExt);
+      const isExcelName = Boolean(title.match(/\.(xlsx|xls|csv|tsv)$/i)) || isExcelExt;
+      const isExcelType =
+        blobData.type?.includes("spreadsheet") ||
+        blobData.type?.includes("excel") ||
+        contentType.includes("spreadsheet") ||
+        contentType.includes("excel") ||
+        (isPkZip && !isPdfHeader && (fileExt === "xlsx" || title.toLowerCase().endsWith(".xlsx")));
+
+      // 2. Text & Code extensions and formats (excluding csv/tsv if handled by excel viewer)
+      const textExtensions = ["txt", "log", "json", "xml", "md", "markdown", "sql", "ini", "conf", "env", "yml", "yaml", "sh", "bat"];
+      const isTextByExt = textExtensions.includes(fileExt) || Boolean(title.match(/\.(txt|log|json|xml|md|sql|ini|conf|env|ya?ml)$/i));
       const isTextByMime =
         contentType.startsWith("text/plain") ||
-        contentType.startsWith("text/csv") ||
         contentType.startsWith("application/json") ||
         contentType.startsWith("application/xml") ||
-        contentType.startsWith("text/markdown") ||
-        contentType.startsWith("text/tab-separated-values");
+        contentType.startsWith("text/markdown");
 
       const isPrintableText =
         !isPkZip &&
         !isPdfHeader &&
+        !isExcelName &&
         !contentType.includes("pdf") &&
         !contentType.includes("image") &&
         !contentType.includes("word") &&
         !contentType.includes("officedocument") &&
         (isTextByExt || isTextByMime || (firstBytes.length > 0 && !/[\x00-\x08\x0E-\x1F]/.test(firstBytes.slice(0, 64))));
 
-      // 2. Images
+      // 3. Images
       const isImage =
         ["png", "jpg", "jpeg", "webp", "gif", "svg", "bmp", "ico"].includes(fileExt) ||
         Boolean(title.match(/\.(png|jpe?g|webp|gif|svg|bmp|ico)$/i)) ||
         Boolean(blobData.type?.startsWith("image/")) ||
         Boolean(contentType.startsWith("image/"));
 
-      // 3. Word documents (.docx / .doc)
+      // 4. Word documents (.docx / .doc)
       const isWordName =
         title.toLowerCase().endsWith(".docx") ||
         title.toLowerCase().endsWith(".doc") ||
@@ -401,9 +422,9 @@ function OperationDetailContent({ id }: { id: string }) {
         blobData.type?.includes("officedocument.wordprocessingml") ||
         contentType.includes("word") ||
         contentType.includes("officedocument.wordprocessingml") ||
-        (isPkZip && !isPdfHeader && (isWordName || fileExt === "docx" || fileExt === "doc"));
+        (isPkZip && !isPdfHeader && !isExcelName && (isWordName || fileExt === "docx" || fileExt === "doc"));
 
-      // 4. HTML
+      // 5. HTML
       const isHtml =
         blobData.type?.includes("html") ||
         contentType.includes("html") ||
@@ -414,7 +435,7 @@ function OperationDetailContent({ id }: { id: string }) {
         firstBytes.toLowerCase().includes("<!doctype html") ||
         firstBytes.toLowerCase().includes("<html");
 
-      // 5. PDF
+      // 6. PDF
       const isPdf =
         fileExt === "pdf" ||
         title.toLowerCase().endsWith(".pdf") ||
@@ -433,7 +454,16 @@ function OperationDetailContent({ id }: { id: string }) {
         return;
       }
 
-      // 2. Word preview (.docx / .doc)
+      // 2. Excel / Spreadsheet preview (.xlsx, .xls, .csv, .tsv)
+      if (isExcelName || isExcelType) {
+        setPreviewDocBlob(blobData);
+        setPreviewDocType("excel");
+        setPreviewDocUrl("excel_viewer_active");
+        toast.success("تم فتح جدول البيانات للمعاينة المباشرة! 📊");
+        return;
+      }
+
+      // 3. Word preview (.docx / .doc) - بدون أي تحويل خادمي أو باركود، عرض أصلي 100%
       if (isWordName || isWordType) {
         setPreviewDocBlob(blobData);
         setPreviewDocType("docx");
@@ -442,7 +472,7 @@ function OperationDetailContent({ id }: { id: string }) {
         return;
       }
 
-      // 3. HTML preview (synthesized official specifications & web pages)
+      // 4. HTML preview (synthesized official specifications & web pages)
       if (isHtml) {
         const htmlBlob = new Blob([blobData], { type: "text/html;charset=utf-8" });
         const blobUrl = URL.createObjectURL(htmlBlob);
@@ -453,7 +483,7 @@ function OperationDetailContent({ id }: { id: string }) {
         return;
       }
 
-      // 4. Text preview (.txt, .log, .csv, .json, .xml, .md, etc.)
+      // 5. Text preview (.txt, .log, .json, .xml, .md, etc.)
       if (isTextByExt || (isPrintableText && !isPdf)) {
         const text = await blobData.text();
         setPreviewTextContent(text);
@@ -464,7 +494,7 @@ function OperationDetailContent({ id }: { id: string }) {
         return;
       }
 
-      // 5. PDF preview
+      // 6. PDF preview
       if (isPdf) {
         const pdfBlob = new Blob([blobData], { type: "application/pdf" });
         const blobUrl = URL.createObjectURL(pdfBlob);
@@ -475,7 +505,7 @@ function OperationDetailContent({ id }: { id: string }) {
         return;
       }
 
-      // 6. Other / binary fallback
+      // 7. Other / binary fallback
       const fallbackBlob = new Blob([blobData], { type: blobData.type || "application/octet-stream" });
       const blobUrl = URL.createObjectURL(fallbackBlob);
       setPreviewDocBlob(fallbackBlob);
@@ -484,16 +514,13 @@ function OperationDetailContent({ id }: { id: string }) {
       toast.info("تم تحضير الملف — يمكنك استعراض تفاصيله وتحميله مباشرة");
     } catch (err: any) {
       console.error("Preview error:", err);
-      toast.error("تعذر فتح معاينة الملف — جاري المحاولة بتحميله مباشرة إلى جهازك...");
-      try {
-        await handleDownloadDocument(doc);
-      } catch {}
+      toast.error(err?.message || "تعذر فتح معاينة الملف");
     } finally {
       setIsProcessingDoc(false);
     }
   };
 
-  const handleDownloadDocument = async (doc: { id?: string; fileName?: string; filePath?: string; title?: string; fileType?: string }) => {
+  const handleDownloadDocument = async (doc: { id?: string; fileName?: string; filePath?: string; title?: string; fileType?: string; type?: string }) => {
     try {
       toast.info("جاري تحميل الملف إلى جهازك...");
       const title = doc.fileName || doc.title || "مستند_العملية";
@@ -527,14 +554,22 @@ function OperationDetailContent({ id }: { id: string }) {
       }
 
       // Tier 3: Radar download fallback
-      if (!blobData) {
-        const res = await api.get(`/radar/download-doc?docId=booklet&download=true`, { responseType: "blob" });
-        blobData = res.data;
-        contentType = String(res.headers?.["content-type"] || "").toLowerCase();
+      if (!blobData && (doc.type === "BOOKLET" || (doc.filePath || "").includes("booklet"))) {
+        const tenderTarget = op?.radarItem?.id || (op?.radarItem as any)?.externalId;
+        if (tenderTarget) {
+          try {
+            const res = await api.get(`/radar/download-doc?docId=booklet&download=true&tenderId=${tenderTarget}`, { responseType: "blob" });
+            if (res.data && res.data.size > 0) {
+              blobData = res.data;
+              contentType = String(res.headers?.["content-type"] || "").toLowerCase();
+            }
+          } catch {}
+        }
       }
 
       if (!blobData) {
-        throw new Error("تعذر تحميل الملف");
+        toast.warning("المستند المطلوب غير متوفر على الخادم للتحميل.");
+        return;
       }
 
       // Determine proper file extension
@@ -570,7 +605,12 @@ function OperationDetailContent({ id }: { id: string }) {
   };
 
   const closeDocViewer = () => {
-    if (previewDocUrl && previewDocUrl !== "docx_viewer_active" && previewDocUrl !== "text_viewer_active") {
+    if (
+      previewDocUrl &&
+      previewDocUrl !== "docx_viewer_active" &&
+      previewDocUrl !== "text_viewer_active" &&
+      previewDocUrl !== "excel_viewer_active"
+    ) {
       URL.revokeObjectURL(previewDocUrl);
     }
     setPreviewDocUrl(null);
@@ -783,6 +823,16 @@ function OperationDetailContent({ id }: { id: string }) {
             onDownloadDoc={handleDownloadDocument}
           />
         );
+      case "general_letter":
+        return (
+          <TabGeneralLetter
+            op={op}
+            onRefresh={fetchOp}
+            onNavigate={setActiveTab}
+            onPreviewDoc={handlePreviewDocument}
+            onDownloadDoc={handleDownloadDocument}
+          />
+        );
       case "booklet":
       case "guarantee_initial":
         return (
@@ -872,6 +922,14 @@ function OperationDetailContent({ id }: { id: string }) {
       case "supply_order":
         return (
           <TabSupplyOrder
+            op={op}
+            onRefresh={fetchOp}
+            onNavigate={setActiveTab}
+          />
+        );
+      case "warranty_certificate":
+        return (
+          <WarrantyCertificateSection
             op={op}
             onRefresh={fetchOp}
             onNavigate={setActiveTab}
@@ -1595,10 +1653,12 @@ function OperationDetailContent({ id }: { id: string }) {
                     className={`w-9 h-9 rounded-xl border flex items-center justify-center font-bold text-xs shrink-0 shadow-xs ${
                       previewDocType === "docx"
                         ? "bg-blue-500/20 text-blue-400 border-blue-500/30 font-black font-mono"
+                        : previewDocType === "excel"
+                        ? "bg-emerald-500/20 text-emerald-400 border-emerald-500/30 font-black font-mono"
                         : previewDocType === "image"
                         ? "bg-purple-500/20 text-purple-400 border-purple-500/30 font-black font-mono"
                         : previewDocType === "text"
-                        ? "bg-emerald-500/20 text-emerald-400 border-emerald-500/30 font-black font-mono"
+                        ? "bg-teal-500/20 text-teal-400 border-teal-500/30 font-black font-mono"
                         : previewDocType === "html"
                         ? "bg-amber-500/20 text-amber-400 border-amber-500/30 font-black font-mono"
                         : previewDocType === "pdf"
@@ -1608,6 +1668,8 @@ function OperationDetailContent({ id }: { id: string }) {
                   >
                     {previewDocType === "docx"
                       ? "DOCX"
+                      : previewDocType === "excel"
+                      ? "XLSX"
                       : previewDocType === "image"
                       ? "IMG"
                       : previewDocType === "text"
@@ -1683,10 +1745,15 @@ function OperationDetailContent({ id }: { id: string }) {
               {/* Embedded Viewer */}
               <div className="flex-1 w-full bg-slate-900 overflow-hidden relative flex flex-col">
                 {previewDocType === "docx" ? (
-                  <DocxViewer
-                    blob={previewDocBlob}
-                    fileName={previewDocTitle}
-                    hideHeaderTitle={true}
+                  <ClientDocxViewer
+                    docxBlob={previewDocBlob}
+                    documentTitle={previewDocTitle}
+                    onDownload={() => handleDownloadDocument(previewDocItem || { fileName: previewDocTitle, filePath: previewDocUrl || undefined })}
+                  />
+                ) : previewDocType === "excel" ? (
+                  <ClientExcelViewer
+                    fileBlob={previewDocBlob}
+                    documentTitle={previewDocTitle}
                     onDownload={() => handleDownloadDocument(previewDocItem || { fileName: previewDocTitle, filePath: previewDocUrl || undefined })}
                   />
                 ) : previewDocType === "image" ? (

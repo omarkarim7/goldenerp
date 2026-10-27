@@ -1,15 +1,15 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useMemo } from "react";
 import {
   Calendar, Clock, Plus, Edit, Trash2, X, CheckCircle2,
-  LayoutGrid, LayoutList, Loader2
+  LayoutGrid, LayoutList, Loader2, ArrowUpDown
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger } from "@/components/ui/select";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
 import api from "@/lib/api";
 import { ArabicDateTimePicker } from "@/components/ui/arabic-date-picker";
@@ -18,6 +18,30 @@ import {
   getCountdown, DATE_TYPE_LABELS
 } from "./types";
 import { StepFooterNav } from "./StepFooterNav";
+
+export const DATE_STAGE_ORDER: Record<string, number> = {
+  PUBLICATION: 1,
+  INVITATION: 1,
+  ANNOUNCEMENT: 1,
+  INQUIRIES_START: 2,
+  INQUIRIES_DEADLINE: 3,
+  INQUIRY_DEADLINE: 3,
+  INQUIRIES_SESSION: 4,
+  BOOKLET_DEADLINE: 5,
+  BOOKLET_PURCHASE_DEADLINE: 5,
+  SUBMISSION_DEADLINE: 5,
+  TECHNICAL_OPENING: 6,
+  AUCTION_SESSION: 7,
+  TECHNICAL_DECISION: 8,
+  FINANCIAL_OPENING: 9,
+  FINANCIAL_DECISION: 10,
+  AWARD_SESSION: 11,
+  AWARD_DATE: 11,
+  SITE_HANDOVER: 12,
+  EXECUTION_START: 13,
+  EXECUTION_END: 14,
+  OTHER: 99,
+};
 
 export function TabDates({
   op,
@@ -128,6 +152,18 @@ export function TabDates({
     }
   };
 
+  const sortedDates = useMemo(() => {
+    if (!op.dates || !Array.isArray(op.dates)) return [];
+    return [...op.dates].sort((a: any, b: any) => {
+      const stageA = DATE_STAGE_ORDER[a.dateType || a.type] ?? 90;
+      const stageB = DATE_STAGE_ORDER[b.dateType || b.type] ?? 90;
+      if (stageA !== stageB) return stageA - stageB;
+      const tA = new Date(a.dateValue || a.date || 0).getTime();
+      const tB = new Date(b.dateValue || b.date || 0).getTime();
+      return tA - tB;
+    });
+  }, [op.dates]);
+
   return (
     <div className="space-y-6 animate-fade-in">
       <SectionCard
@@ -136,7 +172,13 @@ export function TabDates({
         iconColor="text-indigo-600"
         badge={<Badge className="bg-blue-600/10 text-blue-700 dark:text-blue-300 border-blue-500/20 text-xs">{op.dates?.length || 0} مواعيد مسجلة</Badge>}
         actions={
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
+            {/* مؤشر الترتيب الإجرائي التلقائي */}
+            <Badge variant="outline" className="h-8 text-xs font-bold rounded-xl bg-blue-500/10 text-blue-700 dark:text-blue-300 border-blue-500/20 gap-1.5 px-3">
+              <Clock className="h-3.5 w-3.5 text-blue-600" />
+              <span>الترتيب الإجرائي التلقائي</span>
+            </Badge>
+
             <div className="flex items-center bg-slate-100 dark:bg-slate-800 p-0.5 rounded-xl border border-border shadow-inner">
               <button
                 type="button"
@@ -347,10 +389,10 @@ export function TabDates({
         )}
 
         {/* Dates list */}
-        {op.dates?.length > 0 ? (
+        {sortedDates.length > 0 ? (
           viewMode === "grid" ? (
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 animate-fade-in">
-              {op.dates.map((d: any) => {
+              {sortedDates.map((d: any, idx: number) => {
                 const cd = getCountdown(d.dateValue || d.date);
                 const isExpired = cd.expired || cd.text.includes("انتهى");
                 const isConfirmingDelete = confirmDeleteId === d.id;
@@ -372,9 +414,14 @@ export function TabDates({
                   >
                     <div className="space-y-2">
                       <div className="flex items-center justify-between">
-                        <span className={`text-sm font-black ${isExpired ? "text-rose-950 dark:text-rose-100" : "text-foreground"}`}>
-                          {d.label || DATE_TYPE_LABELS[d.dateType || d.type] || d.dateType || d.type}
-                        </span>
+                        <div className="flex items-center gap-2">
+                          <span className="text-[11px] font-bold font-mono px-2 py-0.5 rounded-md bg-blue-500/10 text-blue-600 border border-blue-500/20">
+                            #{idx + 1}
+                          </span>
+                          <span className={`text-sm font-black ${isExpired ? "text-rose-950 dark:text-rose-100" : "text-foreground"}`}>
+                            {d.label || DATE_TYPE_LABELS[d.dateType || d.type] || d.dateType || d.type}
+                          </span>
+                        </div>
                         {isExpired ? (
                           <Badge className="bg-rose-600 text-white font-bold text-[10px] px-2.5 py-0.5">
                             انتهى الموعد ⌛
@@ -429,6 +476,7 @@ export function TabDates({
               <table className="w-full text-right text-xs">
                 <thead className="bg-muted text-muted-foreground border-b border-border">
                   <tr>
+                    <th className="py-3 px-3 font-bold text-center w-12">#</th>
                     <th className="py-3 px-4 font-bold">مسمى الموعد / الجلسة</th>
                     <th className="py-3 px-4 font-bold">التاريخ والتوقيت</th>
                     <th className="py-3 px-4 font-bold">المتبقي / الموقف</th>
@@ -436,10 +484,11 @@ export function TabDates({
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border">
-                  {op.dates.map((d: any) => {
+                  {sortedDates.map((d: any, idx: number) => {
                     const cd = getCountdown(d.dateValue || d.date);
                     return (
                       <tr key={d.id} className="hover:bg-muted/30">
+                        <td className="py-3 px-3 font-mono font-bold text-center text-muted-foreground">#{idx + 1}</td>
                         <td className="py-3 px-4 font-bold text-foreground">{d.label || DATE_TYPE_LABELS[d.dateType || d.type]}</td>
                         <td className="py-3 px-4 font-mono">{formatDateTime(d.dateValue || d.date)}</td>
                         <td className="py-3 px-4 font-bold">{cd.text}</td>

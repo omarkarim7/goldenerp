@@ -53,6 +53,7 @@ import {
   tafqeetArabic,
 } from "./types";
 import { StepFooterNav } from "./StepFooterNav";
+import { SmartArabicDatePicker } from "@/components/ui/arabic-date-picker";
 
 export interface SupplyItemRow {
   id: string;
@@ -658,12 +659,12 @@ export function TabSupply({
           </div>
 
           <div className="space-y-1.5">
-            <Label className="text-xs font-bold">تاريخ الفحص والاستلام المبدئي *</Label>
-            <Input
-              type="date"
+            <SmartArabicDatePicker
+              label="تاريخ الفحص والاستلام المبدئي"
+              required
               value={initialInspectionDate}
-              onChange={(e) => setInitialInspectionDate(e.target.value)}
-              className="h-9.5 text-xs font-medium rounded-xl"
+              onChange={(val) => setInitialInspectionDate(val)}
+              outputFormat="iso"
             />
           </div>
 
@@ -887,12 +888,11 @@ export function TabSupply({
                 />
               </div>
               <div className="space-y-1">
-                <Label className="text-xs">تاريخ الاستلام الفعلي بالمخزن</Label>
-                <Input
-                  type="date"
+                <SmartArabicDatePicker
+                  label="تاريخ الاستلام الفعلي بالمخزن"
                   value={receiptDate}
-                  onChange={(e) => setReceiptDate(e.target.value)}
-                  className="h-10 text-sm"
+                  onChange={(val) => setReceiptDate(val)}
+                  outputFormat="iso"
                 />
               </div>
             </div>

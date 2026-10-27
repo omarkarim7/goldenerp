@@ -53,6 +53,8 @@ import {
   formatDocFileSize,
 } from "./types";
 import { StepFooterNav } from "./StepFooterNav";
+import { SmartArabicDatePicker } from "@/components/ui/arabic-date-picker";
+import { generateUniversalLetterPdfBlob } from "./universal-letter-generator";
 
 export type FileCategory =
   | "ALL"
@@ -184,7 +186,12 @@ export function TabSubmissionPackage({
   const insCloudUrl = savedNotes?.declarationsDocx?.cloudPdfUrlInsurance || "";
   const finCloudUrl = savedNotes?.financialOfferDocx?.cloudPdfUrl || "";
   const warrantyCloudUrl = savedNotes?.warrantyCertificate?.cloudPdfUrl || "";
-  const generalCloudUrl = savedNotes?.declarationsDocx?.cloudPdfUrlGeneral || "";
+  const generalCloudUrl = savedNotes?.declarationsDocx?.cloudPdfUrlGeneral || savedNotes?.generalLetterDocx?.cloudPdfUrl || "";
+  const bookletCloudUrls = savedNotes?.bookletLettersDocx?.cloudUrls || {};
+  const guaranteeCloudUrls = savedNotes?.finalGuaranteeLetter?.cloudUrls || {};
+  const refundCloudUrl = savedNotes?.finalInsuranceRefund?.cloudPdfUrl || "";
+  const grievanceTechCloudUrl = savedNotes?.grievanceLetterTech?.cloudPdfUrl || "";
+  const grievanceFinCloudUrl = savedNotes?.grievanceLetterFin?.cloudPdfUrl || "";
 
   // ━━━ جلب مستندات الشركة القانونية المعتمدة تلقائياً لضمان المزامنة 100% ━━━
   const [fetchedCompDocs, setFetchedCompDocs] = useState<any[]>([]);
@@ -271,6 +278,22 @@ export function TabSubmissionPackage({
     const allCompDocs = Array.from(compDocsMap.values());
 
     allCompDocs.forEach((cd: any) => {
+      // استبعاد أي مستند يخص عمليات أو مناقصات أخرى لضمان عرض ملفات هذه العملية حصرياً
+      const fnLower = `${cd.fileName || ""} ${cd.originalFileName || ""}`.toLowerCase();
+      const isOtherOpDoc =
+        fnLower.includes("كراسة") ||
+        fnLower.includes("مزايدة") ||
+        fnLower.includes("مناقصة") ||
+        fnLower.includes("ممارسة") ||
+        fnLower.includes("بوفيه") ||
+        fnLower.includes("الكهنة") ||
+        fnLower.includes("أمر توريد") ||
+        (cd.notes && cd.notes.toLowerCase().includes("عملية"));
+
+      if (isOtherOpDoc) {
+        return;
+      }
+
       const rawExt = (cd.fileType || "").toLowerCase();
       const isImg = ["png", "jpg", "jpeg", "webp", "gif"].includes(rawExt);
       const isDocx = ["docx", "doc"].includes(rawExt);
@@ -421,6 +444,134 @@ export function TabSubmissionPackage({
       });
     }
 
+    // ─────────────────────────────────────────────────────────────
+    // 4. خطابات كراسة الشروط والتأمين الابتدائي المؤرشفة
+    // ─────────────────────────────────────────────────────────────
+    const bookletLettersMeta = [
+      {
+        id: "letter-booklet-booklet_withdrawal",
+        name: "خطاب سحب كراسة الشروط والمواصفات",
+        cloudUrl: bookletCloudUrls["booklet_withdrawal"] || "",
+        envelope: "المظروف الفني" as const,
+        matchIds: ["letter-booklet-booklet_withdrawal", "letter-booklet"],
+      },
+      {
+        id: "letter-booklet-insurance_payment",
+        name: "خطاب سداد التأمين الابتدائي القانوني",
+        cloudUrl: bookletCloudUrls["insurance_payment"] || "",
+        envelope: "المظروف المالي" as const,
+        matchIds: ["letter-booklet-insurance_payment", "letter-booklet-insurance"],
+      },
+      {
+        id: "letter-booklet-booklet_and_insurance",
+        name: "خطاب سحب الكراسة وسداد التأمين معاً",
+        cloudUrl: bookletCloudUrls["booklet_and_insurance"] || "",
+        envelope: "المظروف الفني" as const,
+        matchIds: ["letter-booklet-booklet_and_insurance"],
+      },
+      {
+        id: "letter-booklet-bank_guarantee_letter",
+        name: "خطاب موجه للبنك لإصدار خطاب ضمان بنكي",
+        cloudUrl: bookletCloudUrls["bank_guarantee_letter"] || "",
+        envelope: "المظروف المالي" as const,
+        matchIds: ["letter-booklet-bank_guarantee_letter"],
+      },
+    ];
+
+    bookletLettersMeta.forEach((bl) => {
+      const isArchived = bl.matchIds.some((mid) => archivedDocIds.includes(mid));
+      if (bl.cloudUrl || isArchived) {
+        list.push({
+          id: bl.id,
+          name: bl.name,
+          description: `النسخة الرقمية المعتمدة لـ ${bl.name} مع رمز QR الموثق`,
+          category: "BOOKLET_INSURANCE",
+          sourceTab: "كراسة الشروط والتأمين",
+          envelope: bl.envelope,
+          fileType: "pdf",
+          cloudUrl: bl.cloudUrl,
+          isArchived,
+        });
+      }
+    });
+
+    // ─────────────────────────────────────────────────────────────
+    // 5. خطابات التأمين النهائي المؤرشفة
+    // ─────────────────────────────────────────────────────────────
+    const guarTypes = [
+      { key: "CASH", label: "خطاب سداد التأمين النهائي نقداً بالخزينة" },
+      { key: "BANK_GUARANTEE", label: "خطاب إصدار خطاب ضمان بنكي للتأمين النهائي" },
+      { key: "DEDUCTION", label: "خطاب خصم التأمين النهائي من مستحقات عملية أخرى" },
+      { key: "INITIAL_TRANSFER", label: "خطاب تحويل التأمين الابتدائي إلى نهائي" },
+      { key: "DEDUCTION_AND_TRANSFER", label: "خطاب خصم التأمين النهائي وتحويل التأمين الابتدائي" },
+    ];
+    guarTypes.forEach((gt) => {
+      const gId = `letter-final-guarantee-${gt.key}`;
+      const gCloud = guaranteeCloudUrls[gt.key] || "";
+      const isArch =
+        archivedDocIds.includes(gId) ||
+        archivedDocIds.includes("letter-final-guarantee") ||
+        archivedDocIds.includes("letter-guarantee");
+      if (gCloud || isArch) {
+        list.push({
+          id: gId,
+          name: gt.label,
+          description: "النسخة الرقمية المعتمدة لخطاب التأمين النهائي مع رمز QR",
+          category: "LETTERS",
+          sourceTab: "خطابات ومخرجات العطاء",
+          envelope: "المظروف المالي",
+          fileType: "pdf",
+          cloudUrl: gCloud,
+          isArchived: isArch,
+        });
+      }
+    });
+
+    // ─────────────────────────────────────────────────────────────
+    // 6. خطابات التظلم واسترداد التأمين المؤرشفة
+    // ─────────────────────────────────────────────────────────────
+    if (grievanceTechCloudUrl || archivedDocIds.includes("grievance-tech") || archivedDocIds.includes("letter-grievance-tech")) {
+      list.push({
+        id: "grievance-tech",
+        name: "خطاب التظلم الفني الرسمي",
+        description: "مذكرة التظلم القانوني من قرارات لجنة البت الفني مع رمز QR",
+        category: "LETTERS",
+        sourceTab: "خطابات ومخرجات العطاء",
+        envelope: "المظروف الفني",
+        fileType: "pdf",
+        cloudUrl: grievanceTechCloudUrl,
+        isArchived: archivedDocIds.includes("grievance-tech") || archivedDocIds.includes("letter-grievance-tech"),
+      });
+    }
+
+    if (grievanceFinCloudUrl || archivedDocIds.includes("grievance-fin") || archivedDocIds.includes("letter-grievance-fin")) {
+      list.push({
+        id: "grievance-fin",
+        name: "خطاب التظلم المالي الرسمي",
+        description: "مذكرة التظلم القانوني من قرارات لجنة البت المالي مع رمز QR",
+        category: "LETTERS",
+        sourceTab: "خطابات ومخرجات العطاء",
+        envelope: "المظروف المالي",
+        fileType: "pdf",
+        cloudUrl: grievanceFinCloudUrl,
+        isArchived: archivedDocIds.includes("grievance-fin") || archivedDocIds.includes("letter-grievance-fin"),
+      });
+    }
+
+    if (refundCloudUrl || archivedDocIds.includes("letter-refund")) {
+      list.push({
+        id: "letter-refund",
+        name: "خطاب استرداد التأمين النهائي المعتمد",
+        description: "النسخة الرسمية لخطاب استرداد التأمين النهائي مع رمز QR",
+        category: "LETTERS",
+        sourceTab: "خطابات ومخرجات العطاء",
+        envelope: "مستندات عامة مشتركة",
+        fileType: "pdf",
+        cloudUrl: refundCloudUrl,
+        isArchived: archivedDocIds.includes("letter-refund"),
+      });
+    }
+
     return list;
   }, [
     op.documents,
@@ -434,6 +585,11 @@ export function TabSubmissionPackage({
     finCloudUrl,
     warrantyCloudUrl,
     generalCloudUrl,
+    bookletCloudUrls,
+    guaranteeCloudUrls,
+    refundCloudUrl,
+    grievanceTechCloudUrl,
+    grievanceFinCloudUrl,
     archivedDocIds,
   ]);
 
@@ -580,58 +736,55 @@ export function TabSubmissionPackage({
       }
     }
 
-    // 4. بطاقة المستند كملف نصي موثق
-    const content = `=========================================================================\n` +
-      `منظومة جولدن ERP لإدارة المناقصات — بطاقة مستند العطاء الرسمي\n` +
-      `=========================================================================\n` +
-      `اسم المستند: ${item.name}\n` +
-      `الوصف: ${item.description}\n` +
-      `المظروف التابع له: ${item.envelope}\n` +
-      `العملية: ${op.name} (${op.externalNumber || op.serialNumber})\n` +
-      `جهة الإسناد: ${op.authority}\n` +
-      `الشركة المتقدمة: ${selectedCompanyRel?.company?.name || "جولدن"} (${selectedCompanyRel?.displayCode || "A"})\n` +
-      (item.cloudUrl ? `الرابط السحابي المباشر: ${item.cloudUrl}\n` : "") +
-      `تاريخ الاستخراج: ${new Date().toLocaleString("ar-EG")}\n` +
-      `حالة التوثيق: معتمد ومطابق لأحكام القانون رقم 182 لسنة 2018 ✓\n` +
-      `=========================================================================\n`;
+    // 4. إذا كان الخطاب من خطابات العطاء المؤرشفة، قم بتوليد مستند PDF الرسمي فورياً
+    try {
+      const generated = await generateUniversalLetterPdfBlob(item.id, op, selectedCompanyRel);
+      if (generated && generated.blob && generated.blob.size > 500) {
+        return {
+          blob: generated.blob,
+          fileName: `${safeTitle}.pdf`,
+        };
+      }
+    } catch (genErr) {
+      console.warn("Universal letter generation in fetchFileBlob failed:", genErr);
+    }
 
-    return {
-      blob: new Blob([content], { type: "text/plain;charset=utf-8" }),
-      fileName: `${safeTitle}.txt`,
-    };
+    throw new Error(`تعذر استخراج أو توليد ملف الـ PDF الرسمي للمستند (${item.name})`);
   };
 
   // ━━━ دالة المعاينة الفورية الشاملة للمستند ━━━
   const handlePreviewItem = async (item: DossierItem) => {
     try {
+      toast.info(`جاري فتح ومعاينة المستند الرسمي (${item.name})...`);
       const { blob, fileName } = await fetchFileBlob(item);
+      const isPdf =
+        fileName.toLowerCase().endsWith(".pdf") ||
+        item.fileType === "pdf" ||
+        blob.type === "application/pdf";
+
       onPreviewDoc?.({
         id: item.docRef?.id || item.companyDocRef?.id || item.id,
         blob,
-        fileName: fileName || item.name,
+        fileName: fileName || `${item.name}.pdf`,
         filePath: item.cloudUrl || item.companyDocRef?.filePath || item.docRef?.filePath,
-        fileType: item.fileType,
+        fileType: isPdf ? "pdf" : item.fileType,
       });
     } catch (err: any) {
-      console.warn("Direct blob pre-fetch fallback:", err);
-      if (item.docRef) {
-        onPreviewDoc?.({ ...item.docRef, fileName: item.name, fileType: item.fileType });
-      } else if (item.companyDocRef) {
-        onPreviewDoc?.({
-          ...item.companyDocRef,
-          companyId: selectedCompanyRel?.companyId || selectedCompanyRel?.company?.id,
-          fileName: item.name,
-          fileType: item.fileType,
-        });
-      } else if (item.cloudUrl) {
-        onPreviewDoc?.({ fileName: `${item.name}.pdf`, filePath: item.cloudUrl, fileType: "pdf" });
-      } else if (item.templateKey) {
-        toast.info(`يرجى الانتقال لتبويب خطابات العطاء لتوليد واعتماد النسخة الرسمية (${item.name}) بصيغة PDF`);
-        if (item.templateKey === "clarification") onNavigate?.("clarification");
-        else if (item.templateKey === "technical") onNavigate?.("technical");
-        else if (item.templateKey === "financial") onNavigate?.("financial");
-        else if (item.templateKey === "specs" || item.templateKey === "insurance") onNavigate?.("declarations");
-      }
+      console.warn("handlePreviewItem direct fetch failed, attempting emergency universal generation:", err);
+      try {
+        const generated = await generateUniversalLetterPdfBlob(item.id, op, selectedCompanyRel);
+        if (generated && generated.blob && generated.blob.size > 500) {
+          onPreviewDoc?.({
+            id: item.id,
+            blob: generated.blob,
+            fileName: `${item.name}.pdf`,
+            fileType: "pdf",
+          });
+          return;
+        }
+      } catch {}
+
+      toast.error(err?.message || "تعذر معاينة المستند");
     }
   };
 
@@ -971,12 +1124,12 @@ export function TabSubmissionPackage({
                     </div>
 
                     <div className="space-y-1">
-                      <Label className="text-[11px] font-bold">تاريخ وساعة التسليم الفعلي *</Label>
-                      <Input
-                        type="date"
+                      <SmartArabicDatePicker
+                        label="تاريخ وساعة التسليم الفعلي"
+                        required
                         value={submissionDate}
-                        onChange={(e) => setSubmissionDate(e.target.value)}
-                        className="h-9 text-xs font-mono"
+                        onChange={(val) => setSubmissionDate(val)}
+                        outputFormat="iso"
                       />
                     </div>
 

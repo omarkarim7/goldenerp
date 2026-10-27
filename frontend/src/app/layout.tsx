@@ -9,10 +9,10 @@ import { CompanyProvider } from "@/context/company-context";
 
 const cairo = Cairo({
   variable: "--font-cairo",
-  subsets: ["arabic"],
+  subsets: ["arabic", "latin"],
   weight: ["400", "500", "600", "700", "800"],
   display: "swap",
-  preload: true,
+  preload: false,
 });
 
 export const metadata: Metadata = {
