@@ -422,414 +422,6 @@ export function EgyptianOfficialLetterModal({
 }
 
 /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-   FLOATING GRIEVANCE MODAL WITH FORM FIELDS AND LIVE PREVIEW
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
-export function GrievanceModalWithPreview({
-  isOpen,
-  onClose,
-  stage,
-  op,
-  company,
-  defaultReason = "",
-  openingDate,
-  onSubmit,
-  isSaving,
-}: {
-  isOpen: boolean;
-  onClose: () => void;
-  stage: "technical" | "financial";
-  op: any;
-  company?: any;
-  defaultReason?: string;
-  openingDate?: string;
-  onSubmit: (data: {
-    grievanceType: "AUTHORITY" | "TRIBUNAL";
-    reason: string;
-    filingDate: string;
-  }) => Promise<void>;
-  isSaving: boolean;
-}) {
-  const [activeTab, setActiveTab] = useState<"form" | "preview">("form");
-  const [grievanceType, setGrievanceType] = useState<"AUTHORITY" | "TRIBUNAL">("AUTHORITY");
-  const [reason, setReason] = useState(defaultReason);
-  const [filingDate, setFilingDate] = useState(() => new Date().toISOString().split("T")[0]);
-
-  useEffect(() => {
-    if (defaultReason && !reason) {
-      setReason(defaultReason);
-    }
-  }, [defaultReason, reason]);
-
-  if (!isOpen) return null;
-
-  const stageTitle = stage === "technical" ? "البت الفني" : "البت المالي";
-  const stageDocTitle = stage === "technical" ? "المظروف الفني" : "العطاء المالي";
-
-  const quickSuggestions =
-    stage === "technical"
-      ? [
-          "مطابقة العينات والكتالوجات لكافة بنود الكراسة الفنية المعتمدة",
-          "استيفاء شهادات الخبرة وسابقة الأعمال المماثلة المطلوبة بدقة",
-          "وجود خطأ مادي وظاهري في تفسير بنود الكتالوج والمواصفة الفنية",
-          "العطاء الفني محقق لأعلى معايير الجودة والأداء طبقاً للمادة 42",
-        ]
-      : [
-          "مطابقة الأسعار للقيمة التقديرية ودراسات السوق الرسمية المعتمدة",
-          "عطاؤنا هو الأقل سعراً ومحقق للمصلحة العامة وترشيد الإنفاق",
-          "خلو العرض من أي خطأ حسابي أو مادي بالأسعار طبقاً للمادة 42",
-          "مراعاة فروق الأسعار والتغيرات السعرية المعتمدة والتضخم الاقتصادي",
-        ];
-
-  const handlePrint = () => {
-    window.print();
-  };
-
-  const getLetterHtml = () => {
-    return `
-      <div style="font-size:13px; line-height:1.8; color:#0f172a;">
-        <p><strong>بشأن:</strong> التظلم القانوني من قرار استبعاد ${stageDocTitle} المقدم منا في العملية رقم (<strong>${op?.externalNumber || op?.serialNumber || "—"}</strong>) بعنوان "<strong>${op?.name}</strong>".</p>
-        
-        <p>بالإشارة إلى جلسة ${stageTitle} المنعقدة بتاريخ <strong>${formatDate(openingDate || filingDate)}</strong>، وإخطارنا بقرار استبعاد عطائنا؛</p>
-        
-        <p>نحيط سيادتكم علماً بأن قرار الاستبعاد قد شابه الإجحاف والخطأ في التقدير للأسباب القانونية والموضوعية الآتية:</p>
-        
-        <div style="background:#f8fafc; border:1px solid #cbd5e1; padding:14px; border-radius:8px; margin: 12px 0; font-weight:bold; color:#1e293b;">
-          📌 <strong>أسباب ودفوع التظلم:</strong><br/>
-          ${reason || (stage === "technical" ? "استيفاء العطاء لكافة الاشتراطات الفنية الواردة بكراسة الشروط والمواصفات ومطابقة العينات المقدمة." : "مطابقة الأسعار للقيمة التقديرية للعملية وخلو العرض من أي خطأ حسابي وملاءمة الأسعار لجودة المواصفات.")}
-        </div>
-
-        <p>وحيث إن <strong>المادة (42) من قانون تنظيم التعاقدات التي تبرمها الجهات العامة رقم 182 لسنة 2018</strong> ولائحته التنفيذية تكفل لمقدم العطاء الحق في التظلم وإعادة فحص عطائه بمعرفة لجنة مختصة قبل إتمام إجراءات التعاقد أو فتح المظاريف المالية؛</p>
-        
-        <p><strong>لذلك نلتمس من سيادتكم:</strong></p>
-        <ol style="margin-right:20px; line-height:1.9;">
-          <li>قبول هذا التظلم شكلاً لوروده في الميعاد القانوني المقرر (خلال 7 أيام عمل).</li>
-          <li>إعادة فحص ${stageDocTitle} وإلغاء قرار الاستبعاد وتصويب الإجراءات.</li>
-          <li>إدراج شركتنا ضمن العطاءات المقبولة والمصرح لها باستكمال إجراءات العملية.</li>
-        </ol>
-        
-        <p style="text-align:center; margin-top:25px; font-weight:bold;">وتفضلوا بقبول فائق الاحترام والتقدير ،،،</p>
-      </div>
-    `;
-  };
-
-  const handleDownloadWord = () => {
-    const title = `مذكرة_تظلم_${stage === "technical" ? "فني" : "مالي"}_${op?.name || "عملية"}`;
-    const header = `
-      <html xmlns:o='urn:schemas-microsoft-com:office:office' 
-            xmlns:w='urn:schemas-microsoft-com:office:word' 
-            xmlns='http://www.w3.org/TR/REC-html40'>
-      <head><meta charset='utf-8'><title>${title}</title>
-      <style>
-        body { font-family: 'Cairo', Arial, sans-serif; direction: rtl; text-align: right; padding: 20px; }
-        table { border-collapse: collapse; width: 100%; }
-        th, td { border: 1px solid #cbd5e1; padding: 6px; }
-      </style>
-      </head><body>
-    `;
-    const footer = "</body></html>";
-    const letterHtml = getLetterHtml();
-    const fullHtml = header + letterHtml + footer;
-    const blob = new Blob(["\ufeff" + fullHtml], { type: "application/msword;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `${title.replace(/\s+/g, "_")}.doc`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-  };
-
-  return (
-    <Portal>
-      <div className="fixed inset-0 z-[99999] bg-black/80 backdrop-blur-xs flex items-center justify-center p-3 sm:p-5 overflow-y-auto animate-fade-in">
-        <div className="bg-card text-card-foreground border border-border rounded-3xl w-full max-w-4xl max-h-[92vh] flex flex-col shadow-2xl overflow-hidden">
-          {/* Header */}
-          <div className="p-4 sm:p-5 border-b border-border bg-gradient-to-r from-indigo-500/10 via-blue-500/10 to-transparent flex items-center justify-between gap-3 shrink-0">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-2xl bg-indigo-600 text-white flex items-center justify-center font-bold shadow-md shadow-indigo-500/20">
-                <Scale className="h-5 w-5" />
-              </div>
-              <div>
-                <h3 className="font-extrabold text-foreground text-sm sm:text-base">
-                  تظلم قانوني من قرار استبعاد {stageTitle} (نافذة عائمة ⚖️)
-                </h3>
-                <p className="text-xs text-muted-foreground mt-0.5">
-                  صادر وموثق طبقاً للمادة (42) من قانون التعاقدات العامة 182 لسنة 2018
-                </p>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-2">
-              {/* Tab Selector */}
-              <div className="flex items-center bg-muted/60 p-1 rounded-xl border border-border text-xs font-bold">
-                <button
-                  type="button"
-                  onClick={() => setActiveTab("form")}
-                  className={`px-3 py-1.5 rounded-lg transition-all cursor-pointer ${
-                    activeTab === "form"
-                      ? "bg-card text-foreground shadow-2xs font-extrabold"
-                      : "text-muted-foreground hover:text-foreground"
-                  }`}
-                >
-                  📝 تسجيل البيانات والدفوع
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setActiveTab("preview")}
-                  className={`px-3 py-1.5 rounded-lg transition-all cursor-pointer ${
-                    activeTab === "preview"
-                      ? "bg-indigo-600 text-white shadow-2xs font-extrabold"
-                      : "text-muted-foreground hover:text-foreground"
-                  }`}
-                >
-                  👁️ معاينة الخطاب الرسمي
-                </button>
-              </div>
-
-              <button
-                type="button"
-                onClick={onClose}
-                className="w-8 h-8 rounded-xl text-muted-foreground hover:text-foreground hover:bg-muted flex items-center justify-center cursor-pointer transition-colors"
-              >
-                <X className="h-5 w-5" />
-              </button>
-            </div>
-          </div>
-
-          {/* Body Content */}
-          <div className="p-4 sm:p-6 overflow-y-auto flex-1 space-y-4">
-            {activeTab === "form" ? (
-              <div className="space-y-4 animate-fade-in">
-                {/* Law Reference Banner */}
-                <div className="p-3.5 rounded-2xl bg-blue-500/10 border border-blue-500/30 flex items-start gap-3">
-                  <AlertCircle className="h-5 w-5 text-blue-600 shrink-0 mt-0.5" />
-                  <div className="text-xs space-y-0.5">
-                    <p className="font-bold text-blue-800 dark:text-blue-300">
-                      الضوابط القانونية للتظلم (المادة 42 من القانون 182 لسنة 2018):
-                    </p>
-                    <p className="text-muted-foreground leading-relaxed">
-                      يُقدم التظلم خلال سبعة أيام عمل من تاريخ الإخطار بالقرار، ويترتب على تقديمه وقف استكمال إجراءات البت لحين البت في التظلم بمعرفة السلطة المختصة خلال سبعة أيام عمل.
-                    </p>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  {/* Authority Selection */}
-                  <div>
-                    <label className="text-xs font-bold text-foreground block mb-1.5">
-                      الجهة الموجه إليها التظلم
-                    </label>
-                    <select
-                      value={grievanceType}
-                      onChange={(e) => setGrievanceType(e.target.value as any)}
-                      className="w-full bg-background border border-border rounded-xl px-3 py-2.5 text-xs text-foreground font-semibold focus:ring-2 focus:ring-indigo-500"
-                    >
-                      <option value="AUTHORITY">
-                        السلطة المختصة مباشرة / رئيس جهة الإسناد ({op?.authority || "الجهة الحكومية"})
-                      </option>
-                      <option value="TRIBUNAL">
-                        لجنة التوفيق وفض المنازعات الحكومية بوزارة المالية
-                      </option>
-                    </select>
-                  </div>
-
-                  {/* Filing Date */}
-                  <div>
-                    <label className="text-xs font-bold text-foreground block mb-1.5">
-                      تاريخ قيد وتقديم التظلم
-                    </label>
-                    <input
-                      type="date"
-                      value={filingDate}
-                      onChange={(e) => setFilingDate(e.target.value)}
-                      className="w-full bg-background border border-border rounded-xl px-3 py-2.5 text-xs text-foreground font-semibold focus:ring-2 focus:ring-indigo-500"
-                    />
-                  </div>
-                </div>
-
-                {/* Quick suggestions */}
-                <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-muted-foreground block">
-                    اقتراحات سريعة للأسانيد القانونية (اضغط للإضافة الفورية ⚡):
-                  </label>
-                  <div className="flex flex-wrap gap-2">
-                    {quickSuggestions.map((sug, i) => (
-                      <button
-                        key={i}
-                        type="button"
-                        onClick={() => {
-                          setReason((prev) => (prev ? `${prev}\n• ${sug}` : `• ${sug}`));
-                        }}
-                        className="text-[11px] px-3 py-1.5 rounded-xl border border-indigo-200 dark:border-indigo-800/80 bg-indigo-50/50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-100 hover:border-indigo-400 font-medium transition-all cursor-pointer text-right"
-                      >
-                        + {sug}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Reasons textarea */}
-                <div>
-                  <div className="flex items-center justify-between mb-1.5">
-                    <label className="text-xs font-bold text-foreground">
-                      الأسانيد والدفوع القانونية والموضوعية بالتفصيل
-                    </label>
-                    <span className="text-[11px] text-muted-foreground">
-                      {reason.length} حرف
-                    </span>
-                  </div>
-                  <textarea
-                    rows={4}
-                    value={reason}
-                    onChange={(e) => setReason(e.target.value)}
-                    placeholder="بيان مطابقة العطاء، الرد على ملاحظات محضر الجلسة، توضيح سلامة الأسعار أو المواصفات..."
-                    className="w-full bg-background border border-border rounded-2xl p-3 text-xs text-foreground leading-relaxed focus:ring-2 focus:ring-indigo-500"
-                  />
-                </div>
-
-                {/* Prompt to preview */}
-                <div className="p-3.5 rounded-2xl bg-muted/40 border border-border flex items-center justify-between flex-wrap gap-2">
-                  <span className="text-xs text-muted-foreground">
-                    يمكنك الانتقال لتبويب المعاينة لمشاهدة شكل الخطاب المعتمد مع الترويسة والأختام قبل الحفظ.
-                  </span>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    onClick={() => setActiveTab("preview")}
-                    className="text-xs font-bold h-8 px-3 rounded-xl border-indigo-300 text-indigo-700 hover:bg-indigo-50"
-                  >
-                    معاينة الخطاب الرسمي المباشر 👁️
-                  </Button>
-                </div>
-              </div>
-            ) : (
-              /* Live Preview Tab */
-              <div className="space-y-4 animate-fade-in">
-                {/* Print & Download bar */}
-                <div className="flex items-center justify-between pb-2 border-b border-border">
-                  <span className="text-xs font-bold text-foreground">
-                    معاينة حية للمذكرة الرسمية المعتمدة
-                  </span>
-                  <div className="flex items-center gap-2">
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      onClick={handlePrint}
-                      className="text-xs h-8 px-3 rounded-xl flex items-center gap-1.5"
-                    >
-                      <Printer className="h-3.5 w-3.5" />
-                      <span>طباعة فورية</span>
-                    </Button>
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      onClick={handleDownloadWord}
-                      className="text-xs h-8 px-3 rounded-xl flex items-center gap-1.5 text-blue-600 hover:bg-blue-50"
-                    >
-                      <Download className="h-3.5 w-3.5" />
-                      <span>تحميل Word (.doc)</span>
-                    </Button>
-                  </div>
-                </div>
-
-                {/* Egyptian Letter Format Preview */}
-                <div className="bg-white text-slate-900 rounded-2xl p-6 sm:p-10 border border-slate-300 shadow-md space-y-6">
-                  {/* Company Header */}
-                  <div className="border-b-2 border-slate-900 pb-4 flex items-start justify-between">
-                    <div className="text-right space-y-0.5">
-                      <h4 className="font-black text-base text-slate-900">
-                        {company?.name || op.companies?.[0]?.company?.name || "شركة التعاقدات والتوريدات العامة (GoldenERP)"}
-                      </h4>
-                      <p className="text-xs text-slate-600">
-                        س.ت: {company?.crNumber || "10293847"} • ب.ض: {company?.taxNumber || "987-654-321"}
-                      </p>
-                      <p className="text-[11px] text-slate-500">
-                        العنوان: {company?.address || "جمهورية مصر العربية — القاهرة"}
-                      </p>
-                    </div>
-                    <div className="text-center px-3 py-1.5 rounded-lg border border-slate-300 bg-slate-50">
-                      <span className="text-[10px] text-slate-500 block font-bold">الرقم المرجعي الرسمي</span>
-                      <span className="font-mono font-bold text-xs text-blue-700">
-                        {op?.externalNumber || `#OP-${op?.serialNumber || "2026"}`}
-                      </span>
-                      <span className="text-[9px] text-slate-400 block mt-0.5">
-                        التاريخ: {formatDate(filingDate)}
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* Addressee */}
-                  <div className="bg-slate-50 p-4 rounded-xl border border-slate-200">
-                    <p className="font-bold text-sm text-slate-900">
-                      السيد الأستاذ / {grievanceType === "AUTHORITY" ? `رئيس جهة الإسناد — ${op?.authority || "الجهة المختصة"}` : "رئيس لجنة التوفيق وفض المنازعات الحكومية بوزارة المالية"}
-                    </p>
-                    <p className="text-xs text-slate-600 mt-1">
-                      تحية طيبة وبعد ،،،
-                    </p>
-                    <p className="text-xs font-bold text-indigo-950 mt-2">
-                      الموضوع: تظلم قانوني وموضوعي من قرار استبعاد {stageDocTitle} بشأن عملية ({op?.name})
-                    </p>
-                  </div>
-
-                  {/* Body Content */}
-                  <div
-                    className="prose prose-sm max-w-none text-slate-800 leading-relaxed text-justify"
-                    dangerouslySetInnerHTML={{ __html: getLetterHtml() }}
-                  />
-
-                  {/* Signatures & Stamp */}
-                  <div className="pt-6 border-t border-slate-300">
-                    <div className="grid grid-cols-2 gap-8 text-center text-xs">
-                      <div>
-                        <p className="font-bold text-slate-700">المسؤول القانوني / الفني</p>
-                        <p className="text-[11px] text-slate-500 mt-1">التوقيع: ................................</p>
-                      </div>
-                      <div>
-                        <p className="font-bold text-slate-900">الممثل القانوني للشركة / المفوض</p>
-                        <p className="text-[11px] text-slate-500 mt-1">خاتم الشركة وتفويض الاعتماد</p>
-                        <div className="w-16 h-16 rounded-full border-2 border-dashed border-slate-400 mx-auto mt-2 flex items-center justify-center text-[10px] text-slate-400 font-bold">
-                          بصمة الخاتم
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Footer */}
-          <div className="p-4 sm:p-5 border-t border-border bg-muted/30 flex items-center justify-between gap-3 shrink-0">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={onClose}
-              className="text-xs h-9 px-4 rounded-xl"
-            >
-              إلغاء
-            </Button>
-
-            <Button
-              type="button"
-              onClick={() => onSubmit({ grievanceType, reason, filingDate })}
-              disabled={isSaving || !reason.trim()}
-              className="bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold text-xs h-9 px-6 rounded-xl flex items-center gap-2 cursor-pointer shadow-md shadow-indigo-500/20"
-            >
-              <Scale className="h-4 w-4" />
-              <span>{isSaving ? "جاري الاعتماد والتسجيل..." : "تسجيل واعتماد التظلم رسمياً بالمنظومة ⚖️"}</span>
-            </Button>
-          </div>
-        </div>
-      </div>
-    </Portal>
-  );
-}
-
-/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
    INTERACTIVE GRAPHIC DECISION TREE COMPONENT (Downward Cascading Timeline)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
 export function OpeningDecisionTree({
@@ -1392,7 +984,13 @@ export function TabTechOpening({
 
   const savedGrievance = useMemo(() => {
     if (op.grievances && op.grievances.length > 0) {
-      return op.grievances[op.grievances.length - 1];
+      const techG = op.grievances.find(
+        (g: any) =>
+          (g.notes || "").includes("تظلم فني") ||
+          (g.notes || "").includes("فني") ||
+          (!g.notes?.includes("مالي") && (g.grievanceType === "AUTHORITY" || g.grievanceType === "TRIBUNAL"))
+      );
+      return techG || op.grievances[op.grievances.length - 1];
     }
     return null;
   }, [op.grievances]);
@@ -1423,7 +1021,8 @@ export function TabTechOpening({
   const [grievanceType, setGrievanceType] = useState<"AUTHORITY" | "TRIBUNAL">("AUTHORITY");
   const [grievanceReason, setGrievanceReason] = useState("");
   const [savingGrievance, setSavingGrievance] = useState(false);
-  const [grievanceModalOpen, setGrievanceModalOpen] = useState(false);
+  const [isEditingGrievance, setIsEditingGrievance] = useState(false);
+  const [showRefundAfterGrievanceReject, setShowRefundAfterGrievanceReject] = useState(false);
 
   // Grievance status outcome (PENDING / ACCEPTED / PARTIALLY_ACCEPTED / REJECTED)
   const grievanceOutcome = useMemo(() => {
@@ -1434,10 +1033,8 @@ export function TabTechOpening({
     return "PENDING";
   }, [savedGrievance]);
 
-  // Refund Letter Modal state
-  const [refundLetterModalOpen, setRefundLetterModalOpen] = useState(false);
+  // Refund Letter state
   const [showFinalRefundSection, setShowFinalRefundSection] = useState(false);
-  const [showOfficialGrievanceDoc, setShowOfficialGrievanceDoc] = useState(false);
 
   // Optional Fulfillment
   const [fulfillmentOpen, setFulfillmentOpen] = useState(false);
@@ -1578,22 +1175,29 @@ export function TabTechOpening({
     }
   };
 
-  // Submit Grievance
-  const handleSubmitGrievance = async () => {
-    if (!grievanceReason.trim()) {
-      toast.error("يرجى كتابة أسباب التظلم القانوني");
-      return;
-    }
+  // Register and submit technical grievance officially
+  const handleRegisterGrievanceOfficial = async () => {
     setSavingGrievance(true);
     try {
+      let noteReason = "استيفاء العطاء الفني لكافة الاشتراطات الفنية ومطابقة العينات والكتالوجات طبقاً للمادة 42 من القانون 182 لسنة 2018";
+      if (op.notes && op.notes.startsWith("{")) {
+        try {
+          const parsed = JSON.parse(op.notes);
+          if (parsed.technicalGrievanceLetterDocx?.reason) {
+            noteReason = parsed.technicalGrievanceLetterDocx.reason;
+          }
+        } catch {}
+      }
+
       await api.post(`/operations/${op.id}/grievances`, {
         companyId: currentCompanyLink?.companyId || op.companies?.[0]?.companyId,
-        grievanceType,
-        reason: grievanceReason,
-        notes: `تظلم رسمي ضد قرار استبعاد البت الفني لعملية: ${op.name}`,
+        grievanceType: "AUTHORITY",
+        reason: noteReason,
+        notes: `تظلم فني رسمي ضد قرار استبعاد البت الفني لعملية: ${op.name}`,
       });
-      toast.success("تم تسجيل التظلم القانوني وإرساله رسمياً بنجاح! ⚖️ الحالة الآن: في انتظار نتيجة التظلم ⏳");
-      setGrievanceReason("");
+
+      toast.success("تم تسجيل واعتماد التظلم القانوني رسمياً بنجاح! ⚖️ الحالة الآن: في انتظار نتيجة التظلم ⏳");
+      setIsEditingGrievance(false);
       onRefresh();
     } catch {
       toast.error("فشل تسجيل التظلم");
@@ -2192,8 +1796,73 @@ export function TabTechOpening({
           {/* الحالة ب: في حالة الاستبعاد الفني -> مسار التظلم أو الاسترداد المباشر */}
           {effectiveResult === "REJECTED" && (
             <div className="space-y-4 animate-fade-in">
-              {/* إذا لم يتم قيد تظلم حتى الآن */}
-              {!savedGrievance ? (
+              {/* إذا كان المستخدم في وضع تحرير/معاينة التظلم الفني الرسمي المعتمد */}
+              {isEditingGrievance ? (
+                <div className="space-y-4 animate-fade-in">
+                  <div className="p-3.5 rounded-2xl bg-indigo-500/10 border border-indigo-500/30 flex items-center justify-between flex-wrap gap-2">
+                    <span className="text-xs font-bold text-indigo-900 dark:text-indigo-200 flex items-center gap-2">
+                      <Scale className="h-4 w-4 text-indigo-600" />
+                      {savedGrievance
+                        ? "معاينة وتعديل بيانات ومحرر خطاب التظلم الفني المعتمد (قالب الوورد الرسمي)"
+                        : "إعداد وتجهيز خطاب التظلم الفني الرسمي وفقاً للقانون 182 لسنة 2018"}
+                    </span>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => setIsEditingGrievance(false)}
+                      className="text-xs text-muted-foreground hover:text-foreground h-8 px-3 rounded-xl"
+                    >
+                      {savedGrievance ? "الرجوع لمتابعة حالة التظلم ↩️" : "إلغاء والرجوع للخيارات ✕"}
+                    </Button>
+                  </div>
+
+                  {/* تضمين قسم خطاب التظلم الحقيقي بالقالب المعتمد والخانات الأصلية */}
+                  <GrievanceLetterSection
+                    op={op}
+                    stage="technical"
+                    onRefresh={onRefresh}
+                    onClose={() => setIsEditingGrievance(false)}
+                  />
+
+                  {/* شريط الإجراءات والاعتماد أسفل الخطاب */}
+                  <div className="p-4 sm:p-5 rounded-2xl bg-gradient-to-r from-blue-500/10 via-indigo-500/10 to-transparent border-2 border-indigo-500/30 flex items-center justify-between flex-wrap gap-3 shadow-md">
+                    <div>
+                      <h5 className="font-extrabold text-sm text-foreground flex items-center gap-2">
+                        <Scale className="h-5 w-5 text-indigo-600" />
+                        <span>{savedGrievance ? "بيانات التظلم الفني مسجلة بالمنظومة" : "تسجيل واعتماد التظلم الفني رسمياً"}</span>
+                      </h5>
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        {savedGrievance
+                          ? "تم حفظ كافة التعديلات على بنود وأسباب التظلم بالقالب أعلاه ومزامنتها بنجاح."
+                          : "بعد الانتهاء من مراجعة وضبط بنود وأسباب التظلم بالقالب المعتمد أعلاه، اضغط لتسجيل التظلم رسمياً وبدء مهلة الـ 7 أيام."}
+                      </p>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setIsEditingGrievance(false)}
+                        className="text-xs h-9 px-4 rounded-xl"
+                      >
+                        {savedGrievance ? "الرجوع لمتابعة حالة التظلم ↩️" : "إغلاق محرر التظلم ✕"}
+                      </Button>
+                      {!savedGrievance && (
+                        <Button
+                          size="sm"
+                          onClick={handleRegisterGrievanceOfficial}
+                          disabled={savingGrievance}
+                          className="bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold text-xs h-9 px-5 rounded-xl flex items-center gap-2 shadow-md cursor-pointer"
+                        >
+                          <CheckCircle2 className="h-4 w-4" />
+                          <span>{savingGrievance ? "جاري التسجيل والاعتماد..." : "تسجيل التظلم رسمياً واعتماده ⚖️"}</span>
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              ) : !savedGrievance ? (
+                /* إذا لم يتم قيد تظلم حتى الآن */
                 !showFinalRefundSection ? (
                   <div className="p-5 sm:p-6 rounded-3xl bg-gradient-to-r from-rose-50 via-white to-rose-50/50 dark:from-rose-950/40 dark:via-slate-900 dark:to-slate-950 border-2 border-rose-300 dark:border-rose-600/50 shadow-xs space-y-4">
                     <div className="flex items-center gap-3">
@@ -2231,11 +1900,11 @@ export function TabTechOpening({
 
                       <Button
                         size="sm"
-                        onClick={() => setGrievanceModalOpen(true)}
+                        onClick={() => setIsEditingGrievance(true)}
                         className="bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold text-xs h-9 px-5 rounded-xl flex items-center gap-2 cursor-pointer shadow-md shadow-indigo-500/20"
                       >
                         <Scale className="h-4 w-4" />
-                        <span>عمل تظلم فني ضد قرار الاستبعاد (نافذة عائمة) ⚖️</span>
+                        <span>عمل وتجهيز خطاب التظلم الفني الرسمي (قالب الوورد المعتمد) ⚖️</span>
                       </Button>
                     </div>
                   </div>
@@ -2264,7 +1933,7 @@ export function TabTechOpening({
                   </div>
                 )
               ) : (
-                /* تم تقديم التظلم بالفعل -> الخطوة 3: في انتظار النتيجة وتسجيل رد الجهة */
+                /* تم تقديم التظلم بالفعل -> الخطوة 3: في انتظار النتيجة وتسجيل رد الجهة (مطابق تماماً لما في الصورة المرفقة) */
                 <div className="space-y-4 animate-fade-in">
                   <div className="p-5 sm:p-6 rounded-3xl bg-gradient-to-r from-amber-50 via-white to-amber-50/50 dark:from-amber-950/40 dark:via-slate-900 dark:to-slate-950 border-2 border-amber-300 dark:border-amber-600/50 shadow-xs space-y-4">
                     <div className="flex items-center justify-between flex-wrap gap-2 pb-3 border-b border-amber-200 dark:border-amber-800/60">
@@ -2286,19 +1955,20 @@ export function TabTechOpening({
                         <Button
                           size="sm"
                           variant="outline"
-                          onClick={() => setGrievanceModalOpen(true)}
-                          className="border-indigo-300 text-indigo-700 hover:bg-indigo-50 font-bold text-xs h-8 px-3 rounded-xl"
+                          onClick={() => setIsEditingGrievance(true)}
+                          className="border-indigo-300 text-indigo-700 hover:bg-indigo-50 font-bold text-xs h-8 px-3 rounded-xl flex items-center gap-1.5"
                         >
-                          معاينة / تعديل التظلم 👁️
+                          <Eye className="h-3.5 w-3.5" />
+                          <span>معاينة / تعديل التظلم</span>
                         </Button>
                         <Button
                           size="sm"
                           variant="ghost"
                           onClick={() => handleDeleteGrievance(savedGrievance.id)}
-                          className="text-xs text-rose-600 hover:bg-rose-50 h-8 px-2.5 rounded-xl"
+                          className="text-xs text-rose-600 hover:bg-rose-50 h-8 px-2.5 rounded-xl flex items-center gap-1"
                         >
-                          <Trash2 className="h-3.5 w-3.5 ml-1" />
-                          إلغاء التظلم
+                          <Trash2 className="h-3.5 w-3.5" />
+                          <span>إلغاء التظلم</span>
                         </Button>
                       </div>
                     </div>
@@ -2324,7 +1994,7 @@ export function TabTechOpening({
                       <strong>الأسانيد القانونية:</strong> {savedGrievance.reason}
                     </p>
 
-                    {/* تسجيل رد السلطة المختصة على التظلم */}
+                    {/* تسجيل رد السلطة المختصة على التظلم (المحدد بالدائرة الحمراء في الصورة) */}
                     <div className="p-4 sm:p-5 rounded-2xl bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 space-y-3 shadow-xs">
                       <div className="flex items-center justify-between flex-wrap gap-2">
                         <h5 className="font-extrabold text-xs sm:text-sm text-foreground flex items-center gap-1.5">
@@ -2395,26 +2065,39 @@ export function TabTechOpening({
                     </div>
                   </div>
 
-                  {/* الخطوة 4: إذا رُفض التظلم -> إظهار نموذج استرداد التأمين الابتدائي تلقائياً */}
+                  {/* الخطوة 4: إذا رُفض التظلم -> زر ومسار استرداد التأمين الابتدائي المعتمد */}
                   {grievanceOutcome === "REJECTED" && (
                     <div className="space-y-4 animate-fade-in">
-                      <div className="p-4 rounded-2xl bg-rose-500/10 border-2 border-rose-500/40 flex items-center justify-between flex-wrap gap-3">
+                      <div className="p-4 sm:p-5 rounded-2xl bg-rose-500/10 border-2 border-rose-500/40 flex items-center justify-between flex-wrap gap-3">
                         <div>
-                          <h5 className="font-extrabold text-sm text-rose-800 dark:text-rose-300">
-                            الخطوة 4: تم رفض التظلم وتأكيد الاستبعاد نهائياً — فتح مسار استرداد التأمين الابتدائي 📄
+                          <h5 className="font-extrabold text-sm text-rose-800 dark:text-rose-300 flex items-center gap-2">
+                            <XCircle className="h-5 w-5 text-rose-600" />
+                            <span>الخطوة 4: تم رفض التظلم وتأكيد الاستبعاد نهائياً — استرداد التأمين الابتدائي</span>
                           </h5>
                           <p className="text-xs text-muted-foreground mt-0.5">
                             طبقاً للمادة (38) و(42) من القانون 182/2018، تلتزم جهة الإسناد برد التأمين الابتدائي فوراً دون أي خصم.
                           </p>
                         </div>
+                        <Button
+                          size="sm"
+                          onClick={() => setShowRefundAfterGrievanceReject((prev) => !prev)}
+                          className="bg-rose-600 hover:bg-rose-700 text-white font-extrabold text-xs h-9 px-4 rounded-xl flex items-center gap-1.5 shadow-md cursor-pointer"
+                        >
+                          <Receipt className="h-4 w-4" />
+                          <span>{showRefundAfterGrievanceReject ? "إخفاء نموذج وقالب استرداد التأمين ✕" : "فتح نموذج وقالب استرداد التأمين الابتدائي 📄"}</span>
+                        </Button>
                       </div>
 
-                      <FinalInsuranceRefundSection
-                        op={op}
-                        onRefresh={onRefresh}
-                        triggerContext="GRIEVANCE_REJECTED"
-                        onClose={() => {}}
-                      />
+                      {showRefundAfterGrievanceReject && (
+                        <div className="animate-fade-in">
+                          <FinalInsuranceRefundSection
+                            op={op}
+                            onRefresh={onRefresh}
+                            triggerContext="GRIEVANCE_REJECTED"
+                            onClose={() => setShowRefundAfterGrievanceReject(false)}
+                          />
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
@@ -2467,40 +2150,6 @@ export function TabTechOpening({
         )}
       </div>
 
-      {/* Floating Grievance Modal with Form & Live Preview */}
-      <GrievanceModalWithPreview
-        isOpen={grievanceModalOpen}
-        onClose={() => setGrievanceModalOpen(false)}
-        stage="technical"
-        op={op}
-        company={currentCompany}
-        defaultReason={savedGrievance?.reason || savedTo?.reason || ""}
-        openingDate={savedTo?.openingDate || openingDate}
-        onSubmit={async (data) => {
-          setSavingGrievance(true);
-          try {
-            await api.post(`/operations/${op.id}/grievances`, {
-              companyId: currentCompanyLink?.companyId || op.companies?.[0]?.companyId,
-              grievanceType: data.grievanceType,
-              reason: data.reason,
-              filingDate: data.filingDate,
-              notes: `تظلم فني رسمي ضد قرار استبعاد البت الفني لعملية: ${op.name}`,
-            });
-            await api.post(`/operations/${op.id}/documents`, {
-              fileName: `مذكرة_تظلم_فني_${op.name.replace(/\s+/g, "_")}.pdf`,
-              type: "TECH_SPECS",
-            }).catch(() => {});
-            toast.success("تم تسجيل التظلم القانوني وإرساله رسمياً بنجاح! ⚖️ الحالة: في انتظار نتيجة التظلم ⏳");
-            setGrievanceModalOpen(false);
-            onRefresh();
-          } catch {
-            toast.error("فشل تسجيل التظلم");
-          } finally {
-            setSavingGrievance(false);
-          }
-        }}
-        isSaving={savingGrievance}
-      />
 
       {/* Continuity Action Footer */}
       <StepFooterNav
@@ -2659,6 +2308,8 @@ export function TabFinOpening({
   const [finGrievanceReason, setFinGrievanceReason] = useState("");
   const [savingFinGrievance, setSavingFinGrievance] = useState(false);
   const [finGrievanceModalOpen, setFinGrievanceModalOpen] = useState(false);
+  const [isEditingFinGrievance, setIsEditingFinGrievance] = useState(false);
+  const [showRefundAfterFinGrievanceReject, setShowRefundAfterFinGrievanceReject] = useState(false);
   const [refundModalOpen, setRefundModalOpen] = useState(false);
 
   const initialGuar = op.guarantees?.find((g: any) => g.type === "INITIAL");
@@ -2733,23 +2384,30 @@ export function TabFinOpening({
     setPartialItems((prev: BoqItem[]) => prev.filter((item: BoqItem) => item.id !== id));
   };
 
-  // Submit Financial Grievance
-  const handleSubmitFinGrievance = async () => {
-    if (!finGrievanceReason.trim()) {
-      toast.error("يرجى كتابة أسباب التظلم المالي");
-      return;
-    }
+  // Register and submit financial grievance officially
+  const handleRegisterFinGrievanceOfficial = async () => {
     setSavingFinGrievance(true);
     try {
+      let noteReason = "مطابقة الأسعار للقيمة التقديرية ودراسات السوق الرسمية وخلو العرض المالي من أي خطأ حسابي طبقاً للمادة 42 من القانون 182 لسنة 2018";
+      if (op.notes && op.notes.startsWith("{")) {
+        try {
+          const parsed = JSON.parse(op.notes);
+          if (parsed.financialGrievanceLetterDocx?.reason) {
+            noteReason = parsed.financialGrievanceLetterDocx.reason;
+          }
+        } catch {}
+      }
+
       await api.post(`/operations/${op.id}/grievances`, {
         companyId: currentCompanyLink?.companyId || op.companies?.[0]?.companyId,
         grievanceType: "AUTHORITY",
-        reason: finGrievanceReason,
+        reason: noteReason,
         notes: `تظلم مالي رسمي ضد قرار استبعاد العطاء المالي لعملية: ${op.name}`,
         status: "PENDING",
       });
-      toast.success("تم تسجيل التظلم المالي وإرساله رسمياً بنجاح! ⚖️ الحالة: في انتظار نتيجة التظلم ⏳");
-      setFinGrievanceReason("");
+
+      toast.success("تم تسجيل واعتماد التظلم المالي رسمياً بنجاح! ⚖️ الحالة الآن: في انتظار نتيجة التظلم ⏳");
+      setIsEditingFinGrievance(false);
       onRefresh();
     } catch {
       toast.error("فشل تسجيل التظلم المالي");
@@ -3795,7 +3453,72 @@ export function TabFinOpening({
           {/* المسار 3: في حالة الاستبعاد المالي -> مسار التظلم المالي أو الاسترداد المباشر */}
           {evalOutcome === "REJECTED" && (
             <div className="space-y-4 animate-fade-in">
-              {!savedFinGrievance ? (
+              {/* إذا كان المستخدم في وضع تحرير/معاينة التظلم المالي الرسمي المعتمد */}
+              {isEditingFinGrievance ? (
+                <div className="space-y-4 animate-fade-in">
+                  <div className="p-3.5 rounded-2xl bg-indigo-500/10 border border-indigo-500/30 flex items-center justify-between flex-wrap gap-2">
+                    <span className="text-xs font-bold text-indigo-900 dark:text-indigo-200 flex items-center gap-2">
+                      <Scale className="h-4 w-4 text-indigo-600" />
+                      {savedFinGrievance
+                        ? "معاينة وتعديل بيانات ومحرر خطاب التظلم المالي المعتمد (قالب الوورد الرسمي)"
+                        : "إعداد وتجهيز خطاب التظلم المالي والمحاسبي وفقاً للقانون 182 لسنة 2018"}
+                    </span>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => setIsEditingFinGrievance(false)}
+                      className="text-xs text-muted-foreground hover:text-foreground h-8 px-3 rounded-xl"
+                    >
+                      {savedFinGrievance ? "الرجوع لمتابعة حالة التظلم ↩️" : "إلغاء والرجوع للخيارات ✕"}
+                    </Button>
+                  </div>
+
+                  {/* تضمين قسم خطاب التظلم المالي الحقيقي بالقالب المعتمد والخانات الأصلية */}
+                  <GrievanceLetterSection
+                    op={op}
+                    stage="financial"
+                    onRefresh={onRefresh}
+                    onClose={() => setIsEditingFinGrievance(false)}
+                  />
+
+                  {/* شريط الإجراءات والاعتماد أسفل الخطاب */}
+                  <div className="p-4 sm:p-5 rounded-2xl bg-gradient-to-r from-blue-500/10 via-indigo-500/10 to-transparent border-2 border-indigo-500/30 flex items-center justify-between flex-wrap gap-3 shadow-md">
+                    <div>
+                      <h5 className="font-extrabold text-sm text-foreground flex items-center gap-2">
+                        <Scale className="h-5 w-5 text-indigo-600" />
+                        <span>{savedFinGrievance ? "بيانات التظلم المالي مسجلة بالمنظومة" : "تسجيل واعتماد التظلم المالي رسمياً"}</span>
+                      </h5>
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        {savedFinGrievance
+                          ? "تم حفظ كافة التعديلات على بنود وأسباب التظلم بالقالب أعلاه ومزامنتها بنجاح."
+                          : "بعد الانتهاء من مراجعة وضبط بنود وأسعار التظلم بالقالب المعتمد أعلاه، اضغط لتسجيل التظلم رسمياً وبدء مهلة الـ 7 أيام."}
+                      </p>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setIsEditingFinGrievance(false)}
+                        className="text-xs h-9 px-4 rounded-xl"
+                      >
+                        {savedFinGrievance ? "الرجوع لمتابعة حالة التظلم ↩️" : "إغلاق محرر التظلم ✕"}
+                      </Button>
+                      {!savedFinGrievance && (
+                        <Button
+                          size="sm"
+                          onClick={handleRegisterFinGrievanceOfficial}
+                          disabled={savingFinGrievance}
+                          className="bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold text-xs h-9 px-5 rounded-xl flex items-center gap-2 shadow-md cursor-pointer"
+                        >
+                          <CheckCircle2 className="h-4 w-4" />
+                          <span>{savingFinGrievance ? "جاري التسجيل والاعتماد..." : "تسجيل التظلم المالي رسمياً واعتماده ⚖️"}</span>
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              ) : !savedFinGrievance ? (
                 !showFinalRefundSection ? (
                   <div className="p-5 sm:p-6 rounded-3xl bg-gradient-to-r from-rose-50 via-white to-rose-50/50 dark:from-rose-950/40 dark:via-slate-900 dark:to-slate-950 border-2 border-rose-300 dark:border-rose-600/50 shadow-xs space-y-4">
                     <div className="flex items-center gap-3">
@@ -3833,11 +3556,11 @@ export function TabFinOpening({
 
                       <Button
                         size="sm"
-                        onClick={() => setFinGrievanceModalOpen(true)}
+                        onClick={() => setIsEditingFinGrievance(true)}
                         className="bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold text-xs h-9 px-5 rounded-xl flex items-center gap-2 cursor-pointer shadow-md shadow-indigo-500/20"
                       >
                         <Scale className="h-4 w-4" />
-                        <span>عمل تظلم مالي ومحاسبي (نافذة عائمة) ⚖️</span>
+                        <span>عمل وتجهيز خطاب التظلم المالي الرسمي (قالب الوورد المعتمد) ⚖️</span>
                       </Button>
                     </div>
                   </div>
@@ -3888,19 +3611,20 @@ export function TabFinOpening({
                         <Button
                           size="sm"
                           variant="outline"
-                          onClick={() => setFinGrievanceModalOpen(true)}
-                          className="border-indigo-300 text-indigo-700 hover:bg-indigo-50 font-bold text-xs h-8 px-3 rounded-xl"
+                          onClick={() => setIsEditingFinGrievance(true)}
+                          className="border-indigo-300 text-indigo-700 hover:bg-indigo-50 font-bold text-xs h-8 px-3 rounded-xl flex items-center gap-1.5"
                         >
-                          معاينة / تعديل التظلم 👁️
+                          <Eye className="h-3.5 w-3.5" />
+                          <span>معاينة / تعديل التظلم</span>
                         </Button>
                         <Button
                           size="sm"
                           variant="ghost"
                           onClick={() => handleDeleteFinGrievance(savedFinGrievance.id)}
-                          className="text-xs text-rose-600 hover:bg-rose-50 h-8 px-2.5 rounded-xl"
+                          className="text-xs text-rose-600 hover:bg-rose-50 h-8 px-2.5 rounded-xl flex items-center gap-1"
                         >
-                          <Trash2 className="h-3.5 w-3.5 ml-1" />
-                          إلغاء التظلم
+                          <Trash2 className="h-3.5 w-3.5" />
+                          <span>إلغاء التظلم</span>
                         </Button>
                       </div>
                     </div>
@@ -3995,26 +3719,39 @@ export function TabFinOpening({
                     </div>
                   </div>
 
-                  {/* الخطوة 4: إذا رُفض التظلم المالي -> إظهار نموذج استرداد التأمين الابتدائي تلقائياً */}
+                  {/* الخطوة 4: إذا رُفض التظلم المالي -> زر ومسار استرداد التأمين الابتدائي المعتمد */}
                   {finGrievanceOutcome === "REJECTED" && (
                     <div className="space-y-4 animate-fade-in">
-                      <div className="p-4 rounded-2xl bg-rose-500/10 border-2 border-rose-500/40 flex items-center justify-between flex-wrap gap-3">
+                      <div className="p-4 sm:p-5 rounded-2xl bg-rose-500/10 border-2 border-rose-500/40 flex items-center justify-between flex-wrap gap-3">
                         <div>
-                          <h5 className="font-extrabold text-sm text-rose-800 dark:text-rose-300">
-                            الخطوة 4: تم رفض التظلم المالي وتأكيد الاستبعاد نهائياً — فتح مسار استرداد التأمين الابتدائي 📄
+                          <h5 className="font-extrabold text-sm text-rose-800 dark:text-rose-300 flex items-center gap-2">
+                            <XCircle className="h-5 w-5 text-rose-600" />
+                            <span>الخطوة 4: تم رفض التظلم المالي وتأكيد الاستبعاد نهائياً — استرداد التأمين الابتدائي</span>
                           </h5>
                           <p className="text-xs text-muted-foreground mt-0.5">
                             طبقاً للمادة (38) و(42) من القانون 182/2018، تلتزم جهة الإسناد برد التأمين الابتدائي فوراً دون أي خصم.
                           </p>
                         </div>
+                        <Button
+                          size="sm"
+                          onClick={() => setShowRefundAfterFinGrievanceReject((prev) => !prev)}
+                          className="bg-rose-600 hover:bg-rose-700 text-white font-extrabold text-xs h-9 px-4 rounded-xl flex items-center gap-1.5 shadow-md cursor-pointer"
+                        >
+                          <Receipt className="h-4 w-4" />
+                          <span>{showRefundAfterFinGrievanceReject ? "إخفاء نموذج وقالب استرداد التأمين ✕" : "فتح نموذج وقالب استرداد التأمين الابتدائي 📄"}</span>
+                        </Button>
                       </div>
 
-                      <FinalInsuranceRefundSection
-                        op={op}
-                        onRefresh={onRefresh}
-                        triggerContext="GRIEVANCE_REJECTED"
-                        onClose={() => {}}
-                      />
+                      {showRefundAfterFinGrievanceReject && (
+                        <div className="animate-fade-in">
+                          <FinalInsuranceRefundSection
+                            op={op}
+                            onRefresh={onRefresh}
+                            triggerContext="GRIEVANCE_REJECTED"
+                            onClose={() => setShowRefundAfterFinGrievanceReject(false)}
+                          />
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
@@ -4043,41 +3780,7 @@ export function TabFinOpening({
         }}
       />
 
-      {/* Floating Financial Grievance Modal with Form & Live Preview */}
-      <GrievanceModalWithPreview
-        isOpen={finGrievanceModalOpen}
-        onClose={() => setFinGrievanceModalOpen(false)}
-        stage="financial"
-        op={op}
-        company={currentCompany}
-        defaultReason={savedFinGrievance?.reason || ""}
-        openingDate={savedFo?.openingDate || openingDate}
-        onSubmit={async (data) => {
-          setSavingFinGrievance(true);
-          try {
-            await api.post(`/operations/${op.id}/grievances`, {
-              companyId: currentCompanyLink?.companyId || op.companies?.[0]?.companyId,
-              grievanceType: data.grievanceType,
-              reason: data.reason,
-              filingDate: data.filingDate,
-              notes: `تظلم مالي رسمي ضد قرار استبعاد العطاء المالي لعملية: ${op.name}`,
-              status: "PENDING",
-            });
-            await api.post(`/operations/${op.id}/documents`, {
-              fileName: `مذكرة_تظلم_مالي_${op.name.replace(/\s+/g, "_")}.pdf`,
-              type: "TECH_SPECS",
-            }).catch(() => {});
-            toast.success("تم تسجيل التظلم المالي وإرساله رسمياً بنجاح! ⚖️ الحالة: في انتظار نتيجة التظلم ⏳");
-            setFinGrievanceModalOpen(false);
-            onRefresh();
-          } catch {
-            toast.error("فشل تسجيل التظلم المالي");
-          } finally {
-            setSavingFinGrievance(false);
-          }
-        }}
-        isSaving={savingFinGrievance}
-      />
+
 
       {/* Continuity Action Footer (التسجيل 1 & 2) */}
       <StepFooterNav
