@@ -125,11 +125,13 @@ export function GrievanceLetterSection({
   stage = "technical",
   onRefresh,
   onClose,
+  initialOpenPreview = false,
 }: {
   op: Operation;
   stage?: "technical" | "financial";
   onRefresh: () => void;
   onClose?: () => void;
+  initialOpenPreview?: boolean;
 }) {
   const isTech = stage === "technical";
   const noteKey = isTech ? "technicalGrievanceLetterDocx" : "financialGrievanceLetterDocx";
@@ -479,24 +481,17 @@ export function GrievanceLetterSection({
     // جهة الخطاب بتوسيط وتنسيق متوازن
     docXml = replaceDocxRecipient(docXml, recipientPrefix, recipientTitleAndAuthority);
 
-    // 1. موضوع وسند التظلم (تظلم من ...) - استبدال ديناميكي من الخانة الحرة
+    // 1. موضوع وسند التظلم (تظلم من ...) - استبدال ديناميكي من الخانة الحرة دون أي كسر لوسوم XML
     const grvSubjectTarget =
       grievanceSubject?.trim() ||
       (isTech ? "نتيجة البت الفني – ميعاد الفتح الفني" : "نتيجة البت المالي وفض المظاريف المالية");
 
-    const grvPStart = docXml.indexOf("الموضوع بخصوص");
-    if (grvPStart !== -1) {
-      const grvFromIdx = docXml.indexOf("تظلم من", grvPStart);
-      const grvToIdx = docXml.indexOf("لعملية", grvFromIdx);
-      if (grvFromIdx !== -1 && grvToIdx !== -1) {
-        const afterFrom = docXml.indexOf("</w:r>", grvFromIdx) + 6;
-        const beforeTo = docXml.lastIndexOf("<w:r", grvToIdx);
-        if (afterFrom !== -1 && beforeTo !== -1 && afterFrom < beforeTo) {
-          const replacementRun = `<w:r><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial" w:hint="cs"/><w:b/><w:bCs/><w:sz w:val="28"/><w:szCs w:val="28"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t xml:space="preserve"> ${escapeXml(grvSubjectTarget)} </w:t></w:r>`;
-          docXml = docXml.substring(0, afterFrom) + replacementRun + docXml.substring(beforeTo);
-        }
-      }
-    }
+    const targetSubjectXml = `<w:r><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial" w:hint="cs"/><w:b/><w:bCs/><w:sz w:val="28"/><w:szCs w:val="28"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t xml:space="preserve">تظلم من ${escapeXml(grvSubjectTarget)} لعملية </w:t></w:r>`;
+
+    docXml = docXml.replace(
+      /<w:r\b[^>]*>(?:(?!<\/w:r>)[\s\S])*?تظلم من(?:(?!<\/w:r>)[\s\S])*?<\/w:r>[\s\S]*?<w:r\b[^>]*>(?:(?!<\/w:r>)[\s\S])*?لعملية(?:(?!<\/w:r>)[\s\S])*?<\/w:r>/,
+      targetSubjectXml
+    );
 
     if (!isTech) {
       docXml = docXml.replace(/تظلم من نتيجة\s+البت الفني/g, "تظلم من نتيجة البت المالي");
@@ -649,6 +644,17 @@ export function GrievanceLetterSection({
     setPreviewModalOpen(true);
     const shouldForce = forceRefresh === true;
 
+    // حفظ فوري للمسودة لضمان تسجيل بيانات الخطاب
+    try {
+      let parsedNotes: any = {};
+      if (op.notes && op.notes.startsWith("{")) {
+        parsedNotes = JSON.parse(op.notes);
+      }
+      parsedNotes[noteKey] = JSON.parse(currentSnapshot);
+      api.patch(`/operations/${op.id}`, { notes: JSON.stringify(parsedNotes) }).catch(() => {});
+      setSavedSnapshot(currentSnapshot);
+    } catch {}
+
     // 1. إذا كان الملف موجوداً ومولداً في الذاكرة ولم تتغير البيانات -> فتح فوري 0ms
     if (previewPdfBlob && previewPdfUrl && currentSnapshot === lastGeneratedSnapshot && !shouldForce) {
       return;
@@ -708,6 +714,19 @@ export function GrievanceLetterSection({
       setRenderingDocx(false);
     }
   };
+
+  const handleCloseModal = () => {
+    setPreviewModalOpen(false);
+    if (initialOpenPreview) {
+      onClose?.();
+    }
+  };
+
+  useEffect(() => {
+    if (initialOpenPreview) {
+      handleOpenPreview(false);
+    }
+  }, [initialOpenPreview]);
 
   const handleDownloadDocx = async () => {
     if (previewDocxBlob && currentSnapshot === lastGeneratedSnapshot) {
@@ -1003,13 +1022,12 @@ export function GrievanceLetterSection({
 
           {onClose && (
             <Button
-              size="icon"
-              variant="ghost"
+              size="sm"
+              variant="outline"
               onClick={onClose}
-              className="h-8.5 w-8.5 rounded-xl text-muted-foreground hover:text-foreground cursor-pointer"
-              title="إغلاق النموذج"
+              className="text-xs h-8.5 px-3 rounded-xl border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 font-bold flex items-center gap-1.5 cursor-pointer"
             >
-              <X className="h-4 w-4" />
+              <span>الرجوع لحالة التظلم ↩️</span>
             </Button>
           )}
         </div>
@@ -1441,57 +1459,24 @@ export function GrievanceLetterSection({
                     <span>تحديث المعاينة</span>
                   </Button>
 
-                  <Button
-                    size="sm"
-                    onClick={handleDownloadDocx}
-                    disabled={downloadingDocx}
-                    className="h-8 text-xs bg-blue-600 hover:bg-blue-700 text-white font-bold"
-                  >
-                    <Download className="h-3.5 w-3.5 ml-1" />
-                    <span>تحميل Word (.docx)</span>
-                  </Button>
-
-                  <Button
-                    size="sm"
-                    onClick={handleDownloadPdf}
-                    disabled={downloadingPdf}
-                    className="h-8 text-xs bg-emerald-600 hover:bg-emerald-700 text-white font-bold"
-                  >
-                    <Download className="h-3.5 w-3.5 ml-1" />
-                    <span>تحميل PDF</span>
-                  </Button>
-
-                  <Button
-                    size="sm"
-                    onClick={handlePrintWordDocument}
-                    disabled={printingDocx}
-                    className="h-8 text-xs bg-amber-600 hover:bg-amber-700 text-white font-bold"
-                  >
-                    <Printer className="h-3.5 w-3.5 ml-1" />
-                    <span>طباعة</span>
-                  </Button>
-
-                  <Button
-                    size="sm"
-                    variant={isArchived ? "default" : "outline"}
-                    onClick={handleToggleArchive}
-                    disabled={addingToArchive}
-                    className={`h-8 text-xs font-bold flex items-center gap-1.5 cursor-pointer ${
-                      isArchived
-                        ? "bg-purple-600 hover:bg-purple-700 text-white"
-                        : "border-purple-500/40 text-purple-300 hover:bg-purple-950/60"
-                    }`}
-                  >
-                    <Archive className="h-3.5 w-3.5 ml-1" />
-                    <span>{isArchived ? "مضاف للأرشيف ✓" : "إضافة للأرشيف 📥"}</span>
-                  </Button>
+                  {onClose && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => {
+                        setPreviewModalOpen(false);
+                        onClose();
+                      }}
+                      className="h-8 text-xs border-indigo-500/40 text-indigo-300 hover:bg-indigo-950/60 font-bold flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <span>الرجوع لحالة التظلم ↩️</span>
+                    </Button>
+                  )}
 
                   <Button
                     size="icon"
                     variant="ghost"
-                    onClick={() => {
-                      setPreviewModalOpen(false);
-                    }}
+                    onClick={handleCloseModal}
                     className="h-8 w-8 text-slate-400 hover:text-white"
                   >
                     <X className="h-4 w-4" />

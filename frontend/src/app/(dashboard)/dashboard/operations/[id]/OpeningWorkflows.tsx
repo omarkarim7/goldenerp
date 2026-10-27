@@ -1022,7 +1022,21 @@ export function TabTechOpening({
   const [grievanceReason, setGrievanceReason] = useState("");
   const [savingGrievance, setSavingGrievance] = useState(false);
   const [isEditingGrievance, setIsEditingGrievance] = useState(false);
+  const [viewingGrievanceLetter, setViewingGrievanceLetter] = useState(false);
   const [showRefundAfterGrievanceReject, setShowRefundAfterGrievanceReject] = useState(false);
+
+  const parsedOpNotes = useMemo(() => {
+    try {
+      if (op.notes && op.notes.startsWith("{")) return JSON.parse(op.notes);
+    } catch {}
+    return {};
+  }, [op.notes]);
+
+  const hasTechGrievanceLetter = Boolean(
+    parsedOpNotes?.technicalGrievanceLetterDocx ||
+    parsedOpNotes?.archivedDocIds?.includes("grievance-tech") ||
+    parsedOpNotes?.archivedDocIds?.includes("letter-grievance-tech")
+  );
 
   // Grievance status outcome (PENDING / ACCEPTED / PARTIALLY_ACCEPTED / REJECTED)
   const grievanceOutcome = useMemo(() => {
@@ -1796,6 +1810,17 @@ export function TabTechOpening({
           {/* الحالة ب: في حالة الاستبعاد الفني -> مسار التظلم أو الاسترداد المباشر */}
           {effectiveResult === "REJECTED" && (
             <div className="space-y-4 animate-fade-in">
+              {/* إذا تم طلب عرض الخطاب المُعد مباشرة للمعاينة والطباعة الفورية دون الدخول في وضع التعديل */}
+              {viewingGrievanceLetter && (
+                <GrievanceLetterSection
+                  op={op}
+                  stage="technical"
+                  onRefresh={onRefresh}
+                  initialOpenPreview={true}
+                  onClose={() => setViewingGrievanceLetter(false)}
+                />
+              )}
+
               {/* إذا كان المستخدم في وضع تحرير/معاينة التظلم الفني الرسمي المعتمد */}
               {isEditingGrievance ? (
                 <div className="space-y-4 animate-fade-in">
@@ -1888,6 +1913,35 @@ export function TabTechOpening({
                       </p>
                     </div>
 
+                    {/* إشعار وتفاصيل الخطاب المُعد مسبقاً إن وجد */}
+                    {hasTechGrievanceLetter && (
+                      <div className="p-3.5 rounded-2xl bg-indigo-50/90 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-800/60 flex items-center justify-between flex-wrap gap-2 animate-fade-in">
+                        <div className="flex items-center gap-2 text-xs font-bold text-indigo-950 dark:text-indigo-200">
+                          <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+                          <span>تم إعداد وتجهيز مسودة خطاب التظلم الفني المعتمد بالمنظومة ✓</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Button
+                            size="sm"
+                            onClick={() => setViewingGrievanceLetter(true)}
+                            className="bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs h-8.5 px-3.5 rounded-xl flex items-center gap-1.5 shadow-xs cursor-pointer"
+                          >
+                            <Eye className="h-3.5 w-3.5" />
+                            <span>عرض الخطاب المُعد 👁️</span>
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => setIsEditingGrievance(true)}
+                            className="border-indigo-300 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-50 dark:hover:bg-indigo-950/60 text-xs h-8.5 px-3 rounded-xl flex items-center gap-1.5 cursor-pointer font-bold"
+                          >
+                            <Edit className="h-3.5 w-3.5" />
+                            <span>تعديل بيانات الخطاب ✏️</span>
+                          </Button>
+                        </div>
+                      </div>
+                    )}
+
                     <div className="flex items-center justify-between pt-2 flex-wrap gap-3">
                       <Button
                         size="sm"
@@ -1898,14 +1952,30 @@ export function TabTechOpening({
                         تخطي التظلم واسترداد التأمين فوراً 📄
                       </Button>
 
-                      <Button
-                        size="sm"
-                        onClick={() => setIsEditingGrievance(true)}
-                        className="bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold text-xs h-9 px-5 rounded-xl flex items-center gap-2 cursor-pointer shadow-md shadow-indigo-500/20"
-                      >
-                        <Scale className="h-4 w-4" />
-                        <span>عمل وتجهيز خطاب التظلم الفني الرسمي (قالب الوورد المعتمد) ⚖️</span>
-                      </Button>
+                      <div className="flex items-center gap-2">
+                        {hasTechGrievanceLetter && (
+                          <Button
+                            size="sm"
+                            onClick={() => setViewingGrievanceLetter(true)}
+                            className="bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs h-9 px-4 rounded-xl flex items-center gap-1.5 shadow-md cursor-pointer"
+                          >
+                            <Eye className="h-4 w-4" />
+                            <span>عرض الخطاب المُعد 👁️</span>
+                          </Button>
+                        )}
+                        <Button
+                          size="sm"
+                          onClick={() => setIsEditingGrievance(true)}
+                          className="bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold text-xs h-9 px-5 rounded-xl flex items-center gap-2 cursor-pointer shadow-md shadow-indigo-500/20"
+                        >
+                          <Scale className="h-4 w-4" />
+                          <span>
+                            {hasTechGrievanceLetter
+                              ? "متابعة تعديل واعتماد خطاب التظلم الفني ⚖️"
+                              : "عمل وتجهيز خطاب التظلم الفني الرسمي (قالب الوورد المعتمد) ⚖️"}
+                          </span>
+                        </Button>
+                      </div>
                     </div>
                   </div>
                 ) : (
@@ -1954,18 +2024,26 @@ export function TabTechOpening({
                       <div className="flex items-center gap-2">
                         <Button
                           size="sm"
-                          variant="outline"
-                          onClick={() => setIsEditingGrievance(true)}
-                          className="border-indigo-300 text-indigo-700 hover:bg-indigo-50 font-bold text-xs h-8 px-3 rounded-xl flex items-center gap-1.5"
+                          onClick={() => setViewingGrievanceLetter(true)}
+                          className="bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold text-xs h-8 px-3.5 rounded-xl flex items-center gap-1.5 shadow-xs cursor-pointer"
                         >
                           <Eye className="h-3.5 w-3.5" />
-                          <span>معاينة / تعديل التظلم</span>
+                          <span>عرض الخطاب المُعد 👁️</span>
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => setIsEditingGrievance(true)}
+                          className="border-indigo-300 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-50 dark:hover:bg-indigo-950/60 font-bold text-xs h-8 px-3 rounded-xl flex items-center gap-1.5 cursor-pointer"
+                        >
+                          <Edit className="h-3.5 w-3.5" />
+                          <span>تعديل الخطاب ✏️</span>
                         </Button>
                         <Button
                           size="sm"
                           variant="ghost"
                           onClick={() => handleDeleteGrievance(savedGrievance.id)}
-                          className="text-xs text-rose-600 hover:bg-rose-50 h-8 px-2.5 rounded-xl flex items-center gap-1"
+                          className="text-xs text-rose-600 hover:bg-rose-50 h-8 px-2.5 rounded-xl flex items-center gap-1 cursor-pointer"
                         >
                           <Trash2 className="h-3.5 w-3.5" />
                           <span>إلغاء التظلم</span>
@@ -2309,7 +2387,21 @@ export function TabFinOpening({
   const [savingFinGrievance, setSavingFinGrievance] = useState(false);
   const [finGrievanceModalOpen, setFinGrievanceModalOpen] = useState(false);
   const [isEditingFinGrievance, setIsEditingFinGrievance] = useState(false);
+  const [viewingFinGrievanceLetter, setViewingFinGrievanceLetter] = useState(false);
   const [showRefundAfterFinGrievanceReject, setShowRefundAfterFinGrievanceReject] = useState(false);
+
+  const parsedFinOpNotes = useMemo(() => {
+    try {
+      if (op.notes && op.notes.startsWith("{")) return JSON.parse(op.notes);
+    } catch {}
+    return {};
+  }, [op.notes]);
+
+  const hasFinGrievanceLetter = Boolean(
+    parsedFinOpNotes?.financialGrievanceLetterDocx ||
+    parsedFinOpNotes?.archivedDocIds?.includes("grievance-fin") ||
+    parsedFinOpNotes?.archivedDocIds?.includes("letter-grievance-fin")
+  );
   const [refundModalOpen, setRefundModalOpen] = useState(false);
 
   const initialGuar = op.guarantees?.find((g: any) => g.type === "INITIAL");
@@ -3453,6 +3545,17 @@ export function TabFinOpening({
           {/* المسار 3: في حالة الاستبعاد المالي -> مسار التظلم المالي أو الاسترداد المباشر */}
           {evalOutcome === "REJECTED" && (
             <div className="space-y-4 animate-fade-in">
+              {/* إذا تم طلب عرض الخطاب المالي المُعد مباشرة للمعاينة والطباعة الفورية */}
+              {viewingFinGrievanceLetter && (
+                <GrievanceLetterSection
+                  op={op}
+                  stage="financial"
+                  onRefresh={onRefresh}
+                  initialOpenPreview={true}
+                  onClose={() => setViewingFinGrievanceLetter(false)}
+                />
+              )}
+
               {/* إذا كان المستخدم في وضع تحرير/معاينة التظلم المالي الرسمي المعتمد */}
               {isEditingFinGrievance ? (
                 <div className="space-y-4 animate-fade-in">
@@ -3544,6 +3647,35 @@ export function TabFinOpening({
                       </p>
                     </div>
 
+                    {/* إشعار وتفاصيل الخطاب المالي المُعد مسبقاً إن وجد */}
+                    {hasFinGrievanceLetter && (
+                      <div className="p-3.5 rounded-2xl bg-indigo-50/90 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-800/60 flex items-center justify-between flex-wrap gap-2 animate-fade-in">
+                        <div className="flex items-center gap-2 text-xs font-bold text-indigo-950 dark:text-indigo-200">
+                          <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+                          <span>تم إعداد وتجهيز مسودة خطاب التظلم المالي المعتمد بالمنظومة ✓</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Button
+                            size="sm"
+                            onClick={() => setViewingFinGrievanceLetter(true)}
+                            className="bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs h-8.5 px-3.5 rounded-xl flex items-center gap-1.5 shadow-xs cursor-pointer"
+                          >
+                            <Eye className="h-3.5 w-3.5" />
+                            <span>عرض الخطاب المُعد 👁️</span>
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => setIsEditingFinGrievance(true)}
+                            className="border-indigo-300 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-50 dark:hover:bg-indigo-950/60 text-xs h-8.5 px-3 rounded-xl flex items-center gap-1.5 cursor-pointer font-bold"
+                          >
+                            <Edit className="h-3.5 w-3.5" />
+                            <span>تعديل بيانات الخطاب ✏️</span>
+                          </Button>
+                        </div>
+                      </div>
+                    )}
+
                     <div className="flex items-center justify-between pt-2 flex-wrap gap-3">
                       <Button
                         size="sm"
@@ -3554,14 +3686,30 @@ export function TabFinOpening({
                         تخطي التظلم واسترداد التأمين فوراً 📄
                       </Button>
 
-                      <Button
-                        size="sm"
-                        onClick={() => setIsEditingFinGrievance(true)}
-                        className="bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold text-xs h-9 px-5 rounded-xl flex items-center gap-2 cursor-pointer shadow-md shadow-indigo-500/20"
-                      >
-                        <Scale className="h-4 w-4" />
-                        <span>عمل وتجهيز خطاب التظلم المالي الرسمي (قالب الوورد المعتمد) ⚖️</span>
-                      </Button>
+                      <div className="flex items-center gap-2">
+                        {hasFinGrievanceLetter && (
+                          <Button
+                            size="sm"
+                            onClick={() => setViewingFinGrievanceLetter(true)}
+                            className="bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs h-9 px-4 rounded-xl flex items-center gap-1.5 shadow-md cursor-pointer"
+                          >
+                            <Eye className="h-4 w-4" />
+                            <span>عرض الخطاب المُعد 👁️</span>
+                          </Button>
+                        )}
+                        <Button
+                          size="sm"
+                          onClick={() => setIsEditingFinGrievance(true)}
+                          className="bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold text-xs h-9 px-5 rounded-xl flex items-center gap-2 cursor-pointer shadow-md shadow-indigo-500/20"
+                        >
+                          <Scale className="h-4 w-4" />
+                          <span>
+                            {hasFinGrievanceLetter
+                              ? "متابعة تعديل واعتماد خطاب التظلم المالي ⚖️"
+                              : "عمل وتجهيز خطاب التظلم المالي الرسمي (قالب الوورد المعتمد) ⚖️"}
+                          </span>
+                        </Button>
+                      </div>
                     </div>
                   </div>
                 ) : (
@@ -3610,18 +3758,26 @@ export function TabFinOpening({
                       <div className="flex items-center gap-2">
                         <Button
                           size="sm"
-                          variant="outline"
-                          onClick={() => setIsEditingFinGrievance(true)}
-                          className="border-indigo-300 text-indigo-700 hover:bg-indigo-50 font-bold text-xs h-8 px-3 rounded-xl flex items-center gap-1.5"
+                          onClick={() => setViewingFinGrievanceLetter(true)}
+                          className="bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold text-xs h-8 px-3.5 rounded-xl flex items-center gap-1.5 shadow-xs cursor-pointer"
                         >
                           <Eye className="h-3.5 w-3.5" />
-                          <span>معاينة / تعديل التظلم</span>
+                          <span>عرض الخطاب المُعد 👁️</span>
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => setIsEditingFinGrievance(true)}
+                          className="border-indigo-300 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-50 dark:hover:bg-indigo-950/60 font-bold text-xs h-8 px-3 rounded-xl flex items-center gap-1.5 cursor-pointer"
+                        >
+                          <Edit className="h-3.5 w-3.5" />
+                          <span>تعديل الخطاب ✏️</span>
                         </Button>
                         <Button
                           size="sm"
                           variant="ghost"
                           onClick={() => handleDeleteFinGrievance(savedFinGrievance.id)}
-                          className="text-xs text-rose-600 hover:bg-rose-50 h-8 px-2.5 rounded-xl flex items-center gap-1"
+                          className="text-xs text-rose-600 hover:bg-rose-50 h-8 px-2.5 rounded-xl flex items-center gap-1 cursor-pointer"
                         >
                           <Trash2 className="h-3.5 w-3.5" />
                           <span>إلغاء التظلم</span>
