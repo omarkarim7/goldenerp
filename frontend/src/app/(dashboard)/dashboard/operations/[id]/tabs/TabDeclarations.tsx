@@ -863,6 +863,7 @@ export function TabDeclarations({
   }, [activeDeclType]);
 
   const isCurrentArchived = useMemo(() => {
+    if (isDirty) return false;
     try {
       if (op.notes && op.notes.startsWith("{")) {
         const parsed = JSON.parse(op.notes);
@@ -871,7 +872,7 @@ export function TabDeclarations({
       }
     } catch {}
     return false;
-  }, [op.notes, currentArchiveDocId]);
+  }, [op.notes, currentArchiveDocId, isDirty]);
 
   const handleToggleArchive = async () => {
     setAddingToArchive(true);
@@ -884,14 +885,24 @@ export function TabDeclarations({
 
     const current: string[] = notesObj.archivedDocIds || [];
     const exists = current.includes(currentArchiveDocId);
-    const updated = exists
+    const shouldRemove = exists && !isDirty;
+    const updated = shouldRemove
       ? current.filter((id: string) => id !== currentArchiveDocId)
-      : [...current, currentArchiveDocId];
+      : Array.from(new Set([...current, currentArchiveDocId]));
 
     notesObj.archivedDocIds = updated;
 
     try {
-      if (!exists) {
+      if (!shouldRemove) {
+        if (isDirty) {
+          const snapToSave = currentSnapshot;
+          setSavedSnapshot(snapToSave);
+          notesObj.declarationsDocx = {
+            ...(notesObj.declarationsDocx || {}),
+            ...JSON.parse(snapToSave),
+          };
+        }
+
         const docTitle =
           activeDeclType === "specs"
             ? "إقرار الالتزام بكراسة الشروط والمواصفات"
@@ -921,7 +932,7 @@ export function TabDeclarations({
           const formData = new FormData();
           formData.append("file", pdf, `${docTitle}.pdf`);
           formData.append("type", "DECLARATION");
-          api.post(`/operations/${op.id}/documents`, formData).catch(() => {});
+          await api.post(`/operations/${op.id}/documents`, formData).catch(() => {});
         } catch (pdfErr) {
           console.warn("Archival PDF generation error in TabDeclarations:", pdfErr);
         }
@@ -931,9 +942,9 @@ export function TabDeclarations({
         notes: JSON.stringify(notesObj),
       });
       toast.success(
-        exists
+        shouldRemove
           ? "تمت إزالة الإقرار من مستندات الأرشيف وحزمة التقديم 📂"
-          : "تمت إضافة الإقرار وتوثيق نسخة PDF في الأرشيف بنجاح! 📦✨"
+          : "تمت إضافة النسخة المحدثة وتوثيقها في الأرشيف وحزمة التقديم بنجاح! 📦✨"
       );
       onRefresh();
     } catch (err: any) {

@@ -771,6 +771,7 @@ export function TabFinalGuarantee({
   // ━━━ حالة وإجراء الإضافة المباشرة للأرشيف ━━━
   const [addingToArchive, setAddingToArchive] = useState(false);
   const isArchived = useMemo(() => {
+    if (isDirty) return false;
     try {
       if (op.notes && op.notes.startsWith("{")) {
         const parsed = JSON.parse(op.notes);
@@ -783,7 +784,7 @@ export function TabFinalGuarantee({
       }
     } catch {}
     return false;
-  }, [op.notes, activeLetterType]);
+  }, [op.notes, activeLetterType, isDirty]);
 
   const handleToggleArchive = async () => {
     setAddingToArchive(true);
@@ -800,25 +801,65 @@ export function TabFinalGuarantee({
       current.includes(docKey) ||
       current.includes("letter-final-guarantee") ||
       current.includes("letter-guarantee");
-    const updated = exists
+    const shouldRemove = exists && !isDirty;
+    const updated = shouldRemove
       ? current.filter(
           (id: string) =>
             id !== docKey &&
             id !== "letter-final-guarantee" &&
             id !== "letter-guarantee"
         )
-      : [...current, docKey];
+      : Array.from(new Set([...current, docKey]));
 
     notesObj.archivedDocIds = updated;
 
     try {
+      if (!shouldRemove) {
+        if (isDirty) {
+          const snapToSave = currentSnapshot;
+          setSavedSnapshot(snapToSave);
+          notesObj.finalGuaranteeLetter = {
+            ...(notesObj.finalGuaranteeLetter || {}),
+            ...JSON.parse(snapToSave),
+          };
+        }
+
+        try {
+          const pdfBlob = await generateGuaranteePdfBlob(activeLetterType);
+          const cloudFilename = `final_guarantee_${activeLetterType}_${registrationNumber || op.serialNumber || "doc"}.pdf`;
+          const cloudRes = await uploadPdfToFreeCloud(pdfBlob, cloudFilename).catch(() => null);
+
+          if (!notesObj.finalGuaranteeLetter) notesObj.finalGuaranteeLetter = {};
+          if (!notesObj.finalGuaranteeLetter.cloudUrls) notesObj.finalGuaranteeLetter.cloudUrls = {};
+          if (cloudRes?.url) {
+            notesObj.finalGuaranteeLetter.cloudUrls[activeLetterType] = cloudRes.url;
+            setCloudUrls((prev) => ({ ...prev, [activeLetterType]: cloudRes.url }));
+          }
+
+          const letterLabels: Record<string, string> = {
+            CASH: "خطاب سداد التأمين النهائي نقداً بالخزينة",
+            DEDUCTION: "خطاب خصم التأمين النهائي من مستحقات عملية أخرى",
+            DEDUCTION_AND_INITIAL: "خطاب خصم التأمين النهائي وتحويل التأمين الابتدائي",
+            INITIAL_TRANSFER: "خطاب تحويل التأمين الابتدائي إلى نهائي",
+            BANK_GUARANTEE: "خطاب إصدار خطاب ضمان بنكي للتأمين النهائي",
+          };
+          const letterTitle = letterLabels[activeLetterType] || "خطاب التأمين النهائي";
+          const formData = new FormData();
+          formData.append("file", pdfBlob, `${letterTitle}.pdf`);
+          formData.append("type", "GUARANTEE_RECEIPT");
+          await api.post(`/operations/${op.id}/documents`, formData).catch(() => {});
+        } catch (pdfErr) {
+          console.warn("Archival PDF generation error in TabFinalGuarantee:", pdfErr);
+        }
+      }
+
       await api.patch(`/operations/${op.id}`, {
         notes: JSON.stringify(notesObj),
       });
       toast.success(
-        exists
+        shouldRemove
           ? "تمت إزالة خطاب التأمين النهائي من مستندات الأرشيف وحزمة التقديم 📂"
-          : "تمت إضافة خطاب التأمين النهائي إلى مستندات الأرشيف وحزمة التقديم بنجاح! 📦✨"
+          : "تمت إضافة النسخة المحدثة من خطاب التأمين النهائي للأرشيف وحزمة التقديم بنجاح! 📦✨"
       );
       onRefresh();
     } catch (err: any) {

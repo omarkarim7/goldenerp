@@ -733,13 +733,15 @@ export function TabBooklet({
       // السنة المالية وموعد جلسة فتح المظروف
       docXml = replaceDocxFiscalAndDate(docXml, fiscalYear, technicalOpeningDate);
 
-      // 3. بيانات تفويض المندوب (استبدال دقيق ومحدد داخل جملة التفويض يمنع تداخل الأسماء نهائياً)
-      const safeDelegate = delegateName && delegateName.trim() ? escapeXml(delegateName.trim()) : "";
+      // 3. بيانات تفويض المندوب (استبدال دقيق ومحدد داخل جملة التفويض يمنع تداخل الأسماء والكلمات)
+      const safeDelegate = delegateName && delegateName.length > 0 ? escapeXml(delegateName) : "................";
       docXml = docXml.replace(
-        /(وتفوض\s+الشركة\s+السيد\s*\/\s*(?:[\(（]\s*)?)(?:أحمد محمد أحمد|[^\)]*?)((\s*[\)）])?\s*وصفته)/g,
-        `$1${safeDelegate || "................"}$2`
+        /(وتفوض\s+الشركة\s+السيد\s*\/\s*(?:[\(（]\s*)?)(?:أحمد محمد أحمد|[^\)]*?)(\s*[\)）])?(\s*وصفته)/g,
+        `$1${safeDelegate}$2 وصفته`
       );
-      docXml = docXml.replace(/أحمد محمد أحمد/g, safeDelegate || "................");
+      docXml = docXml.replace(/أحمد محمد أحمد/g, safeDelegate);
+      docXml = docXml.replace(/([^\s>])وصفته/g, "$1 وصفته");
+      docXml = docXml.replace(/<w:t>وصفته/g, '<w:t xml:space="preserve"> وصفته');
       docXml = docXml.replace(/مندوب التعاقدات المفوض/g, escapeXml(delegateTitle));
       docXml = docXml.replace(/23056289523202/g, escapeXml(delegateNationalId));
       docXml = docXml.replace(/والتوقيع على العقود واستلام الخطابات والمكاتبات الرسميه/g, escapeXml(delegatePowers));
@@ -1132,6 +1134,7 @@ export function TabBooklet({
   // ━━━ حالة وإجراء الإضافة المباشرة للأرشيف ━━━
   const [addingToArchive, setAddingToArchive] = useState(false);
   const isArchived = useMemo(() => {
+    if (isDirty) return false;
     try {
       if (op.notes && op.notes.startsWith("{")) {
         const parsed = JSON.parse(op.notes);
@@ -1144,7 +1147,7 @@ export function TabBooklet({
       }
     } catch {}
     return false;
-  }, [op.notes, activeLetterType]);
+  }, [op.notes, activeLetterType, isDirty]);
 
   const handleToggleArchive = async () => {
     setAddingToArchive(true);
@@ -1158,15 +1161,29 @@ export function TabBooklet({
     const docKey = `letter-booklet-${activeLetterType}`;
     const current: string[] = notesObj.archivedDocIds || [];
     const exists = current.includes(docKey) || current.includes("letter-booklet") || current.includes("letter-booklet-insurance");
-    const updated = exists
+    
+    // إذا كان المستند مضافاً مسبقاً ولم يحدث أي تعديل -> يتم الإلغاء
+    // إذا كان هناك تعديل جديد (isDirty) أو لم يكن مضافاً أصلاً -> نقوم بحفظ التعديلات وتحديث/إضافة الأرشيف
+    const shouldRemove = exists && !isDirty;
+    const updated = shouldRemove
       ? current.filter((id: string) => id !== docKey && id !== "letter-booklet" && id !== "letter-booklet-insurance")
-      : [...current, docKey];
+      : Array.from(new Set([...current, docKey]));
 
     notesObj.archivedDocIds = updated;
 
     try {
-      if (!exists) {
-        toast.info(`جاري تجهيز وتوثيق نسخة PDF الرسمية لـ ${currentTpl.title}...`);
+      if (!shouldRemove) {
+        // في حال وجود تعديلات جديدة، نقوم باعتماد وحفظ السناب شوت أولاً
+        if (isDirty) {
+          const snapshotToSave = currentSnapshot;
+          setSavedSnapshot(snapshotToSave);
+          notesObj.bookletLettersDocx = {
+            ...(notesObj.bookletLettersDocx || {}),
+            ...JSON.parse(snapshotToSave),
+          };
+        }
+
+        toast.info(`جاري تجهيز وتوثيق نسخة PDF الرسمية المحدثة لـ ${currentTpl.title}...`);
         try {
           const pdfBlob = await generateBookletPdfBlob(activeLetterType);
           const cloudFilename = `official_letter_${activeLetterType}_${registrationNumber || op.serialNumber || "doc"}.pdf`;
@@ -1184,7 +1201,7 @@ export function TabBooklet({
           const formData = new FormData();
           formData.append("file", pdfBlob, `${currentTpl.title}.pdf`);
           formData.append("type", "BOOKLET");
-          api.post(`/operations/${op.id}/documents`, formData).catch(() => {});
+          await api.post(`/operations/${op.id}/documents`, formData).catch(() => {});
         } catch (pdfErr) {
           console.warn("Archival PDF generation error in TabBooklet:", pdfErr);
         }
@@ -1194,9 +1211,9 @@ export function TabBooklet({
         notes: JSON.stringify(notesObj),
       });
       toast.success(
-        exists
+        shouldRemove
           ? `تمت إزالة ${currentTpl.title} من مستندات الأرشيف وحزمة التقديم 📂`
-          : `تمت إضافة ${currentTpl.title} وتوثيقها بصيغة PDF في الأرشيف بنجاح! 📦✨`
+          : `تمت إضافة النسخة المحدثة من ${currentTpl.title} وتوثيقها بالأرشيف وحزمة التقديم بنجاح! 📦✨`
       );
       onRefresh();
     } catch (err: any) {

@@ -1032,6 +1032,7 @@ export function TabClarification({
   // ━━━ حالة إضافة خطاب التوضيح إلى مستندات الأرشيف ━━━
   const [addingToArchive, setAddingToArchive] = useState(false);
   const isArchived = useMemo(() => {
+    if (isDirty) return false;
     try {
       if (op.notes && op.notes.startsWith("{")) {
         const parsed = JSON.parse(op.notes);
@@ -1040,7 +1041,7 @@ export function TabClarification({
       }
     } catch {}
     return false;
-  }, [op.notes]);
+  }, [op.notes, isDirty]);
 
   const handleToggleArchive = async () => {
     setAddingToArchive(true);
@@ -1053,20 +1054,52 @@ export function TabClarification({
 
     const current: string[] = notesObj.archivedDocIds || [];
     const exists = current.includes("letter-clarification");
-    const updated = exists
+    const shouldRemove = exists && !isDirty;
+    const updated = shouldRemove
       ? current.filter((id: string) => id !== "letter-clarification")
-      : [...current, "letter-clarification"];
+      : Array.from(new Set([...current, "letter-clarification"]));
 
     notesObj.archivedDocIds = updated;
 
     try {
+      if (!shouldRemove) {
+        if (isDirty) {
+          const snapToSave = currentSnapshot;
+          setSavedSnapshot(snapToSave);
+          notesObj.clarificationLetter = {
+            ...(notesObj.clarificationLetter || {}),
+            ...JSON.parse(snapToSave),
+          };
+        }
+
+        try {
+          const docx = await generateClarificationDocxBlob();
+          const pdfBlob = await getPdfBlobFromDocx(docx, `clarification_${registrationNumber}.docx`);
+          const cloudFilename = `clarification_${registrationNumber || op.serialNumber || "doc"}.pdf`;
+          const cloudRes = await uploadPdfToFreeCloud(pdfBlob, cloudFilename).catch(() => null);
+
+          if (!notesObj.clarificationLetter) notesObj.clarificationLetter = {};
+          if (cloudRes?.url) {
+            notesObj.clarificationLetter.cloudPdfUrl = cloudRes.url;
+            setCloudPdfUrl(cloudRes.url);
+          }
+
+          const formData = new FormData();
+          formData.append("file", pdfBlob, "خطاب التوضيح والاستفسارات الرسمي.pdf");
+          formData.append("type", "CLARIFICATION");
+          await api.post(`/operations/${op.id}/documents`, formData).catch(() => {});
+        } catch (pdfErr) {
+          console.warn("Archival PDF generation error in TabClarification:", pdfErr);
+        }
+      }
+
       await api.patch(`/operations/${op.id}`, {
         notes: JSON.stringify(notesObj),
       });
       toast.success(
-        exists
+        shouldRemove
           ? "تمت إزالة خطاب التوضيح من مستندات الأرشيف وحزمة التقديم 📂"
-          : "تمت إضافة خطاب التوضيح إلى مستندات الأرشيف وحزمة التقديم بنجاح! 📦✨"
+          : "تمت إضافة النسخة المحدثة وتوثيقها في الأرشيف وحزمة التقديم بنجاح! 📦✨"
       );
       onRefresh();
     } catch (err: any) {

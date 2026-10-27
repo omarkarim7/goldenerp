@@ -1652,31 +1652,50 @@ export function LetterBottomActionWidget({
           </Button>
 
           {/* زر إضافة للأرشيف وحزمة التقديم: بجانب زر المعاينة مباشرة */}
-          {onAddToArchive && (
-            <Button
-              size="sm"
-              variant={isArchived ? "default" : "outline"}
-              onClick={onAddToArchive}
-              disabled={addingToArchive || isDirty}
-              title={
-                isArchived
-                  ? "المستند مضاف حالياً إلى مستندات الأرشيف وحزمة التقديم (انقر للإلغاء)"
-                  : "إضافة هذا المستند مباشرة إلى مستندات الأرشيف وحزمة التقديم"
+          {onAddToArchive && (() => {
+            const effectiveIsArchived = isArchived && !isDirty;
+            const handleArchiveClick = async () => {
+              if (addingToArchive || saving) return;
+              if (isDirty && onSave) {
+                try {
+                  await onSave();
+                } catch {
+                  return;
+                }
               }
-              className={`h-10 px-4 text-xs font-bold rounded-xl border-2 transition-all cursor-pointer flex items-center gap-1.5 shadow-xs ${
-                isArchived
-                  ? "bg-purple-600 hover:bg-purple-700 text-white border-purple-600 dark:bg-purple-600 dark:hover:bg-purple-700 shadow-sm"
-                  : "border-purple-500/50 text-purple-700 dark:text-purple-300 hover:bg-purple-50 dark:hover:bg-purple-950/40 hover:border-purple-600"
-              } ${isDirty ? "opacity-50 cursor-not-allowed" : "hover:scale-102"}`}
-            >
-              {addingToArchive ? (
-                <RefreshCw className="h-4 w-4 animate-spin text-current" />
-              ) : (
-                <Archive className="h-4 w-4 text-current" />
-              )}
-              <span>{isArchived ? "مضاف للأرشيف ✓" : "إضافة للأرشيف 📥"}</span>
-            </Button>
-          )}
+              if (onAddToArchive) {
+                await onAddToArchive();
+              }
+            };
+
+            return (
+              <Button
+                size="sm"
+                variant={effectiveIsArchived ? "default" : "outline"}
+                onClick={handleArchiveClick}
+                disabled={addingToArchive || saving}
+                title={
+                  effectiveIsArchived
+                    ? "المستند مضاف حالياً إلى مستندات الأرشيف وحزمة التقديم (انقر للإلغاء)"
+                    : isDirty
+                    ? "حفظ التعديلات الجديدة وإضافتها مباشرة إلى مستندات الأرشيف وحزمة التقديم"
+                    : "إضافة هذا المستند مباشرة إلى مستندات الأرشيف وحزمة التقديم"
+                }
+                className={`h-10 px-4 text-xs font-bold rounded-xl border-2 transition-all cursor-pointer flex items-center gap-1.5 shadow-xs ${
+                  effectiveIsArchived
+                    ? "bg-purple-600 hover:bg-purple-700 text-white border-purple-600 dark:bg-purple-600 dark:hover:bg-purple-700 shadow-sm"
+                    : "border-purple-500/50 text-purple-700 dark:text-purple-300 hover:bg-purple-50 dark:hover:bg-purple-950/40 hover:border-purple-600"
+                } hover:scale-102`}
+              >
+                {addingToArchive ? (
+                  <RefreshCw className="h-4 w-4 animate-spin text-current" />
+                ) : (
+                  <Archive className="h-4 w-4 text-current" />
+                )}
+                <span>{effectiveIsArchived ? "مضاف للأرشيف ✓" : "إضافة للأرشيف 📥"}</span>
+              </Button>
+            );
+          })()}
 
           {hasPrinted && onViewArchive && (
             <Button

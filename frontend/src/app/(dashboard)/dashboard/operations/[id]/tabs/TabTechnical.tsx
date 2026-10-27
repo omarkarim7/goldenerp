@@ -1197,6 +1197,7 @@ export function TabTechnical({
   // ━━━ حالة إضافة العرض الفني إلى مستندات الأرشيف ━━━
   const [addingToArchive, setAddingToArchive] = useState(false);
   const isArchived = useMemo(() => {
+    if (isDirty) return false;
     try {
       if (op.notes && op.notes.startsWith("{")) {
         const parsed = JSON.parse(op.notes);
@@ -1205,7 +1206,7 @@ export function TabTechnical({
       }
     } catch {}
     return false;
-  }, [op.notes]);
+  }, [op.notes, isDirty]);
 
   const handleToggleArchive = async () => {
     setAddingToArchive(true);
@@ -1218,20 +1219,51 @@ export function TabTechnical({
 
     const current: string[] = notesObj.archivedDocIds || [];
     const exists = current.includes("letter-technical");
-    const updated = exists
+    const shouldRemove = exists && !isDirty;
+    const updated = shouldRemove
       ? current.filter((id: string) => id !== "letter-technical")
-      : [...current, "letter-technical"];
+      : Array.from(new Set([...current, "letter-technical"]));
 
     notesObj.archivedDocIds = updated;
 
     try {
+      if (!shouldRemove) {
+        if (isDirty) {
+          const snapToSave = currentSnapshot;
+          setSavedSnapshot(snapToSave);
+          notesObj.technicalOfferDocx = {
+            ...(notesObj.technicalOfferDocx || {}),
+            ...JSON.parse(snapToSave),
+          };
+        }
+
+        try {
+          const pdfBlob = await generateTechnicalPdfBlob();
+          const cloudFilename = `technical_offer_${registrationNumber || op.serialNumber || "doc"}.pdf`;
+          const cloudRes = await uploadPdfToFreeCloud(pdfBlob, cloudFilename).catch(() => null);
+
+          if (!notesObj.technicalOfferDocx) notesObj.technicalOfferDocx = {};
+          if (cloudRes?.url) {
+            notesObj.technicalOfferDocx.cloudPdfUrl = cloudRes.url;
+            setCloudPdfUrl(cloudRes.url);
+          }
+
+          const formData = new FormData();
+          formData.append("file", pdfBlob, "العرض الفني والمواصفات الفنية.pdf");
+          formData.append("type", "TECHNICAL_OFFER");
+          await api.post(`/operations/${op.id}/documents`, formData).catch(() => {});
+        } catch (pdfErr) {
+          console.warn("Archival PDF generation error in TabTechnical:", pdfErr);
+        }
+      }
+
       await api.patch(`/operations/${op.id}`, {
         notes: JSON.stringify(notesObj),
       });
       toast.success(
-        exists
+        shouldRemove
           ? "تمت إزالة العرض الفني من مستندات الأرشيف وحزمة التقديم 📂"
-          : "تمت إضافة العرض الفني إلى مستندات الأرشيف وحزمة التقديم بنجاح! 📦✨"
+          : "تمت إضافة النسخة المحدثة من العرض الفني للأرشيف وحزمة التقديم بنجاح! 📦✨"
       );
       onRefresh();
     } catch (err: any) {

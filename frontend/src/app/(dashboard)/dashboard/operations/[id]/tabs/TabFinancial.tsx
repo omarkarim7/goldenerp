@@ -1453,6 +1453,7 @@ export function TabFinancial({
   // ━━━ حالة إضافة العرض المالي إلى مستندات الأرشيف ━━━
   const [addingToArchive, setAddingToArchive] = useState(false);
   const isArchived = useMemo(() => {
+    if (isDirty) return false;
     try {
       if (op.notes && op.notes.startsWith("{")) {
         const parsed = JSON.parse(op.notes);
@@ -1461,7 +1462,7 @@ export function TabFinancial({
       }
     } catch {}
     return false;
-  }, [op.notes]);
+  }, [op.notes, isDirty]);
 
   const handleToggleArchive = async () => {
     setAddingToArchive(true);
@@ -1474,20 +1475,51 @@ export function TabFinancial({
 
     const current: string[] = notesObj.archivedDocIds || [];
     const exists = current.includes("letter-financial");
-    const updated = exists
+    const shouldRemove = exists && !isDirty;
+    const updated = shouldRemove
       ? current.filter((id: string) => id !== "letter-financial")
-      : [...current, "letter-financial"];
+      : Array.from(new Set([...current, "letter-financial"]));
 
     notesObj.archivedDocIds = updated;
 
     try {
+      if (!shouldRemove) {
+        if (isDirty) {
+          const snapToSave = currentSnapshot;
+          setSavedSnapshot(snapToSave);
+          notesObj.financialOfferDocx = {
+            ...(notesObj.financialOfferDocx || {}),
+            ...JSON.parse(snapToSave),
+          };
+        }
+
+        try {
+          const pdfBlob = await generateFinancialPdfBlob();
+          const cloudFilename = `financial_offer_${registrationNumber || op.serialNumber || "doc"}.pdf`;
+          const cloudRes = await uploadPdfToFreeCloud(pdfBlob, cloudFilename).catch(() => null);
+
+          if (!notesObj.financialOfferDocx) notesObj.financialOfferDocx = {};
+          if (cloudRes?.url) {
+            notesObj.financialOfferDocx.cloudPdfUrl = cloudRes.url;
+            setCloudPdfUrl(cloudRes.url);
+          }
+
+          const formData = new FormData();
+          formData.append("file", pdfBlob, "العرض المالي وجدول الأسعار والتفقيط.pdf");
+          formData.append("type", "FINANCIAL_OFFER");
+          await api.post(`/operations/${op.id}/documents`, formData).catch(() => {});
+        } catch (pdfErr) {
+          console.warn("Archival PDF generation error in TabFinancial:", pdfErr);
+        }
+      }
+
       await api.patch(`/operations/${op.id}`, {
         notes: JSON.stringify(notesObj),
       });
       toast.success(
-        exists
+        shouldRemove
           ? "تمت إزالة العرض المالي من مستندات الأرشيف وحزمة التقديم 📂"
-          : "تمت إضافة العرض المالي إلى مستندات الأرشيف وحزمة التقديم بنجاح! 📦✨"
+          : "تمت إضافة النسخة المحدثة من العرض المالي للأرشيف وحزمة التقديم بنجاح! 📦✨"
       );
       onRefresh();
     } catch (err: any) {

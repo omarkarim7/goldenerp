@@ -364,6 +364,70 @@ export async function generateUniversalLetterDocxBlob(
     docXml = replaceDocxChairman(docXml, boardChairman);
   }
 
+  // استبدال بيانات خطابات الكراسة والتأمين الابتدائي
+  if (meta.category === "booklet") {
+    const delegateName = savedSub?.delegateName || "";
+    const delegateTitle = savedSub?.delegateTitle || "مندوب التعاقدات المفوض";
+    const delegateNationalId = savedSub?.delegateNationalId || "";
+    const delegatePowers = savedSub?.delegatePowers || "والتوقيع على العقود واستلام الخطابات والمكاتبات الرسميه";
+    const safeDelegate = delegateName && delegateName.length > 0 ? escapeXml(delegateName) : "................";
+
+    docXml = docXml.replace(
+      /(وتفوض\s+الشركة\s+السيد\s*\/\s*(?:[\(（]\s*)?)(?:أحمد محمد أحمد|[^\)]*?)(\s*[\)）])?(\s*وصفته)/g,
+      `$1${safeDelegate}$2 وصفته`
+    );
+    docXml = docXml.replace(/أحمد محمد أحمد/g, safeDelegate);
+    docXml = docXml.replace(/([^\s>])وصفته/g, "$1 وصفته");
+    docXml = docXml.replace(/<w:t>وصفته/g, '<w:t xml:space="preserve"> وصفته');
+    docXml = docXml.replace(/مندوب التعاقدات المفوض/g, escapeXml(delegateTitle));
+    docXml = docXml.replace(/23056289523202/g, escapeXml(delegateNationalId || "................"));
+    docXml = docXml.replace(/والتوقيع على العقود واستلام الخطابات والمكاتبات الرسميه/g, escapeXml(delegatePowers));
+
+    const insuranceAmount = savedSub?.insuranceAmount;
+    const insuranceTafqeet = savedSub?.insuranceTafqeet;
+    if (insuranceAmount) {
+      docXml = docXml.replace(/10000/g, escapeXml(insuranceAmount));
+    }
+    if (insuranceTafqeet) {
+      const cleanTafqeet = (insuranceTafqeet || "")
+        .replace(/^فقط\s*وقدره\s*:?\s*/i, "")
+        .replace(/\s*لا\s*غير\s*$/i, "")
+        .trim();
+      docXml = docXml.replace(/عشرة ألاف(?:\s+جنيه)?(?:\s+لا\s*غير)?/g, escapeXml(cleanTafqeet || "عشرة ألاف جنيه"));
+      docXml = docXml.replace(/لا\s*غير\s+لا\s*غير/g, "لا غير");
+    }
+  }
+
+  // استبدال بيانات الإقرارات الرسمية
+  if (meta.category === "declaration") {
+    if (savedSub?.additionalNotes) {
+      docXml = docXml.replace(/خان[ةه] خالي[ةه] للملاحظات/g, escapeXml(savedSub.additionalNotes));
+    }
+  }
+
+  // استبدال بيانات خطاب الاستفسارات والتوضيحات
+  if (meta.category === "clarification") {
+    if (savedSub?.inquiryAspect) {
+      docXml = docXml.replace(/عن نوع الاستفسار من الناحية\s*/g, escapeXml(savedSub.inquiryAspect) + " ");
+    }
+    if (savedSub?.companyRequest) {
+      docXml = docXml.replace(/\(\s*\.{5,}\s*\)/g, `(${escapeXml(savedSub.companyRequest)})`);
+    }
+    if (savedSub?.subjectTarget) {
+      docXml = docXml.replace(/للأصناف/g, escapeXml(savedSub.subjectTarget));
+    }
+  }
+
+  // استبدال بيانات خطابات التأمين النهائي
+  if (meta.category === "guarantee") {
+    if (savedSub?.finalGuaranteeAmount) {
+      docXml = docXml.replace(/37547/g, escapeXml(savedSub.finalGuaranteeAmount));
+    }
+    if (savedSub?.finalGuaranteeTafqeet) {
+      docXml = docXml.replace(/سبعة وثلاثون ألفا وخمسمائة وسبعه وأربعون/g, escapeXml(savedSub.finalGuaranteeTafqeet));
+    }
+  }
+
   // بيانات خاصة بخطاب الضمان البنكي
   if (meta.subType === "bank_guarantee_letter") {
     const bankName = savedSub?.bankName || "مصر";
