@@ -155,20 +155,6 @@ export function GrievanceLetterSection({
     return savedGrievanceData?.selectedCompanyId || op.companies?.[0]?.companyId || op.companies?.[0]?.id || "";
   });
 
-  const handleSelectCompany = (compVal: string) => {
-    setSelectedCompanyId(compVal);
-    const link = (op.companies || []).find((c: any) => c.companyId === compVal || c.id === compVal);
-    if (link) {
-      if (link.displayCode) setCompanyOpCode(link.displayCode);
-      if (link.company?.commercialRegister) setCompanyCommercialRegister(link.company.commercialRegister);
-      if (link.company?.taxCard) setCompanyTaxCard(link.company.taxCard);
-      if (link.company?.phone) setPhoneWhatsapp(link.company.phone);
-      if (link.company?.mobile) setPhoneMobile(link.company.mobile);
-      if (link.company?.address) setCompanyAddress(link.company.address);
-      if (link.company?.email) setCompanyEmail(link.company.email);
-    }
-  };
-
   const currentCompanyLink = useMemo(() => {
     return (
       op.companies?.find(
@@ -178,6 +164,20 @@ export function GrievanceLetterSection({
   }, [op.companies, selectedCompanyId]);
 
   const currentCompany = currentCompanyLink?.company;
+
+  const handleSelectCompany = (compVal: string) => {
+    setSelectedCompanyId(compVal);
+    const link = (op.companies || []).find((c: any) => c.companyId === compVal || c.id === compVal);
+    if (link) {
+      setCompanyOpCode(link.displayCode || `AZ-0${op.serialNumber || 1}`);
+      setCompanyCommercialRegister(link.company?.commercialRegister || "110200700036620");
+      setCompanyTaxCard(link.company?.taxCard || "658369652");
+      if (link.company?.phone) setPhoneWhatsapp(link.company.phone);
+      if (link.company?.mobile) setPhoneMobile(link.company.mobile);
+      if (link.company?.address) setCompanyAddress(link.company.address);
+      if (link.company?.email) setCompanyEmail(link.company.email);
+    }
+  };
 
   // رقم القيد الصادر الذكي
   const [registrationNumber, setRegistrationNumber] = useState(() => {
@@ -208,10 +208,16 @@ export function GrievanceLetterSection({
     );
   });
   const [companyCommercialRegister, setCompanyCommercialRegister] = useState(() => {
-    return savedGrievanceData?.companyCommercialRegister || currentCompany?.commercialRegister || "110200700036620";
+    if (savedGrievanceData?.companyCommercialRegister && savedGrievanceData.companyCommercialRegister !== "65654614258") {
+      return savedGrievanceData.companyCommercialRegister;
+    }
+    return currentCompany?.commercialRegister || "110200700036620";
   });
   const [companyTaxCard, setCompanyTaxCard] = useState(() => {
-    return savedGrievanceData?.companyTaxCard || currentCompany?.taxCard || "658369652";
+    if (savedGrievanceData?.companyTaxCard && savedGrievanceData.companyTaxCard !== "686-218-354") {
+      return savedGrievanceData.companyTaxCard;
+    }
+    return currentCompany?.taxCard || "658369652";
   });
   const [phoneWhatsapp, setPhoneWhatsapp] = useState(() => {
     return savedGrievanceData?.phoneWhatsapp || currentCompany?.phone || "01091708818";
@@ -228,6 +234,33 @@ export function GrievanceLetterSection({
   const [issueDate, setIssueDate] = useState(() => {
     return savedGrievanceData?.issueDate || new Date().toLocaleDateString("en-GB");
   });
+
+  // مزامنة تلقائية لبيانات الشركة (السجل التجاري والبطاقة الضريبية والكود) عند اختيارها
+  useEffect(() => {
+    if (currentCompanyLink || currentCompany) {
+      if (currentCompany?.commercialRegister) {
+        setCompanyCommercialRegister(currentCompany.commercialRegister);
+      }
+      if (currentCompany?.taxCard) {
+        setCompanyTaxCard(currentCompany.taxCard);
+      }
+      if (currentCompany?.phone) {
+        setPhoneWhatsapp(currentCompany.phone);
+      }
+      if (currentCompany?.mobile) {
+        setPhoneMobile(currentCompany.mobile);
+      }
+      if (currentCompany?.address) {
+        setCompanyAddress(currentCompany.address);
+      }
+      if (currentCompany?.email) {
+        setCompanyEmail(currentCompany.email);
+      }
+      if (currentCompanyLink?.displayCode) {
+        setCompanyOpCode(currentCompanyLink.displayCode);
+      }
+    }
+  }, [currentCompany, currentCompanyLink]);
 
   // 2. جهة الخطاب والموضوع
   const [recipientPrefix, setRecipientPrefix] = useState(() => {
@@ -683,6 +716,9 @@ export function GrievanceLetterSection({
         hXml = hXml.replace(/658369652/g, escapeXml(companyTaxCard || "658369652"));
         hXml = hXml.replace(/\(\s*كود العملية بالشرك[ةه]\s*\)/g, `( ${escapeXml(cleanCode)} )`);
         hXml = hXml.replace(/كود العملية بالشرك[ةه]/g, escapeXml(cleanCode));
+        if (currentCompany?.name && currentCompany.name !== "جولدن" && currentCompany.name !== "جولدن سيرفيس") {
+          hXml = hXml.replace(/جــ\s*ـ\s*ـولـــ\s*ـ\s*دن\s*سـ\s*ـ\s*رفـ\s*ـ\s*ــيس/g, escapeXml(currentCompany.name));
+        }
         hXml = hXml.replace(/<w:highlight\s+[^>]*\/>/g, "");
         hXml = hXml.replace(/<w:color\s+w:val="(red|FF0000)"[^>]*\/>/g, "");
         zip.file(hf, hXml);
