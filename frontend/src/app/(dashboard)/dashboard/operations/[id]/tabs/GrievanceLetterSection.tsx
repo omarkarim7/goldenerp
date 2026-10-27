@@ -478,20 +478,58 @@ export function GrievanceLetterSection({
     // عنوان الخطاب الرئيسي
     docXml = docXml.replace(/خط\s*ا\s*ب\s*ت\s*ظلم/g, isTech ? "خطاب تظلم فني" : "خطاب تظلم مالي");
 
-    // جهة الخطاب بتوسيط وتنسيق متوازن
-    docXml = replaceDocxRecipient(docXml, recipientPrefix, recipientTitleAndAuthority);
+    // جهة الخطاب بتوسيط وتنسيق متوازن منضبط بالقالب
+    if (docXml.includes("<w:t>الأستاذ</w:t>")) {
+      docXml = docXml.replace(/<w:t>الأستاذ<\/w:t>/g, `<w:t>${escapeXml((recipientPrefix || "الأستاذ").trim())}</w:t>`);
+    }
+    if (docXml.includes("<w:t>مدير الادارة العامة للمشتريات والمخازن بجامعة دمنهور</w:t>")) {
+      docXml = docXml.replace(
+        /<w:t>مدير الادارة العامة للمشتريات والمخازن بجامعة دمنهور<\/w:t>/g,
+        `<w:t>${escapeXml((recipientTitleAndAuthority || "مدير الادارة العامة للمشتريات والمخازن").trim())}</w:t>`
+      );
+    } else {
+      docXml = replaceDocxRecipient(docXml, recipientPrefix, recipientTitleAndAuthority);
+    }
 
-    // 1. موضوع وسند التظلم (تظلم من ...) - استبدال ديناميكي من الخانة الحرة دون أي كسر لوسوم XML
+    // 1. موضوع وسند التظلم (تظلم من ...) - استبدال بالخانة المحددة بدقة
     const grvSubjectTarget =
       grievanceSubject?.trim() ||
       (isTech ? "نتيجة البت الفني – ميعاد الفتح الفني" : "نتيجة البت المالي وفض المظاريف المالية");
 
-    const targetSubjectXml = `<w:r><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial" w:hint="cs"/><w:b/><w:bCs/><w:sz w:val="28"/><w:szCs w:val="28"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t xml:space="preserve">تظلم من ${escapeXml(grvSubjectTarget)} لعملية </w:t></w:r>`;
+    const subjRegex = /(<w:t xml:space="preserve">تظلم من <\/w:t>[\s\S]*?)(?:<w:r\b[^>]*>(?:(?!<\/w:r>)[\s\S])*?نتيجة(?:(?!<\/w:r>)[\s\S])*?<\/w:r>[\s\S]*?<w:r\b[^>]*>(?:(?!<\/w:r>)[\s\S])*?ميعاد الفتح الفني(?:(?!<\/w:r>)[\s\S])*?<\/w:r>)/;
+    if (subjRegex.test(docXml)) {
+      docXml = docXml.replace(
+        subjRegex,
+        `$1<w:r><w:rPr><w:rFonts w:hint="cs"/><w:b/><w:bCs/><w:sz w:val="28"/><w:szCs w:val="28"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t xml:space="preserve">${escapeXml(grvSubjectTarget)}</w:t></w:r>`
+      );
+    } else {
+      const targetSubjectXml = `<w:r><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial" w:hint="cs"/><w:b/><w:bCs/><w:sz w:val="28"/><w:szCs w:val="28"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t xml:space="preserve">تظلم من ${escapeXml(grvSubjectTarget)} لعملية </w:t></w:r>`;
+      docXml = docXml.replace(
+        /<w:r\b[^>]*>(?:(?!<\/w:r>)[\s\S])*?تظلم من(?:(?!<\/w:r>)[\s\S])*?<\/w:r>[\s\S]*?<w:r\b[^>]*>(?:(?!<\/w:r>)[\s\S])*?لعملية(?:(?!<\/w:r>)[\s\S])*?<\/w:r>/,
+        targetSubjectXml
+      );
+    }
 
-    docXml = docXml.replace(
-      /<w:r\b[^>]*>(?:(?!<\/w:r>)[\s\S])*?تظلم من(?:(?!<\/w:r>)[\s\S])*?<\/w:r>[\s\S]*?<w:r\b[^>]*>(?:(?!<\/w:r>)[\s\S])*?لعملية(?:(?!<\/w:r>)[\s\S])*?<\/w:r>/,
-      targetSubjectXml
-    );
+    // 2. استبدال خانات بيانات العملية المحددة بالقالب
+    docXml = docXml.replace(/<w:t>اسم العملية المسجله<\/w:t>/g, `<w:t>${escapeXml(operationRegisteredName || op.name || "")}</w:t>`);
+    docXml = docXml.replace(/اسم العملية المسجله[\s\.]*/g, escapeXml(operationRegisteredName || op.name || "") + " ");
+
+    docXml = docXml.replace(/<w:t>365<\/w:t>/g, `<w:t>${escapeXml(operationNumber || op.externalNumber || op.serialNumber || "")}</w:t>`);
+    docXml = docXml.replace(/365/g, escapeXml(operationNumber || op.externalNumber || op.serialNumber || ""));
+
+    docXml = docXml.replace(/<w:t>بالمناقصة المحدودة<\/w:t>/g, `<w:t>${escapeXml(methodWithBa)}</w:t>`);
+    docXml = docXml.replace(/(ب)?(?:المناقصة\s+ال[\s\S]*?محدود[\s\S]*?ة|المناقصة\s+المحدودة)/g, (_m, hasB) => {
+      return hasB ? escapeXml(methodWithBa) : escapeXml(cleanMethod || "المناقصة المحدودة");
+    });
+
+    docXml = docXml.replace(/<w:t xml:space="preserve"> توريد كاوتش وبطاريات للسيارات للجامعه<\/w:t>/g, `<w:t xml:space="preserve"> ${escapeXml(operationScope || "")}</w:t>`);
+    docXml = docXml.replace(/توريد كاوتش وبطاريات للسيارات للجامعه/g, escapeXml(operationScope || ""));
+
+    docXml = docXml.replace(/<w:t>2024 \/ 2025<\/w:t>/g, `<w:t>${escapeXml(fiscalYear || "")}</w:t>`);
+    docXml = docXml.replace(/2024\s*\/\s*2025/g, escapeXml(fiscalYear || ""));
+
+    docXml = docXml.replace(/<w:t>14\/ 1 \/2024<\/w:t>/g, `<w:t>${escapeXml(sessionDate || "")}</w:t>`);
+    docXml = docXml.replace(/14\/\s*1\s*\/2024/g, escapeXml(sessionDate || ""));
 
     if (!isTech) {
       docXml = docXml.replace(/تظلم من نتيجة\s+البت الفني/g, "تظلم من نتيجة البت المالي");
@@ -500,27 +538,25 @@ export function GrievanceLetterSection({
       docXml = docXml.replace(/النتيجة الفنيه والقانونيه/g, "النتيجة الماليه والقانونيه");
       docXml = docXml.replace(/النتيجة\s+الفنيه/g, "النتيجة الماليه");
       docXml = docXml.replace(/المحدد لتقديم العطاءات/g, "لجلسة البت المالي");
+      docXml = docXml.replace(
+        /<w:t>ال<\/w:t>[\s\S]*?<w:t>تظلم<\/w:t>[\s\S]*?<w:t>ات وطلبات<\/w:t>[\s\S]*?<w:t xml:space="preserve"> الاعتراض على النتيجة<\/w:t>[\s\S]*?<w:t xml:space="preserve"> الفنيه<\/w:t>/,
+        '<w:t>التظلمات وطلبات الاعتراض على النتيجة الماليه والترسية</w:t>'
+      );
+      docXml = docXml.replace(/<w:t>لتقديم العطاءات<\/w:t>/g, '<w:t>لجلسة البت المالي النهائي</w:t>');
     }
 
-    // بيانات العملية
-    docXml = docXml.replace(/اسم العملية المسجله[\s\.]*/g, escapeXml(operationRegisteredName) + " ");
-    docXml = docXml.replace(/365/g, escapeXml(operationNumber));
-    docXml = docXml.replace(/(ب)?(?:المناقصة\s+ال[\s\S]*?محدود[\s\S]*?ة|المناقصة\s+المحدودة)/g, (_m, hasB) => {
-      return hasB ? escapeXml(methodWithBa) : escapeXml(cleanMethod || "المناقصة المحدودة");
-    });
-    docXml = docXml.replace(/توريد كاوتش وبطاريات للسيارات للجامعه/g, escapeXml(operationScope));
-
-    // التواريخ والسنة المالية
-    docXml = replaceDocxFiscalAndDate(docXml, fiscalYear, sessionDate);
-
-    // نوع التظلم من الناحية
+    // 3. خانة نوع التظلم وحيثياته
     const aspectClean = grievanceAspect || (isTech ? "الفنية والقانونية" : "المالية والحسابية");
+    docXml = docXml.replace(
+      /<w:t>عن نوع الاستفسار من الناحية<\/w:t>/g,
+      `<w:t>${escapeXml(`الناحية ${aspectClean}`)}</w:t>`
+    );
     docXml = docXml.replace(
       /عن نوع الاستفسار من الناحية/g,
       `إن التظلم من الناحية ${escapeXml(aspectClean)} :`
     );
 
-    // استبدال صفوف جدول التظلم بصفوف حقيقية ديناميكية دون أي تكرار لوسوم XML
+    // 4. استبدال صفوف جدول التظلم بصفوف حقيقية ديناميكية مطابقة لمقاسات القالب
     const newRowsXml = buildGrievanceTableRowsXml(grievanceItems);
     const tblStart = docXml.indexOf("<w:tbl>");
     const tblEnd = docXml.indexOf("</w:tbl>") !== -1 ? docXml.indexOf("</w:tbl>") + 8 : -1;
@@ -534,7 +570,7 @@ export function GrievanceLetterSection({
       }
     }
 
-    // الطلب الختامي (استبدال النقط بعد عبارة: الرجاء من سيادتكم التكرم ...)
+    // 5. الطلب الختامي (استبدال النقط بعد عبارة: الرجاء من سيادتكم التكرم ...)
     const cleanGrievanceReq = (grievanceRequest || "")
       .replace(/^(لذا\s*)?(الرجاء|رجاء)\s*من\s*سيادتكم\s*التكرم\s*/i, "")
       .trim() ||
@@ -542,27 +578,33 @@ export function GrievanceLetterSection({
         ? "بإعادة فحص العطاء الفني وإلغاء قرار الاستبعاد واستكمال إجراءات فتح المظروف المالي للشركة وفقاً لأحكام القانون 182 لسنة 2018."
         : "بإعادة التدقيق المحاسبي والمفاضلة المالية وترسية العملية على شركتنا باعتبار عرضنا الأفضل شروطاً والأمثل سعراً.");
 
-    const reqPattern = /<w:p\b[^>]*>(?:(?!<\/w:p>)[\s\S])*?(?:الرجاء|لرجاء)\s*من\s*سيادتكم\s*التكرم(?:(?!<\/w:p>)[\s\S])*?<\/w:p>/;
-    if (reqPattern.test(docXml)) {
-      const targetReqXml = `<w:p><w:pPr><w:spacing w:before="120" w:after="120" w:line="320" w:lineRule="auto"/><w:ind w:left="-567" w:hanging="283"/><w:jc w:val="both"/><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial" w:hint="cs"/><w:b/><w:bCs/><w:sz w:val="28"/><w:szCs w:val="28"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr></w:pPr><w:r><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial" w:hint="cs"/><w:b/><w:bCs/><w:sz w:val="28"/><w:szCs w:val="28"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t xml:space="preserve">الرجاء من سيادتكم التكرم ${escapeXml(cleanGrievanceReq)}</w:t></w:r></w:p>`;
-      docXml = docXml.replace(reqPattern, targetReqXml);
-    }
-
-    // 4. جدول التوقيعات والاعتمادات الرسمية الثلاثي المتوازن في صف أفقي واحد (بدون أي التفاف Wrap)
-    const fullSigBlockRegex = /<w:p\b[^>]*>(?:(?!<\/w:p>)[\s\S])*?(?:المختص|المهندس).*?رئيس مجلس\s*ا?ل?ادارة(?:(?!<\/w:p>)[\s\S])*?<\/w:p>/;
-    if (fullSigBlockRegex.test(docXml)) {
-      const sigTableXml = buildOfficialSignaturesTableXml({
-        specialistTitle: specialistTitle || (isTech ? "المهندس / القانونى المختص :" : "المدير المالي / القانوني :"),
-        specialistName: specialistName || " ",
-        financeManagerName: financeManagerName || " ",
-        boardChairman: boardChairman || "رئيس مجلس الإدارة",
-      });
-      docXml = docXml.replace(fullSigBlockRegex, sigTableXml);
+    const reqDotsRegex = /(<w:t xml:space="preserve">لرجاء من سيادتكم التكرم <\/w:t>[\s\S]*?)<w:t xml:space="preserve">\s*\.{10,}<\/w:t>/;
+    if (reqDotsRegex.test(docXml)) {
+      docXml = docXml.replace(reqDotsRegex, `$1<w:t xml:space="preserve"> ${escapeXml(cleanGrievanceReq)}</w:t>`);
     } else {
-      docXml = replaceDocxChairman(docXml, boardChairman);
+      const reqPattern = /<w:p\b[^>]*>(?:(?!<\/w:p>)[\s\S])*?(?:الرجاء|لرجاء)\s*من\s*سيادتكم\s*التكرم(?:(?!<\/w:p>)[\s\S])*?<\/w:p>/;
+      if (reqPattern.test(docXml)) {
+        const targetReqXml = `<w:p><w:pPr><w:spacing w:before="120" w:after="120" w:line="320" w:lineRule="auto"/><w:ind w:left="-567" w:hanging="283"/><w:jc w:val="both"/><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial" w:hint="cs"/><w:b/><w:bCs/><w:sz w:val="28"/><w:szCs w:val="28"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr></w:pPr><w:r><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial" w:hint="cs"/><w:b/><w:bCs/><w:sz w:val="28"/><w:szCs w:val="28"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t xml:space="preserve">الرجاء من سيادتكم التكرم ${escapeXml(cleanGrievanceReq)}</w:t></w:r></w:p>`;
+        docXml = docXml.replace(reqPattern, targetReqXml);
+      }
     }
 
-    // إزالة خانات الملاحظات والعلامات الحمراء والصفراء
+    // 6. استبدال خانات التوقيعات والاعتمادات في مكانها المخصص بالقالب
+    const safeSpecTitle = specialistTitle || (isTech ? "المهندس / القانونى المختص :" : "المدير المالي / القانوني :");
+    const sigTitleRegex = /<w:r\b[^>]*>(?:(?!<\/w:r>)[\s\S])*?المهندس(?:(?!<\/w:r>)[\s\S])*?<\/w:r>[\s\S]*?<w:r\b[^>]*>(?:(?!<\/w:r>)[\s\S])*?\/ القانونى(?:(?!<\/w:r>)[\s\S])*?<\/w:r>[\s\S]*?<w:r\b[^>]*>(?:(?!<\/w:r>)[\s\S])*?المختص(?:(?!<\/w:r>)[\s\S])*?<\/w:r>[\s\S]*?<w:r\b[^>]*>(?:(?!<\/w:r>)[\s\S])*?:\s*<\/w:t><\/w:r>/;
+    if (sigTitleRegex.test(docXml)) {
+      docXml = docXml.replace(
+        sigTitleRegex,
+        `<w:r><w:rPr><w:b/><w:bCs/><w:sz w:val="24"/><w:szCs w:val="24"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t xml:space="preserve">${escapeXml(safeSpecTitle)}    </w:t></w:r>`
+      );
+    }
+
+    docXml = docXml.replace(/<w:t>أحمد محمد<\/w:t>/g, `<w:t>${escapeXml(specialistName || " ")}</w:t>`);
+    docXml = docXml.replace(/أحمد محمد/g, escapeXml(specialistName || " "));
+    docXml = docXml.replace(/<w:t>اسم<\/w:t>/g, `<w:t>${escapeXml(financeManagerName || " ")}</w:t>`);
+    docXml = docXml.replace(/<w:t>رئيس مجلس الإدارة<\/w:t>/g, `<w:t>${escapeXml(boardChairman || "رئيس مجلس الإدارة")}</w:t>`);
+
+    // تنظيف كل التحديدات والعلامات الحمراء والصفراء بالقالب
     docXml = docXml.replace(/<w:p\b[^>]*>(?:(?!<\/w:p>)[\s\S])*?خان[ةه] (?:لكتابة )?ملاحظ[ةه](?:(?!<\/w:p>)[\s\S])*?<\/w:p>/gi, "");
     docXml = docXml.replace(/خان[ةه] (?:لكتابة )?ملاحظ[ةه]/gi, "");
     docXml = docXml.replace(/<w:highlight\s+[^>]*\/>/g, "");
