@@ -62,6 +62,7 @@ import JSZip from "jszip";
 import QRCode from "qrcode";
 import { getPdfBlobFromDocx, uploadPdfToFreeCloud, getExpectedCloudPdfUrl } from "./client-pdf";
 import { OnlyOfficeDocViewer } from "@/components/OnlyOfficeDocViewer";
+import { loadArchivedPdfBlob, saveLetterToArchiveWithVersion } from "./archive-utils";
 
 export interface GrievanceItem {
   id: string;
@@ -149,6 +150,19 @@ export function GrievanceLetterSection({
   const [selectedCompanyId, setSelectedCompanyId] = useState(() => {
     return savedGrievanceData?.selectedCompanyId || op.companies?.[0]?.companyId || op.companies?.[0]?.id || "";
   });
+
+  const handleSelectCompany = (compVal: string) => {
+    setSelectedCompanyId(compVal);
+    const link = (op.companies || []).find((c: any) => c.companyId === compVal || c.id === compVal);
+    if (link) {
+      if (link.displayCode) setCompanyOpCode(link.displayCode);
+      if (link.company?.commercialRegister) setCompanyCommercialRegister(link.company.commercialRegister);
+      if (link.company?.taxCard) setCompanyTaxCard(link.company.taxCard);
+      if (link.company?.phone) setPhoneWhatsapp(link.company.phone);
+      if (link.company?.mobile) setPhoneMobile(link.company.mobile);
+      if (link.company?.address) setCompanyAddress(link.company.address);
+    }
+  };
 
   const currentCompanyLink = useMemo(() => {
     return (
@@ -246,6 +260,14 @@ export function GrievanceLetterSection({
   // نوع التظلم من الناحية (فنية / مالية / قانونية)
   const [grievanceAspect, setGrievanceAspect] = useState(() => {
     return savedGrievanceData?.grievanceAspect || (isTech ? "الفنية والقانونية" : "المالية والحسابية");
+  });
+
+  // موضوع وسند التظلم (تظلم من ...) - خانة حرة تملأ ديناميكياً
+  const [grievanceSubject, setGrievanceSubject] = useState(() => {
+    return (
+      savedGrievanceData?.grievanceSubject ||
+      (isTech ? "نتيجة البت الفني – ميعاد الفتح الفني" : "نتيجة البت المالي وفض المظاريف المالية")
+    );
   });
 
   // 3. جدول بنود التظلم
@@ -365,6 +387,7 @@ export function GrievanceLetterSection({
       operationScope,
       fiscalYear,
       sessionDate,
+      grievanceSubject,
       grievanceAspect,
       grievanceItems,
       grievanceRequest,
@@ -392,6 +415,7 @@ export function GrievanceLetterSection({
     operationScope,
     fiscalYear,
     sessionDate,
+    grievanceSubject,
     grievanceAspect,
     grievanceItems,
     grievanceRequest,
@@ -455,13 +479,32 @@ export function GrievanceLetterSection({
     // جهة الخطاب بتوسيط وتنسيق متوازن
     docXml = replaceDocxRecipient(docXml, recipientPrefix, recipientTitleAndAuthority);
 
-    // موضوع الخطاب
+    // 1. موضوع وسند التظلم (تظلم من ...) - استبدال ديناميكي من الخانة الحرة
+    const grvSubjectTarget =
+      grievanceSubject?.trim() ||
+      (isTech ? "نتيجة البت الفني – ميعاد الفتح الفني" : "نتيجة البت المالي وفض المظاريف المالية");
+
+    const grvPStart = docXml.indexOf("الموضوع بخصوص");
+    if (grvPStart !== -1) {
+      const grvFromIdx = docXml.indexOf("تظلم من", grvPStart);
+      const grvToIdx = docXml.indexOf("لعملية", grvFromIdx);
+      if (grvFromIdx !== -1 && grvToIdx !== -1) {
+        const afterFrom = docXml.indexOf("</w:r>", grvFromIdx) + 6;
+        const beforeTo = docXml.lastIndexOf("<w:r", grvToIdx);
+        if (afterFrom !== -1 && beforeTo !== -1 && afterFrom < beforeTo) {
+          const replacementRun = `<w:r><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial" w:hint="cs"/><w:b/><w:bCs/><w:sz w:val="28"/><w:szCs w:val="28"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t xml:space="preserve"> ${escapeXml(grvSubjectTarget)} </w:t></w:r>`;
+          docXml = docXml.substring(0, afterFrom) + replacementRun + docXml.substring(beforeTo);
+        }
+      }
+    }
+
     if (!isTech) {
       docXml = docXml.replace(/تظلم من نتيجة\s+البت الفني/g, "تظلم من نتيجة البت المالي");
       docXml = docXml.replace(/ميعاد الفتح الفني/g, "ميعاد الفتح المالي");
       docXml = docXml.replace(/لفتح المظروف الفنى/g, "لفتح المظروف المالي");
       docXml = docXml.replace(/النتيجة الفنيه والقانونيه/g, "النتيجة الماليه والقانونيه");
       docXml = docXml.replace(/النتيجة\s+الفنيه/g, "النتيجة الماليه");
+      docXml = docXml.replace(/المحدد لتقديم العطاءات/g, "لجلسة البت المالي");
     }
 
     // بيانات العملية
@@ -476,9 +519,10 @@ export function GrievanceLetterSection({
     docXml = replaceDocxFiscalAndDate(docXml, fiscalYear, sessionDate);
 
     // نوع التظلم من الناحية
+    const aspectClean = grievanceAspect || (isTech ? "الفنية والقانونية" : "المالية والحسابية");
     docXml = docXml.replace(
       /عن نوع الاستفسار من الناحية/g,
-      `عن نوع التظلم من الناحية ${escapeXml(grievanceAspect || "الفنية والقانونية")}`
+      `إن التظلم من الناحية ${escapeXml(aspectClean)} :`
     );
 
     // استبدال صفوف جدول التظلم بصفوف حقيقية ديناميكية دون أي تكرار لوسوم XML
@@ -562,15 +606,33 @@ export function GrievanceLetterSection({
 
     zip.file("word/document.xml", docXml);
 
-    // 3. ترويسة وتذييل الشركة إن وجدا في القالب
+    // 3. ترويسة وتذييل الشركة في القالب
     const headerFiles = ["word/header1.xml", "word/header2.xml", "word/header3.xml"];
     for (const hf of headerFiles) {
       const hFile = zip.file(hf);
       if (hFile) {
         let hXml = await hFile.async("text");
         hXml = hXml.replace(/جولدن سرفيس/g, escapeXml(currentCompany?.name || "جولدن سرفيس"));
+        hXml = hXml.replace(/110200700036620/g, escapeXml(companyCommercialRegister || ""));
+        hXml = hXml.replace(/658369652/g, escapeXml(companyTaxCard || ""));
+        hXml = hXml.replace(/\(?\s*كود العملية بالشرك[ةه]\s*\)?/g, escapeXml(companyOpCode || ""));
         hXml = hXml.replace(/رقم القيد\s*[:\s]*[\d\w\-\/]+/g, `رقم القيد : ${registrationNumber}`);
         zip.file(hf, hXml);
+      }
+    }
+
+    const footerFiles = ["word/footer1.xml", "word/footer2.xml", "word/footer3.xml"];
+    for (const ff of footerFiles) {
+      const fFile = zip.file(ff);
+      if (fFile) {
+        let fXml = await fFile.async("text");
+        fXml = fXml.replace(/15\/10\/2026/g, escapeXml(issueDate));
+        fXml = fXml.replace(/التاريخ الصادر\s*:\s*[\d\/\-]+/g, `التاريخ الصادر: ${escapeXml(issueDate)}`);
+        fXml = fXml.replace(/رقم القيد/g, `رقم القيد: ${escapeXml(registrationNumber)}`);
+        fXml = fXml.replace(/01091708818/g, escapeXml(phoneWhatsapp));
+        fXml = fXml.replace(/01557018818/g, escapeXml(phoneMobile));
+        fXml = fXml.replace(/بجوار مستشفى ليدى كير\s*-\s*بدمنهور\s*-\s*البح\s*يره/g, escapeXml(companyAddress));
+        zip.file(ff, fXml);
       }
     }
 
@@ -586,13 +648,64 @@ export function GrievanceLetterSection({
   const handleOpenPreview = async (forceRefresh: boolean | any = false) => {
     setPreviewModalOpen(true);
     const shouldForce = forceRefresh === true;
-    if (!cloudPdfUrl || currentSnapshot !== lastGeneratedSnapshot || shouldForce) {
-      setRenderingDocx(true);
+
+    // 1. إذا كان الملف موجوداً ومولداً في الذاكرة ولم تتغير البيانات -> فتح فوري 0ms
+    if (previewPdfBlob && previewPdfUrl && currentSnapshot === lastGeneratedSnapshot && !shouldForce) {
+      return;
+    }
+
+    // 2. إذا كان المستند مضافاً مسبقاً في الأرشيف ولم يتم تعديل البيانات -> تحميل فوري من الأرشيف 0ms
+    if (!shouldForce && !isDirty) {
       try {
-        await handleUploadToCloud();
-      } finally {
-        setRenderingDocx(false);
+        const cached = await loadArchivedPdfBlob(op, grievanceDocKey);
+        if (cached?.blob) {
+          setPreviewPdfBlob(cached.blob);
+          if (previewPdfUrl) {
+            URL.revokeObjectURL(previewPdfUrl);
+          }
+          const url = URL.createObjectURL(cached.blob);
+          setPreviewPdfUrl(url);
+          setLastGeneratedSnapshot(currentSnapshot);
+          toast.success(`تم فتح النسخة المؤرشفة مباشرة ⚡`);
+          return;
+        }
+      } catch (err) {
+        console.warn("Could not load cached archive pdf:", err);
       }
+    }
+
+    if (renderingDocx) return;
+    setRenderingDocx(true);
+    try {
+      const docx = await generateGrievanceDocx();
+      setPreviewDocxBlob(docx);
+
+      const pdf = await getPdfBlobFromDocx(
+        docx,
+        `grievance_${isTech ? "tech" : "fin"}_${registrationNumber || op.serialNumber}.docx`,
+        shouldForce
+      );
+      setPreviewPdfBlob(pdf);
+      if (previewPdfUrl) {
+        URL.revokeObjectURL(previewPdfUrl);
+      }
+      const url = URL.createObjectURL(pdf);
+      setPreviewPdfUrl(url);
+
+      setLastGeneratedSnapshot(currentSnapshot);
+      if (shouldForce) {
+        toast.success("تم تحديث المعاينة الرسمية بنجاح! 🔄✨");
+      }
+
+      // رفع سحابي في الخلفية بدون حجب أو تعطيل شاشة المعاينة
+      if (!cloudPdfUrl) {
+        handleUploadToCloud(false).catch((e) => console.warn("Background cloud upload failed:", e));
+      }
+    } catch (err: any) {
+      console.error(err);
+      toast.error("فشل تجهيز مستند المعاينة: " + (err?.message || ""));
+    } finally {
+      setRenderingDocx(false);
     }
   };
 
@@ -697,26 +810,40 @@ export function GrievanceLetterSection({
     }
   };
 
-  // رفع النسخة الرقمية للسحابة وتحديث الباركود
-  const handleUploadToCloud = async () => {
+  // رفع النسخة الرقمية للسحابة وتحديث الباركود (Cloudflare R2 المعتمد)
+  const handleUploadToCloud = async (forceReupload = false) => {
+    if (cloudPdfUrl && !forceReupload) {
+      toast.info("تم توثيق ورفع هذا الخطاب سحابياً مسبقاً وهو نشط بالفعل ✓");
+      return;
+    }
+    setUploadingCloud(true);
     try {
-      setUploadingCloud(true);
-      toast.info("جاري توثيق ورفع خطاب التظلم سحابياً (رابط PDF مباشر)...");
-      const docxBlob = await generateGrievanceDocx();
-      const pdfBlob = await getPdfBlobFromDocx(docxBlob, `grievance_${isTech ? "tech" : "fin"}_${registrationNumber}.docx`);
-      const fileName = `خطاب_تظلم_${isTech ? "فني" : "مالي"}_${op.id}_${registrationNumber}.pdf`;
-      const res = await uploadPdfToFreeCloud(pdfBlob, fileName);
+      if (forceReupload) {
+        toast.info("جاري توثيق ورفع خطاب التظلم سحابياً (رابط PDF مباشر)...");
+      }
+      let docx = previewDocxBlob;
+      let pdf = previewPdfBlob;
+      if (!docx || !pdf || forceReupload) {
+        docx = await generateGrievanceDocx();
+        pdf = await getPdfBlobFromDocx(
+          docx,
+          `grievance_${isTech ? "tech" : "fin"}_${registrationNumber || op.serialNumber}.docx`,
+          forceReupload
+        );
+        setPreviewDocxBlob(docx);
+        setPreviewPdfBlob(pdf);
+        if (previewPdfUrl) {
+          URL.revokeObjectURL(previewPdfUrl);
+        }
+        setPreviewPdfUrl(URL.createObjectURL(pdf));
+      }
+
+      const fileName = `خطاب_تظلم_${isTech ? "فني" : "مالي"}_${op.id}_${registrationNumber || op.serialNumber}.pdf`;
+      const res = await uploadPdfToFreeCloud(pdf, fileName);
       const cloudUrl = typeof res === "string" ? res : res?.url;
 
       if (cloudUrl) {
         setCloudPdfUrl(cloudUrl);
-        setPreviewDocxBlob(docxBlob);
-        setPreviewPdfBlob(pdfBlob);
-        if (previewPdfUrl) {
-          URL.revokeObjectURL(previewPdfUrl);
-        }
-        setPreviewPdfUrl(URL.createObjectURL(pdfBlob));
-
         const syncedSnapshot = JSON.stringify({
           ...JSON.parse(currentSnapshot),
           cloudPdfUrl: cloudUrl,
@@ -729,15 +856,22 @@ export function GrievanceLetterSection({
           if (op.notes && op.notes.startsWith("{")) parsedNotes = JSON.parse(op.notes);
         } catch {}
         parsedNotes[noteKey] = {
+          ...(parsedNotes[noteKey] || {}),
           ...JSON.parse(currentSnapshot),
           cloudPdfUrl: cloudUrl,
+          updatedAt: new Date().toISOString(),
         };
         await api.patch(`/operations/${op.id}`, { notes: JSON.stringify(parsedNotes) });
-        toast.success("تم توثيق ورفع خطاب التظلم وتحديث المعاينة بنجاح! جاهز للمعاينة الفورية 🚀");
+        if (forceReupload) {
+          toast.success("تم توثيق ورفع خطاب التظلم سحابياً وتحديث المعاينة بنجاح! 🚀");
+        }
         onRefresh();
       }
-    } catch {
-      toast.error("تعذر الرفع السحابي للمستند");
+    } catch (err: any) {
+      console.warn("Cloud upload error:", err);
+      if (forceReupload) {
+        toast.error("فشل الرفع السحابي: " + (err?.message || ""));
+      }
     } finally {
       setUploadingCloud(false);
     }
@@ -772,24 +906,48 @@ export function GrievanceLetterSection({
     const altKey = isTech ? "letter-grievance-tech" : "letter-grievance-fin";
     const current: string[] = notesObj.archivedDocIds || [];
     const exists = current.includes(grievanceDocKey) || current.includes(altKey);
-    const updated = exists
-      ? current.filter((id: string) => id !== grievanceDocKey && id !== altKey)
-      : [...current, grievanceDocKey];
 
-    notesObj.archivedDocIds = updated;
+    if (exists) {
+      notesObj.archivedDocIds = current.filter((id: string) => id !== grievanceDocKey && id !== altKey);
+      try {
+        await api.patch(`/operations/${op.id}`, { notes: JSON.stringify(notesObj) });
+        toast.success(
+          `تمت إزالة ${isTech ? "خطاب التظلم الفني" : "خطاب التظلم المالي"} من مستندات الأرشيف 📂`
+        );
+        onRefresh();
+      } catch (err: any) {
+        toast.error("فشل تحديث حالة الأرشيف: " + (err?.message || ""));
+      } finally {
+        setAddingToArchive(false);
+      }
+      return;
+    }
 
     try {
-      await api.patch(`/operations/${op.id}`, {
-        notes: JSON.stringify(notesObj),
+      toast.info("جاري تجهيز وتوثيق نسخة PDF الرسمية لخطاب التظلم بالأرشيف...");
+      const docx = previewDocxBlob || (await generateGrievanceDocx());
+      const pdfBlob =
+        previewPdfBlob ||
+        (await getPdfBlobFromDocx(
+          docx,
+          `grievance_${isTech ? "tech" : "fin"}_${registrationNumber || op.serialNumber}.docx`
+        ));
+
+      const { versionName } = await saveLetterToArchiveWithVersion({
+        op,
+        docKey: grievanceDocKey,
+        title: isTech ? "خطاب التظلم الفني" : "خطاب التظلم المالي",
+        pdfBlob,
+        currentSnapshot,
+        docType: "LETTER",
+        companyId: selectedCompanyId,
+        registrationNumber,
       });
-      toast.success(
-        exists
-          ? `تمت إزالة ${isTech ? "خطاب التظلم الفني" : "خطاب التظلم المالي"} من مستندات الأرشيف وحزمة التقديم 📂`
-          : `تمت إضافة ${isTech ? "خطاب التظلم الفني" : "خطاب التظلم المالي"} إلى مستندات الأرشيف وحزمة التقديم بنجاح! 📦✨`
-      );
+
+      toast.success(`تمت إضافة المستند للأرشيف بنجاح (${versionName})! 📦✨`);
       onRefresh();
     } catch (err: any) {
-      toast.error("فشل تحديث حالة الأرشيف: " + (err?.message || ""));
+      toast.error("فشل حفظ المستند في الأرشيف: " + (err?.message || ""));
     } finally {
       setAddingToArchive(false);
     }
@@ -868,7 +1026,7 @@ export function GrievanceLetterSection({
             <Label className="text-xs font-bold text-foreground">الشركة المصدرة للخطاب</Label>
             <select
               value={selectedCompanyId}
-              onChange={(e) => setSelectedCompanyId(e.target.value)}
+              onChange={(e) => handleSelectCompany(e.target.value)}
               className="w-full bg-background border border-border rounded-xl px-3 py-2 text-xs font-bold text-foreground focus:ring-2 focus:ring-rose-500"
             >
               {(op.companies || []).map((c: any) => (
@@ -914,11 +1072,44 @@ export function GrievanceLetterSection({
           </div>
 
           <div className="space-y-1 sm:col-span-1">
-            <Label className="text-xs font-bold text-foreground">تاريخ تحرير التظلم</Label>
+            <Label className="text-xs font-bold text-foreground">تاريخ تحرير التظلم (Footer)</Label>
             <Input
               value={issueDate}
               onChange={(e) => setIssueDate(e.target.value)}
               placeholder="يوم/شهر/سنة"
+              className="h-9 text-xs font-mono font-bold text-center"
+            />
+          </div>
+        </div>
+
+        {/* حقول ترويسة الشركة (كود العملية، السجل التجاري، البطاقة الضريبية) */}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-3 border-t border-border/50">
+          <div className="space-y-1 sm:col-span-1">
+            <Label className="text-xs font-bold text-foreground">كود العملية بالشركة (Header) *</Label>
+            <Input
+              value={companyOpCode}
+              onChange={(e) => setCompanyOpCode(e.target.value)}
+              placeholder="A"
+              className="h-9 text-xs font-mono font-bold text-center"
+            />
+          </div>
+
+          <div className="space-y-1 sm:col-span-1">
+            <Label className="text-xs font-bold text-foreground">السجل التجاري (س . ت) *</Label>
+            <Input
+              value={companyCommercialRegister}
+              onChange={(e) => setCompanyCommercialRegister(e.target.value)}
+              placeholder="110200700036620"
+              className="h-9 text-xs font-mono font-bold text-center"
+            />
+          </div>
+
+          <div className="space-y-1 sm:col-span-1">
+            <Label className="text-xs font-bold text-foreground">البطاقة الضريبية (ب . ض) *</Label>
+            <Input
+              value={companyTaxCard}
+              onChange={(e) => setCompanyTaxCard(e.target.value)}
+              placeholder="658369652"
               className="h-9 text-xs font-mono font-bold text-center"
             />
           </div>
@@ -1015,6 +1206,21 @@ export function GrievanceLetterSection({
               placeholder="يوم/شهر/سنة"
               className="h-9 text-xs text-center font-mono font-bold"
             />
+          </div>
+
+          <div className="space-y-1 sm:col-span-4">
+            <Label className="text-xs font-bold text-foreground">
+              موضوع وسند التظلم (تظلم من ...) *
+            </Label>
+            <Input
+              value={grievanceSubject}
+              onChange={(e) => setGrievanceSubject(e.target.value)}
+              placeholder={isTech ? "نتيجة البت الفني – ميعاد الفتح الفني" : "نتيجة البت المالي وفض المظاريف المالية"}
+              className="h-9 text-xs font-bold text-foreground bg-background"
+            />
+            <p className="text-[11px] text-muted-foreground">
+              يحدد نص موضوع التظلم في السطر الرئيسي بالخطاب (مثل: نتيجة البت الفني – ميعاد الفتح الفني).
+            </p>
           </div>
 
           <div className="space-y-1 sm:col-span-4">
@@ -1320,7 +1526,7 @@ export function GrievanceLetterSection({
                         ? "تنبيه هام: هذا الخطاب يحتوي على تعديلات جديدة لم يتم رفعها سحابياً — يرجى الضغط على 'إعادة الرفع والتحديث' لكي يتطابق الباركود مع أحدث بيانات!"
                         : null
                     }
-                    onUploadCloud={() => handleUploadToCloud()}
+                    onUploadCloud={() => handleUploadToCloud(true)}
                     isUploadingCloud={uploadingCloud}
                   />
                 )}

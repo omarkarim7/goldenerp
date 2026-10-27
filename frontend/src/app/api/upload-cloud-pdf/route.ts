@@ -37,7 +37,9 @@ export async function POST(req: NextRequest) {
       credentials: { accessKeyId, secretAccessKey },
     });
 
-    const key = `official_docs/${finalFileName}`;
+    const safeKeySuffix = `${Buffer.from(finalFileName).toString("hex").slice(0, 24)}.pdf`;
+    const key = `official_docs/${safeKeySuffix}`;
+    const contentDisposition = `inline; filename="official_document.pdf"; filename*=UTF-8''${encodeURIComponent(finalFileName)}`;
 
     await s3.send(
       new PutObjectCommand({
@@ -45,7 +47,7 @@ export async function POST(req: NextRequest) {
         Key: key,
         Body: buffer,
         ContentType: "application/pdf",
-        ContentDisposition: `inline; filename="${finalFileName}"`,
+        ContentDisposition: contentDisposition,
       })
     );
 
@@ -61,7 +63,7 @@ export async function POST(req: NextRequest) {
           Bucket: bucketName,
           Key: key,
           ResponseContentType: "application/pdf",
-          ResponseContentDisposition: `inline; filename="${finalFileName}"`,
+          ResponseContentDisposition: contentDisposition,
         }),
         { expiresIn: 604800 }
       );
@@ -103,7 +105,9 @@ export async function GET(req: NextRequest) {
       credentials: { accessKeyId, secretAccessKey },
     });
 
-    const key = `official_docs/${finalFileName}`;
+    const safeKeySuffix = `${Buffer.from(finalFileName).toString("hex").slice(0, 24)}.pdf`;
+    const key = `official_docs/${safeKeySuffix}`;
+    const contentDisposition = `inline; filename="official_document.pdf"; filename*=UTF-8''${encodeURIComponent(finalFileName)}`;
     const publicDomain = process.env.R2_PUBLIC_DOMAIN;
     let directUrl: string;
 
@@ -116,7 +120,7 @@ export async function GET(req: NextRequest) {
           Bucket: bucketName,
           Key: key,
           ResponseContentType: "application/pdf",
-          ResponseContentDisposition: `inline; filename="${finalFileName}"`,
+          ResponseContentDisposition: contentDisposition,
         }),
         { expiresIn: 604800 }
       );

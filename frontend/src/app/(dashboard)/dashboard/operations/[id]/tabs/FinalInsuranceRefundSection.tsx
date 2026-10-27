@@ -518,7 +518,22 @@ export function FinalInsuranceRefundSection({
       }
     }
 
-    docXml = docXml.replace(/خانه خاليه للملاحظات/g, escapeXml(letterNotes));
+    // ━━━ إدراج خانة الملاحظات الإضافية بدقة ووضوح في متن الخطاب ━━━
+    if (letterNotes && letterNotes.trim()) {
+      const cleanNotesText = letterNotes.trim();
+      if (docXml.includes("خانه خاليه للملاحظات")) {
+        docXml = docXml.replace(/خانه خاليه للملاحظات/g, escapeXml(cleanNotesText));
+      } else {
+        const p9Idx = docXml.indexOf("وتفضلو بقبول");
+        if (p9Idx !== -1) {
+          const pStart = Math.max(docXml.lastIndexOf("<w:p ", p9Idx), docXml.lastIndexOf("<w:p>", p9Idx));
+          if (pStart !== -1) {
+            const notesParagraphXml = `<w:p><w:pPr><w:spacing w:before="120" w:after="120" w:line="240" w:lineRule="auto"/><w:ind w:left="-567"/><w:jc w:val="highKashida"/><w:rPr><w:rFonts w:ascii="Arabic Typesetting" w:hAnsi="Arabic Typesetting" w:cs="Arabic Typesetting"/><w:b/><w:bCs/><w:sz w:val="32"/><w:szCs w:val="32"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr></w:pPr><w:r><w:rPr><w:rFonts w:ascii="Arabic Typesetting" w:hAnsi="Arabic Typesetting" w:cs="Arabic Typesetting"/><w:b/><w:bCs/><w:sz w:val="32"/><w:szCs w:val="32"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t xml:space="preserve">ملاحظات : ${escapeXml(cleanNotesText)}</w:t></w:r></w:p>`;
+            docXml = docXml.substring(0, pStart) + notesParagraphXml + docXml.substring(pStart);
+          }
+        }
+      }
+    }
 
     // تنظيف علامات التمييز من نص المستند
     docXml = docXml.replace(/<w:highlight\s+[^>]*\/>/gi, "").replace(/<w:color\s+w:val="(?:red|FF0000)"[^>]*\/>/gi, "");

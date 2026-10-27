@@ -2694,7 +2694,11 @@ try {
         credentials: { accessKeyId, secretAccessKey },
       });
 
-      const key = `official_docs/${finalName}`;
+      // مفتاح S3 آمن تماماً وبصيغة ASCII لمنع أي تعارض في توقيع SigV4
+      const safeKeySuffix = `${Buffer.from(finalName).toString('hex').slice(0, 24)}.pdf`;
+      const key = `official_docs/${safeKeySuffix}`;
+      // ترويسة Content-Disposition متوافقة 100% مع معيار RFC 5987 و RFC 6266 لدعم الأسماء العربية بدون أخطاء في التوقيع
+      const contentDisposition = `inline; filename="official_document.pdf"; filename*=UTF-8''${encodeURIComponent(finalName)}`;
 
       await s3.send(
         new PutObjectCommand({
@@ -2702,7 +2706,7 @@ try {
           Key: key,
           Body: pdfBuffer,
           ContentType: 'application/pdf',
-          ContentDisposition: `inline; filename="${finalName}"`,
+          ContentDisposition: contentDisposition,
         })
       );
 
@@ -2719,7 +2723,7 @@ try {
             Bucket: bucketName,
             Key: key,
             ResponseContentType: 'application/pdf',
-            ResponseContentDisposition: `inline; filename="${finalName}"`,
+            ResponseContentDisposition: contentDisposition,
           }),
           { expiresIn: 604800 }
         );
@@ -2751,7 +2755,9 @@ try {
       credentials: { accessKeyId, secretAccessKey },
     });
 
-    const key = `official_docs/${finalName}`;
+    const safeKeySuffix = `${Buffer.from(finalName).toString('hex').slice(0, 24)}.pdf`;
+    const key = `official_docs/${safeKeySuffix}`;
+    const contentDisposition = `inline; filename="official_document.pdf"; filename*=UTF-8''${encodeURIComponent(finalName)}`;
     const publicDomain = process.env.R2_PUBLIC_DOMAIN;
     if (publicDomain && publicDomain.startsWith('http')) {
       return `${publicDomain.replace(/\/+$/, '')}/${key}`;
@@ -2763,7 +2769,7 @@ try {
         Bucket: bucketName,
         Key: key,
         ResponseContentType: 'application/pdf',
-        ResponseContentDisposition: `inline; filename="${finalName}"`,
+        ResponseContentDisposition: contentDisposition,
       }),
       { expiresIn: 604800 }
     );
