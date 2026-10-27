@@ -49,6 +49,7 @@ import {
   generateHighResDocQrBuffer,
   getStandardDocQrPayload,
   buildOfficialSignaturesTableXml,
+  replaceDocxRecipient,
 } from "./letter-utils";
 import JSZip from "jszip";
 import QRCode from "qrcode";
@@ -206,6 +207,33 @@ export function TabDeclarations({
       setTechnicalOpeningDate(getOperationTechnicalOpeningDate(op));
     }
   }, [op.name, op.externalNumber, op.serialNumber, op.authority, op.dates, savedDec]);
+
+  // مزامنة تلقائية لبيانات الشركة (السجل التجاري والبطاقة الضريبية والكود) عند اختيارها
+  useEffect(() => {
+    if (currentCompanyLink || currentCompany) {
+      if (currentCompany?.commercialRegister) {
+        setCompanyCommercialRegister(currentCompany.commercialRegister);
+      }
+      if (currentCompany?.taxCard) {
+        setCompanyTaxCard(currentCompany.taxCard);
+      }
+      if (currentCompany?.phone) {
+        setPhoneWhatsapp(currentCompany.phone);
+      }
+      if (currentCompany?.mobile) {
+        setPhoneMobile(currentCompany.mobile);
+      }
+      if (currentCompany?.address) {
+        setCompanyAddress(currentCompany.address);
+      }
+      if (currentCompany?.email) {
+        setCompanyEmail(currentCompany.email);
+      }
+      if (currentCompanyLink?.displayCode) {
+        setCompanyOpCode(currentCompanyLink.displayCode);
+      }
+    }
+  }, [currentCompany, currentCompanyLink]);
 
   // ━━━ 3. التوقيعات والاعتمادات والملاحظات ━━━
   const [specialistTitle, setSpecialistTitle] = useState(() => {
@@ -410,11 +438,7 @@ export function TabDeclarations({
     docXml = injectSingleQrIntoDocXml(docXml, qrDrawingXml, escapeXml(registrationNumber));
 
     // لقب وصفة المرسل إليه
-    docXml = docXml.replace(/الأستاذ/g, escapeXml(recipientPrefix));
-    docXml = docXml.replace(
-      /مدير الادارة العامة للمشتريات والمخازن بجامعة دمنهور/g,
-      escapeXml(recipientTitleAndAuthority)
-    );
+    docXml = replaceDocxRecipient(docXml, recipientPrefix, recipientTitleAndAuthority);
 
     // ━━━ استبدال متغيرات إقرارات الشروط والتأمينات ━━━
     docXml = docXml.replace(/اسم العملية المسجله[\s\.]*/g, escapeXml(operationRegisteredName) + " ");

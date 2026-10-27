@@ -759,7 +759,7 @@ export function replaceDocxRecipient(
   const cleanTitle = escapeXml((recipientTitleAndAuthority || "مدير الادارة العامة للمشتريات والمخازن").trim());
 
   // مطابقة فقرة المرسل إليه في كافة قوالب الوورد الرسمية
-  const recipientPattern = /<w:p\b[^>]*>(?:(?!<\/w:p>)[\s\S])*?السيد(?:(?!<\/w:p>)[\s\S])*?(?:مشتريات|دمنهو)(?:(?!<\/w:p>)[\s\S])*?<\/w:p>/;
+  const recipientPattern = /<w:p\b[^>]*>(?:(?!<\/w:p>)[\s\S])*?السيد(?:(?!<\/w:p>)[\s\S])*?(?:مشتريات|دمنهو|الأستاذ|المهندس|الدكتور|المستشار|عميد|رئيس|مدير|المحترم|\/)(?:(?!<\/w:p>)[\s\S])*?<\/w:p>/;
 
   const centeredRecipientXml = `<w:p><w:pPr><w:spacing w:after="0"/><w:jc w:val="center"/><w:rPr><w:rFonts w:ascii="Arabic Typesetting" w:hAnsi="Arabic Typesetting" w:cs="Arabic Typesetting"/><w:b/><w:bCs/><w:sz w:val="50"/><w:szCs w:val="50"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr></w:pPr><w:r><w:rPr><w:rFonts w:ascii="Arabic Typesetting" w:hAnsi="Arabic Typesetting" w:cs="Arabic Typesetting" w:hint="cs"/><w:b/><w:bCs/><w:sz w:val="50"/><w:szCs w:val="50"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t xml:space="preserve">السيد ${cleanPrefix} / ${cleanTitle}</w:t></w:r></w:p>`;
 

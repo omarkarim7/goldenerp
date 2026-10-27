@@ -1,11 +1,13 @@
 "use client";
 
 import React, { useState, useMemo, useEffect } from "react";
+import Link from "next/link";
 import {
   ShieldCheck, Printer, Download, Eye, FileText, Check, AlertCircle,
   Building2, Calendar, Hash, FileCheck, Copy, ArrowRight, ArrowLeft,
   Paperclip, QrCode, Cloud, Globe, ExternalLink, CheckCircle2, RotateCcw,
-  Save, Lock, Sparkles, Receipt, Landmark, RefreshCw, Trash2, Edit, X, Plus, Loader2, FolderOpen, Clock
+  Save, Lock, Sparkles, Receipt, Landmark, RefreshCw, Trash2, Edit, X, Plus, Loader2, FolderOpen, Clock,
+  Percent
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -179,10 +181,125 @@ export function TabFinalGuarantee({
     }
   }, [op.name, op.externalNumber, op.serialNumber, op.authority, op.dates, savedSettings]);
 
+  // System Setting for Final Guarantee Rate (default 5%)
+  const [systemFinalRate, setSystemFinalRate] = useState<number>(5);
+
+  // Calculation mode: percentage or direct amount
+  const [calcMode, setCalcMode] = useState<"PERCENTAGE" | "DIRECT_AMOUNT">(() => {
+    return savedSettings?.calcMode || "PERCENTAGE";
+  });
+
+  // Guarantee Rate % (default from savedSettings or system setting)
+  const [guaranteeRate, setGuaranteeRate] = useState<number>(() => {
+    if (savedSettings?.guaranteeRate !== undefined) {
+      return Number(savedSettings.guaranteeRate);
+    }
+    return 5;
+  });
+
   // Guarantee Amounts
-  const [amountPaid, setAmountPaid] = useState<string>(() => savedSettings?.amountPaid || String(calculated5Percent));
   const [totalAwardAmount, setTotalAwardAmount] = useState<string>(() => savedSettings?.totalAwardAmount || String(totalAwardPrice));
+  const [amountPaid, setAmountPaid] = useState<string>(() => {
+    if (savedSettings?.amountPaid) return savedSettings.amountPaid;
+    const initialRate = savedSettings?.guaranteeRate !== undefined ? Number(savedSettings.guaranteeRate) : 5;
+    return String(Math.round(totalAwardPrice * (initialRate / 100)));
+  });
   const [initialGuaranteeFieldAmount, setInitialGuaranteeFieldAmount] = useState<string>(() => savedSettings?.initialGuaranteeFieldAmount || String(initialGuarAmount));
+
+  // الربط التلقائي بنسبة التأمين النهائي من إعدادات النظام العامة
+  useEffect(() => {
+    let isMounted = true;
+    api
+      .get("/settings")
+      .then((res) => {
+        if (!isMounted) return;
+        if (Array.isArray(res.data)) {
+          const found = res.data.find((s: any) => s.key === "final_guarantee_rate");
+          if (found && found.value) {
+            const parsed = Number(found.value);
+            if (!isNaN(parsed) && parsed > 0) {
+              setSystemFinalRate(parsed);
+              // إذا لم تكن هذه العملية قد حفظت نسبة مخصصة مسبقاً، يتم تطبيق نسبة الإعدادات العامة تلقائياً
+              if (savedSettings?.guaranteeRate === undefined) {
+                setGuaranteeRate(parsed);
+                const award = Number(totalAwardAmount || totalAwardPrice);
+                const computed = Math.round(award * (parsed / 100));
+                setAmountPaid(String(computed));
+              }
+            }
+          }
+        }
+      })
+      .catch((err) => {
+        console.warn("Could not fetch system settings in TabFinalGuarantee:", err);
+      });
+    return () => {
+      isMounted = false;
+    };
+  }, [savedSettings?.guaranteeRate, totalAwardAmount, totalAwardPrice]);
+
+  // مزامنة تلقائية لبيانات الشركة (السجل والبطاقة والكود والعنوان) عند تغيير اختيار الشركة
+  useEffect(() => {
+    if (currentCompanyLink || currentCompany) {
+      if (currentCompany?.commercialRegister) {
+        setCompanyCommercialRegister(currentCompany.commercialRegister);
+      }
+      if (currentCompany?.taxCard) {
+        setCompanyTaxCard(currentCompany.taxCard);
+      }
+      if (currentCompany?.phone) {
+        setPhoneWhatsapp(currentCompany.phone);
+      }
+      if (currentCompany?.mobile) {
+        setPhoneMobile(currentCompany.mobile);
+      }
+      if (currentCompany?.address) {
+        setCompanyAddress(currentCompany.address);
+      }
+      if (currentCompany?.email) {
+        setCompanyEmail(currentCompany.email);
+      }
+      if (currentCompanyLink?.displayCode) {
+        setCompanyOpCode(currentCompanyLink.displayCode);
+      }
+    }
+  }, [currentCompany, currentCompanyLink]);
+
+  // دوال الحساب ثنائي الاتجاه بين النسبة المئوية والمبلغ بالجنيه
+  const handleRateChange = (newRate: number) => {
+    const safeRate = Math.max(0, newRate);
+    setGuaranteeRate(safeRate);
+    const award = Number(totalAwardAmount) || totalAwardPrice;
+    const computed = Math.round(award * (safeRate / 100));
+    setAmountPaid(String(computed));
+  };
+
+  const handleAmountPaidChange = (newAmountStr: string) => {
+    setAmountPaid(newAmountStr);
+    const num = Number(newAmountStr);
+    const award = Number(totalAwardAmount) || totalAwardPrice;
+    if (!isNaN(num) && award > 0) {
+      const computedRate = Number(((num / award) * 100).toFixed(2));
+      setGuaranteeRate(computedRate);
+    }
+  };
+
+  const handleTotalAwardChange = (newTotalStr: string) => {
+    setTotalAwardAmount(newTotalStr);
+    const newTotal = Number(newTotalStr);
+    if (!isNaN(newTotal) && newTotal > 0) {
+      if (calcMode === "PERCENTAGE") {
+        const computed = Math.round(newTotal * (guaranteeRate / 100));
+        setAmountPaid(String(computed));
+      } else {
+        const currentPaid = Number(amountPaid);
+        if (!isNaN(currentPaid)) {
+          const computedRate = Number(((currentPaid / newTotal) * 100).toFixed(2));
+          setGuaranteeRate(computedRate);
+        }
+      }
+    }
+  };
 
   // Deduction Fields (for deduction templates)
   const [deductionOperationName, setDeductionOperationName] = useState(() => savedSettings?.deductionOperationName || "توريد مستلزمات مكتبية للجامعة");
@@ -290,6 +407,8 @@ export function TabFinalGuarantee({
       amountPaid,
       totalAwardAmount,
       initialGuaranteeFieldAmount,
+      guaranteeRate,
+      calcMode,
       deductionOperationName,
       deductionMonth,
       deductionYear,
@@ -313,7 +432,7 @@ export function TabFinalGuarantee({
     companyTaxCard, phoneWhatsapp, phoneMobile, companyAddress, companyEmail, outgoingDate,
     recipientPrefix, recipientTitleAndAuthority, operationRegisteredName, operationNumber, tenderMethod,
     operationScope, fiscalYear, technicalOpeningDate, amountPaid, totalAwardAmount,
-    initialGuaranteeFieldAmount, deductionOperationName, deductionMonth, deductionYear,
+    initialGuaranteeFieldAmount, guaranteeRate, calcMode, deductionOperationName, deductionMonth, deductionYear,
     bankRecipientTitle, bankTargetAuthority, bankTargetAddress, bankAccountNumber, bankNameAndBranch,
     accountHolderName, accountNationalId, guaranteeDurationText, guaranteeStartDate, guaranteeEndDate,
     specialistTitle, specialistName, financeManagerName, boardChairman,
@@ -330,6 +449,8 @@ export function TabFinalGuarantee({
       setRegistrationNumber(snap.registrationNumber);
       setAmountPaid(snap.amountPaid);
       setTotalAwardAmount(snap.totalAwardAmount);
+      if (snap.guaranteeRate !== undefined) setGuaranteeRate(snap.guaranteeRate);
+      if (snap.calcMode) setCalcMode(snap.calcMode);
       setSpecialistName(snap.specialistName);
       setFinanceManagerName(snap.financeManagerName);
       if (snap.boardChairman) setBoardChairman(sanitizeChairmanTitle(snap.boardChairman));
@@ -467,11 +588,16 @@ export function TabFinalGuarantee({
     docXml = docXml.replace(/اسم العملية المسجله[\s\.]*/g, escapeXml(operationRegisteredName) + " ");
     docXml = docXml.replace(/365/g, escapeXml(operationNumber));
 
-    // 6. المبالغ والتفقيط
+    // 6. المبالغ والتفقيط والنسب المئوية
     docXml = docXml.replace(/37547/g, String(numPaid));
     docXml = docXml.replace(/سبعة وثلاثون ألفا وخمسمائة وسبعه وأربعون/g, tafqeetPaid);
     docXml = docXml.replace(/47547/g, String(numTotal));
     docXml = docXml.replace(/سبعه وأربعون ألفا وخمسمائة وسبعه وأربعون/g, tafqeetTotal);
+    // استبدال نسبة التأمين النهائي ديناميكياً بدلاً من الثابت 5%
+    docXml = docXml.replace(/بنسبة\s*5\s*%/g, `بنسبة ${guaranteeRate} %`);
+    docXml = docXml.replace(/النهائي\s*5\s*%/g, `النهائي ${guaranteeRate} %`);
+    docXml = docXml.replace(/5\s*%/g, `${guaranteeRate} %`);
+    docXml = docXml.replace(/٥\s*٪/g, `${guaranteeRate} ٪`);
 
     // 7. بيانات الخصم من مستحقات عملية أخرى
     if (type === "DEDUCTION" || type === "DEDUCTION_AND_INITIAL") {
@@ -1085,29 +1211,225 @@ export function TabFinalGuarantee({
       <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
         <div className="p-4 rounded-2xl bg-card border border-border shadow-xs">
           <span className="text-xs text-muted-foreground block mb-1">قيمة العقد / الترسية</span>
-          <span className="text-lg font-black text-foreground block font-mono">{formatCurrency(totalAwardPrice)}</span>
-          <span className="text-[11px] text-muted-foreground block mt-0.5">{tafqeetArabic(totalAwardPrice)}</span>
+          <span className="text-lg font-black text-foreground block font-mono">{formatCurrency(Number(totalAwardAmount) || totalAwardPrice)}</span>
+          <span className="text-[11px] text-muted-foreground block mt-0.5">{tafqeetArabic(Number(totalAwardAmount) || totalAwardPrice)}</span>
         </div>
 
-        <div className="p-4 rounded-2xl bg-card border border-border shadow-xs">
-          <span className="text-xs text-muted-foreground block mb-1">قيمة التأمين النهائي (5%)</span>
-          <span className="text-lg font-black text-emerald-600 dark:text-emerald-400 block font-mono">{formatCurrency(calculated5Percent)}</span>
-          <span className="text-[11px] text-muted-foreground block mt-0.5">5% ملزمة قانونياً خلال 10 أيام</span>
+        <div className="p-4 rounded-2xl bg-card border border-border shadow-xs relative overflow-hidden group">
+          <div className="flex items-center justify-between mb-1">
+            <span className="text-xs text-muted-foreground block">قيمة التأمين النهائي ({guaranteeRate}%)</span>
+            {guaranteeRate === systemFinalRate ? (
+              <Badge className="bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20 text-[10px] px-1.5 py-0">
+                إعدادات النظام
+              </Badge>
+            ) : (
+              <Badge className="bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20 text-[10px] px-1.5 py-0">
+                نسبة مخصصة
+              </Badge>
+            )}
+          </div>
+          <span className="text-lg font-black text-emerald-600 dark:text-emerald-400 block font-mono">
+            {formatCurrency(Number(amountPaid) || 0)}
+          </span>
+          <span className="text-[11px] text-muted-foreground block mt-0.5">
+            {guaranteeRate}% ملزمة قانونياً خلال 10 أيام
+          </span>
         </div>
 
         <div className="p-4 rounded-2xl bg-card border border-border shadow-xs">
           <span className="text-xs text-muted-foreground block mb-1">التأمين الابتدائي المحجوز</span>
-          <span className="text-lg font-black text-blue-600 dark:text-blue-400 block font-mono">{formatCurrency(initialGuarAmount)}</span>
+          <span className="text-lg font-black text-blue-600 dark:text-blue-400 block font-mono">
+            {formatCurrency(Number(initialGuaranteeFieldAmount) || initialGuarAmount)}
+          </span>
           <span className="text-[11px] text-muted-foreground block mt-0.5">متاح تحويله كجزء من النهائي</span>
         </div>
 
         <div className="p-4 rounded-2xl bg-card border border-border shadow-xs">
           <span className="text-xs text-muted-foreground block mb-1">الفارق الواجب سداده نقداً</span>
           <span className="text-lg font-black text-amber-600 dark:text-amber-400 block font-mono">
-            {formatCurrency(Math.max(0, calculated5Percent - initialGuarAmount))}
+            {formatCurrency(Math.max(0, (Number(amountPaid) || 0) - (Number(initialGuaranteeFieldAmount) || initialGuarAmount)))}
           </span>
           <span className="text-[11px] text-muted-foreground block mt-0.5">عند اختيار تحويل الابتدائي</span>
         </div>
+      </div>
+
+      {/* ━━━ Final Guarantee Calculator & System Settings Integration Card ━━━ */}
+      <div className="p-4.5 rounded-2xl bg-gradient-to-br from-card via-card to-emerald-500/5 border border-emerald-500/20 shadow-xs space-y-4">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 pb-3 border-b border-border/80">
+          <div className="flex items-center gap-2.5">
+            <div className="w-9 h-9 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-600 dark:text-emerald-400 shadow-xs">
+              <Percent className="w-5 h-5" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h4 className="text-sm font-black text-foreground">
+                  حاسبة نسبة وقيمة التأمين النهائي والربط بالإعدادات العامة
+                </h4>
+                <Badge className="bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-500/30 text-[10.5px] font-bold">
+                  حساب ثنائي الاتجاه
+                </Badge>
+              </div>
+              <p className="text-[11px] text-muted-foreground mt-0.5">
+                يمكنك التبديل بين إدخال النسبة المئوية أو إدخال القيمة المباشرة ليتم حساب النسبة تلقائياً، مع ربط كامل بإعدادات المنظومة
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 self-end sm:self-auto">
+            <Link
+              href="/dashboard/settings"
+              target="_blank"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold text-muted-foreground hover:text-foreground bg-muted/60 hover:bg-muted border border-border transition-colors shadow-xs"
+              title="الانتقال لصفحة الإعدادات لتعديل نسبة التأمين النهائي الافتراضية للمنظومة"
+            >
+              <span>إعدادات النظام العامة ({systemFinalRate}%)</span>
+              <ExternalLink className="w-3.5 h-3.5" />
+            </Link>
+          </div>
+        </div>
+
+        {/* Calculation Mode Toggle */}
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+          <div className="flex items-center gap-1 p-1 rounded-xl bg-muted/60 border border-border">
+            <button
+              type="button"
+              onClick={() => setCalcMode("PERCENTAGE")}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                calcMode === "PERCENTAGE"
+                  ? "bg-background text-foreground shadow-xs font-black"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              حساب بالنسبة المئوية (%)
+            </button>
+            <button
+              type="button"
+              onClick={() => setCalcMode("DIRECT_AMOUNT")}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                calcMode === "DIRECT_AMOUNT"
+                  ? "bg-background text-foreground shadow-xs font-black"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              إدخال القيمة المباشرة (ج.م)
+            </button>
+          </div>
+
+          {/* Quick Presets for Percentage */}
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <span className="text-[11px] text-muted-foreground font-medium ml-1">نسب سريعة:</span>
+            {[
+              { label: `${systemFinalRate}% (النظام)`, rate: systemFinalRate, isDefault: true },
+              { label: "10%", rate: 10 },
+              { label: "15%", rate: 15 },
+            ].map((preset) => (
+              <Button
+                key={preset.label}
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setCalcMode("PERCENTAGE");
+                  handleRateChange(preset.rate);
+                }}
+                className={`h-7 px-2.5 text-[11px] font-bold rounded-lg border-border ${
+                  guaranteeRate === preset.rate
+                    ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-500/40"
+                    : "hover:bg-muted"
+                }`}
+              >
+                {preset.label}
+              </Button>
+            ))}
+            {guaranteeRate !== systemFinalRate && (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  setCalcMode("PERCENTAGE");
+                  handleRateChange(systemFinalRate);
+                }}
+                className="h-7 px-2 text-[11px] text-amber-600 dark:text-amber-400 font-bold hover:bg-amber-500/10 rounded-lg gap-1"
+                title="استعادة النسبة الافتراضية المحددة في إعدادات المنظومة"
+              >
+                <RotateCcw className="w-3 h-3" />
+                <span>استعادة {systemFinalRate}%</span>
+              </Button>
+            )}
+          </div>
+        </div>
+
+        {/* Dynamic Controls depending on Calc Mode */}
+        {calcMode === "PERCENTAGE" ? (
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 p-3.5 rounded-xl bg-background/60 border border-border/60">
+            <div className="space-y-1.5">
+              <Label className="text-xs font-bold text-foreground flex items-center justify-between">
+                <span>نسبة التأمين النهائي المطلوبة (%) *</span>
+                <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-semibold">
+                  {guaranteeRate === systemFinalRate ? "مطابق لإعدادات النظام" : "نسبة مخصصة"}
+                </span>
+              </Label>
+              <div className="relative">
+                <Input
+                  type="number"
+                  step="0.1"
+                  min="0"
+                  max="100"
+                  value={guaranteeRate}
+                  onChange={(e) => handleRateChange(Number(e.target.value))}
+                  className="h-10 text-sm font-mono font-black rounded-xl text-center pr-8 pl-8"
+                />
+                <span className="absolute left-3 top-2.5 text-xs text-muted-foreground font-bold pointer-events-none">%</span>
+              </div>
+            </div>
+
+            <div className="space-y-1.5 sm:col-span-2">
+              <div className="flex items-center justify-between">
+                <Label className="text-xs font-bold text-foreground">قيمة التأمين النهائي المحسوبة آلياً *</Label>
+                <span className="text-[10.5px] text-muted-foreground font-mono truncate max-w-[280px]">
+                  {tafqeetArabic(Number(amountPaid))}
+                </span>
+              </div>
+              <div className="h-10 px-3.5 rounded-xl bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-between font-mono font-black text-emerald-700 dark:text-emerald-300 text-sm">
+                <span>{formatCurrency(Number(amountPaid) || 0)}</span>
+                <span className="text-[11px] font-bold text-emerald-600/80 dark:text-emerald-400/80 font-sans">
+                  = {guaranteeRate}% من {formatCurrency(Number(totalAwardAmount) || totalAwardPrice)}
+                </span>
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 p-3.5 rounded-xl bg-background/60 border border-border/60">
+            <div className="space-y-1.5 sm:col-span-2">
+              <div className="flex items-center justify-between">
+                <Label className="text-xs font-bold text-foreground">أدخل قيمة التأمين النهائي المطلوب مباشرة (ج.م) *</Label>
+                <span className="text-[10.5px] text-muted-foreground font-mono truncate max-w-[280px]">
+                  {tafqeetArabic(Number(amountPaid))}
+                </span>
+              </div>
+              <div className="relative">
+                <Input
+                  type="number"
+                  value={amountPaid}
+                  onChange={(e) => handleAmountPaidChange(e.target.value)}
+                  className="h-10 text-sm font-mono font-black rounded-xl text-center pl-12 pr-4 text-emerald-600 dark:text-emerald-400"
+                />
+                <span className="absolute left-3 top-2.5 text-xs text-muted-foreground font-bold pointer-events-none">ج.م</span>
+              </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label className="text-xs font-bold text-foreground">النسبة المحسوبة تلقائياً (%)</Label>
+              <div className="h-10 px-3.5 rounded-xl bg-blue-500/10 border border-blue-500/30 flex items-center justify-between font-mono font-black text-blue-700 dark:text-blue-300 text-sm">
+                <span>{guaranteeRate}%</span>
+                <span className="text-[10px] font-bold text-blue-600/80 dark:text-blue-400/80 font-sans">
+                  من إجمالي الترسية
+                </span>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -1521,14 +1843,16 @@ export function TabFinalGuarantee({
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div className="space-y-1.5">
                     <div className="flex items-center justify-between">
-                      <Label className="text-xs font-bold text-foreground">مبلغ السداد المطلوب بالخطاب (ج.م) *</Label>
+                      <Label className="text-xs font-bold text-foreground">
+                        مبلغ السداد المطلوب بالخطاب (ج.م) * ({guaranteeRate}%)
+                      </Label>
                       <span className="text-[10px] text-muted-foreground font-mono">{tafqeetArabic(Number(amountPaid))}</span>
                     </div>
                     <Input
                       type="number"
                       value={amountPaid}
-                      onChange={(e) => setAmountPaid(e.target.value)}
-                      className="h-9.5 text-xs font-mono font-bold rounded-xl text-center"
+                      onChange={(e) => handleAmountPaidChange(e.target.value)}
+                      className="h-9.5 text-xs font-mono font-bold rounded-xl text-center text-emerald-600 dark:text-emerald-400"
                     />
                   </div>
 
@@ -1540,7 +1864,7 @@ export function TabFinalGuarantee({
                     <Input
                       type="number"
                       value={totalAwardAmount}
-                      onChange={(e) => setTotalAwardAmount(e.target.value)}
+                      onChange={(e) => handleTotalAwardChange(e.target.value)}
                       className="h-9.5 text-xs font-mono font-bold rounded-xl text-center"
                     />
                   </div>
