@@ -534,11 +534,19 @@ export function GrievanceLetterSection({
       }
     }
 
-    // الطلب الختامي
-    docXml = docXml.replace(
-      /(الرجاء من سيادتكم التكرم\s*)(?:\.{3,}|[\s\._]*)/g,
-      `$1 ${escapeXml(grievanceRequest || "باتخاذ اللازم قانوناً وإلغاء الاستبعاد")} `
-    );
+    // الطلب الختامي (استبدال النقط بعد عبارة: الرجاء من سيادتكم التكرم ...)
+    const cleanGrievanceReq = (grievanceRequest || "")
+      .replace(/^(لذا\s*)?(الرجاء|رجاء)\s*من\s*سيادتكم\s*التكرم\s*/i, "")
+      .trim() ||
+      (isTech
+        ? "بإعادة فحص العطاء الفني وإلغاء قرار الاستبعاد واستكمال إجراءات فتح المظروف المالي للشركة وفقاً لأحكام القانون 182 لسنة 2018."
+        : "بإعادة التدقيق المحاسبي والمفاضلة المالية وترسية العملية على شركتنا باعتبار عرضنا الأفضل شروطاً والأمثل سعراً.");
+
+    const reqPattern = /<w:p\b[^>]*>(?:(?!<\/w:p>)[\s\S])*?(?:الرجاء|لرجاء)\s*من\s*سيادتكم\s*التكرم(?:(?!<\/w:p>)[\s\S])*?<\/w:p>/;
+    if (reqPattern.test(docXml)) {
+      const targetReqXml = `<w:p><w:pPr><w:spacing w:before="120" w:after="120" w:line="320" w:lineRule="auto"/><w:ind w:left="-567" w:hanging="283"/><w:jc w:val="both"/><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial" w:hint="cs"/><w:b/><w:bCs/><w:sz w:val="28"/><w:szCs w:val="28"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr></w:pPr><w:r><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial" w:hint="cs"/><w:b/><w:bCs/><w:sz w:val="28"/><w:szCs w:val="28"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t xml:space="preserve">الرجاء من سيادتكم التكرم ${escapeXml(cleanGrievanceReq)}</w:t></w:r></w:p>`;
+      docXml = docXml.replace(reqPattern, targetReqXml);
+    }
 
     // 4. جدول التوقيعات والاعتمادات الرسمية الثلاثي المتوازن في صف أفقي واحد (بدون أي التفاف Wrap)
     const fullSigBlockRegex = /<w:p\b[^>]*>(?:(?!<\/w:p>)[\s\S])*?(?:المختص|المهندس).*?رئيس مجلس\s*ا?ل?ادارة(?:(?!<\/w:p>)[\s\S])*?<\/w:p>/;
@@ -601,17 +609,56 @@ export function GrievanceLetterSection({
 
     zip.file("word/document.xml", docXml);
 
-    // 3. ترويسة وتذييل الشركة في القالب
+    // 3. ترويسة وتذييل الشركة في القالب وضبط محاذاة أرقام السجل والبطاقة وكود العملية لليسار تماماً
+    const cleanCr = (companyCommercialRegister || "").trim();
+    const cleanTax = (companyTaxCard || "").trim();
+    const cleanCode = (companyOpCode || "").trim();
+    const codeFormatted = `( ${cleanCode} )`;
+
     const headerFiles = ["word/header1.xml", "word/header2.xml", "word/header3.xml"];
     for (const hf of headerFiles) {
       const hFile = zip.file(hf);
       if (hFile) {
         let hXml = await hFile.async("text");
         hXml = hXml.replace(/جولدن سرفيس/g, escapeXml(currentCompany?.name || "جولدن سرفيس"));
-        hXml = hXml.replace(/110200700036620/g, escapeXml(companyCommercialRegister || ""));
-        hXml = hXml.replace(/658369652/g, escapeXml(companyTaxCard || ""));
-        hXml = hXml.replace(/\(?\s*كود العملية بالشرك[ةه]\s*\)?/g, escapeXml(companyOpCode || ""));
+
+        // 1. موازنة مسافات السجل التجاري ليكون محاذياً لأقصى اليسار مثل باقي الخطابات
+        const crDiff = 15 - cleanCr.length;
+        if (crDiff > 0) {
+          const extraCrSpaces = " ".repeat(Math.round(crDiff * 1.8));
+          hXml = hXml.replace(
+            /(<w:t xml:space="preserve">)(\s{50,})(<\/w:t>[\s\S]*?س \. ت : )/g,
+            `$1$2${extraCrSpaces}$3`
+          );
+        }
+        hXml = hXml.replace(/110200700036620/g, escapeXml(cleanCr));
+
+        // 2. موازنة مسافات البطاقة الضريبية
+        const taxDiff = 9 - cleanTax.length;
+        if (taxDiff < 0) {
+          const toRemove = Math.min(Math.round(Math.abs(taxDiff) * 1.8), 20);
+          hXml = hXml.replace(
+            new RegExp(`(\\s{60,})(\\s{${toRemove}})(<\\/w:t>[\\s\\S]*?ب \\. ض : )`, "g"),
+            "$1$3"
+          );
+        }
+        hXml = hXml.replace(/658369652/g, escapeXml(cleanTax));
+
+        // 3. موازنة مسافات كود العملية بالأقواس لمنع انقلاب الاتجاه BiDi
+        const codeDiff = 22 - codeFormatted.length;
+        if (codeDiff > 0) {
+          const extraCodeSpaces = " ".repeat(Math.round(codeDiff * 1.5));
+          hXml = hXml.replace(
+            /(<w:t xml:space="preserve">)(\s{70,})(كود العمليه : )/g,
+            `$1$2${extraCodeSpaces}$3`
+          );
+        }
+        hXml = hXml.replace(/\(?\s*كود العملية بالشرك[ةه]\s*\)?/g, escapeXml(codeFormatted));
+
         hXml = hXml.replace(/رقم القيد\s*[:\s]*[\d\w\-\/]+/g, `رقم القيد : ${registrationNumber}`);
+        hXml = hXml.replace(/<w:highlight\s+[^>]*\/>/g, "");
+        hXml = hXml.replace(/<w:color\s+w:val="(red|FF0000)"[^>]*\/>/g, "");
+
         zip.file(hf, hXml);
       }
     }
@@ -1355,21 +1402,66 @@ export function GrievanceLetterSection({
         </div>
       </SectionCard>
 
-      {/* ━━━ SECTION 5: الطلب الختامي للتظلم ━━━ */}
+      {/* ━━━ SECTION 5: الطلب الختامي للتظلم (يحل محل النقط أسفل كلمة لذا) ━━━ */}
       <SectionCard
-        title="5. الطلب الختامي للتظلم (لذا الرجاء من سيادتكم التكرم ...)"
+        title="5. خانة الطلب الختامي للتظلم (بديل النقط الموضحة أسفل كلمة لذا)"
         icon={Sparkles}
         iconColor="text-amber-500"
+        badge={
+          <Badge className="bg-amber-500 text-white text-xs font-bold px-2 py-0.5">
+            يحل محل النقط (...) بالخطاب
+          </Badge>
+        }
       >
-        <div className="space-y-2">
-          <Label className="text-xs font-bold text-foreground">نص الطلب الرسمي الموجه للسلطة المختصة *</Label>
-          <Textarea
-            rows={3}
-            value={grievanceRequest}
-            onChange={(e) => setGrievanceRequest(e.target.value)}
-            placeholder="لذا الرجاء من سيادتكم التكرم بإعادة فحص العطاء الفني/المالي وإلغاء قرار الاستبعاد..."
-            className="text-xs rounded-xl leading-relaxed font-medium"
-          />
+        <div className="space-y-3">
+          <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 text-xs text-foreground flex items-center justify-between flex-wrap gap-2">
+            <span className="font-bold text-amber-900 dark:text-amber-200">
+              ✍️ هذا النص يوضع تلقائياً في الخطاب أمام عبارة: <strong>(الرجاء من سيادتكم التكرم ...)</strong> ويلغي النقط تماماً.
+            </span>
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={() =>
+                  setGrievanceRequest(
+                    isTech
+                      ? "بإعادة فحص العطاء الفني وإلغاء قرار الاستبعاد واستكمال إجراءات فتح المظروف المالي للشركة وفقاً لأحكام القانون 182 لسنة 2018."
+                      : "بإعادة التدقيق المحاسبي والمفاضلة المالية وترسية العملية على شركتنا باعتبار عرضنا الأفضل شروطاً والأمثل سعراً."
+                  )
+                }
+                className="h-7 text-[11px] rounded-lg border-amber-500/40 text-amber-800 dark:text-amber-200 hover:bg-amber-500/20 cursor-pointer"
+              >
+                الصيغة الرسمية القانونية 📜
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={() =>
+                  setGrievanceRequest(
+                    "بإحالة أوراق العطاء الفني والأصناف المعترض عليها إلى لجنة فض المنازعات لإعادة فحص الكتالوجات والعينات وإلغاء قرار الاستبعاد."
+                  )
+                }
+                className="h-7 text-[11px] rounded-lg border-amber-500/40 text-amber-800 dark:text-amber-200 hover:bg-amber-500/20 cursor-pointer"
+              >
+                صيغة لجنة فض المنازعات ⚖️
+              </Button>
+            </div>
+          </div>
+
+          <div className="space-y-1">
+            <Label className="text-xs font-bold text-foreground">
+              نص الطلب الرسمي الموجه للسلطة المختصة (بعد عبارة: لذا الرجاء من سيادتكم التكرم ...) *
+            </Label>
+            <Textarea
+              rows={3}
+              value={grievanceRequest}
+              onChange={(e) => setGrievanceRequest(e.target.value)}
+              placeholder="اكتب هنا الإجراء المطلوب، مثلاً: بإعادة فحص العطاء الفني وإلغاء قرار الاستبعاد واستكمال فتح المظروف المالي..."
+              className="text-xs rounded-xl leading-relaxed font-bold"
+            />
+          </div>
         </div>
       </SectionCard>
 
