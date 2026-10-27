@@ -2303,15 +2303,6 @@ export function TabFinOpening({
     return "ACCEPT_ALL";
   });
 
-  // الربط التلقائي والإلزامي لمرحلة البت المالي بنتيجة البت الفني
-  useEffect(() => {
-    if (isTechPartiallyAccepted && evalOutcome === "ACCEPT_ALL") {
-      setEvalOutcome("ACCEPT_PARTIAL");
-    } else if (isTechRejected && evalOutcome !== "REJECTED") {
-      setEvalOutcome("REJECTED");
-    }
-  }, [isTechPartiallyAccepted, isTechRejected, evalOutcome]);
-
   const currentCompanyLink = op.companies?.[0];
   const currentCompany = currentCompanyLink?.company;
 
@@ -2333,14 +2324,54 @@ export function TabFinOpening({
   const [showFinalRefundSection, setShowFinalRefundSection] = useState(false);
   const [showFinOfficialGrievanceDoc, setShowFinOfficialGrievanceDoc] = useState(false);
 
-  // Competitors registration
+  // تسجيل الشركات المتنافسة بالجلسة (تلقائي بدون شركات وهمية)
   const [adding, setAdding] = useState(false);
   const [openingDate, setOpeningDate] = useState(new Date().toISOString().split("T")[0]);
-  const [competitors, setCompetitors] = useState([
-    { competitorName: currentCompany?.name || "شركتنا (Golden)", price: 850000, isOwnCompany: true, companyId: currentCompanyLink?.companyId },
-    { competitorName: "شركة الأهرام للتجارة والمقاولات", price: 920000, isOwnCompany: false },
-    { competitorName: "الشركة الهندسية للتوريدات العامة", price: 890000, isOwnCompany: false },
-  ]);
+
+  const initialCompanyPrice = useMemo(() => {
+    return Number(
+      op.financialOffers?.[0]?.totalValue ||
+      op.financialOffers?.[0]?.totalAmount ||
+      op.value ||
+      0
+    );
+  }, [op]);
+
+  const [competitors, setCompetitors] = useState<Array<{
+    competitorName: string;
+    price: number;
+    isOwnCompany: boolean;
+    companyId?: string;
+  }>>(() => {
+    if (savedFo?.competitors && savedFo.competitors.length > 0) {
+      return savedFo.competitors;
+    }
+    const myPrice = Number(
+      op.financialOffers?.[0]?.totalValue ||
+      op.financialOffers?.[0]?.totalAmount ||
+      op.value ||
+      0
+    );
+    return [
+      {
+        competitorName: currentCompany?.name || op.companies?.[0]?.company?.name || "شركتنا (Golden)",
+        price: myPrice,
+        isOwnCompany: true,
+        companyId: currentCompanyLink?.companyId,
+      },
+    ];
+  });
+
+  const handleAddCompetitor = () => {
+    setCompetitors((prev) => [
+      ...prev,
+      { competitorName: "", price: 0, isOwnCompany: false },
+    ]);
+  };
+
+  const handleRemoveCompetitor = (idxToRemove: number) => {
+    setCompetitors((prev) => prev.filter((_, idx) => idx !== idxToRemove));
+  };
   const [savingOpening, setSavingOpening] = useState(false);
 
   interface BoqItem {
@@ -2428,6 +2459,26 @@ export function TabFinOpening({
 
   const vatAmount = useMemo(() => (includeVat ? partialSubtotal * 0.14 : 0), [partialSubtotal, includeVat]);
   const partialGrandTotal = useMemo(() => partialSubtotal + vatAmount, [partialSubtotal, vatAmount]);
+
+  // مزامنة سعر شركتنا تلقائياً مع إجمالي الـ BOQ الفعلي أو الترسية الجزئية
+  useEffect(() => {
+    setCompetitors((prev) => {
+      if (!prev || prev.length === 0) return prev;
+      const first = prev[0];
+      if (first.isOwnCompany) {
+        let targetPrice = first.price;
+        if (evalOutcome === "ACCEPT_PARTIAL" && partialGrandTotal > 0) {
+          targetPrice = partialGrandTotal;
+        } else if (first.price === 0 || first.price === 850000) {
+          targetPrice = initialCompanyPrice > 0 ? initialCompanyPrice : (partialGrandTotal > 0 ? partialGrandTotal : 0);
+        }
+        if (targetPrice > 0 && targetPrice !== first.price) {
+          return [{ ...first, price: targetPrice }, ...prev.slice(1)];
+        }
+      }
+      return prev;
+    });
+  }, [evalOutcome, partialGrandTotal, initialCompanyPrice]);
 
   // Status label
   const statusLabel = useMemo(() => {
@@ -2605,6 +2656,18 @@ export function TabFinOpening({
         notes: editingFo.notes,
         competitors: editingFo.competitors,
       });
+
+      // مزامنة حالة العملية والقرار مع التعديلات
+      let updatedDecision = evalOutcome;
+      if (editingFo.notes?.includes("ACCEPT_ALL")) updatedDecision = "ACCEPT_ALL";
+      else if (editingFo.notes?.includes("ACCEPT_PARTIAL")) updatedDecision = "ACCEPT_PARTIAL";
+      else if (editingFo.notes?.includes("REJECTED")) updatedDecision = "REJECTED";
+
+      await api.patch(`/operations/${op.id}/status`, {
+        status: updatedDecision === "REJECTED" ? "FINANCIAL_REJECTED" : "FINANCIAL_OPENED",
+      });
+      setEvalOutcome(updatedDecision);
+
       toast.success("تم تعديل محضر الفتح المالي بنجاح! ✓");
       setEditingFo(null);
       onRefresh();
@@ -2960,54 +3023,86 @@ export function TabFinOpening({
                 <label className="text-xs font-semibold text-muted-foreground block mb-1">قرار البت المالي والترسية</label>
                 <select
                   value={evalOutcome}
-                  disabled={isTechPartiallyAccepted || isTechRejected}
                   onChange={(e) => setEvalOutcome(e.target.value as any)}
-                  className="w-full bg-background border border-border rounded-xl px-3 py-2 text-xs text-foreground font-bold focus:ring-2 focus:ring-emerald-500"
+                  className="w-full bg-background border border-border rounded-xl px-3 py-2 text-xs text-foreground font-bold focus:ring-2 focus:ring-emerald-500 cursor-pointer"
                 >
-                  <option value="ACCEPT_ALL" disabled={isTechPartiallyAccepted || isTechRejected}>
+                  <option value="ACCEPT_ALL">
                     قبول كل الأصناف (ترسية كاملة 100%) ✓
                   </option>
-                  <option value="ACCEPT_PARTIAL" disabled={isTechRejected}>
+                  <option value="ACCEPT_PARTIAL">
                     قبول بعض الأصناف (ترسية جزئية وتعديل BOQ) 🟡
                   </option>
                   <option value="REJECTED">
                     استبعاد / رفض مالي (عدم الترسية لارتفاع السعر) ✗
                   </option>
                 </select>
+                {isTechPartiallyAccepted && (
+                  <p className="text-[11px] text-amber-600 dark:text-amber-400 mt-1 flex items-center gap-1 font-medium">
+                    <span>💡</span>
+                    <span>تم تحديد (ترسية جزئية) تلقائياً لوجود استبعاد فني لبعض الأصناف، ويمكنك تغييره بحرية.</span>
+                  </p>
+                )}
               </div>
             </div>
 
             {/* Competitors List Inputs */}
             <div className="space-y-2 pt-2 border-t border-border">
-              <label className="text-xs font-bold text-foreground block">
-                أسعار الشركات المتنافسة بالجلسة (تلقائي الترتيب):
-              </label>
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-bold text-foreground block">
+                  أسعار الشركات المتنافسة بالجلسة (تلقائي الترتيب):
+                </label>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={handleAddCompetitor}
+                  className="h-7 text-[11px] px-2.5 rounded-lg border-blue-300 dark:border-blue-700 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-950/40 font-semibold cursor-pointer flex items-center gap-1"
+                >
+                  <Plus className="h-3 w-3" />
+                  <span>إضافة شركة متنافسة (اختياري)</span>
+                </Button>
+              </div>
+
               {competitors.map((comp, idx) => (
-                <div key={idx} className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                  <input
-                    type="text"
-                    value={comp.competitorName}
-                    onChange={(e) => {
-                      const updated = [...competitors];
-                      updated[idx].competitorName = e.target.value;
-                      setCompetitors(updated);
-                    }}
-                    className={`border rounded-xl px-3 py-1.5 text-xs text-foreground ${
-                      comp.isOwnCompany ? "bg-blue-500/10 border-blue-500/40 font-bold" : "bg-background border-border"
-                    }`}
-                    placeholder="اسم الشركة"
-                  />
-                  <input
-                    type="number"
-                    value={comp.price}
-                    onChange={(e) => {
-                      const updated = [...competitors];
-                      updated[idx].price = Number(e.target.value);
-                      setCompetitors(updated);
-                    }}
-                    className="bg-background border border-border rounded-xl px-3 py-1.5 text-xs text-foreground font-mono font-bold"
-                    placeholder="السعر الإجمالي (ج.م)"
-                  />
+                <div key={idx} className="flex items-center gap-2">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 flex-1">
+                    <input
+                      type="text"
+                      value={comp.competitorName}
+                      onChange={(e) => {
+                        const updated = [...competitors];
+                        updated[idx].competitorName = e.target.value;
+                        setCompetitors(updated);
+                      }}
+                      className={`border rounded-xl px-3 py-1.5 text-xs text-foreground ${
+                        comp.isOwnCompany ? "bg-blue-500/10 border-blue-500/40 font-bold" : "bg-background border-border"
+                      }`}
+                      placeholder={comp.isOwnCompany ? "اسم شركتنا" : "اسم الشركة المنافسة"}
+                    />
+                    <input
+                      type="number"
+                      value={comp.price || ""}
+                      onChange={(e) => {
+                        const updated = [...competitors];
+                        updated[idx].price = Number(e.target.value);
+                        setCompetitors(updated);
+                      }}
+                      className="bg-background border border-border rounded-xl px-3 py-1.5 text-xs text-foreground font-mono font-bold"
+                      placeholder="السعر الإجمالي (ج.م)"
+                    />
+                  </div>
+                  {!comp.isOwnCompany && (
+                    <Button
+                      type="button"
+                      size="icon"
+                      variant="ghost"
+                      onClick={() => handleRemoveCompetitor(idx)}
+                      className="h-8 w-8 text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-lg cursor-pointer"
+                      title="حذف هذا المتنافس"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </Button>
+                  )}
                 </div>
               ))}
             </div>
@@ -3153,39 +3248,96 @@ export function TabFinOpening({
                 </div>
 
                 <div>
-                  <label className="text-xs font-semibold text-muted-foreground block mb-1">ملاحظات المحضر</label>
-                  <input
-                    type="text"
-                    value={editingFo.notes || ""}
-                    onChange={(e) => setEditingFo({ ...editingFo, notes: e.target.value })}
-                    className="w-full bg-background border border-border rounded-xl px-3 py-2 text-xs text-foreground"
-                  />
+                  <label className="text-xs font-semibold text-muted-foreground block mb-1">قرار البت المالي والترسية</label>
+                  <select
+                    value={
+                      editingFo.notes?.includes("ACCEPT_ALL")
+                        ? "ACCEPT_ALL"
+                        : editingFo.notes?.includes("ACCEPT_PARTIAL")
+                        ? "ACCEPT_PARTIAL"
+                        : editingFo.notes?.includes("REJECTED")
+                        ? "REJECTED"
+                        : evalOutcome
+                    }
+                    onChange={(e) => {
+                      const newOutcome = e.target.value;
+                      setEditingFo({
+                        ...editingFo,
+                        notes: `قرار البت المالي: ${newOutcome}`,
+                      });
+                    }}
+                    className="w-full bg-background border border-border rounded-xl px-3 py-2 text-xs text-foreground font-bold focus:ring-2 focus:ring-emerald-500 cursor-pointer"
+                  >
+                    <option value="ACCEPT_ALL">قبول كل الأصناف (ترسية كاملة 100%) ✓</option>
+                    <option value="ACCEPT_PARTIAL">قبول بعض الأصناف (ترسية جزئية وتعديل BOQ) 🟡</option>
+                    <option value="REJECTED">استبعاد / رفض مالي (عدم الترسية لارتفاع السعر) ✗</option>
+                  </select>
                 </div>
 
                 <div className="space-y-2">
-                  <label className="text-xs font-semibold text-muted-foreground block">تعديل أسعار المتنافسين</label>
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-semibold text-muted-foreground block">تعديل أسعار المتنافسين</label>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={() => {
+                        setEditingFo({
+                          ...editingFo,
+                          competitors: [
+                            ...(editingFo.competitors || []),
+                            { competitorName: "", price: 0, isOwnCompany: false },
+                          ],
+                        });
+                      }}
+                      className="h-6 text-[11px] px-2 rounded-lg text-blue-600 border-blue-300 dark:border-blue-700 cursor-pointer"
+                    >
+                      + إضافة متنافس
+                    </Button>
+                  </div>
                   {(editingFo.competitors || []).map((comp: any, idx: number) => (
-                    <div key={idx} className="grid grid-cols-2 gap-2">
-                      <input
-                        type="text"
-                        value={comp.competitorName}
-                        onChange={(e) => {
-                          const updated = [...editingFo.competitors];
-                          updated[idx] = { ...updated[idx], competitorName: e.target.value };
-                          setEditingFo({ ...editingFo, competitors: updated });
-                        }}
-                        className="bg-background border border-border rounded-xl px-3 py-1.5 text-xs text-foreground"
-                      />
-                      <input
-                        type="number"
-                        value={comp.price}
-                        onChange={(e) => {
-                          const updated = [...editingFo.competitors];
-                          updated[idx] = { ...updated[idx], price: Number(e.target.value) };
-                          setEditingFo({ ...editingFo, competitors: updated });
-                        }}
-                        className="bg-background border border-border rounded-xl px-3 py-1.5 text-xs text-foreground font-mono font-bold"
-                      />
+                    <div key={idx} className="flex items-center gap-2">
+                      <div className="grid grid-cols-2 gap-2 flex-1">
+                        <input
+                          type="text"
+                          value={comp.competitorName}
+                          onChange={(e) => {
+                            const updated = [...editingFo.competitors];
+                            updated[idx] = { ...updated[idx], competitorName: e.target.value };
+                            setEditingFo({ ...editingFo, competitors: updated });
+                          }}
+                          className={`border rounded-xl px-3 py-1.5 text-xs text-foreground ${
+                            comp.isOwnCompany ? "bg-blue-500/10 border-blue-500/40 font-bold" : "bg-background border-border"
+                          }`}
+                          placeholder={comp.isOwnCompany ? "اسم شركتنا" : "اسم الشركة المنافسة"}
+                        />
+                        <input
+                          type="number"
+                          value={comp.price || ""}
+                          onChange={(e) => {
+                            const updated = [...editingFo.competitors];
+                            updated[idx] = { ...updated[idx], price: Number(e.target.value) };
+                            setEditingFo({ ...editingFo, competitors: updated });
+                          }}
+                          className="bg-background border border-border rounded-xl px-3 py-1.5 text-xs text-foreground font-mono font-bold"
+                          placeholder="السعر (ج.م)"
+                        />
+                      </div>
+                      {!comp.isOwnCompany && (
+                        <Button
+                          type="button"
+                          size="icon"
+                          variant="ghost"
+                          onClick={() => {
+                            const updated = editingFo.competitors.filter((_: any, i: number) => i !== idx);
+                            setEditingFo({ ...editingFo, competitors: updated });
+                          }}
+                          className="h-8 w-8 text-rose-500 hover:bg-rose-50 rounded-lg cursor-pointer"
+                          title="حذف هذا المتنافس"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                      )}
                     </div>
                   ))}
                 </div>

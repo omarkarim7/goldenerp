@@ -626,11 +626,11 @@ export function WarrantyCertificateSection({
     // التوقيعات بأسفل الصفحة في جدول ثلاثي منضبط (المختص | المدير المالي | يعتمد رئيس مجلس الإدارة)
     const sigStart = docXml.indexOf("المهندس المختص");
     if (sigStart !== -1) {
-      const pStart = docXml.lastIndexOf("<w:p", sigStart);
+      const pStart = Math.max(docXml.lastIndexOf("<w:p ", sigStart), docXml.lastIndexOf("<w:p>", sigStart));
       const chairmanIdx = docXml.indexOf("رئيس مجلس الإدارة", sigStart);
       if (chairmanIdx !== -1) {
         const pEnd = docXml.indexOf("</w:p>", chairmanIdx);
-        if (pStart !== -1 && pEnd !== -1) {
+        if (pStart !== -1 && pEnd !== -1 && pStart < pEnd) {
           const sigTableXml = buildOfficialSignaturesTableXml({
             specialistTitle: "المهندس المختص :",
             specialistName: engineerSpecialist || " ",
