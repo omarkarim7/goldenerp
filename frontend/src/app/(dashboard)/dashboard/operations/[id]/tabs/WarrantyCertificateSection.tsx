@@ -553,17 +553,26 @@ export function WarrantyCertificateSection({
       console.warn("QR generation failed in WarrantyCertificateSection:", e);
     }
 
-    // 1. استبدال محتوى word/document.xml
+    // 1. استبدال محتوى word/document.xml بدقة 100% وحماية كاملة لكافة فقرات القالب
     let docXml = await zip.file("word/document.xml")!.async("text");
     docXml = injectSingleQrIntoDocXml(docXml, qrDrawingXml, escapeXml(registrationNumber));
 
-    // المرسل إليه والموضوع
-    docXml = replaceDocxRecipient(docXml, recipientPrefix, recipientTitleAndAuthority);
-    docXml = docXml.replace(/للأصناف/g, escapeXml(subjectTarget));
-    docXml = docXml.replace(/اسم العملية المسجله[\s\.]*/g, escapeXml(operationRegisteredName) + " ");
-    docXml = docXml.replace(/365/g, escapeXml(operationNumber));
+    // 1. المرسل إليه
+    docXml = docXml.replace(/(<w:t[^>]*>)الأستاذ(<\/w:t>)/, `$1${escapeXml(recipientPrefix || "الأستاذ")}$2`);
+    docXml = docXml.replace(
+      /(<w:t[^>]*>)مدير الادارة العامة للمشتريات والمخازن بجامعة دمنهور(<\/w:t>)/,
+      `$1${escapeXml(recipientTitleAndAuthority || "مدير الادارة العامة للمشتريات والمخازن بجامعة دمنهور")}$2`
+    );
 
-    // استبدال جدول الأصناف بدقة 100%
+    // 2. الموضوع
+    docXml = docXml.replace(/(<w:t[^>]*>)للأصناف(<\/w:t>)/, `$1${escapeXml(subjectTarget || "للأصناف")}$2`);
+    docXml = docXml.replace(
+      /(<w:t[^>]*>)اسم العملية المسجله (<\/w:t>)/,
+      `$1${escapeXml(operationRegisteredName || "توريد كاوتش وبطاريات للسيارات للجامعه")} $2`
+    );
+    docXml = docXml.replace(/(<w:t[^>]*>)365(<\/w:t>)/, `$1${escapeXml(operationNumber || "365")}$2`);
+
+    // 3. جدول الأصناف (الحفاظ التام على رأس الجدول واستبدال صفوف النقاط بصفوف الأصناف المحددة)
     const tableMatch = docXml.match(/<w:tbl[\s\S]*?<\/w:tbl>/);
     if (tableMatch) {
       const originalTable = tableMatch[0];
@@ -573,79 +582,48 @@ export function WarrantyCertificateSection({
         const newRowsXml = buildWarrantyTableRowsXml(items);
         const newTable = originalTable.replace(
           /<w:tr[\s\S]*<\/w:tr>/,
-          `${headerRow}${newRowsXml}`
+          () => `${headerRow}${newRowsXml}`
         );
-        docXml = docXml.replace(originalTable, newTable);
-      }
-    } else {
-      // حقن الجدول كبديل أمان في حال عدم وجوده بالقالب الأصلي
-      const fullTableXml =
-        `<w:tbl><w:tblPr><w:bidiVisual/><w:tblW w:w="10147" w:type="dxa"/><w:jc w:val="center"/><w:tblBorders><w:top w:val="thinThickSmallGap" w:sz="24" w:space="0" w:color="auto"/><w:left w:val="thinThickSmallGap" w:sz="24" w:space="0" w:color="auto"/><w:bottom w:val="thinThickSmallGap" w:sz="24" w:space="0" w:color="auto"/><w:right w:val="thinThickSmallGap" w:sz="24" w:space="0" w:color="auto"/><w:insideH w:val="thinThickSmallGap" w:sz="18" w:space="0" w:color="auto"/><w:insideV w:val="thinThickSmallGap" w:sz="18" w:space="0" w:color="auto"/></w:tblBorders><w:tblLook w:val="0000" w:firstRow="0" w:lastRow="0" w:firstColumn="0" w:lastColumn="0" w:noHBand="0" w:noVBand="0"/></w:tblPr><w:tblGrid><w:gridCol w:w="561"/><w:gridCol w:w="3593"/><w:gridCol w:w="977"/><w:gridCol w:w="977"/><w:gridCol w:w="2798"/><w:gridCol w:w="1241"/></w:tblGrid><w:tr><w:trPr><w:trHeight w:val="330"/><w:jc w:val="center"/></w:trPr><w:tc><w:tcPr><w:tcW w:w="561" w:type="dxa"/><w:tcBorders><w:top w:val="thinThickSmallGap" w:sz="24" w:space="0" w:color="auto"/><w:left w:val="thinThickSmallGap" w:sz="24" w:space="0" w:color="auto"/><w:bottom w:val="thinThickSmallGap" w:sz="24" w:space="0" w:color="auto"/><w:right w:val="thinThickSmallGap" w:sz="24" w:space="0" w:color="auto"/></w:tcBorders></w:tcPr><w:p><w:pPr><w:spacing w:after="0" w:line="240" w:lineRule="auto"/><w:jc w:val="center"/><w:rPr><w:b/><w:bCs/><w:sz w:val="30"/><w:szCs w:val="30"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr></w:pPr><w:r><w:rPr><w:b/><w:bCs/><w:sz w:val="30"/><w:szCs w:val="30"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t>م</w:t></w:r></w:p></w:tc><w:tc><w:tcPr><w:tcW w:w="3593" w:type="dxa"/><w:tcBorders><w:top w:val="thinThickSmallGap" w:sz="24" w:space="0" w:color="auto"/><w:left w:val="thinThickSmallGap" w:sz="24" w:space="0" w:color="auto"/><w:bottom w:val="thinThickSmallGap" w:sz="24" w:space="0" w:color="auto"/><w:right w:val="thinThickSmallGap" w:sz="24" w:space="0" w:color="auto"/></w:tcBorders></w:tcPr><w:p><w:pPr><w:spacing w:after="0" w:line="240" w:lineRule="auto"/><w:jc w:val="center"/><w:rPr><w:b/><w:bCs/><w:sz w:val="30"/><w:szCs w:val="30"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr></w:pPr><w:r><w:rPr><w:b/><w:bCs/><w:sz w:val="30"/><w:szCs w:val="30"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t>إســــم الصــــــنف والمواصفات</w:t></w:r></w:p></w:tc><w:tc><w:tcPr><w:tcW w:w="977" w:type="dxa"/><w:tcBorders><w:top w:val="thinThickSmallGap" w:sz="24" w:space="0" w:color="auto"/><w:left w:val="thinThickSmallGap" w:sz="24" w:space="0" w:color="auto"/><w:bottom w:val="thinThickSmallGap" w:sz="24" w:space="0" w:color="auto"/><w:right w:val="thinThickSmallGap" w:sz="24" w:space="0" w:color="auto"/></w:tcBorders></w:tcPr><w:p><w:pPr><w:spacing w:after="0" w:line="240" w:lineRule="auto"/><w:jc w:val="center"/><w:rPr><w:b/><w:bCs/><w:sz w:val="30"/><w:szCs w:val="30"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr></w:pPr><w:r><w:rPr><w:b/><w:bCs/><w:sz w:val="30"/><w:szCs w:val="30"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t>الوحدة</w:t></w:r></w:p></w:tc><w:tc><w:tcPr><w:tcW w:w="977" w:type="dxa"/><w:tcBorders><w:top w:val="thinThickSmallGap" w:sz="24" w:space="0" w:color="auto"/><w:left w:val="thinThickSmallGap" w:sz="24" w:space="0" w:color="auto"/><w:bottom w:val="thinThickSmallGap" w:sz="24" w:space="0" w:color="auto"/><w:right w:val="thinThickSmallGap" w:sz="24" w:space="0" w:color="auto"/></w:tcBorders></w:tcPr><w:p><w:pPr><w:spacing w:after="0" w:line="240" w:lineRule="auto"/><w:jc w:val="center"/><w:rPr><w:b/><w:bCs/><w:sz w:val="30"/><w:szCs w:val="30"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr></w:pPr><w:r><w:rPr><w:b/><w:bCs/><w:sz w:val="30"/><w:szCs w:val="30"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t>الكميه</w:t></w:r></w:p></w:tc><w:tc><w:tcPr><w:tcW w:w="2798" w:type="dxa"/><w:tcBorders><w:top w:val="thinThickSmallGap" w:sz="24" w:space="0" w:color="auto"/><w:left w:val="thinThickSmallGap" w:sz="24" w:space="0" w:color="auto"/><w:bottom w:val="thinThickSmallGap" w:sz="24" w:space="0" w:color="auto"/><w:right w:val="thinThickSmallGap" w:sz="24" w:space="0" w:color="auto"/></w:tcBorders></w:tcPr><w:p><w:pPr><w:spacing w:after="0" w:line="240" w:lineRule="auto"/><w:jc w:val="center"/><w:rPr><w:b/><w:bCs/><w:sz w:val="30"/><w:szCs w:val="30"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr></w:pPr><w:r><w:rPr><w:b/><w:bCs/><w:sz w:val="30"/><w:szCs w:val="30"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t>بيان وتغطية الضمان</w:t></w:r></w:p></w:tc><w:tc><w:tcPr><w:tcW w:w="1241" w:type="dxa"/><w:tcBorders><w:top w:val="thinThickSmallGap" w:sz="24" w:space="0" w:color="auto"/><w:left w:val="thinThickSmallGap" w:sz="24" w:space="0" w:color="auto"/><w:bottom w:val="thinThickSmallGap" w:sz="24" w:space="0" w:color="auto"/><w:right w:val="thinThickSmallGap" w:sz="24" w:space="0" w:color="auto"/></w:tcBorders></w:tcPr><w:p><w:pPr><w:spacing w:after="0" w:line="240" w:lineRule="auto"/><w:jc w:val="center"/><w:rPr><w:b/><w:bCs/><w:sz w:val="30"/><w:szCs w:val="30"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr></w:pPr><w:r><w:rPr><w:b/><w:bCs/><w:sz w:val="30"/><w:szCs w:val="30"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t>ملاحظات الضمان</w:t></w:r></w:p></w:tc></w:tr>${buildWarrantyTableRowsXml(items)}</w:tbl><w:p><w:pPr><w:spacing w:before="120" w:after="120" w:line="240" w:lineRule="auto"/></w:pPr></w:p>`;
-
-      const warrantyParaMatch = docXml.match(/<w:p[\s\S]*?مدة الضمان[\s\S]*?<\/w:p>/);
-      if (warrantyParaMatch) {
-        docXml = docXml.replace(warrantyParaMatch[0], fullTableXml + warrantyParaMatch[0]);
+        docXml = docXml.replace(originalTable, () => newTable);
       }
     }
 
-    // فقرة بيان الضمان الشاملة
-    docXml = docXml.replace(/جولدن سرفيس/g, escapeXml(companyName));
+    // 4. فقرة بيان العملية والتعهد
+    docXml = docXml.replace(/جولدن سرفيس/g, escapeXml(companyName || "جولدن سرفيس"));
+    docXml = docXml.replace(/(<w:t[^>]*>)كاوتش وبطاريات(<\/w:t>)/, `$1${escapeXml(suppliedItemsCategory || "كاوتش وبطاريات")}$2`);
+    docXml = docXml.replace(/(<w:t[^>]*>)الجامعه(<\/w:t>)/, `$1${escapeXml(authorityShort || "الجامعه")}$2`);
+    docXml = docXml.replace(/(<w:t[^>]*>)بالمناقصة المحدودة(<\/w:t>)/, `$1${escapeXml(tenderMethod || "بالمناقصة المحدودة")}$2`);
     docXml = docXml.replace(
-      /للعملية المذكورة أعلاه طرفكم/g,
-      `للعملية المذكورة أعلاه (${escapeXml(tenderMethod)} - ${escapeXml(operationScope)}) طرفكم`
+      /(<w:t[^>]*>)\s*توريد كاوتش وبطاريات للسيارات للجامعه(<\/w:t>)/,
+      `$1 ${escapeXml(operationScope || "توريد كاوتش وبطاريات للسيارات للجامعه")}$2`
     );
-    docXml = docXml.replace(/2024\s*\/\s*2025/g, escapeXml(fiscalYear));
-    docXml = docXml.replace(/14\/\s*1\s*\/2024/g, escapeXml(technicalOpeningDate));
+    docXml = docXml.replace(/(<w:t[^>]*>)2024 \/ 2025(<\/w:t>)/, `$1${escapeXml(fiscalYear || "2024 / 2025")}$2`);
+    docXml = docXml.replace(/(<w:t[^>]*>)14\/\s*1\s*\/2024(<\/w:t>)/, `$1${escapeXml(technicalOpeningDate || "14/ 1 /2024")}$2`);
 
-    // مدة الضمان وتغطيته بدقة ومنع التكرار أو الفراغات الزائدة
-    let cleanCoverage = (warrantyCoverage || "").trim();
-    if (cleanCoverage && !cleanCoverage.startsWith("ضد") && !cleanCoverage.startsWith("شامل")) {
-      cleanCoverage = `ضد عيوب الصناعة في ${cleanCoverage}`;
-    }
+    // 5. مدة الضمان وتغطيته
     const safeDuration = (warrantyDuration || "سنة").trim();
-    const warrantyReplacementParagraph = `<w:p w14:paraId="5314EBCB" w14:textId="15F624A1" w:rsidR="003776BD" w:rsidRDefault="003776BD" w:rsidP="003776BD"><w:pPr><w:pStyle w:val="ListParagraph"/><w:numPr><w:ilvl w:val="0"/><w:numId w:val="1"/></w:numPr><w:spacing w:after="0" w:line="240" w:lineRule="auto"/><w:jc w:val="mediumKashida"/><w:rPr><w:b/><w:bCs/><w:sz w:val="32"/><w:szCs w:val="32"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr></w:pPr><w:r><w:rPr><w:b/><w:bCs/><w:sz w:val="36"/><w:szCs w:val="36"/><w:u w:val="single"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t>مدة الضمان</w:t></w:r><w:r><w:rPr><w:b/><w:bCs/><w:sz w:val="36"/><w:szCs w:val="36"/><w:u w:val="none"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t>: </w:t></w:r><w:r><w:rPr><w:b/><w:bCs/><w:sz w:val="32"/><w:szCs w:val="32"/><w:u w:val="none"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t xml:space="preserve">${escapeXml(safeDuration)} ${escapeXml(cleanCoverage)}</w:t></w:r></w:p>`;
+    const safeCoverage = (warrantyCoverage || "مداس الكاوتش  فقط")
+      .replace(/^ضد عيوب الصناع[ةه]\s*في\s*/i, "")
+      .trim();
+    docXml = docXml.replace(/(<w:t[^>]*>)سنة(<\/w:t>)/, `$1${escapeXml(safeDuration)}$2`);
+    docXml = docXml.replace(/(<w:t[^>]*>)مداس الكاوتش\s*فقط(<\/w:t>)/, `$1${escapeXml(safeCoverage)}$2`);
 
-    if (/<w:p[\s\S]*?مدة الضمان[\s\S]*?<\/w:p>/.test(docXml)) {
-      docXml = docXml.replace(/<w:p[\s\S]*?مدة الضمان[\s\S]*?<\/w:p>/, warrantyReplacementParagraph);
-    } else {
-      docXml = docXml.replace(
-        /مدة الضمان:\s*سنة ضد عيوب الصناعه في مداس الكاوتش\s*فقط/g,
-        `مدة الضمان: ${escapeXml(safeDuration)} ${escapeXml(cleanCoverage)}`
-      );
-    }
+    // 6. استثناءات الضمان (الحالات الأربعة)
+    docXml = docXml.replace(/(<w:t[^>]*>)زيادة ضغط الهواء بالاطارات(<\/w:t>)/, `$1${escapeXml((case1 || "زيادة ضغط الهواء بالاطارات").replace(/\.$/, ""))}$2`);
+    docXml = docXml.replace(/(<w:t[^>]*>)التعرض للصدمات أو اى الات حادة(<\/w:t>)/, `$1${escapeXml((case2 || "التعرض للصدمات أو اى الات حادة").replace(/\.$/, ""))}$2`);
+    docXml = docXml.replace(/(<w:t[^>]*>)سوء الاستخدام(<\/w:t>)/, `$1${escapeXml((case3 || "سوء الاستخدام").replace(/\.$/, ""))}$2`);
+    docXml = docXml.replace(/(<w:t[^>]*>)أي شطب أو تعديل في هذه الشهادة تعتبر لاغيه(<\/w:t>)/, `$1${escapeXml((case4 || "أي شطب أو تعديل في هذه الشهادة تعتبر لاغيه").replace(/\.$/, ""))}$2`);
 
-    // الحالات المستثناة
-    docXml = docXml.replace(/زيادة ضغط الهواء بالاطارات/g, escapeXml((case1 || "").replace(/\.$/, "")));
-    docXml = docXml.replace(/التعرض للصدمات أو اى الات حادة/g, escapeXml((case2 || "").replace(/\.$/, "")));
-    docXml = docXml.replace(/سوء الاستخدام/g, escapeXml((case3 || "").replace(/\.$/, "")));
-    docXml = docXml.replace(/أي شطب أو تعديل في هذه الشهادة تعتبر لاغيه/g, escapeXml((case4 || "").replace(/\.$/, "")));
+    // 7. مدة سريان الشهادة
+    docXml = docXml.replace(/(<w:t[^>]*>)مدة سريان الشهادة ستة أشهر\s*(<\/w:t>)/, `$1مدة سريان الشهادة ${escapeXml(validityDuration || "ستة أشهر")}$2`);
 
-    // مدة سريان الشهادة
-    docXml = docXml.replace(/ستة أشهر/g, escapeXml(validityDuration));
+    // 8. التوقيعات الرسمية في مواضعها المعتمدة بالقالب الأصلي
+    docXml = docXml.replace(/(<w:t[^>]*>)أحمد محمد(<\/w:t>)/, `$1${escapeXml(engineerSpecialist || "أحمد محمد")}$2`);
+    docXml = docXml.replace(/(<w:t[^>]*>)\s*اسم(<\/w:t>)/, `$1${escapeXml(financeManager || " ")}$2`);
+    docXml = docXml.replace(/(<w:t[^>]*>)رئيس مجلس الإدارة(<\/w:t>)/, `$1${escapeXml(boardChairman || "رئيس مجلس الإدارة")}$2`);
 
-    // التوقيعات بأسفل الصفحة في جدول ثلاثي منضبط (المختص | المدير المالي | يعتمد رئيس مجلس الإدارة)
-    const sigStart = docXml.indexOf("المهندس المختص");
-    if (sigStart !== -1) {
-      const pStart = Math.max(docXml.lastIndexOf("<w:p ", sigStart), docXml.lastIndexOf("<w:p>", sigStart));
-      const chairmanIdx = docXml.indexOf("رئيس مجلس الإدارة", sigStart);
-      if (chairmanIdx !== -1) {
-        const pEnd = docXml.indexOf("</w:p>", chairmanIdx);
-        if (pStart !== -1 && pEnd !== -1 && pStart < pEnd) {
-          const sigTableXml = buildOfficialSignaturesTableXml({
-            specialistTitle: "المهندس المختص :",
-            specialistName: engineerSpecialist || " ",
-            financeManagerName: financeManager || " ",
-            boardChairman: boardChairman || "رئيس مجلس الإدارة",
-          });
-          docXml = docXml.substring(0, pStart) + sigTableXml + docXml.substring(pEnd + 6);
-        }
-      }
-    } else {
-      docXml = docXml.replace(/رئيس مجلس\s*ا?ل?[إا]دارة/g, escapeXml(boardChairman || "رئيس مجلس الإدارة"));
-    }
-
-    // الملاحظات
-    docXml = docXml.replace(/خانة لكتابة ملاحظة/g, escapeXml(warrantyNotes));
+    // 9. الملاحظات
+    docXml = docXml.replace(/(<w:t[^>]*>)خانة لكتابة ملاحظة(<\/w:t>)/, `$1${escapeXml(warrantyNotes || " ")}$2`);
 
     zip.file("word/document.xml", docXml);
 
@@ -653,18 +631,21 @@ export function WarrantyCertificateSection({
     for (const fileName of Object.keys(zip.files)) {
       if (fileName.startsWith("word/header") && fileName.endsWith(".xml")) {
         let hdr = await zip.file(fileName)!.async("text");
-        hdr = hdr.replace(/110200700036620/g, escapeXml(companyCommercialRegister));
-        hdr = hdr.replace(/658369652/g, escapeXml(companyTaxCard));
-        hdr = hdr.replace(/\(?\s*كود العملية بالشركه\s*\)?/g, escapeXml(companyOpCode));
+        hdr = hdr.replace(/110200700036620/g, escapeXml(companyCommercialRegister || "110200700036620"));
+        hdr = hdr.replace(/658369652/g, escapeXml(companyTaxCard || "658369652"));
+        hdr = hdr.replace(/\(?\s*كود العملية بالشركه\s*\)?/g, `( ${escapeXml(companyOpCode || "AZ-01")} )`);
         zip.file(fileName, hdr);
       }
       if (fileName.startsWith("word/footer") && fileName.endsWith(".xml")) {
         let ftr = await zip.file(fileName)!.async("text");
-        ftr = ftr.replace(/15\/10\/2026/g, escapeXml(issueDate));
-        ftr = ftr.replace(/رقم القيد/g, `رقم القيد: ${escapeXml(registrationNumber)}`);
-        ftr = ftr.replace(/01091708818/g, escapeXml(phoneWhatsapp));
-        ftr = ftr.replace(/01557018818/g, escapeXml(phoneMobile));
-        ftr = ftr.replace(/بجوار مستشفى ليدى كير\s*-\s*بدمنهور\s*-\s*البح\s*يره/g, escapeXml(companyAddress));
+        ftr = ftr.replace(/15\/10\/2026/g, escapeXml(issueDate || "15/10/2026"));
+        ftr = ftr.replace(/رقم القيد/g, `رقم القيد: ${escapeXml(registrationNumber || "")}`);
+        ftr = ftr.replace(/01091708818/g, escapeXml(phoneWhatsapp || "01091708818"));
+        ftr = ftr.replace(/01557018818/g, escapeXml(phoneMobile || "01557018818"));
+        ftr = ftr.replace(/بجوار مستشفى ليدى كير/g, escapeXml(companyAddress || "بجوار مستشفى ليدى كير  -  بدمنهور -  البحيره"));
+        ftr = ftr.replace(/\s*-\s*بدمنهور\s*-\s*البح/g, "");
+        ftr = ftr.replace(/يره/g, "");
+        ftr = ftr.replace(/goldengolden8818@gmail.com/g, escapeXml(currentCompany?.email || "goldengolden8818@gmail.com"));
         zip.file(fileName, ftr);
       }
     }
