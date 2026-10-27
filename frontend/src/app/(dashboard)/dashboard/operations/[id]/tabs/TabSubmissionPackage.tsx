@@ -496,6 +496,13 @@ export function TabSubmissionPackage({
         envelope: "المظروف المالي" as const,
         matchIds: ["letter-booklet-bank_guarantee_letter"],
       },
+      {
+        id: "letter-booklet-insurance_deduction_other",
+        name: "خطاب سداد التأمين الابتدائي بخصم من مستحقات الشركة في عملية أخرى",
+        cloudUrl: bookletCloudUrls["insurance_deduction_other"] || "",
+        envelope: "المظروف المالي" as const,
+        matchIds: ["letter-booklet-insurance_deduction_other"],
+      },
     ];
 
     bookletLettersMeta.forEach((bl) => {

@@ -47,7 +47,8 @@ export type BookletLetterType =
   | "booklet_withdrawal"
   | "insurance_payment"
   | "booklet_and_insurance"
-  | "bank_guarantee_letter";
+  | "bank_guarantee_letter"
+  | "insurance_deduction_other";
 
 export interface BookletLetterTemplateDef {
   id: BookletLetterType;
@@ -101,6 +102,16 @@ export const BOOKLET_LETTER_TEMPLATES: BookletLetterTemplateDef[] = [
     badge: "خطاب ضمان للبنك",
     color: "purple",
   },
+  {
+    id: "insurance_deduction_other",
+    title: "خطاب سداد التأمين الابتدائي بخصم من مستحقات الشركة في عملية أخرى",
+    shortName: "سداد تأمين (خصم مستحقات)",
+    templateFile: "insurance_deduction_other_template.docx",
+    arabicFileName: "خطاب سداد التامين الإبتدائى من مستحقات الشركة فى عمليه أخرى سيستم جولدن 0.docx",
+    desc: "طلب رسمي للموافقة على سداد مبلغ التأمين الابتدائي خصماً من مستحقات الشركة في عملية أخرى سارية وتفويض المندوب",
+    badge: "خصم من مستحقات",
+    color: "amber",
+  },
 ];
 
 const CURRENT_FILE_ARABIC_NAME: Record<BookletLetterType, string> = {
@@ -108,6 +119,7 @@ const CURRENT_FILE_ARABIC_NAME: Record<BookletLetterType, string> = {
   insurance_payment: "خطاب سداد التامين الابتدائى سيستم جولدن.docx",
   booklet_and_insurance: "سحب كراسة وسداد التامين الابتدائى سيستم جولدن - Copy.docx",
   bank_guarantee_letter: "خطاب ضمان بنكى موجه للبنك سداد التامين الإبتدائي سيستم جولدن.docx",
+  insurance_deduction_other: "خطاب سداد التامين الإبتدائى من مستحقات الشركة فى عمليه أخرى سيستم جولدن 0.docx",
 };
 
 function escapeXml(str: string): string {
@@ -174,6 +186,7 @@ export function TabBooklet({
       insurance_payment: saved.insurance_payment || getLetterSpecificRegistrationNumber(op, "insurance_payment", currentCompanyLink?.displayCode),
       booklet_and_insurance: saved.booklet_and_insurance || getLetterSpecificRegistrationNumber(op, "booklet_and_insurance", currentCompanyLink?.displayCode),
       bank_guarantee_letter: saved.bank_guarantee_letter || getLetterSpecificRegistrationNumber(op, "bank_guarantee_letter", currentCompanyLink?.displayCode),
+      insurance_deduction_other: saved.insurance_deduction_other || getLetterSpecificRegistrationNumber(op, "insurance_deduction_other", currentCompanyLink?.displayCode),
     };
   });
 
@@ -390,6 +403,17 @@ export function TabBooklet({
     return savedData?.accountOwnerNationalId || "28912111802623";
   });
 
+  // ━━━ 5.1 بيانات سداد التأمين بخصم من مستحقات الشركة في عملية أخرى (الخطاب الخامس) ━━━
+  const [deductionOperationName, setDeductionOperationName] = useState<string>(() => {
+    return savedData?.deductionOperationName || "";
+  });
+  const [deductionMonth, setDeductionMonth] = useState<string>(() => {
+    return savedData?.deductionMonth || "";
+  });
+  const [deductionYear, setDeductionYear] = useState<string>(() => {
+    return savedData?.deductionYear || new Date().getFullYear().toString();
+  });
+
   // ━━━ 6. التوقيعات والاعتمادات والملاحظات ━━━
   const [specialistTitle, setSpecialistTitle] = useState<string>(() => {
     return savedData?.specialistTitle || "المختص / المندوب :";
@@ -474,6 +498,9 @@ export function TabBooklet({
       financeManagerName,
       boardChairman,
       additionalNotes,
+      deductionOperationName,
+      deductionMonth,
+      deductionYear,
     });
   }, [
     activeLetterType, selectedCompanyId, registrationNumber, companyOpCode,
@@ -488,7 +515,7 @@ export function TabBooklet({
     guaranteeDurationText, guaranteeStartDate, guaranteeEndDate,
     bankAccountNumber, accountBankName, accountBankBranch, accountOwnerName,
     accountOwnerNationalId, specialistTitle, specialistName, financeManagerName,
-    boardChairman, additionalNotes,
+    boardChairman, additionalNotes, deductionOperationName, deductionMonth, deductionYear,
   ]);
 
   const [savedSnapshot, setSavedSnapshot] = useState<string>(() => currentSnapshot);
@@ -582,6 +609,9 @@ export function TabBooklet({
       setFinanceManagerName(snap.financeManagerName);
       setBoardChairman(sanitizeChairmanTitle(snap.boardChairman));
       setAdditionalNotes(snap.additionalNotes);
+      setDeductionOperationName(snap.deductionOperationName || "");
+      setDeductionMonth(snap.deductionMonth || "");
+      setDeductionYear(snap.deductionYear || "");
       setCloudUrls(snap.cloudUrls || {});
       toast.info("تم التراجع عن التعديلات وإعادة الخطابات للحالة السابقة ↺");
     } catch {
@@ -747,7 +777,7 @@ export function TabBooklet({
       docXml = docXml.replace(/23056289523202/g, escapeXml(delegateNationalId));
       docXml = docXml.replace(/والتوقيع على العقود واستلام الخطابات والمكاتبات الرسميه/g, escapeXml(delegatePowers));
 
-      if (type === "insurance_payment" || type === "booklet_and_insurance") {
+      if (type === "insurance_payment" || type === "booklet_and_insurance" || type === "insurance_deduction_other") {
         const cleanTafqeet = (insuranceTafqeet || "")
           .replace(/^فقط\s*وقدره\s*:?\s*/i, "")
           .replace(/\s*لا\s*غير\s*$/i, "")
@@ -755,6 +785,20 @@ export function TabBooklet({
         docXml = docXml.replace(/10000/g, escapeXml(insuranceAmount || "10000"));
         docXml = docXml.replace(/عشرة ألاف(?:\s+جنيه)?(?:\s+لا\s*غير)?/g, escapeXml(cleanTafqeet || "عشرة ألاف جنيه"));
         docXml = docXml.replace(/لا\s*غير\s+لا\s*غير/g, "لا غير");
+      }
+
+      if (type === "insurance_deduction_other") {
+        const safeDedOp = (deductionOperationName || "").trim() || "................";
+        const safeDedMonth = (deductionMonth || "").trim() || "............";
+        const safeDedYear = (deductionYear || "").trim() || ".....";
+
+        docXml = docXml.replace(/(<w:t[^>]*>)(\.{10})(<\/w:t>)/, `$1${escapeXml(safeDedOp)}$3`);
+        docXml = docXml.replace(/(<w:t[^>]*>)(\.{12})(<\/w:t>)/, `$1${escapeXml(safeDedMonth)}$3`);
+        docXml = docXml.replace(/(<w:t[^>]*>)(\.{5})(<\/w:t>)/, `$1${escapeXml(safeDedYear)}$3`);
+
+        docXml = docXml.replace(/(في عملية \()\.{3,}(\))/g, `في عملية (${escapeXml(safeDedOp)})`);
+        docXml = docXml.replace(/(عن شهر \()\.{3,}(\))/g, `عن شهر (${escapeXml(safeDedMonth)})`);
+        docXml = docXml.replace(/(سنة \()\.{3,}(\))/g, `سنة (${escapeXml(safeDedYear)})`);
       }
 
       // 4. جدول التوقيعات والاعتمادات الرسمية الثلاثي المتوازن في صف أفقي واحد (بدون أي التفاف Wrap)
@@ -1613,11 +1657,11 @@ export function TabBooklet({
         </button>
       </div>
 
-      {/* ━━━ الخطوة 1: قوالب الوورد الرسمية الأربعة للخطابات ━━━ */}
+      {/* ━━━ الخطوة 1: قوالب الوورد الرسمية المعتمدة للخطابات (5 خطابات) ━━━ */}
       {activeStep === 1 && (
         <div className="space-y-6">
-          {/* اختيار الخطاب من البطاقات الأربعة */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+          {/* اختيار الخطاب من البطاقات الخمسة المعتمدة */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-3">
             {BOOKLET_LETTER_TEMPLATES.map((tpl) => {
               const isSelected = activeLetterType === tpl.id;
               return (
@@ -2018,8 +2062,8 @@ export function TabBooklet({
             </SectionCard>
           )}
 
-          {/* ━━━ SECTION 4: مبالغ التأمين الابتدائي (للخطاب الثاني والثالث) ━━━ */}
-          {(activeLetterType === "insurance_payment" || activeLetterType === "booklet_and_insurance") && (
+          {/* ━━━ SECTION 4: مبالغ التأمين الابتدائي (للخطابات الخاصة بالتأمين أو الخصم) ━━━ */}
+          {(activeLetterType === "insurance_payment" || activeLetterType === "booklet_and_insurance" || activeLetterType === "insurance_deduction_other") && (
             <SectionCard
               title="4. مبالغ التأمين الابتدائي القانوني والتفقيط الرسمي"
               icon={Shield}
@@ -2044,6 +2088,59 @@ export function TabBooklet({
                     onChange={(e) => setInsuranceTafqeet(e.target.value)}
                     className="h-9.5 text-xs font-bold text-emerald-700 dark:text-emerald-300 bg-background rounded-xl"
                   />
+                </div>
+              </div>
+            </SectionCard>
+          )}
+
+          {/* ━━━ SECTION 5.1: بيانات العملية الأخرى المخصوم منها التأمين (الخطاب الخامس) ━━━ */}
+          {activeLetterType === "insurance_deduction_other" && (
+            <SectionCard
+              title="5. بيانات العملية الأخرى المخصوم منها مستحقات التأمين الابتدائي"
+              icon={Building2}
+              iconColor="text-amber-600"
+              badge={<Badge className="bg-amber-100 text-amber-900 border border-amber-300 dark:bg-amber-950/60 dark:text-amber-200 dark:border-amber-700 text-[11px] font-black">خصم من مستحقات أخرى</Badge>}
+            >
+              <div className="space-y-4">
+                <div className="p-3.5 rounded-2xl bg-amber-500/10 border border-amber-500/20 text-xs text-foreground">
+                  <p className="font-semibold text-amber-900 dark:text-amber-300">
+                    صيغة الخصم في الخطاب الرسمي:
+                  </p>
+                  <p className="text-[11px] text-muted-foreground mt-1 leading-relaxed">
+                    « خصماً من مستحقات الشركة لديكم في عملية (<strong className="text-foreground">{deductionOperationName || "............"}</strong>) عن شهر (<strong className="text-foreground">{deductionMonth || "......"}</strong>) سنة (<strong className="text-foreground">{deductionYear || "...."}</strong>) والتي تستحق الدفع في حينه »
+                  </p>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-4 gap-3.5">
+                  <div className="sm:col-span-2 space-y-1.5">
+                    <Label className="text-xs font-bold text-foreground">اسم العملية الأخرى المستحق للشركة مبالغ بها *</Label>
+                    <Input
+                      value={deductionOperationName}
+                      onChange={(e) => setDeductionOperationName(e.target.value)}
+                      placeholder="مثال: توريد وتجهيز مبنى المعامل المركزية..."
+                      className="h-9.5 text-xs font-bold bg-background rounded-xl"
+                    />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <Label className="text-xs font-bold text-foreground">عن شهر المستحقات *</Label>
+                    <Input
+                      value={deductionMonth}
+                      onChange={(e) => setDeductionMonth(e.target.value)}
+                      placeholder="مثال: أكتوبر"
+                      className="h-9.5 text-xs font-bold bg-background rounded-xl"
+                    />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <Label className="text-xs font-bold text-foreground">سنة المستحقات *</Label>
+                    <Input
+                      value={deductionYear}
+                      onChange={(e) => setDeductionYear(e.target.value)}
+                      placeholder="مثال: 2026"
+                      className="h-9.5 text-xs font-mono font-bold bg-background rounded-xl"
+                    />
+                  </div>
                 </div>
               </div>
             </SectionCard>

@@ -69,6 +69,14 @@ export function detectLetterTypeFromId(id: string): {
       templateFile: "booklet_and_insurance_template.docx",
     };
   }
+  if (cleanId.includes("insurance_deduction_other") || cleanId.includes("deduction_other") || (cleanId.includes("خصم") && cleanId.includes("مستحقات"))) {
+    return {
+      category: "booklet",
+      subType: "insurance_deduction_other",
+      title: "خطاب سداد التأمين الابتدائي بخصم من مستحقات الشركة في عملية أخرى",
+      templateFile: "insurance_deduction_other_template.docx",
+    };
+  }
 
   // 2. Declarations
   if (cleanId.includes("specs") || cleanId.includes("decl-specs")) {
@@ -445,6 +453,21 @@ export async function generateUniversalLetterDocxBlob(
     docXml = docXml.replace(/البحيرة – دمنهور - خلف مستشفى الصدر/g, escapeXml(authorityAddress));
     docXml = docXml.replace(/37547/g, escapeXml(bankGuaranteeAmount));
     docXml = docXml.replace(/سبعة وثلاثون ألفا وخمسمائة وسبعه وأربعون/g, escapeXml(bankGuaranteeTafqeet));
+  }
+
+  // بيانات خاصة بسداد التأمين بخصم من مستحقات أخرى
+  if (meta.subType === "insurance_deduction_other") {
+    const dedOp = savedSub?.deductionOperationName || "................";
+    const dedMonth = savedSub?.deductionMonth || "............";
+    const dedYear = savedSub?.deductionYear || ".....";
+
+    docXml = docXml.replace(/(<w:t[^>]*>)(\.{10})(<\/w:t>)/, `$1${escapeXml(dedOp)}$3`);
+    docXml = docXml.replace(/(<w:t[^>]*>)(\.{12})(<\/w:t>)/, `$1${escapeXml(dedMonth)}$3`);
+    docXml = docXml.replace(/(<w:t[^>]*>)(\.{5})(<\/w:t>)/, `$1${escapeXml(dedYear)}$3`);
+
+    docXml = docXml.replace(/(في عملية \()\.{3,}(\))/g, `في عملية (${escapeXml(dedOp)})`);
+    docXml = docXml.replace(/(عن شهر \()\.{3,}(\))/g, `عن شهر (${escapeXml(dedMonth)})`);
+    docXml = docXml.replace(/(سنة \()\.{3,}(\))/g, `سنة (${escapeXml(dedYear)})`);
   }
 
   // تنظيف علامات التمييز والأحمر

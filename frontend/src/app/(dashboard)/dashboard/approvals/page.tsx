@@ -283,6 +283,9 @@ function getTemplateInfoForApproval(item: ApprovalItem): { templateFile: string;
   const title = (item.documentTitle || "").toLowerCase();
   const type = item.type || "";
 
+  if (title.includes("خصم") || (title.includes("مستحقات") && title.includes("تأمين"))) {
+    return { templateFile: "insurance_deduction_other_template.docx", type: "insurance_deduction_other" };
+  }
   if (title.includes("سداد") && (title.includes("تأمين") || title.includes("ابتدائي"))) {
     return { templateFile: "insurance_payment_template.docx", type: "insurance_payment" };
   }

@@ -1901,6 +1901,7 @@ export const LETTER_SEQUENCE_OFFSETS: Record<string, number> = {
   warranty_certificate: 11,   // شهادة الضمان المعتمدة للأصناف
   final_guarantee: 12,        // خطاب التأمين النهائي
   final_insurance_refund: 13, // طلب استرداد التأمين النهائي
+  insurance_deduction_other: 14, // سداد التأمين الابتدائي بخصم من مستحقات الشركة في عملية أخرى
 };
 
 /**

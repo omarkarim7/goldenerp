@@ -56,6 +56,9 @@ import {
   getStandardDocQrPayload,
   buildOfficialSignaturesTableXml,
   replaceDocxRecipient,
+  getOperationFiscalYear,
+  getOperationTechnicalOpeningDate,
+  getOperationTenderMethod,
 } from "./letter-utils";
 import { getPdfBlobFromDocx, uploadPdfToFreeCloud, getExpectedCloudPdfUrl } from "./client-pdf";
 import {
@@ -273,27 +276,45 @@ export function WarrantyCertificateSection({
   });
 
   const [suppliedItemsCategory, setSuppliedItemsCategory] = useState(() => {
-    return savedWarranty?.suppliedItemsCategory || "كاوتش وبطاريات";
+    if (savedWarranty?.suppliedItemsCategory) return savedWarranty.suppliedItemsCategory;
+    if (op.name && /كاوتش/i.test(op.name)) return "كاوتش وبطاريات";
+    const cleaned = (op.name || "").replace(/^(توريد|عملية|مشروع|تأجير)\s+/i, "").trim();
+    return cleaned || op.name || "أصناف ومهمات";
   });
 
   const [authorityShort, setAuthorityShort] = useState(() => {
-    return savedWarranty?.authorityShort || "الجامعه";
+    if (savedWarranty?.authorityShort) return savedWarranty.authorityShort;
+    const cName = (op as any).clientName || op.authority || "";
+    if (/جامعة/i.test(cName)) return "الجامعة";
+    if (/مديرية/i.test(cName)) return "المديرية";
+    if (/محافظة/i.test(cName)) return "المحافظة";
+    if (/مجلس|الوحدة المحلية|مدينة/i.test(cName)) return "الوحدة المحلية";
+    if (/مستشفى/i.test(cName)) return "المستشفى";
+    if (/شركة/i.test(cName)) return "الشركة";
+    return cName.split(" ")?.[0] || "الجهة الإدارية";
   });
 
   const [tenderMethod, setTenderMethod] = useState(() => {
-    return savedWarranty?.tenderMethod || "بالمناقصة المحدودة";
+    if (savedWarranty?.tenderMethod) return savedWarranty.tenderMethod;
+    if (op.tenderType) {
+      if (op.tenderType === "AUCTION") return "بالمزايدة العلنية";
+      if (op.tenderType === "LIMITED_TENDER") return "بالمناقصة المحدودة";
+      if (op.tenderType === "PRACTICE") return "بالممارسة العامة";
+      if (op.tenderType === "DIRECT_ORDER") return "بالأمر المباشر";
+    }
+    return getOperationTenderMethod(op) || "بالمناقصة العامة";
   });
 
   const [operationScope, setOperationScope] = useState(() => {
-    return savedWarranty?.operationScope || op.name || "توريد كاوتش وبطاريات للسيارات للجامعه";
+    return savedWarranty?.operationScope || op.name || "أصناف ومهمات";
   });
 
   const [fiscalYear, setFiscalYear] = useState(() => {
-    return savedWarranty?.fiscalYear || savedTechOffer?.fiscalYear || "2024 / 2025";
+    return savedWarranty?.fiscalYear || savedTechOffer?.fiscalYear || getOperationFiscalYear(op);
   });
 
   const [technicalOpeningDate, setTechnicalOpeningDate] = useState(() => {
-    return savedWarranty?.technicalOpeningDate || savedTechOffer?.technicalOpeningDate || "14/ 1 /2024";
+    return savedWarranty?.technicalOpeningDate || savedTechOffer?.technicalOpeningDate || getOperationTechnicalOpeningDate(op);
   });
 
   // مدة وشروط الضمان
@@ -302,12 +323,16 @@ export function WarrantyCertificateSection({
   });
 
   const [warrantyCoverage, setWarrantyCoverage] = useState(() => {
-    return savedWarranty?.warrantyCoverage || "ضد عيوب الصناعه في مداس الكاوتش  فقط";
+    if (savedWarranty?.warrantyCoverage) return savedWarranty.warrantyCoverage;
+    if (op.name && /كاوتش/i.test(op.name)) return "ضد عيوب الصناعه في مداس الكاوتش  فقط";
+    return "ضد كافة عيوب الصناعة وعيوب المواد والخامات المصنعية";
   });
 
   // الحالات التي لا يسري فيها الضمان
   const [case1, setCase1] = useState(() => {
-    return savedWarranty?.case1 || "زيادة ضغط الهواء بالاطارات.";
+    if (savedWarranty?.case1) return savedWarranty.case1;
+    if (op.name && /كاوتش/i.test(op.name)) return "زيادة ضغط الهواء بالاطارات.";
+    return "التشغيل في بيئة غير ملائمة أو مخالفة لكتيبات التشغيل.";
   });
   const [case2, setCase2] = useState(() => {
     return savedWarranty?.case2 || "التعرض للصدمات أو اى الات حادة.";
@@ -590,19 +615,19 @@ export function WarrantyCertificateSection({
 
     // 4. فقرة بيان العملية والتعهد
     docXml = docXml.replace(/جولدن سرفيس/g, escapeXml(companyName || "جولدن سرفيس"));
-    docXml = docXml.replace(/(<w:t[^>]*>)كاوتش وبطاريات(<\/w:t>)/, `$1${escapeXml(suppliedItemsCategory || "كاوتش وبطاريات")}$2`);
-    docXml = docXml.replace(/(<w:t[^>]*>)الجامعه(<\/w:t>)/, `$1${escapeXml(authorityShort || "الجامعه")}$2`);
-    docXml = docXml.replace(/(<w:t[^>]*>)بالمناقصة المحدودة(<\/w:t>)/, `$1${escapeXml(tenderMethod || "بالمناقصة المحدودة")}$2`);
+    docXml = docXml.replace(/(<w:t[^>]*>)كاوتش وبطاريات(<\/w:t>)/, `$1${escapeXml(suppliedItemsCategory || "الأصناف والمهمات")}$2`);
+    docXml = docXml.replace(/(<w:t[^>]*>)الجامعه(<\/w:t>)/, `$1${escapeXml(authorityShort || "الجهة الإدارية")}$2`);
+    docXml = docXml.replace(/(<w:t[^>]*>)بالمناقصة المحدودة(<\/w:t>)/, `$1${escapeXml(tenderMethod || "بالمناقصة العامة")}$2`);
     docXml = docXml.replace(
       /(<w:t[^>]*>)\s*توريد كاوتش وبطاريات للسيارات للجامعه(<\/w:t>)/,
-      `$1 ${escapeXml(operationScope || "توريد كاوتش وبطاريات للسيارات للجامعه")}$2`
+      `$1 ${escapeXml(operationScope || op.name || "أصناف ومهمات")}$2`
     );
     docXml = docXml.replace(/(<w:t[^>]*>)2024 \/ 2025(<\/w:t>)/, `$1${escapeXml(fiscalYear || "2024 / 2025")}$2`);
     docXml = docXml.replace(/(<w:t[^>]*>)14\/\s*1\s*\/2024(<\/w:t>)/, `$1${escapeXml(technicalOpeningDate || "14/ 1 /2024")}$2`);
 
     // 5. مدة الضمان وتغطيته
     const safeDuration = (warrantyDuration || "سنة").trim();
-    const safeCoverage = (warrantyCoverage || "مداس الكاوتش  فقط")
+    const safeCoverage = (warrantyCoverage || "ضد كافة عيوب الصناعة وعيوب المواد والخامات المصنعية")
       .replace(/^ضد عيوب الصناع[ةه]\s*في\s*/i, "")
       .trim();
     docXml = docXml.replace(/(<w:t[^>]*>)سنة(<\/w:t>)/, `$1${escapeXml(safeDuration)}$2`);
@@ -617,10 +642,24 @@ export function WarrantyCertificateSection({
     // 7. مدة سريان الشهادة
     docXml = docXml.replace(/(<w:t[^>]*>)مدة سريان الشهادة ستة أشهر\s*(<\/w:t>)/, `$1مدة سريان الشهادة ${escapeXml(validityDuration || "ستة أشهر")}$2`);
 
-    // 8. التوقيعات الرسمية في مواضعها المعتمدة بالقالب الأصلي
-    docXml = docXml.replace(/(<w:t[^>]*>)أحمد محمد(<\/w:t>)/, `$1${escapeXml(engineerSpecialist || "أحمد محمد")}$2`);
-    docXml = docXml.replace(/(<w:t[^>]*>)\s*اسم(<\/w:t>)/, `$1${escapeXml(financeManager || " ")}$2`);
-    docXml = docXml.replace(/(<w:t[^>]*>)رئيس مجلس الإدارة(<\/w:t>)/, `$1${escapeXml(boardChairman || "رئيس مجلس الإدارة")}$2`);
+    // 8. التوقيعات الرسمية المعتمدة بجدول ثلاثي متوازن بدون تداخل أو ملامسة للإطار
+    const warrantySigBlockRegex = /<w:p\b[^>]*>(?:(?!<\/w:p>)[\s\S])*?(?:المهندس المختص|المدير المالى)[\s\S]*?يعتمد[\s\S]*?<\/w:p>\s*<w:p\b[^>]*>(?:(?!<\/w:p>)[\s\S])*?رئيس مجلس[\s\S]*?<\/w:p>/;
+    if (warrantySigBlockRegex.test(docXml)) {
+      const sigTableXml = buildOfficialSignaturesTableXml({
+        specialistTitle: "المهندس المختص :",
+        specialistName: engineerSpecialist || " ",
+        financeManagerName: financeManager || " ",
+        boardChairman: boardChairman || "رئيس مجلس الإدارة",
+      });
+      docXml = docXml.replace(warrantySigBlockRegex, sigTableXml);
+    } else {
+      docXml = docXml.replace(/(<w:t[^>]*>)أحمد محمد(<\/w:t>)/, `$1${escapeXml(engineerSpecialist || " ")}$2`);
+      docXml = docXml.replace(/(<w:t[^>]*>)\s*اسم(<\/w:t>)/, `$1${escapeXml(financeManager || " ")}$2`);
+      docXml = docXml.replace(/(<w:t[^>]*>)رئيس مجلس الإدارة(<\/w:t>)/, `$1${escapeXml(boardChairman || "رئيس مجلس الإدارة")}$2`);
+    }
+
+    // إزالة أي إزاحات سالبة تدفع النصوص للتصادم مع إطار الصفحة
+    docXml = docXml.replace(/<w:ind\s+w:left="-\d+"\s*\/>/g, "");
 
     // 9. الملاحظات
     docXml = docXml.replace(/(<w:t[^>]*>)خانة لكتابة ملاحظة(<\/w:t>)/, `$1${escapeXml(warrantyNotes || " ")}$2`);
@@ -1140,6 +1179,73 @@ export function WarrantyCertificateSection({
                 onChange={(e) => setOperationNumber(e.target.value)}
                 className="h-9.5 text-xs font-mono font-bold rounded-xl"
               />
+            </div>
+          </div>
+
+          <div className="p-3.5 rounded-2xl bg-indigo-500/10 border border-indigo-500/20 space-y-3">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold text-indigo-900 dark:text-indigo-300">
+                البيانات الديناميكية للعملية والتوريد (المحددة بالأحمر في قالب شهادة الضمان):
+              </span>
+              <Badge className="bg-indigo-600 text-white text-[10px] font-bold">
+                قابلة للتخصيص الكامل
+              </Badge>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div className="space-y-1">
+                <Label className="text-[11px] font-bold text-foreground">نوع وتصنيف الأصناف الموردة *</Label>
+                <Input
+                  value={suppliedItemsCategory}
+                  onChange={(e) => setSuppliedItemsCategory(e.target.value)}
+                  placeholder="كاوتش وبطاريات / عنبر تسمين / توريدات..."
+                  className="h-8.5 text-xs rounded-xl bg-background"
+                />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-[11px] font-bold text-foreground">اختصار اسم جهة التوريد (طرفكم) *</Label>
+                <Input
+                  value={authorityShort}
+                  onChange={(e) => setAuthorityShort(e.target.value)}
+                  placeholder="الجامعة / الوحدة المحلية..."
+                  className="h-8.5 text-xs rounded-xl bg-background"
+                />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-[11px] font-bold text-foreground">طريقة الطرح والتعاقد *</Label>
+                <Input
+                  value={tenderMethod}
+                  onChange={(e) => setTenderMethod(e.target.value)}
+                  placeholder="بالمناقصة المحدودة / العامة..."
+                  className="h-8.5 text-xs rounded-xl bg-background"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 pt-1">
+              <div className="space-y-1 sm:col-span-2">
+                <Label className="text-[11px] font-bold text-foreground">نطاق وموضوع التوريد (لزوم العملية) *</Label>
+                <Input
+                  value={operationScope}
+                  onChange={(e) => setOperationScope(e.target.value)}
+                  className="h-8.5 text-xs rounded-xl bg-background"
+                />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-[11px] font-bold text-foreground">العام المالي *</Label>
+                <Input
+                  value={fiscalYear}
+                  onChange={(e) => setFiscalYear(e.target.value)}
+                  className="h-8.5 text-xs font-mono rounded-xl bg-background"
+                />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-[11px] font-bold text-foreground">تاريخ جلسة فتح المظروف الفني *</Label>
+                <Input
+                  value={technicalOpeningDate}
+                  onChange={(e) => setTechnicalOpeningDate(e.target.value)}
+                  className="h-8.5 text-xs font-mono rounded-xl bg-background"
+                />
+              </div>
             </div>
           </div>
         </div>
