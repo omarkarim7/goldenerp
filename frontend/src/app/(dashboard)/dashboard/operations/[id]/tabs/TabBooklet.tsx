@@ -678,26 +678,31 @@ export function TabBooklet({
     let docXml = await zip.file("word/document.xml")!.async("text");
     docXml = injectSingleQrIntoDocXml(docXml, qrDrawingXml, escapeXml(registrationNumber));
 
-    // إعداد صيغة أسلوب الطرح بحرف الباء وبدون حرف الباء لضمان عدم حدوث أي تكرار
-    const cleanMethod = (tenderMethod || "").trim();
-    let methodWithBa = cleanMethod.startsWith("ب")
-      ? cleanMethod
-      : cleanMethod.startsWith("ال")
-      ? `ب${cleanMethod}`
-      : `بـ${cleanMethod}`;
+    // إعداد صيغة أسلوب الطرح بحرف الباء وبدون حرف الباء لضمان عدم حدوث أي تكرار أو إضافة غير مرغوبة لكلمة "بالمناقصة"
+    const rawMethod = (tenderMethod || "").trim();
+    let cleanMethod = rawMethod;
+    if (rawMethod.startsWith("بال")) {
+      cleanMethod = "ال" + rawMethod.slice(3).trim();
+    } else if (rawMethod.startsWith("بـ")) {
+      cleanMethod = rawMethod.slice(2).trim();
+    } else if (rawMethod.startsWith("ب") && !rawMethod.startsWith("بدون")) {
+      cleanMethod = rawMethod.slice(1).trim();
+    }
 
-    if (cleanMethod === "العامة") {
+    let methodWithBa = "";
+    if (cleanMethod === "العامة" || cleanMethod === "المناقصة العامة") {
+      cleanMethod = "المناقصة العامة";
       methodWithBa = "بالمناقصة العامة";
-    } else if (cleanMethod === "المحدودة") {
+    } else if (cleanMethod === "المحدودة" || cleanMethod === "المناقصة المحدودة") {
+      cleanMethod = "المناقصة المحدودة";
       methodWithBa = "بالمناقصة المحدودة";
-    } else if (
-      !cleanMethod.includes("مناقص") &&
-      !cleanMethod.includes("ممارس") &&
-      !cleanMethod.includes("مزايد") &&
-      !cleanMethod.includes("إسناد") &&
-      !cleanMethod.includes("طرح")
-    ) {
-      methodWithBa = `بالمناقصة ${cleanMethod}`;
+    } else if (cleanMethod.startsWith("ال")) {
+      methodWithBa = `ب${cleanMethod}`;
+    } else if (cleanMethod) {
+      methodWithBa = `بـ${cleanMethod}`;
+    } else {
+      cleanMethod = "المناقصة العامة";
+      methodWithBa = "بالمناقصة العامة";
     }
 
     if (type === "bank_guarantee_letter") {
@@ -1221,7 +1226,7 @@ export function TabBooklet({
         title: currentTpl.title,
         pdfBlob,
         currentSnapshot,
-        docType: "BOOKLET",
+        docType: "LETTER",
         companyId: selectedCompanyId,
         registrationNumber,
       });

@@ -76,11 +76,12 @@ export const LIFECYCLE_TABS: TabDef[] = [
   { id: "warranty_certificate", label: "شهادة الضمان للأصناف الموردة", shortLabel: "شهادة الضمان", icon: ShieldCheck, order: 14, color: "emerald", description: "توليد وطباعة شهادة الضمان الرسمية المعتمدة للأصناف وفترة سريان الضمان والباركود الذكي" },
   { id: "guarantee_final", label: "التأمين النهائي (5%)", shortLabel: "التأمين النهائي", icon: ShieldCheck, order: 15, color: "emerald", description: "خطابات سداد التأمين النهائي، الخصم من المستحقات، الضمان البنكي، والباركود" },
   { id: "supply", label: "حالة التوريد والتجهيز", shortLabel: "حالة التوريد", icon: Truck, order: 16, color: "blue", description: "حصر وتجهيز أصناف البت المالي، مقارنة أسعار دراسة السوق بالتوريد، وأذون الإضافة المخزنية" },
-  { id: "invoicing", label: "إصدار الفاتورة والتسليم", shortLabel: "الفاتورة والتسليم", icon: FileText, order: 17, color: "indigo", description: "إصدار الفاتورة الرسمية، ضريبة 14%، رفع ملف الفاتورة المعتمدة، وإذن ومحضر التسليم الفعلي" },
-  { id: "insurances_labor", label: "التأمينات والقوى العاملة وأمر الدفع", shortLabel: "التأمينات والعمالة", icon: ShieldCheck, order: 18, color: "amber", description: "سداد التأمينات والعمالة، تسليم الشهادات للجهة الإدارية، ومتابعة استخراج أمر الدفع الحكومي" },
-  { id: "certificates", label: "المستخلصات والاستقطاعات والضرائب", shortLabel: "المستخلصات والضرائب", icon: Calculator, order: 19, color: "teal", description: "أمر الدفع، بيان الاستقطاعات الضريبية (14% VAT + 1% أ.ت.ص) وصافي الصرف" },
-  { id: "finance", label: "الحسابات والمالية والأرباح", shortLabel: "المالية والأرباح", icon: BarChart3, order: 20, color: "emerald", description: "التكلفة الإجمالية الفعلية، التدفقات النقدية، وصافي أرباح العملية" },
-  { id: "close", label: "إغلاق العملية وفترة الضمان", shortLabel: "الضمان والإغلاق", icon: Archive, order: 21, color: "slate", description: "فترة الضمان، الزيارات الشهرية للصيانة، الاستلام النهائي، واسترداد التأمينات والأرشيف" },
+  { id: "inspection_report", label: "محضر المعاينة والفحص الفعلي", shortLabel: "محضر المعاينة", icon: ClipboardCheck, order: 17, color: "amber", description: "توليد وطباعة محضر المعاينة والفحص الميداني للأعمال والأصناف واللجنة والباركود الذكي" },
+  { id: "invoicing", label: "إصدار الفاتورة والتسليم", shortLabel: "الفاتورة والتسليم", icon: FileText, order: 18, color: "indigo", description: "إصدار الفاتورة الرسمية، ضريبة 14%، رفع ملف الفاتورة المعتمدة، وإذن ومحضر التسليم الفعلي" },
+  { id: "insurances_labor", label: "التأمينات والقوى العاملة وأمر الدفع", shortLabel: "التأمينات والعمالة", icon: ShieldCheck, order: 19, color: "amber", description: "سداد التأمينات والعمالة، تسليم الشهادات للجهة الإدارية، ومتابعة استخراج أمر الدفع الحكومي" },
+  { id: "certificates", label: "المستخلصات والاستقطاعات والضرائب", shortLabel: "المستخلصات والضرائب", icon: Calculator, order: 20, color: "teal", description: "أمر الدفع، بيان الاستقطاعات الضريبية (14% VAT + 1% أ.ت.ص) وصافي الصرف" },
+  { id: "finance", label: "الحسابات والمالية والأرباح", shortLabel: "المالية والأرباح", icon: BarChart3, order: 21, color: "emerald", description: "التكلفة الإجمالية الفعلية، التدفقات النقدية، وصافي أرباح العملية" },
+  { id: "close", label: "إغلاق العملية وفترة الضمان", shortLabel: "الضمان والإغلاق", icon: Archive, order: 22, color: "slate", description: "فترة الضمان، الزيارات الشهرية للصيانة، الاستلام النهائي، واسترداد التأمينات والأرشيف" },
 ];
 
 export const STATUS_LABELS: Record<string, { label: string; badgeBg: string }> = {

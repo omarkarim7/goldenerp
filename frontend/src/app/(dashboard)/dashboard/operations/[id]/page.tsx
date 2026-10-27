@@ -80,6 +80,7 @@ import { TabSupplyOrder } from "./tabs/TabSupplyOrder";
 import { TabFinalGuarantee } from "./tabs/TabFinalGuarantee";
 import { TabGuarantees } from "./tabs/TabGuarantees";
 import { TabSupply } from "./tabs/TabSupply";
+import { TabInspectionReport } from "./tabs/TabInspectionReport";
 import { TabInvoicing } from "./tabs/TabInvoicing";
 import { TabInsurancesLabor } from "./tabs/TabInsurancesLabor";
 import { TabCertificates } from "./tabs/TabCertificates";
@@ -935,6 +936,16 @@ function OperationDetailContent({ id }: { id: string }) {
         );
       case "supply":
         return <TabSupply op={op} onRefresh={fetchOp} onNavigate={setActiveTab} />;
+      case "inspection_report":
+        return (
+          <TabInspectionReport
+            op={op}
+            onRefresh={fetchOp}
+            onNavigate={setActiveTab}
+            onPreviewDoc={handlePreviewDocument}
+            onDownloadDoc={handleDownloadDocument}
+          />
+        );
       case "invoicing":
         return (
           <TabInvoicing

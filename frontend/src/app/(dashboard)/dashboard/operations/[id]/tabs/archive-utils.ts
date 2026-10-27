@@ -136,8 +136,37 @@ export async function saveLetterToArchiveWithVersion({
   };
 }
 
+function isPdfDocument(d: any): boolean {
+  if (!d) return false;
+  const fn = (d.fileName || "").toLowerCase();
+  const ft = (d.fileType || d.mimeType || "").toLowerCase();
+  const fp = (d.filePath || "").toLowerCase();
+
+  // إذا كان الملف صورة صريحة، نرفضه فوراً لمنع تداخله مع معاينة الخطابات
+  if (
+    fn.endsWith(".png") ||
+    fn.endsWith(".jpg") ||
+    fn.endsWith(".jpeg") ||
+    fn.endsWith(".webp") ||
+    fn.endsWith(".gif") ||
+    fn.endsWith(".bmp") ||
+    ft.startsWith("image/") ||
+    fp.startsWith("data:image/")
+  ) {
+    return false;
+  }
+
+  // يجب أن يحمل امتداد pdf أو نوع MIME صالح
+  return (
+    fn.endsWith(".pdf") ||
+    ft.includes("pdf") ||
+    fp.startsWith("data:application/pdf")
+  );
+}
+
 /**
  * دالة التحميل الفوري للمستند المؤرشف بدون أي إعادة توليد (0ms Instant Load)
+ * مع ضمان تام لعدم جلب صور أو إيصالات مرفوعة بدلاً من خطابات الـ PDF الرسمية
  */
 export async function loadArchivedPdfBlob(
   op: Operation,
@@ -149,9 +178,26 @@ export async function loadArchivedPdfBlob(
   }
 
   const latestDocId = info.latestEntry?.docId;
-  const matchDoc = latestDocId
-    ? (op.documents || []).find((d: any) => d.id === latestDocId)
-    : (op.documents || []).find((d: any) => d.fileName?.includes(docKey) || d.type === "BOOKLET" || d.type === "LETTER");
+  let matchDoc: any = null;
+
+  if (latestDocId) {
+    const candidate = (op.documents || []).find((d: any) => d.id === latestDocId);
+    if (candidate && isPdfDocument(candidate)) {
+      matchDoc = candidate;
+    }
+  }
+
+  // إذا لم نجد الملف عبر docId، نبحث في الوثائق عن ملف PDF يطابق كود المستند أو اسمه فقط
+  if (!matchDoc) {
+    const expectedName = info.latestEntry?.fileName?.toLowerCase();
+    matchDoc = (op.documents || []).find((d: any) => {
+      if (!isPdfDocument(d)) return false;
+      const fn = (d.fileName || "").toLowerCase();
+      if (expectedName && fn.includes(expectedName.replace(/\.pdf$/i, ""))) return true;
+      if (fn.includes(docKey.toLowerCase())) return true;
+      return false;
+    });
+  }
 
   // 1. إذا كان الملف مخزناً كـ base64 داخل filePath في قاعدة البيانات
   if (matchDoc?.filePath && matchDoc.filePath.startsWith("data:application/pdf;base64,")) {
@@ -180,6 +226,25 @@ export async function loadArchivedPdfBlob(
         responseType: "blob",
       });
       if (res.data && res.data.size > 0) {
+        // التحقق من نوع الملف والتأكد التام من أنه ليس صورة مرفوعة
+        if (res.data.type && res.data.type.startsWith("image/")) {
+          console.warn("Retrieved document is an image, rejecting cached PDF preview:", res.data.type);
+          return null;
+        }
+
+        // فحص ترويسة الـ PDF السحرية %PDF لضمان سلامة الملف
+        try {
+          const headerSlice = await res.data.slice(0, 5).arrayBuffer();
+          const headerBytes = new Uint8Array(headerSlice);
+          const headerStr = String.fromCharCode(...headerBytes);
+          if (!headerStr.startsWith("%PDF")) {
+            console.warn("Document blob does not start with %PDF magic bytes, ignoring cached preview.");
+            return null;
+          }
+        } catch (headerErr) {
+          console.warn("Could not inspect PDF header bytes:", headerErr);
+        }
+
         return {
           blob: res.data,
           version: info.currentVersion || 1,
