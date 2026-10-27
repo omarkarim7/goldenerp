@@ -1039,13 +1039,40 @@ export function TabFinalGuarantee({
   }, [op.guarantees]);
 
   const finalDocs = useMemo(() => {
-    return (op.documents || []).filter(
-      (d: any) =>
-        d.type === "GUARANTEE_RECEIPT" ||
-        d.fileName?.includes("نهائي") ||
-        d.fileName?.includes("ضمان") ||
-        d.fileName?.includes("سداد")
-    );
+    return (op.documents || []).filter((d: any) => {
+      const name = d.fileName || "";
+      const type = d.type || "";
+
+      // Unconditionally exclude documents belonging to other stages
+      if (
+        name.includes("كراسة") ||
+        type === "BOOKLET" ||
+        name.includes("ابتدائي") ||
+        name.includes("مؤقت") ||
+        name.includes("شهادة ضمان") ||
+        type === "MARKET_STUDY" ||
+        name.includes("دراسة") ||
+        type === "SUPPLY_ORDER" ||
+        name.includes("أمر_توريد") ||
+        name.includes("إخطار الترسية") ||
+        name.includes("عرض")
+      ) {
+        return false;
+      }
+
+      // Strictly include final guarantee receipts and letters
+      const isFinalName =
+        name.includes("نهائي") ||
+        name.includes("التأمين النهائي") ||
+        name.includes("ضمان بنكي نهائي") ||
+        (name.includes("خطاب ضمان") && !name.includes("ابتدائي"));
+
+      const isFinalType =
+        (type === "GUARANTEE_RECEIPT" && (name.includes("نهائي") || name.includes("إيصال") || name.includes("ضمان"))) ||
+        type === "FINAL_GUARANTEE";
+
+      return isFinalName || isFinalType;
+    });
   }, [op.documents]);
 
   return (

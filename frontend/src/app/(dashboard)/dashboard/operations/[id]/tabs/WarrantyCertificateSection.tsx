@@ -55,8 +55,14 @@ import {
   generateHighResDocQrBuffer,
   getStandardDocQrPayload,
   buildOfficialSignaturesTableXml,
+  replaceDocxRecipient,
 } from "./letter-utils";
 import { getPdfBlobFromDocx, uploadPdfToFreeCloud, getExpectedCloudPdfUrl } from "./client-pdf";
+import {
+  getArchivedLetterInfo,
+  saveLetterToArchiveWithVersion,
+  loadArchivedPdfBlob,
+} from "./archive-utils";
 
 export interface WarrantyCertificateItem {
   id: string;
@@ -552,11 +558,7 @@ export function WarrantyCertificateSection({
     docXml = injectSingleQrIntoDocXml(docXml, qrDrawingXml, escapeXml(registrationNumber));
 
     // المرسل إليه والموضوع
-    docXml = docXml.replace(/الأستاذ/g, escapeXml(recipientPrefix));
-    docXml = docXml.replace(
-      /مدير الادارة العامة للمشتريات والمخازن بجامعة دمنهور/g,
-      escapeXml(recipientTitleAndAuthority)
-    );
+    docXml = replaceDocxRecipient(docXml, recipientPrefix, recipientTitleAndAuthority);
     docXml = docXml.replace(/للأصناف/g, escapeXml(subjectTarget));
     docXml = docXml.replace(/اسم العملية المسجله[\s\.]*/g, escapeXml(operationRegisteredName) + " ");
     docXml = docXml.replace(/365/g, escapeXml(operationNumber));
@@ -588,10 +590,10 @@ export function WarrantyCertificateSection({
 
     // فقرة بيان الضمان الشاملة
     docXml = docXml.replace(/جولدن سرفيس/g, escapeXml(companyName));
-    docXml = docXml.replace(/كاوتش وبطاريات/g, escapeXml(suppliedItemsCategory));
-    docXml = docXml.replace(/الجامعه/g, escapeXml(authorityShort));
-    docXml = docXml.replace(/بالمناقصة المحدودة/g, escapeXml(tenderMethod));
-    docXml = docXml.replace(/توريد كاوتش وبطاريات للسيارات للجامعه/g, escapeXml(operationScope));
+    docXml = docXml.replace(
+      /للعملية المذكورة أعلاه طرفكم/g,
+      `للعملية المذكورة أعلاه (${escapeXml(tenderMethod)} - ${escapeXml(operationScope)}) طرفكم`
+    );
     docXml = docXml.replace(/2024\s*\/\s*2025/g, escapeXml(fiscalYear));
     docXml = docXml.replace(/14\/\s*1\s*\/2024/g, escapeXml(technicalOpeningDate));
 
@@ -613,24 +615,31 @@ export function WarrantyCertificateSection({
     }
 
     // الحالات المستثناة
-    docXml = docXml.replace(/زيادة ضغط الهواء بالاطارات\./g, escapeXml(case1));
-    docXml = docXml.replace(/التعرض للصدمات أو اى الات حادة\./g, escapeXml(case2));
-    docXml = docXml.replace(/سوء الاستخدام \./g, escapeXml(case3));
-    docXml = docXml.replace(/أي شطب أو تعديل في هذه الشهادة تعتبر لاغيه\./g, escapeXml(case4));
+    docXml = docXml.replace(/زيادة ضغط الهواء بالاطارات/g, escapeXml((case1 || "").replace(/\.$/, "")));
+    docXml = docXml.replace(/التعرض للصدمات أو اى الات حادة/g, escapeXml((case2 || "").replace(/\.$/, "")));
+    docXml = docXml.replace(/سوء الاستخدام/g, escapeXml((case3 || "").replace(/\.$/, "")));
+    docXml = docXml.replace(/أي شطب أو تعديل في هذه الشهادة تعتبر لاغيه/g, escapeXml((case4 || "").replace(/\.$/, "")));
 
     // مدة سريان الشهادة
     docXml = docXml.replace(/ستة أشهر/g, escapeXml(validityDuration));
 
     // التوقيعات بأسفل الصفحة في جدول ثلاثي منضبط (المختص | المدير المالي | يعتمد رئيس مجلس الإدارة)
-    const warSigBlockRegex = /<w:p\b[^>]*>(?:(?!<w:p\b)[\s\S])*?(?:المختص|المهندس)[\s\S]*?رئيس مجلس[\s\S]*?<\/w:p>/;
-    if (warSigBlockRegex.test(docXml)) {
-      const sigTableXml = buildOfficialSignaturesTableXml({
-        specialistTitle: "المهندس المختص :",
-        specialistName: engineerSpecialist || " ",
-        financeManagerName: financeManager || " ",
-        boardChairman: boardChairman || "رئيس مجلس الإدارة",
-      });
-      docXml = docXml.replace(warSigBlockRegex, sigTableXml);
+    const sigStart = docXml.indexOf("المهندس المختص");
+    if (sigStart !== -1) {
+      const pStart = docXml.lastIndexOf("<w:p", sigStart);
+      const chairmanIdx = docXml.indexOf("رئيس مجلس الإدارة", sigStart);
+      if (chairmanIdx !== -1) {
+        const pEnd = docXml.indexOf("</w:p>", chairmanIdx);
+        if (pStart !== -1 && pEnd !== -1) {
+          const sigTableXml = buildOfficialSignaturesTableXml({
+            specialistTitle: "المهندس المختص :",
+            specialistName: engineerSpecialist || " ",
+            financeManagerName: financeManager || " ",
+            boardChairman: boardChairman || "رئيس مجلس الإدارة",
+          });
+          docXml = docXml.substring(0, pStart) + sigTableXml + docXml.substring(pEnd + 6);
+        }
+      }
     } else {
       docXml = docXml.replace(/رئيس مجلس\s*ا?ل?[إا]دارة/g, escapeXml(boardChairman || "رئيس مجلس الإدارة"));
     }
@@ -646,7 +655,7 @@ export function WarrantyCertificateSection({
         let hdr = await zip.file(fileName)!.async("text");
         hdr = hdr.replace(/110200700036620/g, escapeXml(companyCommercialRegister));
         hdr = hdr.replace(/658369652/g, escapeXml(companyTaxCard));
-        hdr = hdr.replace(/كود العملية بالشركه/g, escapeXml(companyOpCode));
+        hdr = hdr.replace(/\(?\s*كود العملية بالشركه\s*\)?/g, escapeXml(companyOpCode));
         zip.file(fileName, hdr);
       }
       if (fileName.startsWith("word/footer") && fileName.endsWith(".xml")) {
@@ -678,6 +687,19 @@ export function WarrantyCertificateSection({
     if (renderingDocx) return;
     setRenderingDocx(true);
     try {
+      // 0ms instant preview from archive if not dirty and not forcing refresh
+      if (!forceRefresh && !isDirty) {
+        const archived = await loadArchivedPdfBlob(op, "letter-warranty");
+        if (archived?.blob) {
+          setPreviewPdfBlob(archived.blob);
+          if (previewPdfUrl) URL.revokeObjectURL(previewPdfUrl);
+          setPreviewPdfUrl(URL.createObjectURL(archived.blob));
+          setLastGeneratedSnapshot(currentSnapshot);
+          setRenderingDocx(false);
+          return;
+        }
+      }
+
       const docx = await generateWarrantyDocxBlob();
       setPreviewDocxBlob(docx);
 
@@ -686,6 +708,7 @@ export function WarrantyCertificateSection({
         `warranty_certificate_${registrationNumber || op.serialNumber}.docx`
       );
       setPreviewPdfBlob(pdf);
+      if (previewPdfUrl) URL.revokeObjectURL(previewPdfUrl);
       const url = URL.createObjectURL(pdf);
       setPreviewPdfUrl(url);
 
@@ -884,43 +907,36 @@ export function WarrantyCertificateSection({
 
   // ━━━ حالة إضافة شهادة الضمان للأرشيف ━━━
   const [addingToArchive, setAddingToArchive] = useState(false);
-  const isArchived = useMemo(() => {
-    try {
-      if (op.notes && op.notes.startsWith("{")) {
-        const parsed = JSON.parse(op.notes);
-        const list = parsed.archivedDocIds || [];
-        return list.includes("letter-warranty");
-      }
-    } catch {}
-    return false;
-  }, [op.notes]);
+  const archiveInfo = useMemo(() => getArchivedLetterInfo(op, "letter-warranty"), [op]);
+  const isArchived = archiveInfo.isArchived;
 
   const handleToggleArchive = async () => {
     setAddingToArchive(true);
-    let notesObj: any = {};
     try {
-      if (op.notes && op.notes.startsWith("{")) {
-        notesObj = JSON.parse(op.notes);
+      if (isArchived) {
+        let notesObj: any = {};
+        try {
+          if (op.notes && op.notes.startsWith("{")) notesObj = JSON.parse(op.notes);
+        } catch {}
+        notesObj.archivedDocIds = (notesObj.archivedDocIds || []).filter((id: string) => id !== "letter-warranty");
+        await api.patch(`/operations/${op.id}`, { notes: JSON.stringify(notesObj) });
+        toast.success("تمت إزالة شهادة الضمان من مستندات الأرشيف وحزمة التقديم 📂");
+      } else {
+        toast.info("جاري تجهيز وتوثيق نسخة PDF لشهادة الضمان للأرشيف...");
+        const docx = previewDocxBlob || (await generateWarrantyDocxBlob());
+        const pdf = previewPdfBlob || (await getPdfBlobFromDocx(docx, `warranty_${registrationNumber}.docx`));
+        const res = await saveLetterToArchiveWithVersion({
+          op,
+          docKey: "letter-warranty",
+          title: "شهادة الضمان والصيانة المعتمدة",
+          pdfBlob: pdf,
+          currentSnapshot,
+          docType: "LETTER",
+          companyId: selectedCompanyId,
+          registrationNumber,
+        });
+        toast.success(`تمت إضافة شهادة الضمان إلى الأرشيف بنجاح (${res.versionName})! 📦✨`);
       }
-    } catch {}
-
-    const current: string[] = notesObj.archivedDocIds || [];
-    const exists = current.includes("letter-warranty");
-    const updated = exists
-      ? current.filter((id: string) => id !== "letter-warranty")
-      : [...current, "letter-warranty"];
-
-    notesObj.archivedDocIds = updated;
-
-    try {
-      await api.patch(`/operations/${op.id}`, {
-        notes: JSON.stringify(notesObj),
-      });
-      toast.success(
-        exists
-          ? "تمت إزالة شهادة الضمان من مستندات الأرشيف وحزمة التقديم 📂"
-          : "تمت إضافة شهادة الضمان إلى مستندات الأرشيف وحزمة التقديم بنجاح! 📦✨"
-      );
       onRefresh();
     } catch (err: any) {
       toast.error("فشل تحديث حالة الأرشيف لشهادة الضمان: " + (err?.message || ""));

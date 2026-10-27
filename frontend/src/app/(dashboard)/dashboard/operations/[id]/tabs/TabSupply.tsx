@@ -27,6 +27,7 @@ import {
   Calendar,
   Building2,
   ExternalLink,
+  RefreshCw,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -118,47 +119,227 @@ export function TabSupply({
   const supplyData = existingNotes.supplyPreparationData || {};
   const marketQuotes = existingNotes.marketQuotes || [];
 
-  // Initialize Supply Items from Financial Offer or Market Quotes
-  const [supplyItems, setSupplyItems] = useState<SupplyItemRow[]>(() => {
-    if (supplyData.items && Array.isArray(supplyData.items) && supplyData.items.length > 0) {
-      return supplyData.items;
+  // Helper to detect if saved items is just the stale single-item placeholder with operation title
+  const isStalePlaceholderList = (items?: SupplyItemRow[]) => {
+    if (!items || !Array.isArray(items) || items.length === 0) return true;
+    if (items.length === 1) {
+      const it = items[0];
+      const name = (it.itemName || "").trim();
+      const opName = (op.name || "").trim();
+      if (
+        name === opName ||
+        name.includes("تأجير") ||
+        name.includes("المزايدة المحلية") ||
+        name.includes("المزايدة") ||
+        name.includes("المناقصة") ||
+        name.includes("توريد أصناف ومهمات مطابقة للمواصفات") ||
+        (it.costPrice === 42000 && it.supplyPrice === 58000)
+      ) {
+        return true;
+      }
     }
-    // Pull from financial offer items
-    const foItems = op.financialOffers?.[0]?.items || [];
-    if (foItems.length > 0) {
-      return foItems.map((fi: any, idx: number) => {
-        const matchedMarket = marketQuotes.find(
-          (mq: any) => mq.itemName?.trim().toLowerCase() === fi.itemName?.trim().toLowerCase()
-        );
-        const costPrice = matchedMarket ? Number(matchedMarket.unitPrice) : Math.round(Number(fi.unitPrice) * 0.75);
+    return false;
+  };
+
+  // Helper to resolve detailed items from offers or market study
+  const resolveDetailedItems = () => {
+    // 1. Helper to find market quote price for an item
+    const findCost = (name: string, fallbackSupplyPrice: number = 0) => {
+      if (!name) return fallbackSupplyPrice > 0 ? Math.round(fallbackSupplyPrice * 0.75) : 0;
+      const clean = name.trim().toLowerCase();
+      const found = marketQuotes.find(
+        (mq: any) =>
+          mq.itemName?.trim().toLowerCase() === clean ||
+          clean.includes(mq.itemName?.trim().toLowerCase()) ||
+          (mq.itemName && clean.includes(mq.itemName.trim().toLowerCase()))
+      );
+      if (found && Number(found.unitPrice) > 0) return Number(found.unitPrice);
+      return fallbackSupplyPrice > 0 ? Math.round(fallbackSupplyPrice * 0.75) : 0;
+    };
+
+    // 2. Helper to find supply price from financial offer if available
+    const findSupplyPrice = (name: string, fallbackCost: number = 0) => {
+      const foItems = existingNotes.financialOfferDocx?.items || op.financialOffers?.[0]?.items || [];
+      const clean = (name || "").trim().toLowerCase();
+      const found = foItems.find(
+        (fi: any) =>
+          fi.itemName?.trim().toLowerCase() === clean ||
+          clean.includes(fi.itemName?.trim().toLowerCase())
+      );
+      if (found) {
+        const price = Number(found.variants?.[0]?.unitPrice) || Number(found.unitPrice) || 0;
+        if (price > 0) return price;
+      }
+      return fallbackCost > 0 ? Math.round(fallbackCost * 1.25) : 0;
+    };
+
+    // A. Check financial offer docx items
+    const foDocxItems = existingNotes.financialOfferDocx?.items;
+    if (Array.isArray(foDocxItems) && foDocxItems.length > 0) {
+      return foDocxItems.map((fi: any, idx: number) => {
+        const supplyPrice = Number(fi.variants?.[0]?.unitPrice) || Number(fi.unitPrice) || 0;
+        const costPrice = findCost(fi.itemName, supplyPrice);
         return {
-          id: fi.id || String(idx + 1),
+          id: fi.id || `fo-item-${idx + 1}`,
           itemCode: `بند-${idx + 1}`,
-          itemName: fi.itemName || "صنف توريد معتمد",
-          unit: fi.unit || "وحدة",
+          itemName: fi.itemName || `صنف #${idx + 1}`,
+          unit: fi.unit || "عدد",
           quantity: Number(fi.quantity) || 1,
           costPrice,
-          supplyPrice: Number(fi.unitPrice) || 0,
-          prepStatus: "PREPARING",
-          inspectionStatus: "MATCHED",
-          notes: fi.description || "",
+          supplyPrice,
+          prepStatus: "PREPARING" as const,
+          inspectionStatus: "MATCHED" as const,
+          notes: fi.variants?.[0]?.description || fi.variants?.[0]?.notes || fi.description || "معتمد بالعرض المالي",
         };
       });
     }
 
-    // Default mock items if none found
+    // B. Check DB financial offer items
+    const foDbItems = op.financialOffers?.[0]?.items;
+    if (Array.isArray(foDbItems) && foDbItems.length > 0) {
+      return foDbItems.map((fi: any, idx: number) => {
+        const supplyPrice = Number(fi.unitPrice) || 0;
+        const costPrice = findCost(fi.itemName, supplyPrice);
+        return {
+          id: fi.id || `fo-db-${idx + 1}`,
+          itemCode: `بند-${idx + 1}`,
+          itemName: fi.itemName || `صنف #${idx + 1}`,
+          unit: fi.unit || "وحدة",
+          quantity: Number(fi.quantity) || 1,
+          costPrice,
+          supplyPrice,
+          prepStatus: "PREPARING" as const,
+          inspectionStatus: "MATCHED" as const,
+          notes: fi.description || "معتمد بالعرض المالي",
+        };
+      });
+    }
+
+    // C. Check technical offer docx items
+    const toDocxItems = existingNotes.technicalOfferDocx?.items;
+    if (Array.isArray(toDocxItems) && toDocxItems.length > 0) {
+      return toDocxItems.map((ti: any, idx: number) => {
+        const notes = ti.variants?.[0]?.description || ti.variants?.[0]?.notes || "مطابق للمواصفات الفنية";
+        const supplyPrice = findSupplyPrice(ti.itemName);
+        const costPrice = findCost(ti.itemName, supplyPrice);
+        return {
+          id: ti.id || `to-item-${idx + 1}`,
+          itemCode: `بند-${idx + 1}`,
+          itemName: ti.itemName || `صنف #${idx + 1}`,
+          unit: ti.unit || "عدد",
+          quantity: Number(ti.quantity) || 1,
+          costPrice,
+          supplyPrice: supplyPrice > 0 ? supplyPrice : Math.round(costPrice * 1.25),
+          prepStatus: "PREPARING" as const,
+          inspectionStatus: "MATCHED" as const,
+          notes,
+        };
+      });
+    }
+
+    // D. Check DB technical offer items
+    const toDbItems = op.technicalOffers?.[0]?.items;
+    if (Array.isArray(toDbItems) && toDbItems.length > 0) {
+      return toDbItems.map((ti: any, idx: number) => {
+        const supplyPrice = findSupplyPrice(ti.itemName);
+        const costPrice = findCost(ti.itemName, supplyPrice);
+        return {
+          id: ti.id || `to-db-${idx + 1}`,
+          itemCode: `بند-${idx + 1}`,
+          itemName: ti.itemName || `صنف #${idx + 1}`,
+          unit: ti.unit || "عدد",
+          quantity: Number(ti.quantity) || 1,
+          costPrice,
+          supplyPrice: supplyPrice > 0 ? supplyPrice : Math.round(costPrice * 1.25),
+          prepStatus: "PREPARING" as const,
+          inspectionStatus: "MATCHED" as const,
+          notes: ti.description || "مطابق للمواصفات الفنية",
+        };
+      });
+    }
+
+    // E. Check market quotes
+    if (marketQuotes.length > 0) {
+      return marketQuotes.map((mq: any, idx: number) => {
+        const costPrice = Number(mq.unitPrice) || 0;
+        const supplyPrice = Math.round(costPrice * 1.25);
+        return {
+          id: mq.id || `mq-item-${idx + 1}`,
+          itemCode: mq.itemCode || `بند-${idx + 1}`,
+          itemName: mq.itemName || `صنف #${idx + 1}`,
+          unit: mq.unit || "وحدة",
+          quantity: Number(mq.quantity) || 1,
+          costPrice,
+          supplyPrice,
+          prepStatus: "PREPARING" as const,
+          inspectionStatus: "MATCHED" as const,
+          notes: mq.notes || mq.specsMatch || "وفق دراسة أسعار السوق المعتمدة",
+        };
+      });
+    }
+
+    // F. Check warranty certificate items
+    const warItems = existingNotes.warrantyCertificate?.items;
+    if (Array.isArray(warItems) && warItems.length > 0) {
+      return warItems.map((wi: any, idx: number) => {
+        const costPrice = findCost(wi.itemName);
+        const supplyPrice = findSupplyPrice(wi.itemName, costPrice);
+        return {
+          id: wi.id || `war-item-${idx + 1}`,
+          itemCode: `بند-${idx + 1}`,
+          itemName: wi.itemName || `صنف #${idx + 1}`,
+          unit: wi.unit || "عدد",
+          quantity: Number(wi.quantity) || 1,
+          costPrice,
+          supplyPrice: supplyPrice > 0 ? supplyPrice : Math.round(costPrice * 1.25),
+          prepStatus: "PREPARING" as const,
+          inspectionStatus: "MATCHED" as const,
+          notes: wi.description || wi.notes || "شهادة الضمان والصيانة",
+        };
+      });
+    }
+
+    // G. Check booklet items
+    const bookletItems = existingNotes.bookletData?.items;
+    if (Array.isArray(bookletItems) && bookletItems.length > 0) {
+      return bookletItems.map((bi: any, idx: number) => ({
+        id: bi.id || `bk-item-${idx + 1}`,
+        itemCode: `بند-${idx + 1}`,
+        itemName: bi.itemName || `صنف #${idx + 1}`,
+        unit: bi.unit || "عدد",
+        quantity: Number(bi.quantity) || 1,
+        costPrice: findCost(bi.itemName),
+        supplyPrice: findSupplyPrice(bi.itemName),
+        prepStatus: "PREPARING" as const,
+        inspectionStatus: "MATCHED" as const,
+        notes: bi.description || "كراسة الشروط والمواصفات",
+      }));
+    }
+
+    return [];
+  };
+
+  // Initialize Supply Items with detailed items
+  const [supplyItems, setSupplyItems] = useState<SupplyItemRow[]>(() => {
+    if (supplyData.items && Array.isArray(supplyData.items) && !isStalePlaceholderList(supplyData.items)) {
+      return supplyData.items;
+    }
+    const resolved = resolveDetailedItems();
+    if (resolved.length > 0) {
+      return resolved;
+    }
     return [
       {
-        id: "1",
+        id: "item-1",
         itemCode: "بند-1",
-        itemName: op.name || "توريد أصناف ومهمات مطابقة للمواصفات",
-        unit: "دفعة",
+        itemName: "صنف توريد جديد",
+        unit: "عدد",
         quantity: 1,
-        costPrice: 42000,
-        supplyPrice: 58000,
+        costPrice: 0,
+        supplyPrice: 0,
         prepStatus: "PREPARING",
         inspectionStatus: "MATCHED",
-        notes: "تم الاتفاق مع المورد وجاري التجهيز",
+        notes: "يرجى تحديد اسم وتفاصيل الصنف",
       },
     ];
   });
@@ -268,6 +449,54 @@ export function TabSupply({
   // Update item status
   const handleUpdateItemStatus = (id: string, field: "prepStatus" | "inspectionStatus", value: any) => {
     setSupplyItems(supplyItems.map((it) => (it.id === id ? { ...it, [field]: value } : it)));
+  };
+
+  // Sync items from offers
+  const handleSyncDetailedItems = () => {
+    const resolved = resolveDetailedItems();
+    if (resolved.length > 0) {
+      setSupplyItems(resolved);
+      toast.success(`تم استيراد ${resolved.length} أصناف تفصيلية بنجاح من عروض العملية! 🔄📦`);
+    } else {
+      toast.warning("لم يتم العثور على أصناف تفصيلية مسجلة في العرض الفني أو المالي أو دراسة السوق");
+    }
+  };
+
+  // Add custom item row
+  const handleAddItem = () => {
+    const nextIdx = supplyItems.length + 1;
+    setSupplyItems([
+      ...supplyItems,
+      {
+        id: `item-${Date.now()}`,
+        itemCode: `بند-${nextIdx}`,
+        itemName: "",
+        unit: "عدد",
+        quantity: 1,
+        costPrice: 0,
+        supplyPrice: 0,
+        prepStatus: "PREPARING",
+        inspectionStatus: "MATCHED",
+        notes: "",
+      },
+    ]);
+    toast.info("تمت إضافة سطر صنف جديد بالجدول ➕");
+  };
+
+  // Delete item row
+  const handleDeleteItem = (id: string) => {
+    if (supplyItems.length <= 1) {
+      toast.warning("يجب الإبقاء على صنف واحد على الأقل في الجدول");
+      return;
+    }
+    setSupplyItems(supplyItems.filter((it) => it.id !== id));
+  };
+
+  // Update item field (name, quantity, unit, price, notes)
+  const handleUpdateItemField = (id: string, field: keyof SupplyItemRow, value: any) => {
+    setSupplyItems(
+      supplyItems.map((it) => (it.id === id ? { ...it, [field]: value } : it))
+    );
   };
 
   // Save Supply Prep Data into op.notes and record as Card
@@ -527,9 +756,33 @@ export function TabSupply({
         icon={Boxes}
         iconColor="text-blue-600"
         badge={
-          <Badge className="bg-blue-500/15 text-blue-700 dark:text-blue-300 border-blue-500/30 text-xs font-bold">
-            {supplyItems.length} أصناف بالعملية
-          </Badge>
+          <div className="flex items-center gap-2 flex-wrap">
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={handleSyncDetailedItems}
+              className="text-xs font-bold gap-1.5 h-7 rounded-xl bg-background hover:bg-muted text-blue-600 border-blue-500/30 cursor-pointer shadow-xs"
+              title="مزامنة وتفصيل الأصناف وفق العرض الفني والمالي"
+            >
+              <RefreshCw className="h-3 w-3" />
+              مزامنة الأصناف 🔄
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={handleAddItem}
+              className="text-xs font-bold gap-1.5 h-7 rounded-xl bg-background hover:bg-muted text-emerald-600 border-emerald-500/30 cursor-pointer shadow-xs"
+              title="إضافة صنف توريد جديد"
+            >
+              <Plus className="h-3 w-3" />
+              إضافة صنف ➕
+            </Button>
+            <Badge className="bg-blue-500/15 text-blue-700 dark:text-blue-300 border-blue-500/30 text-xs font-bold">
+              {supplyItems.length} أصناف تفصيلية بالعملية
+            </Badge>
+          </div>
         }
       >
         <div className="p-3.5 rounded-xl bg-blue-500/5 border border-blue-500/20 text-xs text-foreground mb-1 leading-relaxed">
@@ -541,14 +794,15 @@ export function TabSupply({
             <thead className="bg-muted/60 text-muted-foreground font-bold border-b border-border">
               <tr>
                 <th className="p-3 text-center w-12">#</th>
-                <th className="p-3 min-w-[200px]">الصنف والمواصفات</th>
-                <th className="p-3 w-20 text-center">الكمية</th>
+                <th className="p-3 min-w-[220px]">الصنف والمواصفات</th>
+                <th className="p-3 w-24 text-center">الكمية</th>
                 <th className="p-3 w-24 text-center">الوحدة</th>
-                <th className="p-3 w-28 text-center text-blue-600 dark:text-blue-400">سعر دراسة السوق</th>
-                <th className="p-3 w-28 text-center text-emerald-600 dark:text-emerald-400">سعر البت المالي</th>
+                <th className="p-3 w-32 text-center text-blue-600 dark:text-blue-400">سعر دراسة السوق</th>
+                <th className="p-3 w-32 text-center text-emerald-600 dark:text-emerald-400">سعر البت المالي</th>
                 <th className="p-3 w-28 text-center text-amber-600 dark:text-amber-400">إجمالي الهامش</th>
                 <th className="p-3 min-w-[200px] text-center">حالة التجهيز</th>
                 <th className="p-3 min-w-[210px] text-center">الفحص المبدئي</th>
+                <th className="p-3 text-center w-12">حذف</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border/60">
@@ -559,21 +813,53 @@ export function TabSupply({
                     <td className="p-2.5 text-center font-mono font-bold text-muted-foreground">
                       {idx + 1}
                     </td>
-                    <td className="p-2.5">
-                      <div className="font-bold text-foreground">{item.itemName}</div>
-                      {item.notes && <div className="text-[11px] text-muted-foreground mt-0.5">{item.notes}</div>}
+                    <td className="p-2.5 min-w-[220px]">
+                      <Input
+                        value={item.itemName}
+                        onChange={(e) => handleUpdateItemField(item.id, "itemName", e.target.value)}
+                        className="h-8 text-xs font-bold bg-transparent border-transparent hover:border-border focus:border-primary focus:bg-background rounded-lg px-2"
+                        placeholder="اسم الصنف والمواصفة"
+                      />
+                      <Input
+                        value={item.notes || ""}
+                        onChange={(e) => handleUpdateItemField(item.id, "notes", e.target.value)}
+                        className="h-6 text-[11px] text-muted-foreground bg-transparent border-transparent hover:border-border focus:border-primary focus:bg-background rounded-md px-2 mt-0.5"
+                        placeholder="ملاحظات المواصفة والتجهيز"
+                      />
                     </td>
-                    <td className="p-2.5 text-center font-mono font-bold">
-                      {item.quantity}
+                    <td className="p-2.5 text-center">
+                      <Input
+                        type="number"
+                        min="1"
+                        value={item.quantity}
+                        onChange={(e) => handleUpdateItemField(item.id, "quantity", Number(e.target.value) || 1)}
+                        className="h-8 w-20 text-center text-xs font-mono font-bold bg-transparent border-transparent hover:border-border focus:border-primary focus:bg-background rounded-lg mx-auto"
+                      />
                     </td>
-                    <td className="p-2.5 text-center text-muted-foreground font-semibold">
-                      {item.unit}
+                    <td className="p-2.5 text-center">
+                      <Input
+                        value={item.unit}
+                        onChange={(e) => handleUpdateItemField(item.id, "unit", e.target.value)}
+                        className="h-8 w-20 text-center text-xs font-semibold text-muted-foreground bg-transparent border-transparent hover:border-border focus:border-primary focus:bg-background rounded-lg mx-auto"
+                      />
                     </td>
-                    <td className="p-2.5 text-center font-mono font-bold text-blue-600 dark:text-blue-400">
-                      {formatCurrency(item.costPrice)}
+                    <td className="p-2.5 text-center">
+                      <Input
+                        type="number"
+                        value={item.costPrice}
+                        onChange={(e) => handleUpdateItemField(item.id, "costPrice", Number(e.target.value) || 0)}
+                        className="h-8 w-28 text-center text-xs font-mono font-bold text-blue-600 dark:text-blue-400 bg-transparent border-transparent hover:border-border focus:border-primary focus:bg-background rounded-lg mx-auto"
+                      />
+                      <div className="text-[10px] text-muted-foreground mt-0.5">{formatCurrency(item.costPrice)}</div>
                     </td>
-                    <td className="p-2.5 text-center font-mono font-bold text-emerald-600 dark:text-emerald-400">
-                      {formatCurrency(item.supplyPrice)}
+                    <td className="p-2.5 text-center">
+                      <Input
+                        type="number"
+                        value={item.supplyPrice}
+                        onChange={(e) => handleUpdateItemField(item.id, "supplyPrice", Number(e.target.value) || 0)}
+                        className="h-8 w-28 text-center text-xs font-mono font-bold text-emerald-600 dark:text-emerald-400 bg-transparent border-transparent hover:border-border focus:border-primary focus:bg-background rounded-lg mx-auto"
+                      />
+                      <div className="text-[10px] text-muted-foreground mt-0.5">{formatCurrency(item.supplyPrice)}</div>
                     </td>
                     <td className="p-2.5 text-center font-mono font-bold text-amber-600 dark:text-amber-400">
                       {formatCurrency(itemMargin)}
@@ -626,6 +912,18 @@ export function TabSupply({
                           <SelectItem value="REJECTED">مرفوض للاستبدال ✕</SelectItem>
                         </SelectContent>
                       </Select>
+                    </td>
+                    <td className="p-2.5 text-center w-12">
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => handleDeleteItem(item.id)}
+                        className="h-8 w-8 text-muted-foreground hover:text-red-600 hover:bg-red-500/10 rounded-lg transition-colors cursor-pointer"
+                        title="حذف هذا الصنف"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
                     </td>
                   </tr>
                 );
