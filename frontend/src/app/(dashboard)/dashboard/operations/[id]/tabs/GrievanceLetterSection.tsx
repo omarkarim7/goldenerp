@@ -589,20 +589,29 @@ export function GrievanceLetterSection({
       }
     }
 
-    // 6. استبدال خانات التوقيعات والاعتمادات في مكانها المخصص بالقالب
-    const safeSpecTitle = specialistTitle || (isTech ? "المهندس / القانونى المختص :" : "المدير المالي / القانوني :");
-    const sigTitleRegex = /<w:r\b[^>]*>(?:(?!<\/w:r>)[\s\S])*?المهندس(?:(?!<\/w:r>)[\s\S])*?<\/w:r>[\s\S]*?<w:r\b[^>]*>(?:(?!<\/w:r>)[\s\S])*?\/ القانونى(?:(?!<\/w:r>)[\s\S])*?<\/w:r>[\s\S]*?<w:r\b[^>]*>(?:(?!<\/w:r>)[\s\S])*?المختص(?:(?!<\/w:r>)[\s\S])*?<\/w:r>[\s\S]*?<w:r\b[^>]*>(?:(?!<\/w:r>)[\s\S])*?:\s*<\/w:t><\/w:r>/;
-    if (sigTitleRegex.test(docXml)) {
-      docXml = docXml.replace(
-        sigTitleRegex,
-        `<w:r><w:rPr><w:b/><w:bCs/><w:sz w:val="24"/><w:szCs w:val="24"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t xml:space="preserve">${escapeXml(safeSpecTitle)}    </w:t></w:r>`
-      );
+    // 6. عبارة الاحترام والتقدير والتوقيعات الرسمية في جدول ثلاثي منضبط (مطابق لباقي خطابات النظام)
+    const p40Regex = /<w:p\b[^>]*>(?:(?!<\/w:p>)[\s\S])*?وتفضلو بقبول وافر الامتنان والتقدير[\s\S]*?<\/w:p>/;
+    if (p40Regex.test(docXml)) {
+      const cleanedP40 = `<w:p><w:pPr><w:spacing w:before="120" w:after="160" w:line="280" w:lineRule="auto"/><w:jc w:val="center"/><w:rPr><w:rFonts w:ascii="Andalus" w:hAnsi="Andalus" w:cs="Andalus"/><w:b/><w:bCs/><w:sz w:val="34"/><w:szCs w:val="34"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr></w:pPr><w:r><w:rPr><w:rFonts w:ascii="Andalus" w:hAnsi="Andalus" w:cs="Andalus"/><w:b/><w:bCs/><w:sz w:val="34"/><w:szCs w:val="34"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t xml:space="preserve">وتفضلو بقبول وافر الامتنان والتقدير  ،،،،،</w:t></w:r></w:p>`;
+      docXml = docXml.replace(p40Regex, cleanedP40);
     }
 
-    docXml = docXml.replace(/<w:t>أحمد محمد<\/w:t>/g, `<w:t>${escapeXml(specialistName || " ")}</w:t>`);
-    docXml = docXml.replace(/أحمد محمد/g, escapeXml(specialistName || " "));
-    docXml = docXml.replace(/<w:t>اسم<\/w:t>/g, `<w:t>${escapeXml(financeManagerName || " ")}</w:t>`);
-    docXml = docXml.replace(/<w:t>رئيس مجلس الإدارة<\/w:t>/g, `<w:t>${escapeXml(boardChairman || "رئيس مجلس الإدارة")}</w:t>`);
+    const grievanceSigBlockRegex = /<w:p\b[^>]*>(?:(?!<\/w:p>)[\s\S])*?(?:المختص|المهندس|المدير المالى)[\s\S]*?يعتمد[\s\S]*?<\/w:p>\s*<w:p\b[^>]*>(?:(?!<\/w:p>)[\s\S])*?رئيس مجلس[\s\S]*?<\/w:p>/;
+    const safeSpecTitle = specialistTitle || (isTech ? "المهندس / القانونى المختص :" : "المدير المالي / القانوني :");
+    if (grievanceSigBlockRegex.test(docXml)) {
+      const sigTableXml = buildOfficialSignaturesTableXml({
+        specialistTitle: safeSpecTitle,
+        specialistName: specialistName || " ",
+        financeManagerName: financeManagerName || " ",
+        boardChairman: boardChairman || "رئيس مجلس الإدارة",
+      });
+      docXml = docXml.replace(grievanceSigBlockRegex, sigTableXml);
+    } else {
+      docXml = docXml.replace(/<w:t>أحمد محمد<\/w:t>/g, `<w:t>${escapeXml(specialistName || " ")}</w:t>`);
+      docXml = docXml.replace(/أحمد محمد/g, escapeXml(specialistName || " "));
+      docXml = docXml.replace(/<w:t>اسم<\/w:t>/g, `<w:t>${escapeXml(financeManagerName || " ")}</w:t>`);
+      docXml = docXml.replace(/<w:t>رئيس مجلس الإدارة<\/w:t>/g, `<w:t>${escapeXml(boardChairman || "رئيس مجلس الإدارة")}</w:t>`);
+    }
 
     // تنظيف كل التحديدات والعلامات الحمراء والصفراء بالقالب
     docXml = docXml.replace(/<w:p\b[^>]*>(?:(?!<\/w:p>)[\s\S])*?خان[ةه] (?:لكتابة )?ملاحظ[ةه](?:(?!<\/w:p>)[\s\S])*?<\/w:p>/gi, "");
@@ -667,7 +676,7 @@ export function GrievanceLetterSection({
         // 1. موازنة مسافات السجل التجاري ليكون محاذياً لأقصى اليسار مثل باقي الخطابات
         const crDiff = 15 - cleanCr.length;
         if (crDiff > 0) {
-          const extraCrSpaces = " ".repeat(Math.round(crDiff * 1.8));
+          const extraCrSpaces = " ".repeat(Math.round(crDiff * 1.5));
           hXml = hXml.replace(
             /(<w:t xml:space="preserve">)(\s{50,})(<\/w:t>[\s\S]*?س \. ت : )/g,
             `$1$2${extraCrSpaces}$3`
@@ -675,15 +684,13 @@ export function GrievanceLetterSection({
         }
         hXml = hXml.replace(/110200700036620/g, escapeXml(cleanCr));
 
-        // 2. موازنة مسافات البطاقة الضريبية
+        // 2. موازنة مسافات البطاقة الضريبية (إزاحة لليسار لتتطابق تماماً مع السجل التجاري وكود العملية)
         const taxDiff = 9 - cleanTax.length;
-        if (taxDiff < 0) {
-          const toRemove = Math.min(Math.round(Math.abs(taxDiff) * 1.8), 20);
-          hXml = hXml.replace(
-            new RegExp(`(\\s{60,})(\\s{${toRemove}})(<\\/w:t>[\\s\\S]*?ب \\. ض : )`, "g"),
-            "$1$3"
-          );
-        }
+        const extraTaxSpaces = " ".repeat(Math.max(6 + Math.round(taxDiff * 0.8), 2));
+        hXml = hXml.replace(
+          /(<w:t xml:space="preserve">)(\s{50,})(ب \. ض : )/g,
+          `$1$2${extraTaxSpaces}$3`
+        );
         hXml = hXml.replace(/658369652/g, escapeXml(cleanTax));
 
         // 3. موازنة مسافات كود العملية بالأقواس لمنع انقلاب الاتجاه BiDi
