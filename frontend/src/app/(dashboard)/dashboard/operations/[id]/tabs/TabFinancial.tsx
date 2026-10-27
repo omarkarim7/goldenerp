@@ -18,6 +18,7 @@ import { toast } from "sonner";
 import api from "@/lib/api";
 import { Operation, SectionCard, formatDate, tafqeetArabic, formatCurrency } from "./types";
 import { StepFooterNav } from "./StepFooterNav";
+import { getArchivedLetterInfo, saveLetterToArchiveWithVersion, loadArchivedPdfBlob } from "./archive-utils";
 import {
   generateSmartOutgoingRef,
   cleanAllDocxXml,
@@ -1203,6 +1204,21 @@ export function TabFinancial({
       return;
     }
 
+    // التحميل الفوري من الأرشيف إذا كان المستند مضافاً مسبقاً وغير معدل
+    if (!forceRefresh && !isDirty) {
+      try {
+        const cached = await loadArchivedPdfBlob(op, "letter-financial");
+        if (cached?.blob) {
+          setPreviewPdfBlob(cached.blob);
+          setLastGeneratedSnapshot(currentSnapshot);
+          toast.success(`تم فتح النسخة المؤرشفة مباشرة (نسخة رقم ${cached.version}) ⚡`);
+          return;
+        }
+      } catch (err) {
+        console.warn("Could not load cached archive pdf:", err);
+      }
+    }
+
     if (renderingDocx) return;
 
     setRenderingDocx(true);
@@ -1452,78 +1468,41 @@ export function TabFinancial({
 
   // ━━━ حالة إضافة العرض المالي إلى مستندات الأرشيف ━━━
   const [addingToArchive, setAddingToArchive] = useState(false);
+  const archiveInfo = useMemo(() => {
+    return getArchivedLetterInfo(op, "letter-financial");
+  }, [op]);
+
   const isArchived = useMemo(() => {
     if (isDirty) return false;
-    try {
-      if (op.notes && op.notes.startsWith("{")) {
-        const parsed = JSON.parse(op.notes);
-        const list = parsed.archivedDocIds || [];
-        return list.includes("letter-financial");
-      }
-    } catch {}
-    return false;
-  }, [op.notes, isDirty]);
+    return archiveInfo.isArchived;
+  }, [archiveInfo, isDirty]);
 
   const handleToggleArchive = async () => {
     setAddingToArchive(true);
-    let notesObj: any = {};
     try {
-      if (op.notes && op.notes.startsWith("{")) {
-        notesObj = JSON.parse(op.notes);
-      }
-    } catch {}
-
-    const current: string[] = notesObj.archivedDocIds || [];
-    const exists = current.includes("letter-financial");
-    const shouldRemove = exists && !isDirty;
-    const updated = shouldRemove
-      ? current.filter((id: string) => id !== "letter-financial")
-      : Array.from(new Set([...current, "letter-financial"]));
-
-    notesObj.archivedDocIds = updated;
-
-    try {
-      if (!shouldRemove) {
-        if (isDirty) {
-          const snapToSave = currentSnapshot;
-          setSavedSnapshot(snapToSave);
-          notesObj.financialOfferDocx = {
-            ...(notesObj.financialOfferDocx || {}),
-            ...JSON.parse(snapToSave),
-          };
-        }
-
-        try {
-          const pdfBlob = await generateFinancialPdfBlob();
-          const cloudFilename = `financial_offer_${registrationNumber || op.serialNumber || "doc"}.pdf`;
-          const cloudRes = await uploadPdfToFreeCloud(pdfBlob, cloudFilename).catch(() => null);
-
-          if (!notesObj.financialOfferDocx) notesObj.financialOfferDocx = {};
-          if (cloudRes?.url) {
-            notesObj.financialOfferDocx.cloudPdfUrl = cloudRes.url;
-            setCloudPdfUrl(cloudRes.url);
-          }
-
-          const formData = new FormData();
-          formData.append("file", pdfBlob, "العرض المالي وجدول الأسعار والتفقيط.pdf");
-          formData.append("type", "FINANCIAL_OFFER");
-          await api.post(`/operations/${op.id}/documents`, formData).catch(() => {});
-        } catch (pdfErr) {
-          console.warn("Archival PDF generation error in TabFinancial:", pdfErr);
-        }
+      if (isDirty) {
+        const snapToSave = currentSnapshot;
+        setSavedSnapshot(snapToSave);
       }
 
-      await api.patch(`/operations/${op.id}`, {
-        notes: JSON.stringify(notesObj),
+      toast.info("جاري تجهيز وتوثيق نسخة PDF الرسمية للعرض المالي...");
+      const pdfBlob = previewPdfBlob || (await generateFinancialPdfBlob());
+
+      const { version, versionName } = await saveLetterToArchiveWithVersion({
+        op,
+        docKey: "letter-financial",
+        title: "العرض المالي وجدول الأسعار والتفقيط",
+        pdfBlob,
+        currentSnapshot,
+        docType: "FINANCIAL_OFFER",
+        companyId: selectedCompanyId,
+        registrationNumber,
       });
-      toast.success(
-        shouldRemove
-          ? "تمت إزالة العرض المالي من مستندات الأرشيف وحزمة التقديم 📂"
-          : "تمت إضافة النسخة المحدثة من العرض المالي للأرشيف وحزمة التقديم بنجاح! 📦✨"
-      );
+
+      toast.success(`تمت إضافة المستند للأرشيف بنجاح (${versionName})! 📦✨`);
       onRefresh();
     } catch (err: any) {
-      toast.error("فشل تحديث حالة الأرشيف للعرض المالي: " + (err?.message || ""));
+      toast.error("فشل حفظ المستند في الأرشيف: " + (err?.message || ""));
     } finally {
       setAddingToArchive(false);
     }
@@ -2302,6 +2281,7 @@ export function TabFinancial({
         onAddToArchive={handleToggleArchive}
         isArchived={isArchived}
         addingToArchive={addingToArchive}
+        archivedVersion={archiveInfo.currentVersion}
         icon={Coins}
         iconColor="text-teal-700 dark:text-teal-400"
         iconBg="bg-teal-500/15 border-teal-500/30"

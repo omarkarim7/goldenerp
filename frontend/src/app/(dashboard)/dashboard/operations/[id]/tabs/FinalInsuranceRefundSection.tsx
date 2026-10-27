@@ -36,6 +36,7 @@ import { Portal } from "@/components/ui/portal";
 import { OnlyOfficeDocViewer } from "@/components/OnlyOfficeDocViewer";
 import { Operation, SectionCard, tafqeetArabic } from "./types";
 import { SmartArabicDatePicker } from "@/components/ui/arabic-date-picker";
+import { getArchivedLetterInfo, saveLetterToArchiveWithVersion, loadArchivedPdfBlob } from "./archive-utils";
 import {
   isValidCloudDocUrl,
   escapeXml,
@@ -559,6 +560,24 @@ export function FinalInsuranceRefundSection({
     if (previewPdfBlob && currentSnapshot === lastGeneratedSnapshot && !forceRefresh) {
       return;
     }
+
+    // التحميل الفوري من الأرشيف إذا كان المستند مضافاً مسبقاً وغير معدل (0ms)
+    if (!forceRefresh && !isDirty) {
+      try {
+        const cached = await loadArchivedPdfBlob(op, "letter-final-refund");
+        if (cached?.blob) {
+          setPreviewPdfBlob(cached.blob);
+          const url = URL.createObjectURL(cached.blob);
+          setPreviewPdfUrl(url);
+          setLastGeneratedSnapshot(currentSnapshot);
+          toast.success(`تم فتح النسخة المؤرشفة مباشرة (نسخة رقم ${cached.version}) ⚡`);
+          return;
+        }
+      } catch (err) {
+        console.warn("Could not load cached archive pdf:", err);
+      }
+    }
+
     if (renderingDocx) return;
     setRenderingDocx(true);
     try {
@@ -769,50 +788,53 @@ export function FinalInsuranceRefundSection({
 
   // ━━━ حالة وإجراء الإضافة المباشرة للأرشيف ━━━
   const [addingToArchive, setAddingToArchive] = useState(false);
+  const archiveInfo = useMemo(() => {
+    return getArchivedLetterInfo(op, "letter-final-refund");
+  }, [op]);
+
   const isArchived = useMemo(() => {
-    try {
-      if (op.notes && op.notes.startsWith("{")) {
-        const parsed = JSON.parse(op.notes);
-        const list = parsed.archivedDocIds || [];
-        return (
-          list.includes("letter-final-refund") ||
-          list.includes("letter-refund")
-        );
-      }
-    } catch {}
-    return false;
-  }, [op.notes]);
+    if (isDirty) return false;
+    return archiveInfo.isArchived;
+  }, [archiveInfo, isDirty]);
 
   const handleToggleArchive = async () => {
     setAddingToArchive(true);
-    let notesObj: any = {};
     try {
-      if (op.notes && op.notes.startsWith("{")) {
-        notesObj = JSON.parse(op.notes);
+      if (isDirty) {
+        const snapToSave = currentSnapshot;
+        setSavedSnapshot(snapToSave);
+        let existingNotesObj: Record<string, any> = {};
+        try {
+          if (op.notes && op.notes.startsWith("{")) {
+            existingNotesObj = JSON.parse(op.notes);
+          }
+        } catch {}
+        existingNotesObj.finalInsuranceRefundLetter = {
+          ...(existingNotesObj.finalInsuranceRefundLetter || {}),
+          ...JSON.parse(snapToSave),
+        };
+        await api.patch(`/operations/${op.id}`, { notes: JSON.stringify(existingNotesObj) });
       }
-    } catch {}
 
-    const docKey = "letter-final-refund";
-    const current: string[] = notesObj.archivedDocIds || [];
-    const exists = current.includes(docKey) || current.includes("letter-refund");
-    const updated = exists
-      ? current.filter((id: string) => id !== docKey && id !== "letter-refund")
-      : [...current, docKey];
+      toast.info("جاري تجهيز وتوثيق نسخة PDF الرسمية لخطاب استرداد التأمين...");
+      const docx = previewDocxBlob || (await generateRefundDocxBlob());
+      const pdfBlob = previewPdfBlob || (await getPdfBlobFromDocx(docx, `refund_${registrationNumber}.docx`));
 
-    notesObj.archivedDocIds = updated;
-
-    try {
-      await api.patch(`/operations/${op.id}`, {
-        notes: JSON.stringify(notesObj),
+      const { version, versionName } = await saveLetterToArchiveWithVersion({
+        op,
+        docKey: "letter-final-refund",
+        title: "خطاب استرداد التأمين النهائي",
+        pdfBlob,
+        currentSnapshot,
+        docType: "GUARANTEE_RECEIPT",
+        companyId: selectedCompanyId,
+        registrationNumber,
       });
-      toast.success(
-        exists
-          ? "تمت إزالة خطاب استرداد التأمين النهائي من مستندات الأرشيف وحزمة التقديم 📂"
-          : "تمت إضافة خطاب استرداد التأمين النهائي إلى مستندات الأرشيف وحزمة التقديم بنجاح! 📦✨"
-      );
+
+      toast.success(`تمت إضافة المستند للأرشيف بنجاح (${versionName})! 📦✨`);
       onRefresh();
     } catch (err: any) {
-      toast.error("فشل تحديث حالة الأرشيف لخطاب الاسترداد: " + (err?.message || ""));
+      toast.error("فشل حفظ المستند في الأرشيف: " + (err?.message || ""));
     } finally {
       setAddingToArchive(false);
     }
@@ -1591,6 +1613,7 @@ export function FinalInsuranceRefundSection({
         onViewArchive={handleViewArchive}
         onAddToArchive={handleToggleArchive}
         isArchived={isArchived}
+        archivedVersion={archiveInfo.currentVersion}
         addingToArchive={addingToArchive}
         customSubtitle="وفقاً للمادة (38) من القانون 182 لسنة 2018. اضغط على زر المعاينة للاطلاع على المستند وتنزيله أو طباعته."
       />

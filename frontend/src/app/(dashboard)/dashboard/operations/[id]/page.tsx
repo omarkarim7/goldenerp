@@ -74,7 +74,6 @@ import { TabTechnical } from "./tabs/TabTechnical";
 import { WarrantyCertificateSection } from "./tabs/WarrantyCertificateSection";
 import { TabFinancial } from "./tabs/TabFinancial";
 import { TabDeclarations } from "./tabs/TabDeclarations";
-import { TabSubmissionPackage } from "./tabs/TabSubmissionPackage";
 import { TabTechOpening, TabFinOpening } from "./OpeningWorkflows";
 import { TabAward } from "./tabs/TabAward";
 import { TabSupplyOrder } from "./tabs/TabSupplyOrder";
@@ -868,17 +867,6 @@ function OperationDetailContent({ id }: { id: string }) {
       case "declarations":
         return (
           <TabDeclarations
-            op={op}
-            onRefresh={fetchOp}
-            onNavigate={setActiveTab}
-            onPreviewDoc={handlePreviewDocument}
-            onDownloadDoc={handleDownloadDocument}
-          />
-        );
-      case "submission_package":
-      case "submission":
-        return (
-          <TabSubmissionPackage
             op={op}
             onRefresh={fetchOp}
             onNavigate={setActiveTab}

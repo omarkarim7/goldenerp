@@ -18,6 +18,7 @@ import { toast } from "sonner";
 import api from "@/lib/api";
 import { Operation, SectionCard, formatDate } from "./types";
 import { StepFooterNav } from "./StepFooterNav";
+import { getArchivedLetterInfo, saveLetterToArchiveWithVersion, loadArchivedPdfBlob } from "./archive-utils";
 import {
   generateSmartOutgoingRef,
   cleanAllDocxXml,
@@ -880,6 +881,21 @@ export function TabClarification({
       return;
     }
 
+    // التحميل الفوري من الأرشيف إذا كان المستند مضافاً مسبقاً وغير معدل
+    if (!forceRefresh && !isDirty) {
+      try {
+        const cached = await loadArchivedPdfBlob(op, "letter-clarification");
+        if (cached?.blob) {
+          setPreviewPdfBlob(cached.blob);
+          setLastGeneratedSnapshot(currentSnapshot);
+          toast.success(`تم فتح النسخة المؤرشفة مباشرة (نسخة رقم ${cached.version}) ⚡`);
+          return;
+        }
+      } catch (err) {
+        console.warn("Could not load cached archive pdf:", err);
+      }
+    }
+
     if (renderingDocx) return;
 
     setRenderingDocx(true);
@@ -1031,79 +1047,45 @@ export function TabClarification({
 
   // ━━━ حالة إضافة خطاب التوضيح إلى مستندات الأرشيف ━━━
   const [addingToArchive, setAddingToArchive] = useState(false);
+  const archiveInfo = useMemo(() => {
+    return getArchivedLetterInfo(op, "letter-clarification");
+  }, [op]);
+
   const isArchived = useMemo(() => {
     if (isDirty) return false;
-    try {
-      if (op.notes && op.notes.startsWith("{")) {
-        const parsed = JSON.parse(op.notes);
-        const list = parsed.archivedDocIds || [];
-        return list.includes("letter-clarification");
-      }
-    } catch {}
-    return false;
-  }, [op.notes, isDirty]);
+    return archiveInfo.isArchived;
+  }, [archiveInfo, isDirty]);
 
   const handleToggleArchive = async () => {
     setAddingToArchive(true);
-    let notesObj: any = {};
     try {
-      if (op.notes && op.notes.startsWith("{")) {
-        notesObj = JSON.parse(op.notes);
-      }
-    } catch {}
-
-    const current: string[] = notesObj.archivedDocIds || [];
-    const exists = current.includes("letter-clarification");
-    const shouldRemove = exists && !isDirty;
-    const updated = shouldRemove
-      ? current.filter((id: string) => id !== "letter-clarification")
-      : Array.from(new Set([...current, "letter-clarification"]));
-
-    notesObj.archivedDocIds = updated;
-
-    try {
-      if (!shouldRemove) {
-        if (isDirty) {
-          const snapToSave = currentSnapshot;
-          setSavedSnapshot(snapToSave);
-          notesObj.clarificationLetter = {
-            ...(notesObj.clarificationLetter || {}),
-            ...JSON.parse(snapToSave),
-          };
-        }
-
-        try {
-          const docx = await generateClarificationDocxBlob();
-          const pdfBlob = await getPdfBlobFromDocx(docx, `clarification_${registrationNumber}.docx`);
-          const cloudFilename = `clarification_${registrationNumber || op.serialNumber || "doc"}.pdf`;
-          const cloudRes = await uploadPdfToFreeCloud(pdfBlob, cloudFilename).catch(() => null);
-
-          if (!notesObj.clarificationLetter) notesObj.clarificationLetter = {};
-          if (cloudRes?.url) {
-            notesObj.clarificationLetter.cloudPdfUrl = cloudRes.url;
-            setCloudPdfUrl(cloudRes.url);
-          }
-
-          const formData = new FormData();
-          formData.append("file", pdfBlob, "خطاب التوضيح والاستفسارات الرسمي.pdf");
-          formData.append("type", "CLARIFICATION");
-          await api.post(`/operations/${op.id}/documents`, formData).catch(() => {});
-        } catch (pdfErr) {
-          console.warn("Archival PDF generation error in TabClarification:", pdfErr);
-        }
+      if (isDirty) {
+        const snapToSave = currentSnapshot;
+        setSavedSnapshot(snapToSave);
       }
 
-      await api.patch(`/operations/${op.id}`, {
-        notes: JSON.stringify(notesObj),
+      toast.info("جاري تجهيز وتوثيق نسخة PDF الرسمية لخطاب التوضيح...");
+      let pdfBlob = previewPdfBlob;
+      if (!pdfBlob) {
+        const docx = await generateClarificationDocxBlob();
+        pdfBlob = await getPdfBlobFromDocx(docx, `clarification_${registrationNumber}.docx`);
+      }
+
+      const { version, versionName } = await saveLetterToArchiveWithVersion({
+        op,
+        docKey: "letter-clarification",
+        title: "خطاب التوضيح والاستفسارات الرسمي",
+        pdfBlob,
+        currentSnapshot,
+        docType: "CLARIFICATION",
+        companyId: selectedCompanyId,
+        registrationNumber,
       });
-      toast.success(
-        shouldRemove
-          ? "تمت إزالة خطاب التوضيح من مستندات الأرشيف وحزمة التقديم 📂"
-          : "تمت إضافة النسخة المحدثة وتوثيقها في الأرشيف وحزمة التقديم بنجاح! 📦✨"
-      );
+
+      toast.success(`تمت إضافة المستند للأرشيف بنجاح (${versionName})! 📦✨`);
       onRefresh();
     } catch (err: any) {
-      toast.error("فشل تحديث حالة الأرشيف لخطاب التوضيح: " + (err?.message || ""));
+      toast.error("فشل حفظ المستند في الأرشيف: " + (err?.message || ""));
     } finally {
       setAddingToArchive(false);
     }
@@ -1923,6 +1905,7 @@ export function TabClarification({
         onAddToArchive={handleToggleArchive}
         isArchived={isArchived}
         addingToArchive={addingToArchive}
+        archivedVersion={archiveInfo.currentVersion}
         customSubtitle="مطابق 100% لقالب الوورد المعتمد للشركة. اضغط على زر المعاينة للاطلاع على المستند وتنزيله أو طباعته."
       />
 

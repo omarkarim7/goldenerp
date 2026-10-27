@@ -18,6 +18,7 @@ import { toast } from "sonner";
 import api from "@/lib/api";
 import { Operation, SectionCard, formatDate } from "./types";
 import { StepFooterNav } from "./StepFooterNav";
+import { getArchivedLetterInfo, saveLetterToArchiveWithVersion, loadArchivedPdfBlob } from "./archive-utils";
 import {
   generateSmartOutgoingRef,
   cleanAllDocxXml,
@@ -612,6 +613,22 @@ export function TabDeclarations({
       return;
     }
 
+    // 2.1 إذا كان المستند محفوظاً ومؤرشفاً بالعملية ولم يتم تعديل الحقول -> تحميل فوري ومباشر من الأرشيف
+    const docKey = activeDeclType === "specs" ? "decl-specs" : activeDeclType === "insurance" ? "decl-insurance" : "decl-general";
+    if (!forceRefresh && !isDirty) {
+      try {
+        const cached = await loadArchivedPdfBlob(op, docKey);
+        if (cached?.blob) {
+          setPreviewPdfBlob(cached.blob);
+          setLastGeneratedSnapshot(currentSnapshot);
+          toast.success(`تم فتح النسخة المؤرشفة مباشرة (نسخة رقم ${cached.version}) ⚡`);
+          return;
+        }
+      } catch (err) {
+        console.warn("Could not load cached archive pdf:", err);
+      }
+    }
+
     // منع أي تحويل مزدوج متزامن
     if (renderingDocx) {
       return;
@@ -862,90 +879,43 @@ export function TabDeclarations({
       : "decl-general";
   }, [activeDeclType]);
 
+  const archiveInfo = useMemo(() => {
+    return getArchivedLetterInfo(op, currentArchiveDocId);
+  }, [op, currentArchiveDocId]);
+
   const isCurrentArchived = useMemo(() => {
     if (isDirty) return false;
-    try {
-      if (op.notes && op.notes.startsWith("{")) {
-        const parsed = JSON.parse(op.notes);
-        const list = parsed.archivedDocIds || [];
-        return list.includes(currentArchiveDocId);
-      }
-    } catch {}
-    return false;
-  }, [op.notes, currentArchiveDocId, isDirty]);
+    return archiveInfo.isArchived;
+  }, [archiveInfo, isDirty]);
 
   const handleToggleArchive = async () => {
     setAddingToArchive(true);
-    let notesObj: any = {};
     try {
-      if (op.notes && op.notes.startsWith("{")) {
-        notesObj = JSON.parse(op.notes);
-      }
-    } catch {}
-
-    const current: string[] = notesObj.archivedDocIds || [];
-    const exists = current.includes(currentArchiveDocId);
-    const shouldRemove = exists && !isDirty;
-    const updated = shouldRemove
-      ? current.filter((id: string) => id !== currentArchiveDocId)
-      : Array.from(new Set([...current, currentArchiveDocId]));
-
-    notesObj.archivedDocIds = updated;
-
-    try {
-      if (!shouldRemove) {
-        if (isDirty) {
-          const snapToSave = currentSnapshot;
-          setSavedSnapshot(snapToSave);
-          notesObj.declarationsDocx = {
-            ...(notesObj.declarationsDocx || {}),
-            ...JSON.parse(snapToSave),
-          };
-        }
-
-        const docTitle =
-          activeDeclType === "specs"
-            ? "إقرار الالتزام بكراسة الشروط والمواصفات"
-            : "إقرار الالتزام بالتأمينات والعمالة والمساواة";
-        toast.info(`جاري تجهيز وتوثيق نسخة PDF الرسمية لـ ${docTitle}...`);
-        try {
-          const docx = await generateDeclarationDocxBlob(activeDeclType);
-          const pdf = await getPdfBlobFromDocx(
-            docx,
-            `declaration_${activeDeclType}_${registrationNumber || op.serialNumber}.docx`
-          );
-          const cloudFilename = `declaration_${activeDeclType}_${registrationNumber || op.serialNumber || "doc"}.pdf`;
-          const cloudRes = await uploadPdfToFreeCloud(pdf, cloudFilename).catch(() => null);
-
-          if (!notesObj.declarationsDocx) notesObj.declarationsDocx = {};
-          if (cloudRes?.url) {
-            if (activeDeclType === "specs") {
-              notesObj.declarationsDocx.cloudPdfUrlSpecs = cloudRes.url;
-              setCloudPdfUrlSpecs(cloudRes.url);
-            } else {
-              notesObj.declarationsDocx.cloudPdfUrlInsurance = cloudRes.url;
-              setCloudPdfUrlInsurance(cloudRes.url);
-            }
-          }
-
-          // رفع ملف الـ PDF كوثيقة رسمية للعملية
-          const formData = new FormData();
-          formData.append("file", pdf, `${docTitle}.pdf`);
-          formData.append("type", "DECLARATION");
-          await api.post(`/operations/${op.id}/documents`, formData).catch(() => {});
-        } catch (pdfErr) {
-          console.warn("Archival PDF generation error in TabDeclarations:", pdfErr);
-        }
+      if (isDirty) {
+        const snapToSave = currentSnapshot;
+        setSavedSnapshot(snapToSave);
       }
 
-      await api.patch(`/operations/${op.id}`, {
-        notes: JSON.stringify(notesObj),
+      const docTitle =
+        activeDeclType === "specs"
+          ? "إقرار الالتزام بكراسة الشروط والمواصفات"
+          : "إقرار الالتزام بالتأمينات والعمالة والمساواة";
+      toast.info(`جاري تجهيز وتوثيق نسخة PDF الرسمية لـ ${docTitle}...`);
+
+      const pdfBlob = previewPdfBlob || (await generateDeclarationPdfBlob(activeDeclType));
+
+      const { version, versionName } = await saveLetterToArchiveWithVersion({
+        op,
+        docKey: currentArchiveDocId,
+        title: docTitle,
+        pdfBlob,
+        currentSnapshot,
+        docType: "DECLARATION",
+        companyId: selectedCompanyId,
+        registrationNumber,
       });
-      toast.success(
-        shouldRemove
-          ? "تمت إزالة الإقرار من مستندات الأرشيف وحزمة التقديم 📂"
-          : "تمت إضافة النسخة المحدثة وتوثيقها في الأرشيف وحزمة التقديم بنجاح! 📦✨"
-      );
+
+      toast.success(`تمت إضافة الإقرار للأرشيف بنجاح (${versionName})! 📦✨`);
       onRefresh();
     } catch (err: any) {
       toast.error("فشل تحديث حالة الأرشيف للإقرار: " + (err?.message || ""));
@@ -1465,6 +1435,7 @@ export function TabDeclarations({
         onAddToArchive={handleToggleArchive}
         isArchived={isCurrentArchived}
         addingToArchive={addingToArchive}
+        archivedVersion={archiveInfo.currentVersion}
         icon={ShieldCheck}
         iconColor="text-emerald-700 dark:text-emerald-400"
         iconBg="bg-emerald-500/15 border-emerald-500/30"
@@ -1490,7 +1461,7 @@ export function TabDeclarations({
       <StepFooterNav
         currentTabId="declarations"
         onNavigate={onNavigate}
-        nextLabel="الانتقال إلى: #9 تجهيز وطباعة ملفات التقديم ➔"
+        nextLabel="الانتقال إلى: #10 نتيجة البت الفني والطعون ➔"
         prevLabel="← العرض المالي وجدول الكميات"
       />
     </div>

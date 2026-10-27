@@ -18,6 +18,7 @@ import { toast } from "sonner";
 import api from "@/lib/api";
 import { Operation, SectionCard, DataRow, EmptyState, formatDate, formatCurrency, tafqeetArabic, formatDocFileSize } from "./types";
 import { StepFooterNav } from "./StepFooterNav";
+import { getArchivedLetterInfo, saveLetterToArchiveWithVersion, loadArchivedPdfBlob } from "./archive-utils";
 import {
   generateSmartOutgoingRef,
   cleanAllDocxXml,
@@ -563,6 +564,24 @@ export function TabFinalGuarantee({
     if (previewPdfBlob && lastGeneratedSnapshot === currentSnapshot && previewDocxBlob && !forceRefresh) {
       return;
     }
+
+    // التحميل الفوري من الأرشيف إذا كان المستند مضافاً مسبقاً وغير معدل (0ms)
+    if (!forceRefresh && !isDirty) {
+      try {
+        const cached = await loadArchivedPdfBlob(op, `letter-final-guarantee-${type}`);
+        if (cached?.blob) {
+          setPreviewPdfBlob(cached.blob);
+          const url = URL.createObjectURL(cached.blob);
+          setPreviewPdfUrl(url);
+          setLastGeneratedSnapshot(currentSnapshot);
+          toast.success(`تم فتح النسخة المؤرشفة مباشرة (نسخة رقم ${cached.version}) ⚡`);
+          return;
+        }
+      } catch (err) {
+        console.warn("Could not load cached archive pdf:", err);
+      }
+    }
+
     if (renderingDocx) return;
     setRenderingDocx(true);
     try {
@@ -768,102 +787,61 @@ export function TabFinalGuarantee({
     loadOfficialPreview(activeLetterType, false);
   };
 
+  const letterLabels: Record<string, string> = {
+    CASH: "خطاب سداد التأمين النهائي نقداً بالخزينة",
+    DEDUCTION: "خطاب خصم التأمين النهائي من مستحقات عملية أخرى",
+    DEDUCTION_AND_INITIAL: "خطاب خصم التأمين النهائي وتحويل التأمين الابتدائي",
+    INITIAL_TRANSFER: "خطاب تحويل التأمين الابتدائي إلى نهائي",
+    BANK_GUARANTEE: "خطاب إصدار خطاب ضمان بنكي للتأمين النهائي",
+  };
+
   // ━━━ حالة وإجراء الإضافة المباشرة للأرشيف ━━━
   const [addingToArchive, setAddingToArchive] = useState(false);
+  const archiveInfo = useMemo(() => {
+    return getArchivedLetterInfo(op, `letter-final-guarantee-${activeLetterType}`);
+  }, [op, activeLetterType]);
+
   const isArchived = useMemo(() => {
     if (isDirty) return false;
-    try {
-      if (op.notes && op.notes.startsWith("{")) {
-        const parsed = JSON.parse(op.notes);
-        const list = parsed.archivedDocIds || [];
-        return (
-          list.includes(`letter-final-guarantee-${activeLetterType}`) ||
-          list.includes("letter-final-guarantee") ||
-          list.includes("letter-guarantee")
-        );
-      }
-    } catch {}
-    return false;
-  }, [op.notes, activeLetterType, isDirty]);
+    return archiveInfo.isArchived;
+  }, [archiveInfo, isDirty]);
 
   const handleToggleArchive = async () => {
     setAddingToArchive(true);
-    let notesObj: any = {};
     try {
-      if (op.notes && op.notes.startsWith("{")) {
-        notesObj = JSON.parse(op.notes);
-      }
-    } catch {}
-
-    const docKey = `letter-final-guarantee-${activeLetterType}`;
-    const current: string[] = notesObj.archivedDocIds || [];
-    const exists =
-      current.includes(docKey) ||
-      current.includes("letter-final-guarantee") ||
-      current.includes("letter-guarantee");
-    const shouldRemove = exists && !isDirty;
-    const updated = shouldRemove
-      ? current.filter(
-          (id: string) =>
-            id !== docKey &&
-            id !== "letter-final-guarantee" &&
-            id !== "letter-guarantee"
-        )
-      : Array.from(new Set([...current, docKey]));
-
-    notesObj.archivedDocIds = updated;
-
-    try {
-      if (!shouldRemove) {
-        if (isDirty) {
-          const snapToSave = currentSnapshot;
-          setSavedSnapshot(snapToSave);
-          notesObj.finalGuaranteeLetter = {
-            ...(notesObj.finalGuaranteeLetter || {}),
-            ...JSON.parse(snapToSave),
-          };
+      if (isDirty) {
+        const snapToSave = currentSnapshot;
+        setSavedSnapshot(snapToSave);
+        let existingNotes: any = {};
+        if (op.notes && op.notes.startsWith("{")) {
+          existingNotes = JSON.parse(op.notes);
         }
-
-        try {
-          const pdfBlob = await generateGuaranteePdfBlob(activeLetterType);
-          const cloudFilename = `final_guarantee_${activeLetterType}_${registrationNumber || op.serialNumber || "doc"}.pdf`;
-          const cloudRes = await uploadPdfToFreeCloud(pdfBlob, cloudFilename).catch(() => null);
-
-          if (!notesObj.finalGuaranteeLetter) notesObj.finalGuaranteeLetter = {};
-          if (!notesObj.finalGuaranteeLetter.cloudUrls) notesObj.finalGuaranteeLetter.cloudUrls = {};
-          if (cloudRes?.url) {
-            notesObj.finalGuaranteeLetter.cloudUrls[activeLetterType] = cloudRes.url;
-            setCloudUrls((prev) => ({ ...prev, [activeLetterType]: cloudRes.url }));
-          }
-
-          const letterLabels: Record<string, string> = {
-            CASH: "خطاب سداد التأمين النهائي نقداً بالخزينة",
-            DEDUCTION: "خطاب خصم التأمين النهائي من مستحقات عملية أخرى",
-            DEDUCTION_AND_INITIAL: "خطاب خصم التأمين النهائي وتحويل التأمين الابتدائي",
-            INITIAL_TRANSFER: "خطاب تحويل التأمين الابتدائي إلى نهائي",
-            BANK_GUARANTEE: "خطاب إصدار خطاب ضمان بنكي للتأمين النهائي",
-          };
-          const letterTitle = letterLabels[activeLetterType] || "خطاب التأمين النهائي";
-          const formData = new FormData();
-          formData.append("file", pdfBlob, `${letterTitle}.pdf`);
-          formData.append("type", "GUARANTEE_RECEIPT");
-          await api.post(`/operations/${op.id}/documents`, formData).catch(() => {});
-        } catch (pdfErr) {
-          console.warn("Archival PDF generation error in TabFinalGuarantee:", pdfErr);
-        }
+        existingNotes.finalGuaranteeLetter = {
+          ...(existingNotes.finalGuaranteeLetter || {}),
+          ...JSON.parse(snapToSave),
+        };
+        await api.patch(`/operations/${op.id}`, { notes: JSON.stringify(existingNotes) });
       }
 
-      await api.patch(`/operations/${op.id}`, {
-        notes: JSON.stringify(notesObj),
+      toast.info("جاري تجهيز وتوثيق نسخة PDF الرسمية لخطاب التأمين النهائي...");
+      const pdfBlob = previewPdfBlob || (await generateGuaranteePdfBlob(activeLetterType));
+      const letterTitle = letterLabels[activeLetterType] || "خطاب التأمين النهائي";
+
+      const { version, versionName } = await saveLetterToArchiveWithVersion({
+        op,
+        docKey: `letter-final-guarantee-${activeLetterType}`,
+        title: letterTitle,
+        pdfBlob,
+        currentSnapshot,
+        docType: "GUARANTEE_RECEIPT",
+        companyId: selectedCompanyId,
+        registrationNumber,
       });
-      toast.success(
-        shouldRemove
-          ? "تمت إزالة خطاب التأمين النهائي من مستندات الأرشيف وحزمة التقديم 📂"
-          : "تمت إضافة النسخة المحدثة من خطاب التأمين النهائي للأرشيف وحزمة التقديم بنجاح! 📦✨"
-      );
+
+      toast.success(`تمت إضافة المستند للأرشيف بنجاح (${versionName})! 📦✨`);
       onRefresh();
     } catch (err: any) {
-      toast.error("فشل تحديث حالة الأرشيف للتأمين النهائي: " + (err?.message || ""));
+      toast.error("فشل حفظ المستند في الأرشيف: " + (err?.message || ""));
     } finally {
       setAddingToArchive(false);
     }
@@ -2101,6 +2079,7 @@ export function TabFinalGuarantee({
         onViewArchive={handleViewArchive}
         onAddToArchive={handleToggleArchive}
         isArchived={isArchived}
+        archivedVersion={archiveInfo.currentVersion}
         addingToArchive={addingToArchive}
         icon={ShieldCheck}
         iconColor="text-emerald-700 dark:text-emerald-400"

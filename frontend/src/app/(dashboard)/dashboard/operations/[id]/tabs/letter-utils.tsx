@@ -1434,6 +1434,7 @@ export function LetterBottomActionWidget({
   onAddToArchive,
   isArchived = false,
   addingToArchive = false,
+  archivedVersion = 0,
   customSubtitle,
   icon: Icon = HelpCircle,
   iconColor = "text-amber-700 dark:text-amber-400",
@@ -1452,6 +1453,7 @@ export function LetterBottomActionWidget({
   onAddToArchive?: () => void;
   isArchived?: boolean;
   addingToArchive?: boolean;
+  archivedVersion?: number;
   customSubtitle?: string;
   icon?: any;
   iconColor?: string;
@@ -1668,6 +1670,9 @@ export function LetterBottomActionWidget({
               }
             };
 
+            const versionText = archivedVersion && archivedVersion > 0 ? ` (نسخة ${archivedVersion})` : "";
+            const nextVersionText = archivedVersion && archivedVersion > 0 ? ` (نسخة ${archivedVersion + 1})` : "";
+
             return (
               <Button
                 size="sm"
@@ -1676,10 +1681,10 @@ export function LetterBottomActionWidget({
                 disabled={addingToArchive || saving}
                 title={
                   effectiveIsArchived
-                    ? "المستند مضاف حالياً إلى مستندات الأرشيف وحزمة التقديم (انقر للإلغاء)"
+                    ? `المستند مضاف حالياً إلى مستندات الأرشيف وحزمة التقديم${versionText}`
                     : isDirty
-                    ? "حفظ التعديلات الجديدة وإضافتها مباشرة إلى مستندات الأرشيف وحزمة التقديم"
-                    : "إضافة هذا المستند مباشرة إلى مستندات الأرشيف وحزمة التقديم"
+                    ? `حفظ التعديلات الجديدة وإضافتها كنسخة جديدة${nextVersionText} إلى الأرشيف`
+                    : "إضافة هذا المستند مباشرة إلى مستندات الأرشيف"
                 }
                 className={`h-10 px-4 text-xs font-bold rounded-xl border-2 transition-all cursor-pointer flex items-center gap-1.5 shadow-xs ${
                   effectiveIsArchived
@@ -1692,7 +1697,13 @@ export function LetterBottomActionWidget({
                 ) : (
                   <Archive className="h-4 w-4 text-current" />
                 )}
-                <span>{effectiveIsArchived ? "مضاف للأرشيف ✓" : "إضافة للأرشيف 📥"}</span>
+                <span>
+                  {effectiveIsArchived
+                    ? `مضاف للأرشيف${versionText} ✓`
+                    : isDirty && isArchived
+                    ? `إضافة للأرشيف كنسخة جديدة${nextVersionText} 📥`
+                    : "إضافة للأرشيف 📥"}
+                </span>
               </Button>
             );
           })()}

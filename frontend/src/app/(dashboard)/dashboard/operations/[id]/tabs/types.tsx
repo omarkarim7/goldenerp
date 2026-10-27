@@ -69,19 +69,18 @@ export const LIFECYCLE_TABS: TabDef[] = [
   { id: "technical", label: "العرض الفني والمواصفات", shortLabel: "الفني", icon: ClipboardCheck, order: 7, color: "purple", description: "تجهيز المظروف الفني، الكتالوجات، والغلاف الذكي المعتمد" },
   { id: "financial", label: "العرض المالي وجدول الكميات", shortLabel: "المالي", icon: Coins, order: 8, color: "teal", description: "تسعير البنود، احتساب الهوامش، وتقديم العطاء رسمياً" },
   { id: "declarations", label: "الإقرارات الرسمية المعتمدة", shortLabel: "الإقرارات الرسمية", icon: FileCheck, order: 9, color: "emerald", description: "توليد وطباعة إقرار الالتزام بكراسة الشروط وإقرار التأمينات والعمالة مطابقة لقوالب Word الرسمية" },
-  { id: "submission_package", label: "تجهيز وطباعة ملفات التقديم", shortLabel: "ملفات التقديم", icon: Package, order: 10, color: "blue", description: "تجميع وطباعة حزمة ملفات العطاء للمظروفين الفني والمالي وتحميلها بمجلد مضغوط ZIP" },
-  { id: "tech_opening", label: "نتيجة البت الفني والطعون", shortLabel: "البت الفني", icon: FolderOpen, order: 11, color: "indigo", description: "قرارات لجنة الفحص الفني، الاستيفاء، القبول، التظلم، واسترداد التأمين" },
-  { id: "fin_opening", label: "نتيجة البت المالي والترتيب", shortLabel: "البت المالي", icon: DollarSign, order: 12, color: "cyan", description: "جلسة الفتح المالي، الشراء، الترسية الجزئية، التظلم، واسترداد التأمين" },
-  { id: "award", label: "قرار الترسية الرسمي", shortLabel: "الترسية", icon: Trophy, order: 13, color: "amber", description: "إخطار الترسية الرسمي، اسم الشركة الفائزة، وقيمة الترسية المعتمدة" },
-  { id: "supply_order", label: "أمر التوريد والتعاقد الرسمي", shortLabel: "أمر التوريد", icon: Truck, order: 14, color: "blue", description: "تسجيل رقم وتاريخ أمر التوريد الصادر من الجهة، مدة التنفيذ، وشروط التوريد" },
-  { id: "warranty_certificate", label: "شهادة الضمان للأصناف الموردة", shortLabel: "شهادة الضمان", icon: ShieldCheck, order: 15, color: "emerald", description: "توليد وطباعة شهادة الضمان الرسمية المعتمدة للأصناف وفترة سريان الضمان والباركود الذكي" },
-  { id: "guarantee_final", label: "التأمين النهائي (5%)", shortLabel: "التأمين النهائي", icon: ShieldCheck, order: 16, color: "emerald", description: "خطابات سداد التأمين النهائي، الخصم من المستحقات، الضمان البنكي، والباركود" },
-  { id: "supply", label: "حالة التوريد والتجهيز", shortLabel: "حالة التوريد", icon: Truck, order: 17, color: "blue", description: "حصر وتجهيز أصناف البت المالي، مقارنة أسعار دراسة السوق بالتوريد، وأذون الإضافة المخزنية" },
-  { id: "invoicing", label: "إصدار الفاتورة والتسليم", shortLabel: "الفاتورة والتسليم", icon: FileText, order: 18, color: "indigo", description: "إصدار الفاتورة الرسمية، ضريبة 14%، رفع ملف الفاتورة المعتمدة، وإذن ومحضر التسليم الفعلي" },
-  { id: "insurances_labor", label: "التأمينات والقوى العاملة وأمر الدفع", shortLabel: "التأمينات والعمالة", icon: ShieldCheck, order: 19, color: "amber", description: "سداد التأمينات والعمالة، تسليم الشهادات للجهة الإدارية، ومتابعة استخراج أمر الدفع الحكومي" },
-  { id: "certificates", label: "المستخلصات والاستقطاعات والضرائب", shortLabel: "المستخلصات والضرائب", icon: Calculator, order: 20, color: "teal", description: "أمر الدفع، بيان الاستقطاعات الضريبية (14% VAT + 1% أ.ت.ص) وصافي الصرف" },
-  { id: "finance", label: "الحسابات والمالية والأرباح", shortLabel: "المالية والأرباح", icon: BarChart3, order: 21, color: "emerald", description: "التكلفة الإجمالية الفعلية، التدفقات النقدية، وصافي أرباح العملية" },
-  { id: "close", label: "إغلاق العملية وفترة الضمان", shortLabel: "الضمان والإغلاق", icon: Archive, order: 22, color: "slate", description: "فترة الضمان، الزيارات الشهرية للصيانة، الاستلام النهائي، واسترداد التأمينات والأرشيف" },
+  { id: "tech_opening", label: "نتيجة البت الفني والطعون", shortLabel: "البت الفني", icon: FolderOpen, order: 10, color: "indigo", description: "قرارات لجنة الفحص الفني، الاستيفاء، القبول، التظلم، واسترداد التأمين" },
+  { id: "fin_opening", label: "نتيجة البت المالي والترتيب", shortLabel: "البت المالي", icon: DollarSign, order: 11, color: "cyan", description: "جلسة الفتح المالي، الشراء، الترسية الجزئية، التظلم، واسترداد التأمين" },
+  { id: "award", label: "قرار الترسية الرسمي", shortLabel: "الترسية", icon: Trophy, order: 12, color: "amber", description: "إخطار الترسية الرسمي، اسم الشركة الفائزة، وقيمة الترسية المعتمدة" },
+  { id: "supply_order", label: "أمر التوريد والتعاقد الرسمي", shortLabel: "أمر التوريد", icon: Truck, order: 13, color: "blue", description: "تسجيل رقم وتاريخ أمر التوريد الصادر من الجهة، مدة التنفيذ، وشروط التوريد" },
+  { id: "warranty_certificate", label: "شهادة الضمان للأصناف الموردة", shortLabel: "شهادة الضمان", icon: ShieldCheck, order: 14, color: "emerald", description: "توليد وطباعة شهادة الضمان الرسمية المعتمدة للأصناف وفترة سريان الضمان والباركود الذكي" },
+  { id: "guarantee_final", label: "التأمين النهائي (5%)", shortLabel: "التأمين النهائي", icon: ShieldCheck, order: 15, color: "emerald", description: "خطابات سداد التأمين النهائي، الخصم من المستحقات، الضمان البنكي، والباركود" },
+  { id: "supply", label: "حالة التوريد والتجهيز", shortLabel: "حالة التوريد", icon: Truck, order: 16, color: "blue", description: "حصر وتجهيز أصناف البت المالي، مقارنة أسعار دراسة السوق بالتوريد، وأذون الإضافة المخزنية" },
+  { id: "invoicing", label: "إصدار الفاتورة والتسليم", shortLabel: "الفاتورة والتسليم", icon: FileText, order: 17, color: "indigo", description: "إصدار الفاتورة الرسمية، ضريبة 14%، رفع ملف الفاتورة المعتمدة، وإذن ومحضر التسليم الفعلي" },
+  { id: "insurances_labor", label: "التأمينات والقوى العاملة وأمر الدفع", shortLabel: "التأمينات والعمالة", icon: ShieldCheck, order: 18, color: "amber", description: "سداد التأمينات والعمالة، تسليم الشهادات للجهة الإدارية، ومتابعة استخراج أمر الدفع الحكومي" },
+  { id: "certificates", label: "المستخلصات والاستقطاعات والضرائب", shortLabel: "المستخلصات والضرائب", icon: Calculator, order: 19, color: "teal", description: "أمر الدفع، بيان الاستقطاعات الضريبية (14% VAT + 1% أ.ت.ص) وصافي الصرف" },
+  { id: "finance", label: "الحسابات والمالية والأرباح", shortLabel: "المالية والأرباح", icon: BarChart3, order: 20, color: "emerald", description: "التكلفة الإجمالية الفعلية، التدفقات النقدية، وصافي أرباح العملية" },
+  { id: "close", label: "إغلاق العملية وفترة الضمان", shortLabel: "الضمان والإغلاق", icon: Archive, order: 21, color: "slate", description: "فترة الضمان، الزيارات الشهرية للصيانة، الاستلام النهائي، واسترداد التأمينات والأرشيف" },
 ];
 
 export const STATUS_LABELS: Record<string, { label: string; badgeBg: string }> = {
@@ -243,9 +242,6 @@ export function getTabCompletionStatus(tab: TabDef, op: Operation, manualOverrid
     case "technical": return op.technicalOffers?.length > 0 ? "done" : "pending";
     case "financial": return (op.financialOffers?.length > 0 || op.submissions?.length > 0) ? "done" : "pending";
     case "declarations": return op.notes?.includes("declarationsDocx") ? "done" : "pending";
-    case "submission_package": {
-      return ["SUBMITTED", "TECHNICAL_OPENED", "TECHNICAL_ACCEPTED", "FINANCIAL_OPENED", "AWARDED", "SUPPLY_IN_PROGRESS", "COMPLETED", "CLOSED"].includes(op.status) ? "done" : "pending";
-    }
     case "tech_opening": return op.technicalOpenings?.length > 0 ? "done" : "pending";
     case "fin_opening": return op.financialOpenings?.length > 0 ? "done" : "pending";
     case "award": return op.awards?.length > 0 ? "done" : "pending";

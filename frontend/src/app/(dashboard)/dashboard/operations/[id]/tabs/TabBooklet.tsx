@@ -23,6 +23,7 @@ import {
   formatDocFileSize, tafqeetArabic
 } from "./types";
 import { StepFooterNav } from "./StepFooterNav";
+import { getArchivedLetterInfo, saveLetterToArchiveWithVersion, loadArchivedPdfBlob } from "./archive-utils";
 import {
   generateSmartOutgoingRef, cleanAllDocxXml, buildQrAnchorXml, injectSingleQrIntoDocXml,
   LetterBottomActionWidget, ReprintConfirmModal, getCurrentUserName, FISCAL_YEAR_OPTIONS,
@@ -973,6 +974,22 @@ export function TabBooklet({
       return;
     }
 
+    // 2.1 إذا كان المستند محفوظاً ومؤرشفاً بالعملية ولم يتم تعديل الحقول -> تحميل فوري ومباشر من الأرشيف
+    const currentDocKey = `letter-booklet-${activeLetterType}`;
+    if (!forceRefresh && !isDirty) {
+      try {
+        const cached = await loadArchivedPdfBlob(op, currentDocKey);
+        if (cached?.blob) {
+          setPreviewPdfBlob(cached.blob);
+          setLastGeneratedSnapshot(currentSnapshot);
+          toast.success(`تم فتح النسخة المؤرشفة مباشرة (نسخة رقم ${cached.version}) ⚡`);
+          return;
+        }
+      } catch (err) {
+        console.warn("Could not load cached archive pdf:", err);
+      }
+    }
+
     // منع أي تحويل مزدوج متزامن إذا كانت المعالجة جارية بالفعل
     if (renderingDocx) {
       return;
@@ -1133,91 +1150,42 @@ export function TabBooklet({
 
   // ━━━ حالة وإجراء الإضافة المباشرة للأرشيف ━━━
   const [addingToArchive, setAddingToArchive] = useState(false);
+  const docKey = `letter-booklet-${activeLetterType}`;
+  const archiveInfo = useMemo(() => {
+    return getArchivedLetterInfo(op, docKey);
+  }, [op, docKey]);
+
   const isArchived = useMemo(() => {
     if (isDirty) return false;
-    try {
-      if (op.notes && op.notes.startsWith("{")) {
-        const parsed = JSON.parse(op.notes);
-        const list = parsed.archivedDocIds || [];
-        return (
-          list.includes(`letter-booklet-${activeLetterType}`) ||
-          list.includes("letter-booklet") ||
-          list.includes("letter-booklet-insurance")
-        );
-      }
-    } catch {}
-    return false;
-  }, [op.notes, activeLetterType, isDirty]);
+    return archiveInfo.isArchived;
+  }, [archiveInfo, isDirty]);
 
   const handleToggleArchive = async () => {
     setAddingToArchive(true);
-    let notesObj: any = {};
     try {
-      if (op.notes && op.notes.startsWith("{")) {
-        notesObj = JSON.parse(op.notes);
-      }
-    } catch {}
-
-    const docKey = `letter-booklet-${activeLetterType}`;
-    const current: string[] = notesObj.archivedDocIds || [];
-    const exists = current.includes(docKey) || current.includes("letter-booklet") || current.includes("letter-booklet-insurance");
-    
-    // إذا كان المستند مضافاً مسبقاً ولم يحدث أي تعديل -> يتم الإلغاء
-    // إذا كان هناك تعديل جديد (isDirty) أو لم يكن مضافاً أصلاً -> نقوم بحفظ التعديلات وتحديث/إضافة الأرشيف
-    const shouldRemove = exists && !isDirty;
-    const updated = shouldRemove
-      ? current.filter((id: string) => id !== docKey && id !== "letter-booklet" && id !== "letter-booklet-insurance")
-      : Array.from(new Set([...current, docKey]));
-
-    notesObj.archivedDocIds = updated;
-
-    try {
-      if (!shouldRemove) {
-        // في حال وجود تعديلات جديدة، نقوم باعتماد وحفظ السناب شوت أولاً
-        if (isDirty) {
-          const snapshotToSave = currentSnapshot;
-          setSavedSnapshot(snapshotToSave);
-          notesObj.bookletLettersDocx = {
-            ...(notesObj.bookletLettersDocx || {}),
-            ...JSON.parse(snapshotToSave),
-          };
-        }
-
-        toast.info(`جاري تجهيز وتوثيق نسخة PDF الرسمية المحدثة لـ ${currentTpl.title}...`);
-        try {
-          const pdfBlob = await generateBookletPdfBlob(activeLetterType);
-          const cloudFilename = `official_letter_${activeLetterType}_${registrationNumber || op.serialNumber || "doc"}.pdf`;
-          const cloudRes = await uploadPdfToFreeCloud(pdfBlob, cloudFilename).catch(() => null);
-
-          if (!notesObj.bookletLettersDocx) notesObj.bookletLettersDocx = {};
-          if (!notesObj.bookletLettersDocx.cloudUrls) notesObj.bookletLettersDocx.cloudUrls = {};
-
-          if (cloudRes?.url) {
-            notesObj.bookletLettersDocx.cloudUrls[activeLetterType] = cloudRes.url;
-            setCloudUrls((prev) => ({ ...prev, [activeLetterType]: cloudRes.url }));
-          }
-
-          // حفظ كوثيقة رسمية للعملية
-          const formData = new FormData();
-          formData.append("file", pdfBlob, `${currentTpl.title}.pdf`);
-          formData.append("type", "BOOKLET");
-          await api.post(`/operations/${op.id}/documents`, formData).catch(() => {});
-        } catch (pdfErr) {
-          console.warn("Archival PDF generation error in TabBooklet:", pdfErr);
-        }
+      if (isDirty) {
+        const snapshotToSave = currentSnapshot;
+        setSavedSnapshot(snapshotToSave);
       }
 
-      await api.patch(`/operations/${op.id}`, {
-        notes: JSON.stringify(notesObj),
+      toast.info(`جاري تجهيز وتوثيق نسخة PDF الرسمية لـ ${currentTpl.title}...`);
+      const pdfBlob = previewPdfBlob || (await generateBookletPdfBlob(activeLetterType));
+
+      const { version, versionName } = await saveLetterToArchiveWithVersion({
+        op,
+        docKey,
+        title: currentTpl.title,
+        pdfBlob,
+        currentSnapshot,
+        docType: "BOOKLET",
+        companyId: selectedCompanyId,
+        registrationNumber,
       });
-      toast.success(
-        shouldRemove
-          ? `تمت إزالة ${currentTpl.title} من مستندات الأرشيف وحزمة التقديم 📂`
-          : `تمت إضافة النسخة المحدثة من ${currentTpl.title} وتوثيقها بالأرشيف وحزمة التقديم بنجاح! 📦✨`
-      );
+
+      toast.success(`تمت إضافة المستند للأرشيف بنجاح (${versionName})! 📦✨`);
       onRefresh();
     } catch (err: any) {
-      toast.error("فشل تحديث حالة الأرشيف: " + (err?.message || ""));
+      toast.error("فشل حفظ المستند في الأرشيف: " + (err?.message || ""));
     } finally {
       setAddingToArchive(false);
     }
@@ -2332,6 +2300,7 @@ export function TabBooklet({
             onAddToArchive={handleToggleArchive}
             isArchived={isArchived}
             addingToArchive={addingToArchive}
+            archivedVersion={archiveInfo.currentVersion}
             customSubtitle="مطابق 100% لقالب الوورد المعتمد للشركة. اضغط على زر المعاينة للاطلاع على المستند وتنزيله أو طباعته."
           />
 

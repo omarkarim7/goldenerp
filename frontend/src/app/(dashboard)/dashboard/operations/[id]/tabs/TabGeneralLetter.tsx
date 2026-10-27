@@ -18,6 +18,7 @@ import { toast } from "sonner";
 import api from "@/lib/api";
 import { Operation, SectionCard, formatDate } from "./types";
 import { StepFooterNav } from "./StepFooterNav";
+import { getArchivedLetterInfo, saveLetterToArchiveWithVersion, loadArchivedPdfBlob } from "./archive-utils";
 import {
   cleanAllDocxXml,
   buildQrAnchorXml,
@@ -551,6 +552,23 @@ export function TabGeneralLetter({
       return;
     }
 
+    // التحميل الفوري من الأرشيف إذا كان المستند مضافاً مسبقاً وغير معدل (0ms)
+    if (!forceRefresh && !isDirty) {
+      try {
+        const cached = await loadArchivedPdfBlob(op, "letter-general");
+        if (cached?.blob) {
+          setPreviewPdfBlob(cached.blob);
+          const url = URL.createObjectURL(cached.blob);
+          setPreviewPdfUrl(url);
+          setLastGeneratedSnapshot(currentSnapshot);
+          toast.success(`تم فتح النسخة المؤرشفة مباشرة (نسخة رقم ${cached.version}) ⚡`);
+          return;
+        }
+      } catch (err) {
+        console.warn("Could not load cached archive pdf:", err);
+      }
+    }
+
     if (renderingDocx) return;
 
     setRenderingDocx(true);
@@ -739,48 +757,52 @@ export function TabGeneralLetter({
   };
 
   // ━━━ حالة وإجراء الإضافة المباشرة للأرشيف ━━━
+  // ━━━ حالة وإجراء الإضافة المباشرة للأرشيف ━━━
   const [addingToArchive, setAddingToArchive] = useState(false);
+  const archiveInfo = useMemo(() => {
+    return getArchivedLetterInfo(op, "letter-general");
+  }, [op]);
+
   const isArchived = useMemo(() => {
-    try {
-      if (op.notes && op.notes.startsWith("{")) {
-        const parsed = JSON.parse(op.notes);
-        const list = parsed.archivedDocIds || [];
-        return list.includes("decl-general") || list.includes("general_letter");
-      }
-    } catch {}
-    return false;
-  }, [op.notes]);
+    if (isDirty) return false;
+    return archiveInfo.isArchived;
+  }, [archiveInfo, isDirty]);
 
   const handleToggleArchive = async () => {
     setAddingToArchive(true);
-    let notesObj: any = {};
     try {
-      if (op.notes && op.notes.startsWith("{")) {
-        notesObj = JSON.parse(op.notes);
+      if (isDirty) {
+        const snapToSave = currentSnapshot;
+        setSavedSnapshot(snapToSave);
+        let notesObj: any = {};
+        if (op.notes && op.notes.startsWith("{")) {
+          try { notesObj = JSON.parse(op.notes); } catch {}
+        }
+        notesObj.generalLetterDocx = {
+          ...(notesObj.generalLetterDocx || {}),
+          ...JSON.parse(snapToSave),
+        };
+        await api.patch(`/operations/${op.id}`, { notes: JSON.stringify(notesObj) });
       }
-    } catch {}
 
-    const docKey = "decl-general";
-    const current: string[] = notesObj.archivedDocIds || [];
-    const exists = current.includes(docKey) || current.includes("general_letter");
-    const updated = exists
-      ? current.filter((id: string) => id !== docKey && id !== "general_letter")
-      : [...current, docKey];
+      toast.info("جاري تجهيز وتوثيق نسخة PDF الرسمية للخطاب العام...");
+      const pdfBlob = previewPdfBlob || (await generateGeneralLetterPdfBlob());
 
-    notesObj.archivedDocIds = updated;
-
-    try {
-      await api.patch(`/operations/${op.id}`, {
-        notes: JSON.stringify(notesObj),
+      const { version, versionName } = await saveLetterToArchiveWithVersion({
+        op,
+        docKey: "letter-general",
+        title: "الخطاب الرسمي العام الموجه لجهة الإسناد",
+        pdfBlob,
+        currentSnapshot,
+        docType: "GENERAL_LETTER",
+        companyId: selectedCompanyId,
+        registrationNumber,
       });
-      toast.success(
-        exists
-          ? "تمت إزالة الخطاب العام من مستندات الأرشيف وحزمة التقديم 📂"
-          : "تمت إضافة الخطاب العام إلى مستندات الأرشيف وحزمة التقديم بنجاح! 📦✨"
-      );
+
+      toast.success(`تمت إضافة المستند للأرشيف بنجاح (${versionName})! 📦✨`);
       onRefresh();
     } catch (err: any) {
-      toast.error("فشل تحديث حالة الأرشيف: " + (err?.message || ""));
+      toast.error("فشل حفظ المستند في الأرشيف: " + (err?.message || ""));
     } finally {
       setAddingToArchive(false);
     }
@@ -1365,6 +1387,7 @@ export function TabGeneralLetter({
         }}
         onAddToArchive={handleToggleArchive}
         isArchived={isArchived}
+        archivedVersion={archiveInfo.currentVersion}
         addingToArchive={addingToArchive}
         icon={FileText}
         iconColor="text-indigo-700 dark:text-indigo-400"

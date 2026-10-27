@@ -18,6 +18,7 @@ import { toast } from "sonner";
 import api from "@/lib/api";
 import { Operation, SectionCard, formatDate } from "./types";
 import { StepFooterNav } from "./StepFooterNav";
+import { getArchivedLetterInfo, saveLetterToArchiveWithVersion, loadArchivedPdfBlob } from "./archive-utils";
 import {
   generateSmartOutgoingRef,
   cleanAllDocxXml,
@@ -946,6 +947,21 @@ export function TabTechnical({
       return;
     }
 
+    // التحميل الفوري من الأرشيف إذا كان المستند مضافاً مسبقاً وغير معدل
+    if (!forceRefresh && !isDirty) {
+      try {
+        const cached = await loadArchivedPdfBlob(op, "letter-technical");
+        if (cached?.blob) {
+          setPreviewPdfBlob(cached.blob);
+          setLastGeneratedSnapshot(currentSnapshot);
+          toast.success(`تم فتح النسخة المؤرشفة مباشرة (نسخة رقم ${cached.version}) ⚡`);
+          return;
+        }
+      } catch (err) {
+        console.warn("Could not load cached archive pdf:", err);
+      }
+    }
+
     if (renderingDocx) return;
 
     setRenderingDocx(true);
@@ -1196,78 +1212,41 @@ export function TabTechnical({
 
   // ━━━ حالة إضافة العرض الفني إلى مستندات الأرشيف ━━━
   const [addingToArchive, setAddingToArchive] = useState(false);
+  const archiveInfo = useMemo(() => {
+    return getArchivedLetterInfo(op, "letter-technical");
+  }, [op]);
+
   const isArchived = useMemo(() => {
     if (isDirty) return false;
-    try {
-      if (op.notes && op.notes.startsWith("{")) {
-        const parsed = JSON.parse(op.notes);
-        const list = parsed.archivedDocIds || [];
-        return list.includes("letter-technical");
-      }
-    } catch {}
-    return false;
-  }, [op.notes, isDirty]);
+    return archiveInfo.isArchived;
+  }, [archiveInfo, isDirty]);
 
   const handleToggleArchive = async () => {
     setAddingToArchive(true);
-    let notesObj: any = {};
     try {
-      if (op.notes && op.notes.startsWith("{")) {
-        notesObj = JSON.parse(op.notes);
-      }
-    } catch {}
-
-    const current: string[] = notesObj.archivedDocIds || [];
-    const exists = current.includes("letter-technical");
-    const shouldRemove = exists && !isDirty;
-    const updated = shouldRemove
-      ? current.filter((id: string) => id !== "letter-technical")
-      : Array.from(new Set([...current, "letter-technical"]));
-
-    notesObj.archivedDocIds = updated;
-
-    try {
-      if (!shouldRemove) {
-        if (isDirty) {
-          const snapToSave = currentSnapshot;
-          setSavedSnapshot(snapToSave);
-          notesObj.technicalOfferDocx = {
-            ...(notesObj.technicalOfferDocx || {}),
-            ...JSON.parse(snapToSave),
-          };
-        }
-
-        try {
-          const pdfBlob = await generateTechnicalPdfBlob();
-          const cloudFilename = `technical_offer_${registrationNumber || op.serialNumber || "doc"}.pdf`;
-          const cloudRes = await uploadPdfToFreeCloud(pdfBlob, cloudFilename).catch(() => null);
-
-          if (!notesObj.technicalOfferDocx) notesObj.technicalOfferDocx = {};
-          if (cloudRes?.url) {
-            notesObj.technicalOfferDocx.cloudPdfUrl = cloudRes.url;
-            setCloudPdfUrl(cloudRes.url);
-          }
-
-          const formData = new FormData();
-          formData.append("file", pdfBlob, "العرض الفني والمواصفات الفنية.pdf");
-          formData.append("type", "TECHNICAL_OFFER");
-          await api.post(`/operations/${op.id}/documents`, formData).catch(() => {});
-        } catch (pdfErr) {
-          console.warn("Archival PDF generation error in TabTechnical:", pdfErr);
-        }
+      if (isDirty) {
+        const snapToSave = currentSnapshot;
+        setSavedSnapshot(snapToSave);
       }
 
-      await api.patch(`/operations/${op.id}`, {
-        notes: JSON.stringify(notesObj),
+      toast.info("جاري تجهيز وتوثيق نسخة PDF الرسمية للعرض الفني...");
+      const pdfBlob = previewPdfBlob || (await generateTechnicalPdfBlob());
+
+      const { version, versionName } = await saveLetterToArchiveWithVersion({
+        op,
+        docKey: "letter-technical",
+        title: "العرض الفني والمواصفات الفنية",
+        pdfBlob,
+        currentSnapshot,
+        docType: "TECHNICAL_OFFER",
+        companyId: selectedCompanyId,
+        registrationNumber,
       });
-      toast.success(
-        shouldRemove
-          ? "تمت إزالة العرض الفني من مستندات الأرشيف وحزمة التقديم 📂"
-          : "تمت إضافة النسخة المحدثة من العرض الفني للأرشيف وحزمة التقديم بنجاح! 📦✨"
-      );
+
+      toast.success(`تمت إضافة المستند للأرشيف بنجاح (${versionName})! 📦✨`);
       onRefresh();
     } catch (err: any) {
-      toast.error("فشل تحديث حالة الأرشيف للعرض الفني: " + (err?.message || ""));
+      toast.error("فشل حفظ المستند في الأرشيف: " + (err?.message || ""));
     } finally {
       setAddingToArchive(false);
     }
@@ -2033,6 +2012,7 @@ export function TabTechnical({
         onAddToArchive={handleToggleArchive}
         isArchived={isArchived}
         addingToArchive={addingToArchive}
+        archivedVersion={archiveInfo.currentVersion}
         icon={ClipboardCheck}
         iconColor="text-blue-700 dark:text-blue-400"
         iconBg="bg-blue-500/15 border-blue-500/30"
