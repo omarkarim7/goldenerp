@@ -60,6 +60,8 @@ import {
 } from "./letter-utils";
 import JSZip from "jszip";
 import QRCode from "qrcode";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { SmartArabicDatePicker } from "@/components/ui/arabic-date-picker";
 import { getPdfBlobFromDocx, uploadPdfToFreeCloud, getExpectedCloudPdfUrl } from "./client-pdf";
 import { OnlyOfficeDocViewer } from "@/components/OnlyOfficeDocViewer";
 import { loadArchivedPdfBlob, saveLetterToArchiveWithVersion } from "./archive-utils";
@@ -163,6 +165,7 @@ export function GrievanceLetterSection({
       if (link.company?.phone) setPhoneWhatsapp(link.company.phone);
       if (link.company?.mobile) setPhoneMobile(link.company.mobile);
       if (link.company?.address) setCompanyAddress(link.company.address);
+      if (link.company?.email) setCompanyEmail(link.company.email);
     }
   };
 
@@ -196,29 +199,34 @@ export function GrievanceLetterSection({
     onRefresh();
   };
 
-  // بيانات الترويسة
+  // بيانات الترويسة والتذييل
   const [companyOpCode, setCompanyOpCode] = useState(() => {
-    return savedGrievanceData?.companyOpCode || currentCompanyLink?.displayCode || "A";
+    return (
+      savedGrievanceData?.companyOpCode ||
+      currentCompanyLink?.displayCode ||
+      `AZ-0${op.serialNumber || 1}`
+    );
   });
   const [companyCommercialRegister, setCompanyCommercialRegister] = useState(() => {
-    return savedGrievanceData?.companyCommercialRegister || currentCompany?.commercialRegister || "14258";
+    return savedGrievanceData?.companyCommercialRegister || currentCompany?.commercialRegister || "110200700036620";
   });
   const [companyTaxCard, setCompanyTaxCard] = useState(() => {
-    return savedGrievanceData?.companyTaxCard || currentCompany?.taxCard || "686-218-354";
+    return savedGrievanceData?.companyTaxCard || currentCompany?.taxCard || "658369652";
   });
   const [phoneWhatsapp, setPhoneWhatsapp] = useState(() => {
-    return savedGrievanceData?.phoneWhatsapp || currentCompany?.phone || "01007604470";
+    return savedGrievanceData?.phoneWhatsapp || currentCompany?.phone || "01091708818";
   });
   const [phoneMobile, setPhoneMobile] = useState(() => {
-    return savedGrievanceData?.phoneMobile || currentCompany?.mobile || "01007604470";
+    return savedGrievanceData?.phoneMobile || currentCompany?.mobile || "01557018818";
   });
   const [companyAddress, setCompanyAddress] = useState(() => {
-    return savedGrievanceData?.companyAddress || currentCompany?.address || "مصر — الإسكندرية / دمنهور";
+    return savedGrievanceData?.companyAddress || currentCompany?.address || "بجوار مستشفى ليدى كير  -  بدمنهور -  البحيره";
+  });
+  const [companyEmail, setCompanyEmail] = useState(() => {
+    return savedGrievanceData?.companyEmail || currentCompany?.email || "goldengolden8818@gmail.com";
   });
   const [issueDate, setIssueDate] = useState(() => {
-    if (savedGrievanceData?.issueDate) return savedGrievanceData.issueDate;
-    const d = new Date();
-    return `${d.getDate()}/${d.getMonth() + 1}/${d.getFullYear()}`;
+    return savedGrievanceData?.issueDate || new Date().toLocaleDateString("en-GB");
   });
 
   // 2. جهة الخطاب والموضوع
@@ -380,6 +388,7 @@ export function GrievanceLetterSection({
       phoneWhatsapp,
       phoneMobile,
       companyAddress,
+      companyEmail,
       issueDate,
       recipientPrefix,
       recipientTitleAndAuthority,
@@ -408,6 +417,7 @@ export function GrievanceLetterSection({
     phoneWhatsapp,
     phoneMobile,
     companyAddress,
+    companyEmail,
     issueDate,
     recipientPrefix,
     recipientTitleAndAuthority,
@@ -442,7 +452,9 @@ export function GrievanceLetterSection({
         }
       } catch {}
 
-      parsedNotes[noteKey] = JSON.parse(currentSnapshot);
+      const snapObj = JSON.parse(currentSnapshot);
+      parsedNotes[noteKey] = snapObj;
+      parsedNotes[isTech ? "grievanceLetterTech" : "grievanceLetterFin"] = snapObj;
 
       await api.patch(`/operations/${op.id}`, {
         notes: JSON.stringify(parsedNotes),
@@ -660,54 +672,19 @@ export function GrievanceLetterSection({
 
     zip.file("word/document.xml", docXml);
 
-    // 3. ترويسة وتذييل الشركة في القالب وضبط محاذاة أرقام السجل والبطاقة وكود العملية لليسار تماماً
-    const cleanCr = (companyCommercialRegister || "").trim();
-    const cleanTax = (companyTaxCard || "").trim();
-    const cleanCode = (companyOpCode || "").trim();
-    const codeFormatted = `( ${cleanCode} )`;
-
+    // 3. ترويسة وتذييل الشركة في القالب مطابق 100% لكافة خطابات النظام وكراسة الشروط
+    const cleanCode = (companyOpCode || "").replace(/^\(|\)$/g, "").trim() || "AZ0005";
     const headerFiles = ["word/header1.xml", "word/header2.xml", "word/header3.xml"];
     for (const hf of headerFiles) {
       const hFile = zip.file(hf);
       if (hFile) {
         let hXml = await hFile.async("text");
-        hXml = hXml.replace(/جولدن سرفيس/g, escapeXml(currentCompany?.name || "جولدن سرفيس"));
-
-        // 1. موازنة مسافات السجل التجاري ليكون محاذياً لأقصى اليسار مثل باقي الخطابات
-        const crDiff = 15 - cleanCr.length;
-        if (crDiff > 0) {
-          const extraCrSpaces = " ".repeat(Math.round(crDiff * 1.5));
-          hXml = hXml.replace(
-            /(<w:t xml:space="preserve">)(\s{50,})(<\/w:t>[\s\S]*?س \. ت : )/g,
-            `$1$2${extraCrSpaces}$3`
-          );
-        }
-        hXml = hXml.replace(/110200700036620/g, escapeXml(cleanCr));
-
-        // 2. موازنة مسافات البطاقة الضريبية (إزاحة لليسار لتتطابق تماماً مع السجل التجاري وكود العملية)
-        const taxDiff = 9 - cleanTax.length;
-        const extraTaxSpaces = " ".repeat(Math.max(6 + Math.round(taxDiff * 0.8), 2));
-        hXml = hXml.replace(
-          /(<w:t xml:space="preserve">)(\s{50,})(ب \. ض : )/g,
-          `$1$2${extraTaxSpaces}$3`
-        );
-        hXml = hXml.replace(/658369652/g, escapeXml(cleanTax));
-
-        // 3. موازنة مسافات كود العملية بالأقواس لمنع انقلاب الاتجاه BiDi
-        const codeDiff = 22 - codeFormatted.length;
-        if (codeDiff > 0) {
-          const extraCodeSpaces = " ".repeat(Math.round(codeDiff * 1.5));
-          hXml = hXml.replace(
-            /(<w:t xml:space="preserve">)(\s{70,})(كود العمليه : )/g,
-            `$1$2${extraCodeSpaces}$3`
-          );
-        }
-        hXml = hXml.replace(/\(?\s*كود العملية بالشرك[ةه]\s*\)?/g, escapeXml(codeFormatted));
-
-        hXml = hXml.replace(/رقم القيد\s*[:\s]*[\d\w\-\/]+/g, `رقم القيد : ${registrationNumber}`);
+        hXml = hXml.replace(/110200700036620/g, escapeXml(companyCommercialRegister || "110200700036620"));
+        hXml = hXml.replace(/658369652/g, escapeXml(companyTaxCard || "658369652"));
+        hXml = hXml.replace(/\(\s*كود العملية بالشرك[ةه]\s*\)/g, `( ${escapeXml(cleanCode)} )`);
+        hXml = hXml.replace(/كود العملية بالشرك[ةه]/g, escapeXml(cleanCode));
         hXml = hXml.replace(/<w:highlight\s+[^>]*\/>/g, "");
         hXml = hXml.replace(/<w:color\s+w:val="(red|FF0000)"[^>]*\/>/g, "");
-
         zip.file(hf, hXml);
       }
     }
@@ -719,10 +696,17 @@ export function GrievanceLetterSection({
         let fXml = await fFile.async("text");
         fXml = fXml.replace(/15\/10\/2026/g, escapeXml(issueDate));
         fXml = fXml.replace(/التاريخ الصادر\s*:\s*[\d\/\-]+/g, `التاريخ الصادر: ${escapeXml(issueDate)}`);
-        fXml = fXml.replace(/رقم القيد/g, `رقم القيد: ${escapeXml(registrationNumber)}`);
+        if (fXml.includes("رقم القيد")) {
+          fXml = fXml.replace(/رقم القيد/g, `رقم القيد : ${escapeXml(registrationNumber)}`);
+        }
+        fXml = fXml.replace(/\(\s*باركود المستند أو العمليه/g, `رقم القيد : ${escapeXml(registrationNumber)}`);
         fXml = fXml.replace(/01091708818/g, escapeXml(phoneWhatsapp));
         fXml = fXml.replace(/01557018818/g, escapeXml(phoneMobile));
         fXml = fXml.replace(/بجوار مستشفى ليدى كير\s*-\s*بدمنهور\s*-\s*البح\s*يره/g, escapeXml(companyAddress));
+        fXml = fXml.replace(/بجوار مستشفى ليدى كير\s*-\s*بدمنهور\s*-\s*البحيره/g, escapeXml(companyAddress));
+        fXml = fXml.replace(/goldengolden8818@gmail.com/g, escapeXml(companyEmail));
+        fXml = fXml.replace(/<w:highlight\s+[^>]*\/>/g, "");
+        fXml = fXml.replace(/<w:color\s+w:val="(red|FF0000)"[^>]*\/>/g, "");
         zip.file(ff, fXml);
       }
     }
@@ -1129,103 +1113,167 @@ export function GrievanceLetterSection({
         </div>
       </div>
 
-      {/* ━━━ SECTION 1: الشركة المصدرة ورقم القيد الصادر ━━━ */}
+      {/* ━━━ SECTION 1: الترويسة التعريفية ورقم القيد والصادر وبيانات الشركة ━━━ */}
       <SectionCard
-        title="1. الشركة المصدرة للتظلم ورقم القيد الصادر الذكي"
+        title="1. الترويسة التعريفية ورقم القيد والصادر وبيانات الشركة (Header & Footer)"
         icon={Building2}
         iconColor="text-blue-600"
+        badge={
+          <Badge className="bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-500/30 text-[10px] font-bold">
+            تفريغ تلقائي للألوان الحمراء بالكامل ✓
+          </Badge>
+        }
       >
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-          <div className="space-y-1 sm:col-span-1">
-            <Label className="text-xs font-bold text-foreground">الشركة المصدرة للخطاب</Label>
-            <select
-              value={selectedCompanyId}
-              onChange={(e) => handleSelectCompany(e.target.value)}
-              className="w-full bg-background border border-border rounded-xl px-3 py-2 text-xs font-bold text-foreground focus:ring-2 focus:ring-rose-500"
+        <div className="space-y-4">
+          <div className="p-3.5 rounded-2xl bg-gradient-to-r from-blue-500/10 via-emerald-500/10 to-transparent border border-blue-500/20 text-xs text-foreground flex flex-col md:flex-row items-start md:items-center justify-between gap-3">
+            <div>
+              <p className="font-semibold text-foreground">
+                يتم هنا تعيين <strong>كود العملية بالشركة</strong> وبيانات الترويسة والتذييل ورقم القيد الصادر باليوم والشهر والسنة.
+              </p>
+              <p className="text-[11px] text-muted-foreground mt-0.5">
+                تفريغ تلقائي للعلامات الحمراء: عند المعاينة أو تنزيل ملف الوورد، تُزال كافة التحديدات والألوان الحمراء في الترويسة والتذييل والمتن ليخرج الخطاب رسمياً ومعتمداً.
+              </p>
+            </div>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={handleRegenerateRef}
+              className="text-[11px] h-8 rounded-xl border-blue-500/40 text-blue-600 dark:text-blue-400 hover:bg-blue-500/10 shrink-0 cursor-pointer font-bold"
             >
-              {(op.companies || []).map((c: any) => (
-                <option key={c.companyId || c.id} value={c.companyId || c.id}>
-                  {c.company?.name || `شركة (${c.displayCode})`}
-                </option>
-              ))}
-            </select>
+              <RefreshCw className="h-3.5 w-3.5 ml-1.5" />
+              <span>تحديث رقم القيد</span>
+            </Button>
           </div>
 
-          <div className="space-y-1 sm:col-span-1">
-            <div className="flex items-center justify-between">
-              <Label className="text-xs font-bold text-foreground">رقم القيد الصادر الذكي</Label>
-              <button
-                type="button"
-                onClick={handleRegenerateRef}
-                className="text-[10px] text-blue-600 hover:underline flex items-center gap-0.5 cursor-pointer"
-                title="توليد رقم تسلسلي جديد"
-              >
-                <RefreshCw className="h-2.5 w-2.5" />
-                <span>توليد جديد</span>
-              </button>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
+            <div className="space-y-1.5">
+              <Label className="text-xs font-bold text-foreground">الشركة المشاركة بالعملية *</Label>
+              <Select value={selectedCompanyId} onValueChange={(val) => handleSelectCompany(val || "")}>
+                <SelectTrigger className="h-9.5 text-xs font-bold rounded-xl bg-background">
+                  <SelectValue placeholder="اختر الشركة">
+                    {currentCompanyLink?.company?.name
+                      ? `${currentCompanyLink.company.name} (${currentCompanyLink.displayCode || "A"})`
+                      : "اختر الشركة"}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  {(op.companies || []).map((c: any) => {
+                    const val = c.companyId || c.id;
+                    return (
+                      <SelectItem key={val} value={val} className="text-xs font-bold">
+                        {c.company?.name || "الشركة"} ({c.displayCode})
+                      </SelectItem>
+                    );
+                  })}
+                </SelectContent>
+              </Select>
             </div>
-            <div className="flex gap-1.5">
+
+            <div className="space-y-1.5">
+              <Label className="text-xs font-bold text-foreground">كود العملية بالشركة (الترويسة) *</Label>
+              <Input
+                value={companyOpCode}
+                onChange={(e) => setCompanyOpCode(e.target.value)}
+                placeholder="( AZ-01 )"
+                className="h-9.5 text-xs font-bold font-mono text-blue-700 dark:text-blue-300 rounded-xl text-center bg-background"
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between">
+                <Label className="text-xs font-bold text-foreground">رقم القيد الصادر الذكي *</Label>
+                <button
+                  type="button"
+                  onClick={() => {
+                    navigator.clipboard.writeText(registrationNumber);
+                    toast.success("تم نسخ رقم القيد بنجاح 📋");
+                  }}
+                  className="text-[10px] text-blue-600 hover:underline flex items-center gap-0.5 cursor-pointer font-bold"
+                  title="نسخ رقم القيد"
+                >
+                  <Copy className="h-2.5 w-2.5" />
+                  <span>نسخ</span>
+                </button>
+              </div>
               <Input
                 value={registrationNumber}
                 onChange={(e) => setRegistrationNumber(e.target.value)}
-                className="h-9 text-xs font-mono font-bold"
+                className="h-9.5 text-xs font-mono font-bold text-indigo-700 dark:text-indigo-300 rounded-xl text-center bg-background"
               />
-              <Button
-                size="icon"
-                variant="outline"
-                onClick={() => {
-                  navigator.clipboard.writeText(registrationNumber);
-                  toast.success("تم نسخ رقم القيد بنجاح 📋");
-                }}
-                className="h-9 w-9 shrink-0 rounded-xl"
-                title="نسخ رقم القيد"
-              >
-                <Copy className="h-3.5 w-3.5" />
-              </Button>
+            </div>
+
+            <div className="space-y-1.5">
+              <SmartArabicDatePicker
+                label="تاريخ الصادر (التذييل)"
+                value={issueDate}
+                onChange={(val) => setIssueDate(val)}
+                required
+              />
             </div>
           </div>
 
-          <div className="space-y-1 sm:col-span-1">
-            <Label className="text-xs font-bold text-foreground">تاريخ تحرير التظلم (Footer)</Label>
-            <Input
-              value={issueDate}
-              onChange={(e) => setIssueDate(e.target.value)}
-              placeholder="يوم/شهر/سنة"
-              className="h-9 text-xs font-mono font-bold text-center"
-            />
-          </div>
-        </div>
+          {/* السجل التجاري والبطاقة الضريبية والهواتف */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5 pt-1">
+            <div className="space-y-1.5">
+              <Label className="text-xs font-bold text-foreground">السجل التجاري (س . ت بالترويسة) *</Label>
+              <Input
+                value={companyCommercialRegister}
+                onChange={(e) => setCompanyCommercialRegister(e.target.value)}
+                placeholder="110200700036620"
+                className="h-9.5 text-xs font-mono rounded-xl text-center font-bold bg-background"
+              />
+            </div>
 
-        {/* حقول ترويسة الشركة (كود العملية، السجل التجاري، البطاقة الضريبية) */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-3 border-t border-border/50">
-          <div className="space-y-1 sm:col-span-1">
-            <Label className="text-xs font-bold text-foreground">كود العملية بالشركة (Header) *</Label>
-            <Input
-              value={companyOpCode}
-              onChange={(e) => setCompanyOpCode(e.target.value)}
-              placeholder="A"
-              className="h-9 text-xs font-mono font-bold text-center"
-            />
+            <div className="space-y-1.5">
+              <Label className="text-xs font-bold text-foreground">البطاقة الضريبية (ب . ض بالترويسة) *</Label>
+              <Input
+                value={companyTaxCard}
+                onChange={(e) => setCompanyTaxCard(e.target.value)}
+                placeholder="658369652"
+                className="h-9.5 text-xs font-mono rounded-xl text-center font-bold bg-background"
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <Label className="text-xs font-bold text-foreground">رقم الواتساب الرسمي (التذييل)</Label>
+              <Input
+                value={phoneWhatsapp}
+                onChange={(e) => setPhoneWhatsapp(e.target.value)}
+                placeholder="01091708818"
+                className="h-9.5 text-xs font-mono rounded-xl text-center bg-background"
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <Label className="text-xs font-bold text-foreground">رقم المحمول الرسمي (التذييل)</Label>
+              <Input
+                value={phoneMobile}
+                onChange={(e) => setPhoneMobile(e.target.value)}
+                placeholder="01557018818"
+                className="h-9.5 text-xs font-mono rounded-xl text-center bg-background"
+              />
+            </div>
           </div>
 
-          <div className="space-y-1 sm:col-span-1">
-            <Label className="text-xs font-bold text-foreground">السجل التجاري (س . ت) *</Label>
-            <Input
-              value={companyCommercialRegister}
-              onChange={(e) => setCompanyCommercialRegister(e.target.value)}
-              placeholder="110200700036620"
-              className="h-9 text-xs font-mono font-bold text-center"
-            />
-          </div>
-
-          <div className="space-y-1 sm:col-span-1">
-            <Label className="text-xs font-bold text-foreground">البطاقة الضريبية (ب . ض) *</Label>
-            <Input
-              value={companyTaxCard}
-              onChange={(e) => setCompanyTaxCard(e.target.value)}
-              placeholder="658369652"
-              className="h-9 text-xs font-mono font-bold text-center"
-            />
+          {/* العنوان والإيميل */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5 pt-1">
+            <div className="space-y-1.5 sm:col-span-2">
+              <Label className="text-xs font-bold text-foreground">عنوان مقر الشركة (التذييل)</Label>
+              <Input
+                value={companyAddress}
+                onChange={(e) => setCompanyAddress(e.target.value)}
+                className="h-9.5 text-xs rounded-xl bg-background"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs font-bold text-foreground">البريد الإلكتروني للشركة (التذييل)</Label>
+              <Input
+                value={companyEmail}
+                onChange={(e) => setCompanyEmail(e.target.value)}
+                className="h-9.5 text-xs font-mono rounded-xl bg-background"
+              />
+            </div>
           </div>
         </div>
       </SectionCard>

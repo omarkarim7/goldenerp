@@ -272,8 +272,8 @@ export async function generateUniversalLetterDocxBlob(
       ? notesObj.warrantyCertificate
       : meta.category === "grievance"
       ? meta.subType === "TECH"
-        ? notesObj.grievanceLetterTech
-        : notesObj.grievanceLetterFin
+        ? (notesObj.grievanceLetterTech || notesObj.technicalGrievanceLetterDocx)
+        : (notesObj.grievanceLetterFin || notesObj.financialGrievanceLetterDocx)
       : meta.category === "refund"
       ? notesObj.finalInsuranceRefund
       : {};
