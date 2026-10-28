@@ -140,6 +140,9 @@ export function getStageIndex(status: string): number {
   if (status === "TECHNICAL_REJECTED" || status === "GRIEVANCE_FILED") {
     return 4; // associated with technical acceptance stage
   }
+  if (status === "FINANCIAL_REJECTED") {
+    return 5; // associated with financial opening stage
+  }
   if (status === "CANCELLED" || status === "ARCHIVED") {
     return 9;
   }

@@ -46,6 +46,7 @@ const statusLabels: Record<string, { label: string; color: string; badgeBg: stri
   TECHNICAL_REJECTED: { label: "مرفوض فنياً", color: "text-rose-500", badgeBg: "badge-rose" },
   GRIEVANCE_FILED: { label: "تظلم", color: "text-amber-500", badgeBg: "badge-amber" },
   FINANCIAL_OPENED: { label: "فتح مالي", color: "text-blue-500", badgeBg: "badge-blue" },
+  FINANCIAL_REJECTED: { label: "مرفوض مالياً", color: "text-rose-500", badgeBg: "badge-rose" },
   AWARDED: { label: "ترسية وفوز", color: "text-amber-500", badgeBg: "badge-amber" },
   SUPPLY_IN_PROGRESS: { label: "جاري التوريد", color: "text-blue-500", badgeBg: "badge-blue" },
   COMPLETED: { label: "مكتمل", color: "text-emerald-500", badgeBg: "badge-emerald" },

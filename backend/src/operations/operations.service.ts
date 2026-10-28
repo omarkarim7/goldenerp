@@ -539,6 +539,7 @@ export class OperationsService {
       'TECHNICAL_OPENED',
       'TECHNICAL_ACCEPTED',
       'FINANCIAL_OPENED',
+      'FINANCIAL_REJECTED',
       'AWARDED',
       'SUPPLY_IN_PROGRESS',
       'COMPLETED',

@@ -30,6 +30,7 @@ const ARABIC_LABELS: Record<string, string> = {
   TECHNICAL_REJECTED: "مرفوض فنياً",
   GRIEVANCE_FILED: "تقديم تظلم",
   FINANCIAL_OPENED: "جلسة فتح مالي",
+  FINANCIAL_REJECTED: "مرفوض مالياً",
   AWARDED: "ترسية وفوز",
   SUPPLY_IN_PROGRESS: "جاري التوريد والتنفيذ",
   COMPLETED: "مكتملة وناجحة",

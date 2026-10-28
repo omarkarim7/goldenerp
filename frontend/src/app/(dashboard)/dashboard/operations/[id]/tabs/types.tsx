@@ -93,6 +93,7 @@ export const STATUS_LABELS: Record<string, { label: string; badgeBg: string }> =
   TECHNICAL_REJECTED: { label: "مرفوض فنياً 🔴", badgeBg: "badge-rose" },
   GRIEVANCE_FILED: { label: "تظلم قيد النظر ⚖️", badgeBg: "badge-amber" },
   FINANCIAL_OPENED: { label: "جلسة فتح مالي 💵", badgeBg: "badge-blue" },
+  FINANCIAL_REJECTED: { label: "مرفوض مالياً 🔴", badgeBg: "badge-rose" },
   AWARDED: { label: "تمت الترسية والفوز 🏆", badgeBg: "badge-amber" },
   SUPPLY_IN_PROGRESS: { label: "جاري التوريد والتنفيذ 📦", badgeBg: "badge-blue" },
   COMPLETED: { label: "مكتمل — استلام نهائي ✅", badgeBg: "badge-emerald" },

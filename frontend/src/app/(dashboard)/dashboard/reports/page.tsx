@@ -139,6 +139,7 @@ const STATUS_CONFIG: Record<string, { label: string; badge: string; color: strin
   TECHNICAL_REJECTED: { label: "مرفوض فنياً", badge: "badge-rose", color: "text-rose-500" },
   GRIEVANCE_FILED: { label: "تظلم", badge: "badge-amber", color: "text-amber-500" },
   FINANCIAL_OPENED: { label: "فتح مالي", badge: "badge-blue", color: "text-blue-500" },
+  FINANCIAL_REJECTED: { label: "مرفوض مالياً", badge: "badge-rose", color: "text-rose-500" },
   AWARDED: { label: "ترسية وفوز", badge: "badge-amber", color: "text-amber-500" },
   SUPPLY_IN_PROGRESS: { label: "جاري التوريد", badge: "badge-blue", color: "text-blue-500" },
   COMPLETED: { label: "مكتملة ومسلمة", badge: "badge-emerald", color: "text-emerald-500" },
@@ -424,10 +425,10 @@ export default function ReportsPage() {
       if (["AWARDED", "SUPPLY_IN_PROGRESS", "COMPLETED"].includes(op.status)) {
         awardedOps++;
       }
-      if (["TECHNICAL_REJECTED", "CANCELLED"].includes(op.status)) {
+      if (["TECHNICAL_REJECTED", "FINANCIAL_REJECTED", "CANCELLED"].includes(op.status)) {
         rejectedOps++;
       }
-      if (!["COMPLETED", "CLOSED", "CANCELLED", "ARCHIVED"].includes(op.status)) {
+      if (!["COMPLETED", "CLOSED", "CANCELLED", "ARCHIVED", "FINANCIAL_REJECTED"].includes(op.status)) {
         activeOps++;
       }
       if (["SUBMITTED", "TECHNICAL_OPENED", "TECHNICAL_ACCEPTED", "FINANCIAL_OPENED"].includes(op.status)) {
@@ -484,11 +485,11 @@ export default function ReportsPage() {
         }
       }
 
-      if (["TECHNICAL_REJECTED", "CANCELLED"].includes(op.status)) {
+      if (["TECHNICAL_REJECTED", "FINANCIAL_REJECTED", "CANCELLED"].includes(op.status)) {
         row.rejected++;
       }
 
-      if (!["COMPLETED", "CLOSED", "CANCELLED", "ARCHIVED"].includes(op.status)) {
+      if (!["COMPLETED", "CLOSED", "CANCELLED", "ARCHIVED", "FINANCIAL_REJECTED"].includes(op.status)) {
         row.active++;
       }
 
@@ -549,8 +550,8 @@ export default function ReportsPage() {
       const matchesStatus =
         statusFilter === "ALL" ||
         (statusFilter === "AWARDED" && ["AWARDED", "SUPPLY_IN_PROGRESS", "COMPLETED"].includes(op.status)) ||
-        (statusFilter === "ACTIVE" && !["COMPLETED", "CLOSED", "CANCELLED", "ARCHIVED"].includes(op.status)) ||
-        (statusFilter === "REJECTED" && ["TECHNICAL_REJECTED", "CANCELLED"].includes(op.status));
+        (statusFilter === "ACTIVE" && !["COMPLETED", "CLOSED", "CANCELLED", "ARCHIVED", "FINANCIAL_REJECTED"].includes(op.status)) ||
+        (statusFilter === "REJECTED" && ["TECHNICAL_REJECTED", "FINANCIAL_REJECTED", "CANCELLED"].includes(op.status));
 
       return matchesSearch && matchesStatus;
     });
