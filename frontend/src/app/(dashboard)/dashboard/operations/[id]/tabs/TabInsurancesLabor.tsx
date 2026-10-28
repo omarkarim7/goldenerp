@@ -55,7 +55,7 @@ import { SmartArabicDatePicker } from "@/components/ui/arabic-date-picker";
 
 export interface InsuranceRecord {
   id: string;
-  type: "SOCIAL" | "LABOR" | "HANDOVER";
+  type: "SOCIAL" | "LABOR" | "HANDOVER" | "PAYMENT_ORDER";
   title: string;
   receiptNo: string;
   amount: number;
@@ -160,7 +160,7 @@ export function TabInsurancesLabor({
 
   // Form State for Adding / Editing Card
   const [formData, setFormData] = useState<{
-    type: "SOCIAL" | "LABOR" | "HANDOVER";
+    type: "SOCIAL" | "LABOR" | "HANDOVER" | "PAYMENT_ORDER";
     title: string;
     receiptNo: string;
     amount: string;
@@ -395,12 +395,35 @@ export function TabInsurancesLabor({
     }
   };
 
-  // Save Payment Order Section
+  // Save Payment Order Section as Card & Notes
   const handleSavePaymentOrder = async () => {
+    if (!paymentOrderNumber && !paymentOrderAmount) {
+      toast.warning("يرجى إدخال رقم أمر الدفع ومبلغ الصرف أولاً");
+      return;
+    }
     setSavingPaymentOrder(true);
     try {
-      await persistCardsToBackend(cards);
-      toast.success("تم حفظ وتحديث بيانات تتبع أمر الدفع الإلكتروني بنجاح! 🏦✨");
+      const poCardId = `po-${paymentOrderNumber || Date.now()}`;
+      const poCard: InsuranceRecord = {
+        id: poCardId,
+        type: "PAYMENT_ORDER",
+        title: `أمر دفع إلكتروني حكومي (${paymentOrderNumber || "PO-01"})`,
+        receiptNo: paymentOrderNumber || "PO-01",
+        amount: Number(paymentOrderAmount) || 0,
+        date: paymentOrderDate || new Date().toISOString().split("T")[0],
+        entityName: disbursingBank || "الوحدة الحسابية المركزية - البنك المركزي المصري",
+        status: paymentOrderStatus === "ISSUED" ? "PAID" : "PENDING",
+        recipientName: "الجهة الإدارية / حساب الشركة البنكي",
+        recipientRole: `حالة الصرف: ${paymentOrderStatus === "ISSUED" ? "تم الصرف بنجاح ✓" : "قيد المتابعة والتحصيل"}`,
+        notes: `أمر دفع إلكتروني صادر عن ${disbursingBank || "الوحدة الحسابية"} بمبلغ ${formatCurrency(Number(paymentOrderAmount) || 0)}`,
+        createdAt: new Date().toISOString(),
+      };
+
+      const filtered = cards.filter((c) => c.type !== "PAYMENT_ORDER" && c.receiptNo !== paymentOrderNumber);
+      const updatedCards = [poCard, ...filtered];
+      setCards(updatedCards);
+      await persistCardsToBackend(updatedCards);
+      toast.success("تم تسجيل وحفظ أمر الدفع كبطاقة معتمدة بنجاح! 💳🏦");
     } catch (err: any) {
       toast.error("فشل حفظ بيانات أمر الدفع: " + (err?.message || ""));
     } finally {
@@ -516,12 +539,15 @@ export function TabInsurancesLabor({
               const isSocial = card.type === "SOCIAL";
               const isLabor = card.type === "LABOR";
               const isHandover = card.type === "HANDOVER";
+              const isPaymentOrder = card.type === "PAYMENT_ORDER";
 
               return (
                 <div
                   key={card.id}
                   className={`rounded-2xl border p-4 sm:p-5 space-y-3.5 transition-all duration-300 hover:shadow-lg relative overflow-hidden group flex flex-col justify-between ${
-                    isSocial
+                    isPaymentOrder
+                      ? "bg-card border-emerald-500/30 hover:border-emerald-500/60"
+                      : isSocial
                       ? "bg-card border-blue-500/30 hover:border-blue-500/60"
                       : isLabor
                       ? "bg-card border-amber-500/30 hover:border-amber-500/60"
@@ -533,7 +559,12 @@ export function TabInsurancesLabor({
                     <div className="flex items-start justify-between gap-2">
                       <div className="space-y-1">
                         <div className="flex items-center gap-1.5 flex-wrap">
-                          {isSocial ? (
+                          {isPaymentOrder ? (
+                            <Badge className="bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-500/30 text-[11px] font-bold flex items-center gap-1">
+                              <Landmark className="h-3 w-3 text-emerald-600" />
+                              <span>أمر دفع إلكتروني حكومي 🏦</span>
+                            </Badge>
+                          ) : isSocial ? (
                             <Badge className="bg-blue-500/15 text-blue-700 dark:text-blue-300 border-blue-500/30 text-[11px] font-bold flex items-center gap-1">
                               <ShieldCheck className="h-3 w-3" />
                               <span>تأمينات اجتماعية (مقاولات)</span>
@@ -770,6 +801,77 @@ export function TabInsurancesLabor({
               )}
             </Button>
           </div>
+
+          {/* ━━━ بطاقة أمر الدفع المسجلة مع خيارات (عرض العين 👁️، تعديل، حذف) ━━━ */}
+          {(() => {
+            const savedPoCard = cards.find((c) => c.type === "PAYMENT_ORDER");
+            if (!savedPoCard) return null;
+            return (
+              <div className="sm:col-span-2 md:col-span-3 mt-2 pt-3 border-t border-emerald-500/20 space-y-2">
+                <div className="flex items-center justify-between pb-1">
+                  <span className="text-xs font-bold text-foreground flex items-center gap-1.5">
+                    <CreditCard className="h-4 w-4 text-emerald-600" />
+                    <span>بطاقة أمر الدفع المعتمدة المسجلة بالسجلات:</span>
+                  </span>
+                  <Badge className="bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-500/30 text-[10px] font-bold">
+                    {savedPoCard.status === "PAID" ? "تم الصرف بنجاح ✓" : "قيد المتابعة والتحصيل"}
+                  </Badge>
+                </div>
+
+                <div className="p-3.5 rounded-2xl bg-gradient-to-r from-emerald-500/10 via-teal-500/5 to-transparent border border-emerald-500/30 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-sm">
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2">
+                      <span className="font-mono font-black text-sm text-emerald-700 dark:text-emerald-300">
+                        {savedPoCard.receiptNo}
+                      </span>
+                      <span className="text-xs text-muted-foreground">• {formatDate(savedPoCard.date)}</span>
+                    </div>
+                    <div className="text-xs font-bold text-foreground">
+                      المبلغ: <span className="font-mono text-emerald-600 text-sm font-black">{formatCurrency(savedPoCard.amount)}</span>
+                      <span className="text-[11px] text-muted-foreground mr-1.5">({savedPoCard.entityName})</span>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-1.5 self-end sm:self-center shrink-0">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => setViewingRecord(savedPoCard)}
+                      className="h-8.5 px-3 rounded-xl border-teal-500/40 text-teal-700 dark:text-teal-300 hover:bg-teal-500/10 text-xs font-bold flex items-center gap-1.5 cursor-pointer"
+                      title="عرض ومعاينة تفاصيل أمر الدفع بالكامل"
+                    >
+                      <Eye className="h-3.5 w-3.5 text-teal-600" />
+                      <span>عرض</span>
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => handleOpenEditModal(savedPoCard)}
+                      className="h-8.5 px-3 rounded-xl border-blue-500/40 text-blue-700 dark:text-blue-300 hover:bg-blue-500/10 text-xs font-bold flex items-center gap-1.5 cursor-pointer"
+                      title="تعديل أمر الدفع"
+                    >
+                      <Edit className="h-3.5 w-3.5 text-blue-600" />
+                      <span>تعديل</span>
+                    </Button>
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      disabled={deletingId === savedPoCard.id}
+                      onClick={() => handleDeleteCard(savedPoCard)}
+                      className="h-8.5 w-8.5 rounded-xl text-rose-500 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 cursor-pointer"
+                      title="حذف أمر الدفع"
+                    >
+                      {deletingId === savedPoCard.id ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      ) : (
+                        <Trash2 className="h-3.5 w-3.5" />
+                      )}
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
         </div>
       </SectionCard>
 

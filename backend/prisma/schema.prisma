@@ -855,7 +855,7 @@ model Certificate {
   performanceBond Decimal  @default(0) @db.Decimal(15, 2) // 5% ضمان أعمال
   netAmount       Decimal  @default(0) @db.Decimal(15, 2)
   certificateDate DateTime?
-  notes           String?
+  notes           String?  @db.Text
   createdAt       DateTime @default(now())
 
   operation Operation @relation(fields: [operationId], references: [id], onDelete: Cascade)

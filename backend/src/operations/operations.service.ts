@@ -1202,7 +1202,7 @@ export class OperationsService {
         performanceBond: bond,
         netAmount: net,
         certificateDate: data.certificateDate ? new Date(data.certificateDate) : new Date(),
-        notes: data.notes,
+        notes: data.notes ? String(data.notes) : null,
       },
     });
 

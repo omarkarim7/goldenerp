@@ -107,40 +107,82 @@ export function TabFinance({
   );
   const totalBlockedGuarantees = totalInitialGuarAmount + totalFinalGuarAmount;
 
-  // Baseline defaults
+  // Real figures derived from all operation tabs
+  const autoSupplyCost = Number(existingNotes.supplyPreparationData?.totalCost || 0);
+  const autoSupplyTotal = Number(existingNotes.supplyPreparationData?.totalSupply || 0);
+  const autoInvoiceGrandTotal = Number(existingNotes.invoicingData?.grandTotal || 0);
+  const autoAwardedAmount = Number(
+    op.awards?.[0]?.awardedAmount ||
+    existingNotes.finalGuaranteeLetter?.totalAwardAmount ||
+    0
+  );
+  const autoOperationValue = Number((op as any).value || (op as any).estimatedBudget || 0);
+
+  // Baseline real revenue (No fake 850,000)
   const defaultRevenue =
-    fin?.totalRevenue ??
-    (op.awards?.[0]?.awardedAmount || autoInvoicesTotal || 850000);
+    (fin?.totalRevenue && Number(fin.totalRevenue) > 0 && Number(fin.totalRevenue) !== 850000)
+      ? Number(fin.totalRevenue)
+      : (autoAwardedAmount || autoInvoicesTotal || autoInvoiceGrandTotal || autoSupplyTotal || autoOperationValue || 0);
+
+  // Baseline real supply cost (No fake 540,000)
+  const defaultSupplyCost =
+    (existingDetailed.directSupplyCost && Number(existingDetailed.directSupplyCost) !== 540000)
+      ? Number(existingDetailed.directSupplyCost)
+      : (autoSupplyCost > 0
+          ? autoSupplyCost
+          : (fin?.totalCost && Number(fin.totalCost) !== 540000
+              ? Number(fin.totalCost)
+              : (defaultRevenue > 0 ? Math.round(Number(defaultRevenue) * 0.78) : 0)));
+
+  // Baseline real labor/social insurances (No fake 2,600)
+  const defaultLaborSocial =
+    (existingDetailed.laborSocialCost && Number(existingDetailed.laborSocialCost) !== 2600)
+      ? Number(existingDetailed.laborSocialCost)
+      : (autoInsurancesTotal || 0);
+
+  // Baseline guarantee fees (No fake 3,500)
+  const defaultGuaranteeFees =
+    (existingDetailed.guaranteeFees && Number(existingDetailed.guaranteeFees) !== 3500)
+      ? Number(existingDetailed.guaranteeFees)
+      : (totalBlockedGuarantees > 0 ? Math.round(totalBlockedGuarantees * 0.02) : 0);
+
+  // Baseline tax deduction (1% أ.ت.ص)
+  const defaultTaxDeduction =
+    existingDetailed.taxDeductionAmount !== undefined
+      ? Number(existingDetailed.taxDeductionAmount)
+      : Math.round(Number(defaultRevenue) * 0.01);
+
+  // Baseline admin & extra expenses (No fake 14,500 or 4,500)
+  const defaultAdminCost =
+    (existingDetailed.adminLogisticsCost && Number(existingDetailed.adminLogisticsCost) !== 14500)
+      ? Number(existingDetailed.adminLogisticsCost)
+      : 0;
+
+  const defaultExtraExpenses =
+    (existingDetailed.extraExpenses && Number(existingDetailed.extraExpenses) !== 4500)
+      ? Number(existingDetailed.extraExpenses)
+      : 0;
+
+  // Baseline collected amount from payment orders & certificates
+  const certsCollected = (op.certificates || []).reduce((acc: number, c: any) => acc + Number(c.netAmount || 0), 0);
+  const defaultCollected =
+    (existingDetailed.collectedTotal && Number(existingDetailed.collectedTotal) > 0)
+      ? Number(existingDetailed.collectedTotal)
+      : (autoPaymentOrderAmount > 0 ? autoPaymentOrderAmount : certsCollected);
 
   const [editing, setEditing] = useState(false);
   const [reportModalOpen, setReportModalOpen] = useState(false);
   const [saving, setSaving] = useState(false);
 
   // Committed Saved State (Used for Dashboard KPI Cards & Progress Bar)
-  const [revenue, setRevenue] = useState<string>(() =>
-    (fin?.totalRevenue ?? defaultRevenue).toString()
-  );
-  const [directSupplyCost, setDirectSupplyCost] = useState<string>(() =>
-    (existingDetailed.directSupplyCost ?? (fin ? Number(fin.totalCost) * 0.78 : 540000)).toString()
-  );
-  const [laborSocialCost, setLaborSocialCost] = useState<string>(() =>
-    (existingDetailed.laborSocialCost ?? (autoInsurancesTotal || 2600)).toString()
-  );
-  const [guaranteeFees, setGuaranteeFees] = useState<string>(() =>
-    (existingDetailed.guaranteeFees ?? 3500).toString()
-  );
-  const [taxDeductionAmount, setTaxDeductionAmount] = useState<string>(() =>
-    (existingDetailed.taxDeductionAmount ?? Math.round(Number(defaultRevenue) * 0.01)).toString()
-  );
-  const [adminLogisticsCost, setAdminLogisticsCost] = useState<string>(() =>
-    (existingDetailed.adminLogisticsCost ?? 14500).toString()
-  );
-  const [extraExpenses, setExtraExpenses] = useState<string>(() =>
-    (existingDetailed.extraExpenses ?? 4500).toString()
-  );
-  const [collectedTotal, setCollectedTotal] = useState<string>(() =>
-    (existingDetailed.collectedTotal ?? (autoPaymentOrderAmount || 0)).toString()
-  );
+  const [revenue, setRevenue] = useState<string>(() => defaultRevenue.toString());
+  const [directSupplyCost, setDirectSupplyCost] = useState<string>(() => defaultSupplyCost.toString());
+  const [laborSocialCost, setLaborSocialCost] = useState<string>(() => defaultLaborSocial.toString());
+  const [guaranteeFees, setGuaranteeFees] = useState<string>(() => defaultGuaranteeFees.toString());
+  const [taxDeductionAmount, setTaxDeductionAmount] = useState<string>(() => defaultTaxDeduction.toString());
+  const [adminLogisticsCost, setAdminLogisticsCost] = useState<string>(() => defaultAdminCost.toString());
+  const [extraExpenses, setExtraExpenses] = useState<string>(() => defaultExtraExpenses.toString());
+  const [collectedTotal, setCollectedTotal] = useState<string>(() => defaultCollected.toString());
   const [financialNotes, setFinancialNotes] = useState<string>(() =>
     fin?.notes || existingDetailed.financialNotes || "تم تسوية حسابات التوريد والمصروفات والتأمينات ومطابقة أوامر الدفع"
   );
@@ -148,28 +190,40 @@ export function TabFinance({
 
   // Sync committed state if op or fin changes from server
   React.useEffect(() => {
-    setRevenue((fin?.totalRevenue ?? defaultRevenue).toString());
-    setDirectSupplyCost((existingDetailed.directSupplyCost ?? (fin ? Number(fin.totalCost) * 0.78 : 540000)).toString());
-    setLaborSocialCost((existingDetailed.laborSocialCost ?? (autoInsurancesTotal || 2600)).toString());
-    setGuaranteeFees((existingDetailed.guaranteeFees ?? 3500).toString());
-    setTaxDeductionAmount((existingDetailed.taxDeductionAmount ?? Math.round(Number(defaultRevenue) * 0.01)).toString());
-    setAdminLogisticsCost((existingDetailed.adminLogisticsCost ?? 14500).toString());
-    setExtraExpenses((existingDetailed.extraExpenses ?? 4500).toString());
-    setCollectedTotal((existingDetailed.collectedTotal ?? (autoPaymentOrderAmount || 0)).toString());
+    setRevenue(defaultRevenue.toString());
+    setDirectSupplyCost(defaultSupplyCost.toString());
+    setLaborSocialCost(defaultLaborSocial.toString());
+    setGuaranteeFees(defaultGuaranteeFees.toString());
+    setTaxDeductionAmount(defaultTaxDeduction.toString());
+    setAdminLogisticsCost(defaultAdminCost.toString());
+    setExtraExpenses(defaultExtraExpenses.toString());
+    setCollectedTotal(defaultCollected.toString());
     setFinancialNotes(fin?.notes || existingDetailed.financialNotes || "تم تسوية حسابات التوريد والمصروفات والتأمينات ومطابقة أوامر الدفع");
     setIsFinClosed(!!fin?.isClosed);
-  }, [fin, op.notes, defaultRevenue, autoInsurancesTotal, autoPaymentOrderAmount]);
+  }, [fin, op.notes, defaultRevenue, defaultSupplyCost, defaultLaborSocial, defaultGuaranteeFees, defaultTaxDeduction, defaultAdminCost, defaultExtraExpenses, defaultCollected]);
+
+  const handleSyncActualFigures = () => {
+    setRevenue(defaultRevenue.toString());
+    setDirectSupplyCost(defaultSupplyCost.toString());
+    setLaborSocialCost(defaultLaborSocial.toString());
+    setGuaranteeFees(defaultGuaranteeFees.toString());
+    setTaxDeductionAmount(defaultTaxDeduction.toString());
+    setAdminLogisticsCost(defaultAdminCost.toString());
+    setExtraExpenses(defaultExtraExpenses.toString());
+    setCollectedTotal(defaultCollected.toString());
+    toast.success("تم سحب ومزامنة كافة الأرقام الفعلية من التوريد ودراسة السوق والفواتير بنجاح! 📊✨");
+  };
 
   // Draft State (Active strictly inside Editing Modal — discarded on Cancel)
   const [draft, setDraft] = useState({
-    revenue: (fin?.totalRevenue ?? defaultRevenue).toString(),
-    directSupplyCost: (existingDetailed.directSupplyCost ?? (fin ? Number(fin.totalCost) * 0.78 : 540000)).toString(),
-    laborSocialCost: (existingDetailed.laborSocialCost ?? (autoInsurancesTotal || 2600)).toString(),
-    guaranteeFees: (existingDetailed.guaranteeFees ?? 3500).toString(),
-    taxDeductionAmount: (existingDetailed.taxDeductionAmount ?? Math.round(Number(defaultRevenue) * 0.01)).toString(),
-    adminLogisticsCost: (existingDetailed.adminLogisticsCost ?? 14500).toString(),
-    extraExpenses: (existingDetailed.extraExpenses ?? 4500).toString(),
-    collectedTotal: (existingDetailed.collectedTotal ?? (autoPaymentOrderAmount || 0)).toString(),
+    revenue: defaultRevenue.toString(),
+    directSupplyCost: defaultSupplyCost.toString(),
+    laborSocialCost: defaultLaborSocial.toString(),
+    guaranteeFees: defaultGuaranteeFees.toString(),
+    taxDeductionAmount: defaultTaxDeduction.toString(),
+    adminLogisticsCost: defaultAdminCost.toString(),
+    extraExpenses: defaultExtraExpenses.toString(),
+    collectedTotal: defaultCollected.toString(),
     financialNotes: fin?.notes || existingDetailed.financialNotes || "تم تسوية حسابات التوريد والمصروفات والتأمينات ومطابقة أوامر الدفع",
     isFinClosed: !!fin?.isClosed,
   });
@@ -349,6 +403,16 @@ export function TabFinance({
           </div>
 
           <div className="flex items-center gap-2 flex-wrap">
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={handleSyncActualFigures}
+              className="h-9 px-3.5 rounded-xl border-emerald-500/40 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-500/10 font-bold text-xs flex items-center gap-1.5 cursor-pointer shadow-sm"
+              title="سحب ومطابقة الأرقام الفعلية من دراسة السوق والتوريد والفواتير والتأمينات"
+            >
+              <Sparkles className="h-3.5 w-3.5 text-emerald-600" />
+              <span>مزامنة الأرقام الفعلية 🔄</span>
+            </Button>
             <Button
               size="sm"
               onClick={() => {
