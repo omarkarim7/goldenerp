@@ -199,43 +199,140 @@ export function GrievanceLetterSection({
     onRefresh();
   };
 
+  // استخراج بيانات الشركة المعتمدة من خطابات العملية الأخرى إن وُجدت
+  const otherLettersCompanyData = useMemo(() => {
+    try {
+      if (op.notes && op.notes.startsWith("{")) {
+        const parsed = JSON.parse(op.notes);
+        const candidates = [
+          parsed.technicalOfferDocx,
+          parsed.declarationsDocx,
+          parsed.finalGuaranteeLetter,
+          parsed.generalLetterDocx,
+          parsed.warrantyCertificate,
+          parsed.finalInsuranceRefundLetter,
+        ];
+        for (const c of candidates) {
+          if (
+            c?.companyCommercialRegister &&
+            c.companyCommercialRegister !== "14258" &&
+            c.companyCommercialRegister !== "65654614258"
+          ) {
+            return {
+              commercialRegister: c.companyCommercialRegister,
+              taxCard: c.companyTaxCard || "658369652",
+              phoneWhatsapp: c.phoneWhatsapp || "01091708818",
+              phoneMobile: c.phoneMobile || "01557018818",
+              address: c.companyAddress || "بجوار مستشفى ليدى كير  -  بدمنهور -  البحيره",
+              email: c.companyEmail || "goldengolden8818@gmail.com",
+              opCode: c.companyOpCode || currentCompanyLink?.displayCode || "AZ0005",
+            };
+          }
+        }
+      }
+    } catch {}
+    return null;
+  }, [op.notes, currentCompanyLink]);
+
   // بيانات الترويسة والتذييل
   const [companyOpCode, setCompanyOpCode] = useState(() => {
     return (
       savedGrievanceData?.companyOpCode ||
+      otherLettersCompanyData?.opCode ||
       currentCompanyLink?.displayCode ||
       `AZ-0${op.serialNumber || 1}`
     );
   });
   const [companyCommercialRegister, setCompanyCommercialRegister] = useState(() => {
-    if (savedGrievanceData?.companyCommercialRegister && savedGrievanceData.companyCommercialRegister !== "65654614258") {
+    if (
+      savedGrievanceData?.companyCommercialRegister &&
+      savedGrievanceData.companyCommercialRegister !== "14258" &&
+      savedGrievanceData.companyCommercialRegister !== "65654614258"
+    ) {
       return savedGrievanceData.companyCommercialRegister;
     }
-    return currentCompany?.commercialRegister || "110200700036620";
+    return (
+      otherLettersCompanyData?.commercialRegister ||
+      currentCompany?.commercialRegister ||
+      "110200700036620"
+    );
   });
   const [companyTaxCard, setCompanyTaxCard] = useState(() => {
-    if (savedGrievanceData?.companyTaxCard && savedGrievanceData.companyTaxCard !== "686-218-354") {
+    if (
+      savedGrievanceData?.companyTaxCard &&
+      savedGrievanceData.companyTaxCard !== "686-218-354"
+    ) {
       return savedGrievanceData.companyTaxCard;
     }
-    return currentCompany?.taxCard || "658369652";
+    return (
+      otherLettersCompanyData?.taxCard ||
+      currentCompany?.taxCard ||
+      "658369652"
+    );
   });
   const [phoneWhatsapp, setPhoneWhatsapp] = useState(() => {
-    return savedGrievanceData?.phoneWhatsapp || currentCompany?.phone || "01091708818";
+    if (savedGrievanceData?.phoneWhatsapp && savedGrievanceData.phoneWhatsapp !== "01007604470") {
+      return savedGrievanceData.phoneWhatsapp;
+    }
+    return (
+      otherLettersCompanyData?.phoneWhatsapp ||
+      currentCompany?.phone ||
+      "01091708818"
+    );
   });
   const [phoneMobile, setPhoneMobile] = useState(() => {
-    return savedGrievanceData?.phoneMobile || currentCompany?.mobile || "01557018818";
+    if (savedGrievanceData?.phoneMobile && savedGrievanceData.phoneMobile !== "01007604470") {
+      return savedGrievanceData.phoneMobile;
+    }
+    return (
+      otherLettersCompanyData?.phoneMobile ||
+      currentCompany?.mobile ||
+      "01557018818"
+    );
   });
   const [companyAddress, setCompanyAddress] = useState(() => {
-    return savedGrievanceData?.companyAddress || currentCompany?.address || "بجوار مستشفى ليدى كير  -  بدمنهور -  البحيره";
+    if (savedGrievanceData?.companyAddress && savedGrievanceData.companyAddress !== "مصر — الإسكندرية / دمنهور") {
+      return savedGrievanceData.companyAddress;
+    }
+    return (
+      otherLettersCompanyData?.address ||
+      currentCompany?.address ||
+      "بجوار مستشفى ليدى كير  -  بدمنهور -  البحيره"
+    );
   });
   const [companyEmail, setCompanyEmail] = useState(() => {
-    return savedGrievanceData?.companyEmail || currentCompany?.email || "goldengolden8818@gmail.com";
+    return (
+      savedGrievanceData?.companyEmail ||
+      otherLettersCompanyData?.email ||
+      currentCompany?.email ||
+      "goldengolden8818@gmail.com"
+    );
   });
   const [issueDate, setIssueDate] = useState(() => {
     return savedGrievanceData?.issueDate || new Date().toLocaleDateString("en-GB");
   });
 
-  // مزامنة تلقائية لبيانات الشركة (السجل التجاري والبطاقة الضريبية والكود) عند اختيارها
+  // مزامنة مطابقة الترويسة يدوياً مع خطابات العملية الأخرى
+  const handleSyncWithOtherLetters = () => {
+    const reg = otherLettersCompanyData?.commercialRegister || currentCompany?.commercialRegister || "110200700036620";
+    const tax = otherLettersCompanyData?.taxCard || currentCompany?.taxCard || "658369652";
+    const phone = otherLettersCompanyData?.phoneWhatsapp || currentCompany?.phone || "01091708818";
+    const mob = otherLettersCompanyData?.phoneMobile || currentCompany?.mobile || "01557018818";
+    const addr = otherLettersCompanyData?.address || currentCompany?.address || "بجوار مستشفى ليدى كير  -  بدمنهور -  البحيره";
+    const mail = otherLettersCompanyData?.email || currentCompany?.email || "goldengolden8818@gmail.com";
+    const code = otherLettersCompanyData?.opCode || currentCompanyLink?.displayCode || "AZ0005";
+
+    setCompanyCommercialRegister(reg);
+    setCompanyTaxCard(tax);
+    setPhoneWhatsapp(phone);
+    setPhoneMobile(mob);
+    setCompanyAddress(addr);
+    setCompanyEmail(mail);
+    setCompanyOpCode(code);
+    toast.success("تمت مطابقة ترويسة وبيانات الشركة مع باقي خطابات العملية بنجاح! 🔄🏢");
+  };
+
+  // مزامنة تلقائية لبيانات الشركة عند اختيارها
   useEffect(() => {
     if (currentCompanyLink || currentCompany) {
       if (currentCompany?.commercialRegister) {
@@ -1170,16 +1267,29 @@ export function GrievanceLetterSection({
                 تفريغ تلقائي للعلامات الحمراء: عند المعاينة أو تنزيل ملف الوورد، تُزال كافة التحديدات والألوان الحمراء في الترويسة والتذييل والمتن ليخرج الخطاب رسمياً ومعتمداً.
               </p>
             </div>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={handleRegenerateRef}
-              className="text-[11px] h-8 rounded-xl border-blue-500/40 text-blue-600 dark:text-blue-400 hover:bg-blue-500/10 shrink-0 cursor-pointer font-bold"
-            >
-              <RefreshCw className="h-3.5 w-3.5 ml-1.5" />
-              <span>تحديث رقم القيد</span>
-            </Button>
+            <div className="flex items-center gap-2 flex-wrap">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={handleSyncWithOtherLetters}
+                className="text-[11px] h-8 rounded-xl border-emerald-500/40 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-500/10 shrink-0 cursor-pointer font-bold flex items-center gap-1.5"
+                title="سحب ومطابقة السجل التجاري والبطاقة الضريبية والعناوين من خطابات العملية الأخرى"
+              >
+                <Sparkles className="h-3.5 w-3.5 text-emerald-600" />
+                <span>مطابقة الترويسة من باقي الخطابات</span>
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={handleRegenerateRef}
+                className="text-[11px] h-8 rounded-xl border-blue-500/40 text-blue-600 dark:text-blue-400 hover:bg-blue-500/10 shrink-0 cursor-pointer font-bold"
+              >
+                <RefreshCw className="h-3.5 w-3.5 ml-1.5" />
+                <span>تحديث رقم القيد</span>
+              </Button>
+            </div>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">

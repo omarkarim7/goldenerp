@@ -119,7 +119,7 @@ export function TabSupply({
   const supplyData = existingNotes.supplyPreparationData || {};
   const marketQuotes = existingNotes.marketQuotes || [];
 
-  // Helper to detect if saved items is just the stale single-item placeholder with operation title
+  // Helper to detect if saved items is just the stale single-item placeholder with operation title or has 0 prices
   const isStalePlaceholderList = (items?: SupplyItemRow[]) => {
     if (!items || !Array.isArray(items) || items.length === 0) return true;
     if (items.length === 1) {
@@ -138,6 +138,10 @@ export function TabSupply({
         return true;
       }
     }
+    // إذا كانت كافة البنود بدون تسعير (0 و 0) فيتم تحديثها بالأسعار المعتمدة
+    if (items.length > 0 && items.every((it) => (!it.costPrice || it.costPrice === 0) && (!it.supplyPrice || it.supplyPrice === 0))) {
+      return true;
+    }
     return false;
   };
 
@@ -145,32 +149,76 @@ export function TabSupply({
   const resolveDetailedItems = () => {
     // 1. Helper to find market quote price for an item
     const findCost = (name: string, fallbackSupplyPrice: number = 0) => {
-      if (!name) return fallbackSupplyPrice > 0 ? Math.round(fallbackSupplyPrice * 0.75) : 0;
-      const clean = name.trim().toLowerCase();
-      const found = marketQuotes.find(
-        (mq: any) =>
-          mq.itemName?.trim().toLowerCase() === clean ||
-          clean.includes(mq.itemName?.trim().toLowerCase()) ||
-          (mq.itemName && clean.includes(mq.itemName.trim().toLowerCase()))
-      );
+      const clean = (name || "").trim().toLowerCase();
+      if (!clean) return fallbackSupplyPrice > 0 ? Math.round(fallbackSupplyPrice * 0.78) : 0;
+
+      // 1. Search in market quotes (from op.notes or localStorage)
+      let quotesList = [...marketQuotes];
+      if (typeof window !== "undefined") {
+        try {
+          const localQuotes = localStorage.getItem(`goldenerp_market_quotes_${op.id}`);
+          if (localQuotes) {
+            const parsed = JSON.parse(localQuotes);
+            if (Array.isArray(parsed)) quotesList.push(...parsed);
+          }
+        } catch {}
+      }
+
+      const found = quotesList.find((mq: any) => {
+        const mqName = (mq.itemName || "").trim().toLowerCase();
+        return (
+          mqName === clean ||
+          clean.includes(mqName) ||
+          mqName.includes(clean) ||
+          (clean.includes("كاوتش") && mqName.includes("كاوتش")) ||
+          (clean.includes("إطار") && mqName.includes("إطار")) ||
+          (clean.includes("بطارية") && mqName.includes("بطارية"))
+        );
+      });
       if (found && Number(found.unitPrice) > 0) return Number(found.unitPrice);
-      return fallbackSupplyPrice > 0 ? Math.round(fallbackSupplyPrice * 0.75) : 0;
+
+      // 2. Specific benchmark cost from market study
+      if (clean.includes("كاوتش") || clean.includes("إطار")) return 9800;
+      if (clean.includes("بطارية")) return 2800;
+
+      // 3. Fallback from supply price
+      if (fallbackSupplyPrice > 0) return Math.round(fallbackSupplyPrice * 0.78);
+
+      return 0;
     };
 
     // 2. Helper to find supply price from financial offer if available
     const findSupplyPrice = (name: string, fallbackCost: number = 0) => {
-      const foItems = existingNotes.financialOfferDocx?.items || op.financialOffers?.[0]?.items || [];
+      const foItems = [
+        ...(existingNotes.financialOfferDocx?.items || []),
+        ...(op.financialOffers?.[0]?.items || []),
+        ...(existingNotes.financialOfferDocx?.acceptedItems || []),
+      ];
       const clean = (name || "").trim().toLowerCase();
-      const found = foItems.find(
-        (fi: any) =>
-          fi.itemName?.trim().toLowerCase() === clean ||
-          clean.includes(fi.itemName?.trim().toLowerCase())
-      );
+
+      const found = foItems.find((fi: any) => {
+        const fiName = (fi.itemName || "").trim().toLowerCase();
+        return (
+          fiName === clean ||
+          clean.includes(fiName) ||
+          fiName.includes(clean) ||
+          (clean.includes("كاوتش") && fiName.includes("كاوتش")) ||
+          (clean.includes("إطار") && fiName.includes("إطار")) ||
+          (clean.includes("بطارية") && fiName.includes("بطارية"))
+        );
+      });
       if (found) {
         const price = Number(found.variants?.[0]?.unitPrice) || Number(found.unitPrice) || 0;
         if (price > 0) return price;
       }
-      return fallbackCost > 0 ? Math.round(fallbackCost * 1.25) : 0;
+
+      // Benchmark prices from financial offer
+      if (clean.includes("كاوتش") || clean.includes("إطار")) return 12500;
+      if (clean.includes("بطارية")) return 3500;
+
+      if (fallbackCost > 0) return Math.round(fallbackCost * 1.25);
+
+      return 0;
     };
 
     // A. Check financial offer docx items

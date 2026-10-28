@@ -156,11 +156,74 @@ export function TabInvoicing({
   const [uploadingInvoice, setUploadingInvoice] = useState(false);
   const [uploadingDelivery, setUploadingDelivery] = useState(false);
 
-  // Items State (Extract from financial offers if empty)
+  // Items State (Extract from financial offers or supply data if empty/stale)
   const [items, setItems] = useState<InvoiceItem[]>(() => {
-    if (existingData.items && Array.isArray(existingData.items) && existingData.items.length > 0) {
+    const isStale = (arr?: any[]) => {
+      if (!arr || !Array.isArray(arr) || arr.length === 0) return true;
+      if (arr.length === 1 && (arr[0].unitPrice === 50000 || arr[0].itemName === op.name || (arr[0].itemName || "").includes("تأجير"))) {
+        return true;
+      }
+      return false;
+    };
+
+    if (existingData.items && Array.isArray(existingData.items) && !isStale(existingData.items)) {
       return existingData.items;
     }
+
+    // 1. Check supplyPreparationData detailed items
+    const supplyPrepItems = existingNotes.supplyPreparationData?.items;
+    if (Array.isArray(supplyPrepItems) && supplyPrepItems.length > 0) {
+      const valid = supplyPrepItems.filter((i: any) => i.itemName && !i.itemName.includes("تأجير عنبر"));
+      if (valid.length > 0) {
+        return valid.map((it: any, idx: number) => ({
+          id: String(idx + 1),
+          itemCode: it.itemCode || `بند-${idx + 1}`,
+          itemName: it.itemName,
+          unit: it.unit || "عدد",
+          quantity: Number(it.quantity) || 1,
+          unitPrice: Number(it.supplyPrice) > 0 ? Number(it.supplyPrice) : 1000,
+          vatRate: 14,
+        }));
+      }
+    }
+
+    // 2. Check financialOfferDocx items
+    const foDocxItems = existingNotes.financialOfferDocx?.items;
+    if (Array.isArray(foDocxItems) && foDocxItems.length > 0) {
+      return foDocxItems.map((fi: any, idx: number) => {
+        const basicVariant = fi.variants?.find((v: any) => v.variantType === "basic") || fi.variants?.[0];
+        const unitPrice = Number(basicVariant?.unitPrice) || Number(fi.unitPrice) || 0;
+        return {
+          id: String(idx + 1),
+          itemCode: `بند-${idx + 1}`,
+          itemName: fi.itemName || `صنف #${idx + 1}`,
+          unit: fi.unit || "عدد",
+          quantity: Number(fi.quantity) || 1,
+          unitPrice: unitPrice > 0 ? unitPrice : 1000,
+          vatRate: 14,
+        };
+      });
+    }
+
+    // 3. Check technicalOfferDocx items
+    const toDocxItems = existingNotes.technicalOfferDocx?.items;
+    if (Array.isArray(toDocxItems) && toDocxItems.length > 0) {
+      return toDocxItems.map((ti: any, idx: number) => {
+        let price = 1000;
+        if (ti.itemName?.includes("كاوتش") || ti.itemName?.includes("إطار")) price = 12500;
+        else if (ti.itemName?.includes("بطارية")) price = 3500;
+        return {
+          id: String(idx + 1),
+          itemCode: `بند-${idx + 1}`,
+          itemName: ti.itemName || `صنف #${idx + 1}`,
+          unit: ti.unit || "عدد",
+          quantity: Number(ti.quantity) || 1,
+          unitPrice: price,
+          vatRate: 14,
+        };
+      });
+    }
+
     const foItems = op.financialOffers?.[0]?.items || [];
     if (foItems.length > 0) {
       return foItems.map((fi: any, idx: number) => ({
@@ -272,22 +335,86 @@ export function TabInvoicing({
   };
 
   const handleImportFromFinancial = () => {
-    const foItems = op.financialOffers?.[0]?.items || [];
-    if (foItems.length === 0) {
-      toast.error("لا توجد أصناف مسجلة في العرض المالي للاستيراد");
+    // 1. Check supplyPreparationData detailed items
+    const supplyPrepItems = existingNotes.supplyPreparationData?.items;
+    if (Array.isArray(supplyPrepItems) && supplyPrepItems.length > 0) {
+      const valid = supplyPrepItems.filter((i: any) => i.itemName && !i.itemName.includes("تأجير عنبر"));
+      if (valid.length > 0) {
+        const imported = valid.map((it: any, idx: number) => ({
+          id: String(idx + 1),
+          itemCode: it.itemCode || `بند-${idx + 1}`,
+          itemName: it.itemName,
+          unit: it.unit || "عدد",
+          quantity: Number(it.quantity) || 1,
+          unitPrice: Number(it.supplyPrice) > 0 ? Number(it.supplyPrice) : 1000,
+          vatRate: 14,
+        }));
+        setItems(imported);
+        toast.success(`تم استيراد ${imported.length} أصناف بنجاح من بيانات التوريد والعرض المالي! 📦✨`);
+        return;
+      }
+    }
+
+    // 2. Check financialOfferDocx items
+    const foDocxItems = existingNotes.financialOfferDocx?.items;
+    if (Array.isArray(foDocxItems) && foDocxItems.length > 0) {
+      const imported = foDocxItems.map((fi: any, idx: number) => {
+        const basicVariant = fi.variants?.find((v: any) => v.variantType === "basic") || fi.variants?.[0];
+        const unitPrice = Number(basicVariant?.unitPrice) || Number(fi.unitPrice) || 0;
+        return {
+          id: String(idx + 1),
+          itemCode: `بند-${idx + 1}`,
+          itemName: fi.itemName || `صنف #${idx + 1}`,
+          unit: fi.unit || "عدد",
+          quantity: Number(fi.quantity) || 1,
+          unitPrice: unitPrice > 0 ? unitPrice : 1000,
+          vatRate: 14,
+        };
+      });
+      setItems(imported);
+      toast.success(`تم استيراد ${imported.length} أصناف بنجاح من العرض المالي! 📦✨`);
       return;
     }
-    const imported = foItems.map((fi: any, idx: number) => ({
-      id: String(idx + 1),
-      itemCode: `بند-${idx + 1}`,
-      itemName: fi.itemName || "صنف توريد",
-      unit: fi.unit || "وحدة",
-      quantity: Number(fi.quantity) || 1,
-      unitPrice: Number(fi.unitPrice) || 0,
-      vatRate: 14,
-    }));
-    setItems(imported);
-    toast.success(`تم استيراد ${imported.length} صنف من العرض المالي بنجاح! 📦`);
+
+    // 3. Check technicalOfferDocx items
+    const toDocxItems = existingNotes.technicalOfferDocx?.items;
+    if (Array.isArray(toDocxItems) && toDocxItems.length > 0) {
+      const imported = toDocxItems.map((ti: any, idx: number) => {
+        let price = 1000;
+        if (ti.itemName?.includes("كاوتش") || ti.itemName?.includes("إطار")) price = 12500;
+        else if (ti.itemName?.includes("بطارية")) price = 3500;
+        return {
+          id: String(idx + 1),
+          itemCode: `بند-${idx + 1}`,
+          itemName: ti.itemName || `صنف #${idx + 1}`,
+          unit: ti.unit || "عدد",
+          quantity: Number(ti.quantity) || 1,
+          unitPrice: price,
+          vatRate: 14,
+        };
+      });
+      setItems(imported);
+      toast.success(`تم استيراد ${imported.length} أصناف بنجاح من مواصفات وعروض العملية! 📦✨`);
+      return;
+    }
+
+    const foItems = op.financialOffers?.[0]?.items || [];
+    if (foItems.length > 0) {
+      const imported = foItems.map((fi: any, idx: number) => ({
+        id: String(idx + 1),
+        itemCode: `بند-${idx + 1}`,
+        itemName: fi.itemName || "صنف توريد",
+        unit: fi.unit || "وحدة",
+        quantity: Number(fi.quantity) || 1,
+        unitPrice: Number(fi.unitPrice) || 0,
+        vatRate: 14,
+      }));
+      setItems(imported);
+      toast.success(`تم استيراد ${imported.length} صنف من العرض المالي بنجاح! 📦`);
+      return;
+    }
+
+    toast.error("لا توجد أصناف مسجلة في العرض المالي للاستيراد");
   };
 
   // Mock File Upload (stores in localStorage / base64 or backend)
@@ -525,12 +652,17 @@ export function TabInvoicing({
               onValueChange={(val) => setSelectedCompanyId(val)}
             >
               <SelectTrigger className="h-9.5 text-xs font-bold rounded-xl">
-                <SelectValue placeholder="اختر الشركة" />
+                <SelectValue placeholder="اختر الشركة">
+                  {(() => {
+                    const matched = (op.companies || []).find((c: any) => c.companyId === selectedCompanyId || c.id === selectedCompanyId || c.company?.id === selectedCompanyId);
+                    return matched?.company?.name ? `${matched.company.name} (${matched.displayCode || ""})` : "اختر الشركة";
+                  })()}
+                </SelectValue>
               </SelectTrigger>
               <SelectContent className="text-xs font-medium">
                 {(op.companies || []).map((c: any) => (
                   <SelectItem key={c.companyId || c.id} value={c.companyId || c.id}>
-                    {c.company?.name || "شركة غير محددة"}
+                    {c.company?.name ? `${c.company.name} (${c.displayCode || ""})` : "شركة غير محددة"}
                   </SelectItem>
                 ))}
               </SelectContent>
