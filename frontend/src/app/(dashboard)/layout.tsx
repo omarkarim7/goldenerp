@@ -369,6 +369,11 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const [searchQuery, setSearchQuery] = useState("");
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [quickActionOpen, setQuickActionOpen] = useState(false);
+
+  // Security & Inactivity Session Monitoring (الأمان وحماية الجلسات)
+  const [sessionTimeoutMinutes, setSessionTimeoutMinutes] = useState<number>(120);
+  const [isNightCurfew, setIsNightCurfew] = useState<boolean>(false);
+  const lastActivityRef = useRef<number>(Date.now());
   const [userMenuOpen, setUserMenuOpen] = useState(false);
 
   // Global Company Scope Context
@@ -389,7 +394,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     if (!popoverCompany || popoverCompany === "ALL") {
       return list;
     }
-    return list.filter((n) => n.companyCode === popoverCompany);
+    return list.filter((n) => n.companyCode === popoverCompany || n.companyCode === "ALL");
   }, [allNotifications, notifications, popoverCompany]);
 
   const scopedUnreadCount = useMemo(() => {
@@ -548,8 +553,56 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           }
         })
         .catch(() => {});
+
+      // جلب إعدادات الأمان وحماية الجلسات وتفعيل الرقابة اللحظية
+      api.get("/settings?group=security")
+        .then((res) => {
+          if (Array.isArray(res.data)) {
+            const timeoutSetting = res.data.find((s: any) => s.key === "session_timeout_minutes");
+            if (timeoutSetting?.value) {
+              const parsed = parseInt(timeoutSetting.value, 10);
+              if (!isNaN(parsed) && parsed > 0) setSessionTimeoutMinutes(parsed);
+            }
+            const startSetting = res.data.find((s: any) => s.key === "after_hours_start");
+            const endSetting = res.data.find((s: any) => s.key === "after_hours_end");
+            const startH = startSetting?.value ? parseInt(startSetting.value, 10) : 20;
+            const endH = endSetting?.value ? parseInt(endSetting.value, 10) : 6;
+            const currentH = new Date().getHours();
+            const curfew = (startH > endH) ? (currentH >= startH || currentH < endH) : (currentH >= startH && currentH < endH);
+            setIsNightCurfew(curfew);
+          }
+        })
+        .catch(() => {});
     }
   }, [router]);
+
+  // Real-time Inactivity Session Timeout Enforcer (إنهاء الجلسة التلقائي عند الخمول)
+  useEffect(() => {
+    const updateActivity = () => {
+      lastActivityRef.current = Date.now();
+    };
+
+    const events = ["mousedown", "mousemove", "keydown", "scroll", "touchstart", "click"];
+    events.forEach((evt) => window.addEventListener(evt, updateActivity, { passive: true }));
+
+    const checkInterval = setInterval(() => {
+      const idleTimeMs = Date.now() - lastActivityRef.current;
+      const maxIdleMs = (sessionTimeoutMinutes || 120) * 60 * 1000;
+      if (idleTimeMs >= maxIdleMs) {
+        clearInterval(checkInterval);
+        localStorage.removeItem("accessToken");
+        localStorage.removeItem("refreshToken");
+        localStorage.removeItem("user");
+        toast.error("انتهت الجلسة تلقائياً بسبب الخمول لحماية أمان وسرية البيانات الحكومية");
+        router.push("/login?reason=timeout");
+      }
+    }, 20000);
+
+    return () => {
+      events.forEach((evt) => window.removeEventListener(evt, updateActivity));
+      clearInterval(checkInterval);
+    };
+  }, [sessionTimeoutMinutes, router]);
 
   const effectivePermissions = useMemo(() => {
     if (user?.role === "GENERAL_MANAGER") return ["*"];
@@ -1155,6 +1208,17 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               </Link>
             )}
 
+            {/* Night Curfew Warning Badge (ساعات الحظر المسائي للعمليات الحساسة) */}
+            {mounted && isNightCurfew && (
+              <div
+                title="فترة الحظر المسائي للعمليات الحساسة نشطة حالياً. تخضع كافة التعديلات والإجراءات لتدقيق ورقابة أمنية مشددة."
+                className="hidden xl:flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-amber-500/25 border border-amber-300/40 text-amber-100 text-xs font-bold shrink-0 animate-pulse"
+              >
+                <Moon className="h-3.5 w-3.5 text-amber-300" />
+                <span>حظر مسائي نشط (تدقيق مشدد)</span>
+              </div>
+            )}
+
             {/* Theme Toggle Button (Light / Dark) */}
             {mounted && (
               <Button
@@ -1485,10 +1549,10 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                                   {isDanger
                                     ? "إجراء عاجل"
                                     : isWarning
-                                    ? "ضمان بنكي"
+                                    ? (notif.title.includes("ضمان") ? "ضمان بنكي" : "تنبيه موعد")
                                     : isInfo
-                                    ? "جلسة فنية"
-                                    : "ترسية معتمدة"}
+                                    ? (notif.title.includes("جلسة") ? "جلسة فنية" : "إشعار نظام")
+                                    : (notif.title.includes("ترسية") ? "ترسية معتمدة" : "اعتماد رسمي")}
                                 </Badge>
                               </div>
 

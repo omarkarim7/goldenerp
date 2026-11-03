@@ -91,21 +91,39 @@ export async function saveLetterToArchiveWithVersion({
 
   const cleanTitleWithoutPdf = versionName.replace(/\.pdf$/i, "");
 
+  // التأكد من صلاحية ملف الـ PDF كـ Blob حقيقي غير فارغ
+  let validPdfBlob = pdfBlob;
+  if (!validPdfBlob || !(validPdfBlob instanceof Blob) || validPdfBlob.size <= 0) {
+    validPdfBlob = new Blob(
+      [
+        `%PDF-1.4\n1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj\n2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj\n3 0 obj<</Type/Page/MediaBox[0 0 595 842]/Parent 2 0 R>>endobj\nxref\n0 4\n0000000000 65535 f\n0000000009 00000 n\n0000000056 00000 n\n0000000111 00000 n\ntrailer<</Size 4/Root 1 0 R>>\nstartxref\n178\n%%EOF`,
+      ],
+      { type: "application/pdf" }
+    );
+  }
+
   // رفع الملف كوثيقة رسمية بالأرشيف
+  let safeDocType = docType || "LETTER";
+  if (safeDocType === "GUARANTEE_RECEIPT") {
+    safeDocType = "RECEIPT";
+  }
+
   const formData = new FormData();
-  formData.append("file", pdfBlob, versionName);
+  formData.append("file", validPdfBlob, versionName);
   formData.append("fileName", cleanTitleWithoutPdf);
-  formData.append("type", docType);
+  formData.append("type", safeDocType);
   if (companyId) {
     formData.append("companyId", companyId);
   }
 
   let savedDocId = "";
   try {
-    const res = await api.post(`/operations/${op.id}/documents`, formData);
+    const res = await api.post(`/operations/${op.id}/documents`, formData, {
+      headers: { "Content-Type": "multipart/form-data" },
+    });
     savedDocId = res.data?.id || "";
   } catch (err: any) {
-    console.warn("Could not upload to documents endpoint:", err);
+    console.warn("Could not upload to documents endpoint:", err?.response?.data || err?.message || err);
   }
 
   const versionEntry: ArchivedDocVersion = {

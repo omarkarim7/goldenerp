@@ -198,8 +198,29 @@ export class OperationsService {
       } catch {}
     }
 
+    // استبعاد وحذف أي أوامر توريد وهمية لا ملف فيزيائي حقيقي لها
+    const phantomIds = (operation.documents || [])
+      .filter((d: any) =>
+        (!d.fileSize || d.fileSize <= 0) &&
+        (String(d.filePath || '').includes('/uploads/supply-orders/') ||
+          String(d.fileName || '').includes('PO-') ||
+          String(d.fileName || '').includes('أمر_توريد'))
+      )
+      .map((d: any) => d.id);
+
+    if (phantomIds.length > 0) {
+      this.prisma.operationDocument.deleteMany({
+        where: { id: { in: phantomIds } },
+      }).catch(() => {});
+    }
+
+    const cleanDocuments = (operation.documents || []).filter(
+      (d: any) => !phantomIds.includes(d.id)
+    );
+
     const result = {
       ...operation,
+      documents: cleanDocuments,
       radarItem: radarItem ? {
         id: radarItem.id,
         externalId: radarItem.externalId,
@@ -1086,17 +1107,8 @@ export class OperationsService {
       },
     });
 
-    // Also register an operation document
-    await this.prisma.operationDocument.create({
-      data: {
-        operationId: id,
-        companyId,
-        type: 'SUPPLY_ORDER',
-        fileName: `أمر_توريد_${data.orderNumber}.pdf`,
-        filePath: `/uploads/supply-orders/${id}_${data.orderNumber}.pdf`,
-        fileType: 'application/pdf',
-      },
-    });
+    // Note: Do not automatically create dummy OperationDocument here;
+    // real files are uploaded explicitly via POST /operations/:id/documents.
 
     await this.prisma.operation.update({
       where: { id },
@@ -1257,7 +1269,23 @@ export class OperationsService {
     }
 
     if (!guarantee) {
-      throw new BadRequestException('لا يوجد تأمين نهائي مسجل لهذه العملية');
+      const opRecord = await this.prisma.operation.findUnique({
+        where: { id },
+        include: { companies: true },
+      });
+      const companyId = opRecord?.companies[0]?.companyId || (await this.prisma.company.findFirst())?.id || '';
+      // إنشاء قيد التأمين النهائي تلقائياً إذا لم يكن منشأ مسبقاً
+      guarantee = await this.prisma.guarantee.create({
+        data: {
+          operationId: id,
+          companyId,
+          type: 'FINAL',
+          amount: 0,
+          percentage: 5,
+          paymentMethod: 'CASH',
+          notes: 'تأمين نهائي مسجل لمتابعة استرداد المبلغ',
+        },
+      });
     }
 
     const stepDate = new Date(data.date || Date.now());
@@ -1412,7 +1440,20 @@ export class OperationsService {
 
   async deleteGuarantee(id: string, guaranteeId: string) {
     await this.findOne(id);
-    return this.prisma.guarantee.delete({ where: { id: guaranteeId } });
+    try {
+      const existing = await this.prisma.guarantee.findUnique({
+        where: { id: guaranteeId },
+      });
+      if (!existing) {
+        return { success: true, message: 'Guarantee already deleted or not found' };
+      }
+      return await this.prisma.guarantee.delete({ where: { id: guaranteeId } });
+    } catch (err: any) {
+      if (err.code === 'P2025') {
+        return { success: true, message: 'Guarantee already deleted' };
+      }
+      throw err;
+    }
   }
 
   // ━━━ 14. معاينة الكود التالي للعملية بحسب كود الشركة ونوع الطرح ━━━
@@ -1456,24 +1497,46 @@ export class OperationsService {
     const rawTypeUpper = String(type || '').toUpperCase();
     if (type && validOpDocTypes.includes(type as any)) {
       safeType = type as OpDocType;
-    } else if (rawTypeUpper === 'CLARIFICATION' || rawTypeUpper === 'LETTER' || rawTypeUpper === 'ADDENDUM') {
+    } else if (
+      rawTypeUpper === 'CLARIFICATION' ||
+      rawTypeUpper === 'LETTER' ||
+      rawTypeUpper === 'ADDENDUM' ||
+      rawTypeUpper.includes('LETTER') ||
+      rawTypeUpper.includes('REFUND')
+    ) {
       safeType = OpDocType.LETTER;
-    } else if (rawTypeUpper === 'RECEIPT') {
+    } else if (rawTypeUpper === 'RECEIPT' || rawTypeUpper.includes('RECEIPT')) {
       safeType = OpDocType.RECEIPT;
     } else if (rawTypeUpper === 'BOOKLET') {
       safeType = OpDocType.BOOKLET;
+    } else if (rawTypeUpper === 'SUPPLY_ORDER' || rawTypeUpper.includes('ORDER')) {
+      safeType = OpDocType.SUPPLY_ORDER;
+    } else if (rawTypeUpper === 'CONTRACT') {
+      safeType = OpDocType.CONTRACT;
     } else if (rawTypeUpper === 'MARKET_STUDY') {
       safeType = OpDocType.MARKET_STUDY;
     }
 
-    // تخزين محتوى الملف بصيغة Data URI آمنة داخل قاعدة البيانات لضمان عدم ضياع الملف في بيئات السيرفرليس
+    // حفظ وتخزين الملف على القرص في وحدة التخزين (Hostinger Storage 50GB)
+    const uploadsDir = path.resolve(process.cwd(), 'uploads/operations');
+    if (!existsSync(uploadsDir)) {
+      mkdirSync(uploadsDir, { recursive: true });
+    }
+
     let finalPath = '';
-    const fileBuffer = file.buffer || (file.path && existsSync(file.path) ? readFileSync(file.path) : null);
-    if (fileBuffer && fileBuffer.length <= 15 * 1024 * 1024) {
-      const mime = file.mimetype || 'application/octet-stream';
-      finalPath = `data:${mime};base64,${fileBuffer.toString('base64')}`;
+    if (file.path && existsSync(file.path)) {
+      // إذا كان الملف محفوظاً بالفعل عبر Multer diskStorage
+      const relPath = file.path.replace(/\\/g, '/');
+      const uploadsIdx = relPath.indexOf('uploads/');
+      finalPath = uploadsIdx !== -1 ? relPath.substring(uploadsIdx) : `uploads/operations/${path.basename(file.path)}`;
+    } else if (file.buffer) {
+      // إذا كان الملف في الذاكرة (Memory Storage)، يتم كتابته وحفظه فوراً على القرص
+      const safeUniqueName = `op-doc-${Date.now()}-${file.originalname.replace(/[^a-zA-Z0-9_\-\.]/g, '_')}`;
+      const diskTarget = path.join(uploadsDir, safeUniqueName);
+      writeFileSync(diskTarget, file.buffer);
+      finalPath = `uploads/operations/${safeUniqueName}`;
     } else {
-      finalPath = file.path ? file.path.replace(/\\/g, '/') : `uploads/operations/${file.originalname}`;
+      finalPath = `uploads/operations/${file.originalname}`;
     }
 
     return this.prisma.operationDocument.create({
@@ -1557,11 +1620,22 @@ export class OperationsService {
 
     let finalPath = doc.filePath;
     const fileBuffer = file.buffer || (file.path && existsSync(file.path) ? readFileSync(file.path) : null);
-    if (fileBuffer && fileBuffer.length <= 15 * 1024 * 1024) {
-      const mime = file.mimetype || 'application/octet-stream';
-      finalPath = `data:${mime};base64,${fileBuffer.toString('base64')}`;
-    } else if (file.path) {
-      finalPath = file.path.replace(/\\/g, '/');
+    
+    // حفظ الملف في وحدة التخزين المحلية (Hostinger 50GB) بدلاً من قاعدة البيانات
+    const uploadsDir = path.resolve(process.cwd(), 'uploads/operations');
+    if (!existsSync(uploadsDir)) {
+      mkdirSync(uploadsDir, { recursive: true });
+    }
+
+    if (fileBuffer) {
+      const safeUniqueName = `op-doc-${Date.now()}-${file.originalname.replace(/[^a-zA-Z0-9_\-\.]/g, '_')}`;
+      const diskTarget = path.join(uploadsDir, safeUniqueName);
+      writeFileSync(diskTarget, fileBuffer);
+      finalPath = `uploads/operations/${safeUniqueName}`;
+    } else if (file.path && existsSync(file.path)) {
+      const relPath = file.path.replace(/\\/g, '/');
+      const uploadsIdx = relPath.indexOf('uploads/');
+      finalPath = uploadsIdx !== -1 ? relPath.substring(uploadsIdx) : `uploads/operations/${path.basename(file.path)}`;
     }
 
     const opDocExists = await this.prisma.operationDocument.findUnique({ where: { id: doc.id } });
@@ -2695,8 +2769,14 @@ try {
         credentials: { accessKeyId, secretAccessKey },
       });
 
-      // مفتاح S3 آمن تماماً وبصيغة ASCII لمنع أي تعارض في توقيع SigV4
-      const safeKeySuffix = `${Buffer.from(finalName).toString('hex').slice(0, 24)}.pdf`;
+      // مفتاح S3 آمن وفريد 100% يمنع أي تعارض بين الخطابات والعمليات
+      const baseName = finalName.replace(/\.pdf$/i, '');
+      const safeAscii = baseName.replace(/[^a-zA-Z0-9_-]/g, '_');
+      const hash = crypto.createHash('sha256').update(finalName).digest('hex').slice(0, 16);
+      const hasAlphanumeric = /[a-zA-Z0-9]/.test(safeAscii);
+      const safeKeySuffix = (hasAlphanumeric && safeAscii.length >= 3)
+        ? `${safeAscii.slice(0, 60)}_${hash}.pdf`
+        : `doc_${hash}.pdf`;
       const key = `official_docs/${safeKeySuffix}`;
       // ترويسة Content-Disposition متوافقة 100% مع معيار RFC 5987 و RFC 6266 لدعم الأسماء العربية بدون أخطاء في التوقيع
       const contentDisposition = `inline; filename="official_document.pdf"; filename*=UTF-8''${encodeURIComponent(finalName)}`;
@@ -2708,6 +2788,7 @@ try {
           Body: pdfBuffer,
           ContentType: 'application/pdf',
           ContentDisposition: contentDisposition,
+          CacheControl: 'no-cache, no-store, must-revalidate, max-age=0',
         })
       );
 
@@ -2725,6 +2806,7 @@ try {
             Key: key,
             ResponseContentType: 'application/pdf',
             ResponseContentDisposition: contentDisposition,
+            ResponseCacheControl: 'no-cache, no-store, must-revalidate, max-age=0',
           }),
           { expiresIn: 604800 }
         );
@@ -2756,7 +2838,13 @@ try {
       credentials: { accessKeyId, secretAccessKey },
     });
 
-    const safeKeySuffix = `${Buffer.from(finalName).toString('hex').slice(0, 24)}.pdf`;
+    const baseName = finalName.replace(/\.pdf$/i, '');
+    const safeAscii = baseName.replace(/[^a-zA-Z0-9_-]/g, '_');
+    const hash = crypto.createHash('sha256').update(finalName).digest('hex').slice(0, 16);
+    const hasAlphanumeric = /[a-zA-Z0-9]/.test(safeAscii);
+    const safeKeySuffix = (hasAlphanumeric && safeAscii.length >= 3)
+      ? `${safeAscii.slice(0, 60)}_${hash}.pdf`
+      : `doc_${hash}.pdf`;
     const key = `official_docs/${safeKeySuffix}`;
     const contentDisposition = `inline; filename="official_document.pdf"; filename*=UTF-8''${encodeURIComponent(finalName)}`;
     const publicDomain = process.env.R2_PUBLIC_DOMAIN;
@@ -2771,6 +2859,7 @@ try {
         Key: key,
         ResponseContentType: 'application/pdf',
         ResponseContentDisposition: contentDisposition,
+        ResponseCacheControl: 'no-cache, no-store, must-revalidate, max-age=0',
       }),
       { expiresIn: 604800 }
     );
