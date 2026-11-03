@@ -10,9 +10,8 @@ import { CompanyProvider } from "@/context/company-context";
 const cairo = Cairo({
   variable: "--font-cairo",
   subsets: ["arabic", "latin"],
-  weight: ["400", "500", "600", "700", "800"],
+  weight: ["400", "500", "600", "700", "800", "900"],
   display: "swap",
-  preload: false,
 });
 
 export const metadata: Metadata = {
@@ -23,8 +22,8 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="ar" dir="rtl" suppressHydrationWarning data-scroll-behavior="smooth" className={`${cairo.variable} h-full antialiased`}>
-      <body className="min-h-full flex flex-col font-[family-name:var(--font-cairo)] bg-background text-foreground transition-colors duration-200">
+    <html lang="ar" dir="rtl" suppressHydrationWarning className={`${cairo.variable} h-full antialiased`}>
+      <body className={`${cairo.className} min-h-full flex flex-col bg-background text-foreground transition-colors duration-200`}>
         <ThemeProvider attribute="class" defaultTheme="dark" enableSystem>
           <TooltipProvider>
             <CompanyProvider>

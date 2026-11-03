@@ -38,13 +38,31 @@ export function TabAward({
   // Award Form State
   const [addingAward, setAddingAward] = useState(false);
   const [winnerName, setWinnerName] = useState(op.companies?.[0]?.company?.name || "شركة جولدن");
-  const [winnerPrice, setWinnerPrice] = useState("850000");
+  const [winnerPrice, setWinnerPrice] = useState(
+    (op as any).estimatedBudget ? String((op as any).estimatedBudget) : (op as any).value ? String((op as any).value) : ""
+  );
   const [isOurCompany, setIsOurCompany] = useState(true);
   const [companyId, setCompanyId] = useState(op.companies?.[0]?.companyId || "");
   const [awardDate, setAwardDate] = useState(new Date().toISOString().split("T")[0]);
   const [notes, setNotes] = useState("");
   const [awardLetterFile, setAwardLetterFile] = useState<File | null>(null);
   const [savingAward, setSavingAward] = useState(false);
+
+  // Document Deletion State
+  const [deletingDocId, setDeletingDocId] = useState<string | null>(null);
+  const handleDeleteDoc = async (docId: string) => {
+    if (!confirm("هل أنت متأكد من رغبتك في حذف هذا المستند من أرشيف مستندات الترسية؟")) return;
+    setDeletingDocId(docId);
+    try {
+      await api.delete(`/operations/${op.id}/documents/${docId}`);
+      toast.success("تم حذف المستند بنجاح من أرشيف الترسية 🗑️");
+      onRefresh();
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message || "فشل حذف المستند");
+    } finally {
+      setDeletingDocId(null);
+    }
+  };
 
   // Edit State
   const [editingAward, setEditingAward] = useState<any | null>(null);
@@ -548,6 +566,20 @@ export function TabAward({
                         <Download className="h-3.5 w-3.5" />
                       </Button>
                     )}
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => handleDeleteDoc(doc.id)}
+                      disabled={deletingDocId === doc.id}
+                      className="h-7 w-7 p-0 rounded-lg text-rose-600 hover:bg-rose-500/10 cursor-pointer"
+                      title="حذف المستند من الأرشيف"
+                    >
+                      {deletingDocId === doc.id ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      ) : (
+                        <Trash2 className="h-3.5 w-3.5" />
+                      )}
+                    </Button>
                   </div>
                 </div>
               ))}

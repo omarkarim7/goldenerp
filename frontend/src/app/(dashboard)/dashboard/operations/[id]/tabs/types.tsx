@@ -181,7 +181,7 @@ export function tafqeetArabic(num: number): string {
   const ones = ["", "واحد", "اثنان", "ثلاثة", "أربعة", "خمسة", "ستة", "سبعة", "ثمانية", "تسعة", "عشرة"];
   const teens = ["أحد عشر", "اثنا عشر", "ثلاثة عشر", "أربعة عشر", "خمسة عشر", "ستة عشر", "سبعة عشر", "ثمانية عشر", "تسعة عشر"];
   const tens = ["", "عشرة", "عشرون", "ثلاثون", "أربعون", "خمسون", "ستون", "سبعون", "ثمانون", "تسعون"];
-  const hundreds = ["", "مائة", "مئتان", "ثلاثمائة", "أربعمائة", "خمسمائة", "ستمائة", "سبعون", "ثمانمائة", "تسعمائة"];
+  const hundreds = ["", "مائة", "مئتان", "ثلاثمائة", "أربعمائة", "خمسمائة", "ستمائة", "سبعمائة", "ثمانمائة", "تسعمائة"];
 
   function convertGroup(n: number): string {
     let res = "";
@@ -210,9 +210,18 @@ export function tafqeetArabic(num: number): string {
   const remainder = num % 1000;
 
   const parts: string[] = [];
-  if (billions > 0) parts.push(billions === 1 ? "مليار" : billions === 2 ? "ملياران" : convertGroup(billions) + " مليار");
-  if (millions > 0) parts.push(millions === 1 ? "مليون" : millions === 2 ? "مليونان" : convertGroup(millions) + " مليون");
-  if (thousands > 0) parts.push(thousands === 1 ? "ألف" : thousands === 2 ? "ألفان" : convertGroup(thousands) + " ألف");
+  if (billions > 0) {
+    const bWord = billions >= 3 && billions <= 10 ? "مليارات" : "مليار";
+    parts.push(billions === 1 ? "مليار" : billions === 2 ? "ملياران" : `${convertGroup(billions)} ${bWord}`);
+  }
+  if (millions > 0) {
+    const mWord = millions >= 3 && millions <= 10 ? "ملايين" : "مليون";
+    parts.push(millions === 1 ? "مليون" : millions === 2 ? "مليونان" : `${convertGroup(millions)} ${mWord}`);
+  }
+  if (thousands > 0) {
+    const tWord = thousands >= 3 && thousands <= 10 ? "آلاف" : "ألف";
+    parts.push(thousands === 1 ? "ألف" : thousands === 2 ? "ألفان" : `${convertGroup(thousands)} ${tWord}`);
+  }
   if (remainder > 0) parts.push(convertGroup(remainder));
 
   return `فقط وقدره ${parts.join(" و ")} جنيه مصري لا غير`;

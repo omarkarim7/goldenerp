@@ -43,17 +43,35 @@ function VerifyDocContent() {
   }
 
   // Determine final effective PDF URL
-  let effectivePdfUrl = "";
+  let initialPdfUrl = "";
   if (
     rawPdfUrl &&
     (rawPdfUrl.startsWith("http://") || rawPdfUrl.startsWith("https://")) &&
     !rawPdfUrl.includes("public-doc") &&
     !rawPdfUrl.includes("17a9mx.pdf")
   ) {
-    effectivePdfUrl = rawPdfUrl;
+    initialPdfUrl = rawPdfUrl;
   }
 
+  const [effectivePdfUrl, setEffectivePdfUrl] = useState<string>(initialPdfUrl);
+  const [isSyncingCloud, setIsSyncingCloud] = useState<boolean>(false);
   const [showEmbeddedPdf, setShowEmbeddedPdf] = useState<boolean>(false);
+
+  // When scanned, if document is not yet on Cloudflare, sync on-demand from Hostinger storage!
+  React.useEffect(() => {
+    if (!effectivePdfUrl && (refNo || opId)) {
+      setIsSyncingCloud(true);
+      fetch(`/api/verify-doc-cloud?ref=${encodeURIComponent(refNo)}&opId=${encodeURIComponent(opId)}`)
+        .then((res) => res.json())
+        .then((data) => {
+          if (data?.success && data?.url) {
+            setEffectivePdfUrl(data.url);
+          }
+        })
+        .catch(() => {})
+        .finally(() => setIsSyncingCloud(false));
+    }
+  }, [effectivePdfUrl, refNo, opId]);
 
   const currentDate = new Date().toLocaleDateString("ar-EG", {
     year: "numeric",

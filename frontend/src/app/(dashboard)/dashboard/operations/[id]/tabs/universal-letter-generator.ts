@@ -17,7 +17,26 @@ import {
   getStandardDocQrPayload,
   generateHighResDocQrBuffer,
   getLetterSpecificRegistrationNumber,
+  fetchDocxTemplateArrayBuffer,
+  replaceDocxStandardHeaderFooter,
 } from "./letter-utils";
+import {
+  isExellentCompany,
+  generateExellentBookletWithdrawalDocx,
+  generateExellentInsurancePaymentDocx,
+  generateExellentBookletAndInsuranceDocx,
+  generateExellentBankGuaranteeDocx,
+  generateExellentDeclarationSpecsDocx,
+  generateExellentDeclarationInsuranceDocx,
+  generateExellentGeneralLetterDocx,
+  generateExellentClarificationDocx,
+  generateExellentGrievanceDocx,
+  generateExellentFinalInsuranceCashDocx,
+  generateExellentFinalInsuranceDeductionDocx,
+  generateExellentFinalInsuranceDeductionAndInitialDocx,
+  generateExellentFinalInsuranceRefundDocx,
+  generateExellentWarrantyCertificateDocx,
+} from "./exellent-letter-engine";
 import { Operation, tafqeetArabic, formatDate } from "./types";
 import { getPdfBlobFromDocx } from "./client-pdf";
 
@@ -222,12 +241,6 @@ export async function generateUniversalLetterDocxBlob(
   companyRel?: any
 ): Promise<{ blob: Blob; fileName: string; title: string }> {
   const meta = detectLetterTypeFromId(letterId);
-  const response = await fetch(`/templates/${meta.templateFile}`);
-  if (!response.ok) {
-    throw new Error(`فشل قراءة قالب الخطاب الرسمي (${meta.templateFile}) من خادم النظام`);
-  }
-  const buffer = await response.arrayBuffer();
-  const zip = await JSZip.loadAsync(buffer);
 
   // قراءة بيانات التخزين من op.notes
   let notesObj: any = {};
@@ -250,6 +263,9 @@ export async function generateUniversalLetterDocxBlob(
       },
       displayCode: "AZ",
     };
+
+  const buffer = await fetchDocxTemplateArrayBuffer(meta.templateFile, currentCompanyRel);
+  const zip = await JSZip.loadAsync(buffer);
 
   const comp = currentCompanyRel.company || {};
   const compCode = currentCompanyRel.displayCode || "AZ";
@@ -275,7 +291,7 @@ export async function generateUniversalLetterDocxBlob(
         ? (notesObj.grievanceLetterTech || notesObj.technicalGrievanceLetterDocx)
         : (notesObj.grievanceLetterFin || notesObj.financialGrievanceLetterDocx)
       : meta.category === "refund"
-      ? notesObj.finalInsuranceRefund
+      ? (notesObj.finalInsuranceRefundLetter || notesObj.finalInsuranceRefund)
       : {};
 
   const regNum =
@@ -304,7 +320,244 @@ export async function generateUniversalLetterDocxBlob(
   const phoneWhatsapp = savedSub?.phoneWhatsapp || comp.phone || "01091708818";
   const phoneMobile = savedSub?.phoneMobile || "01557018818";
   const companyAddress = savedSub?.companyAddress || comp.address || "بجوار مستشفى ليدى كير - بدمنهور - البحيره";
-  const companyEmail = savedSub?.companyEmail || comp.email || "goldengolden8818@gmail.com";
+  const isEx = isExellentCompany(currentCompanyRel);
+  const companyEmail = savedSub?.companyEmail || comp.email || (isEx ? "exellentservice@gmail.com" : "goldengolden8818@gmail.com");
+  const companyOtherDetails = savedSub?.companyOtherDetails || "";
+
+  // ━━━ المسار المخصص المستقل لشركة إكسلنت (B) ━━━
+  if (isExellentCompany(currentCompanyRel)) {
+    let qrBinary: Uint8Array | null = null;
+    try {
+      const filename = `${meta.subType}_${regNum}.pdf`;
+      const qrPayload = await getStandardDocQrPayload("", regNum, meta.title, comp.name || "إكسلنت سرفيس", filename);
+      qrBinary = await generateHighResDocQrBuffer(qrPayload);
+    } catch {}
+
+    const commonParams = {
+      recipientPrefix,
+      recipientTitleAndAuthority: recipientTitle,
+      operationRegisteredName: opName,
+      operationNumber: opNumber,
+      tenderMethod: rawTenderMethod,
+      operationScope: opScope,
+      fiscalYear,
+      technicalOpeningDate,
+      specialistName,
+      financeManagerName,
+      boardChairman,
+      companyCommercialRegister,
+      companyTaxCard,
+      companyOpCode,
+      outgoingDate,
+      registrationNumber: regNum,
+      companyAddress,
+      phoneWhatsapp,
+      phoneMobile,
+      companyEmail,
+      companyOtherDetails,
+      qrBinary,
+    };
+
+    let exDocxBlob: Blob;
+    if (meta.category === "booklet") {
+      if (meta.subType === "bank_guarantee_letter") {
+        exDocxBlob = await generateExellentBankGuaranteeDocx({
+          ...commonParams,
+          bankRecipientPrefix: recipientPrefix,
+          bankName: savedSub?.bankName || "مصر",
+          bankBranch: savedSub?.bankBranch || "دمنهور",
+          guaranteeType: (savedSub?.bankGuaranteeType || "ابتدائي") as any,
+          authorityName: savedSub?.authorityName || op.authority,
+          authorityAddress: savedSub?.authorityAddress || "البحيرة – دمنهور - خلف مستشفى الصدر",
+          actionText: "قبول إصدار خطاب ضمان",
+          bankGuaranteeAmount: savedSub?.bankGuaranteeAmount || "37547",
+          bankGuaranteeTafqeet: savedSub?.bankGuaranteeTafqeet,
+          guaranteePercentage: savedSub?.guaranteePercentage || "5 %",
+          operationTotalAmount: savedSub?.operationTotalAmount,
+          operationTotalTafqeet: savedSub?.operationTotalTafqeet,
+          guaranteeDurationText: savedSub?.guaranteeDurationText || "سنة",
+          guaranteeStartDate: savedSub?.guaranteeStartDate,
+          guaranteeEndDate: savedSub?.guaranteeEndDate,
+          bankAccountNumber: savedSub?.bankAccountNumber,
+          accountBankName: savedSub?.accountBankName,
+          accountOwnerName: savedSub?.accountOwnerName,
+          accountOwnerNationalId: savedSub?.accountOwnerNationalId,
+        });
+      } else if (meta.subType === "insurance_payment") {
+        exDocxBlob = await generateExellentInsurancePaymentDocx({
+          ...commonParams,
+          insuranceAmount: savedSub?.insuranceAmount,
+          insuranceTafqeet: savedSub?.insuranceTafqeet,
+          delegateName: savedSub?.delegateName,
+          delegateTitle: savedSub?.delegateTitle,
+          delegateNationalId: savedSub?.delegateNationalId,
+          delegatePowers: savedSub?.delegatePowers,
+          additionalNotes: savedSub?.additionalNotes,
+        });
+      } else if (meta.subType === "booklet_and_insurance") {
+        exDocxBlob = await generateExellentBookletAndInsuranceDocx({
+          ...commonParams,
+          insuranceAmount: savedSub?.insuranceAmount,
+          insuranceTafqeet: savedSub?.insuranceTafqeet,
+          delegateName: savedSub?.delegateName,
+          delegateTitle: savedSub?.delegateTitle,
+          delegateNationalId: savedSub?.delegateNationalId,
+          delegatePowers: savedSub?.delegatePowers,
+          additionalNotes: savedSub?.additionalNotes,
+        });
+      } else {
+        exDocxBlob = await generateExellentBookletWithdrawalDocx({
+          ...commonParams,
+          delegateName: savedSub?.delegateName,
+          delegateTitle: savedSub?.delegateTitle,
+          delegateNationalId: savedSub?.delegateNationalId,
+          delegatePowers: savedSub?.delegatePowers,
+          additionalNotes: savedSub?.additionalNotes,
+        });
+      }
+    } else if (meta.category === "declaration") {
+      if (meta.subType === "specs") {
+        exDocxBlob = await generateExellentDeclarationSpecsDocx({
+          ...commonParams,
+          companyName: savedSub?.declaringCompanyName || comp.name || "اكسلانت سرفيس للنظافه والصيانه والنقل والخدمات والتوريدات",
+          preambleTitle: savedSub?.specsPreambleTitle || "إقرار الإلتزام بكراسة الشروط والمواصفات",
+          commitmentDetails: savedSub?.specsCommitment || "بكل ما جاء بكراسة الشروط والمواصفات وتوضح",
+          additionalNotes: savedSub?.additionalNotes,
+        });
+      } else if (meta.subType === "insurance") {
+        exDocxBlob = await generateExellentDeclarationInsuranceDocx({
+          ...commonParams,
+          companyName: savedSub?.declaringCompanyName || comp.name || "اكسلانت سرفيس للنظافه والصيانه والنقل والخدمات والتوريدات",
+          preambleTitle: savedSub?.insurancePreambleTitle || "إقرار الإلتزام بالتأمينات والعماله الغير منتظمه والمساواه بين العاملين",
+          commitmentDetails: savedSub?.insuranceCommitment || "بسداد نسبة التأمينات على المقاولات والعماله الغير منتظمه وحسن التعامل مع العاملين بالشركة وعدم التفرقه بينهم",
+          additionalNotes: savedSub?.additionalNotes,
+        });
+      } else {
+        exDocxBlob = await generateExellentGeneralLetterDocx({
+          ...commonParams,
+          letterSubject: savedSub?.generalSubject || op.name,
+          letterBody: savedSub?.generalBody,
+        });
+      }
+    } else if (meta.category === "clarification") {
+      exDocxBlob = await generateExellentClarificationDocx({
+        ...commonParams,
+        clarificationSubject: "توضيح واستفسار للأصناف والمواعيد",
+        items: savedSub?.inquiries || [],
+        inquiryNatureText: savedSub?.inquiryAspect,
+        requestedAction: savedSub?.companyRequest,
+      });
+    } else if (meta.category === "grievance") {
+      exDocxBlob = await generateExellentGrievanceDocx({
+        ...commonParams,
+        grievanceStageTitle: savedSub?.grievanceSubject || "نتيجة البت الفني",
+        items: savedSub?.grievanceItems || [],
+        grievanceAspectText: savedSub?.grievanceNotes,
+        grievanceRequestText: savedSub?.requestedAction,
+      });
+    } else if (meta.category === "refund") {
+      exDocxBlob = await generateExellentFinalInsuranceRefundDocx({
+        ...commonParams,
+        refundAmount: savedSub?.refundAmount,
+        refundTafqeet: savedSub?.refundTafqeet,
+        paymentMethod: savedSub?.paymentMethod,
+        deductionOperationName: savedSub?.deductionOperationName,
+        deductionMonth: savedSub?.deductionMonth,
+        deductionYear: savedSub?.deductionYear,
+        receiptNumber: savedSub?.receiptNumber,
+        receiptDate: savedSub?.receiptDate,
+        bankName: savedSub?.bankName,
+        bankBranch: savedSub?.bankBranch,
+        accountHolderName: savedSub?.accountHolderName,
+        bankAccountNumber: savedSub?.bankAccountNumber,
+        accountNationalId: savedSub?.accountNationalId,
+        attachmentType: savedSub?.attachmentType,
+        attachmentNote: savedSub?.attachmentNote,
+      });
+    } else if (meta.category === "warranty") {
+      exDocxBlob = await generateExellentWarrantyCertificateDocx({
+        ...commonParams,
+        companyName: comp.name || "إكسلنت سرفيس",
+        items: savedSub?.items || [],
+        warrantyDuration: savedSub?.warrantyDuration,
+        warrantyCoverage: savedSub?.warrantyCoverage,
+        case1: savedSub?.case1,
+        case2: savedSub?.case2,
+        case3: savedSub?.case3,
+        case4: savedSub?.case4,
+        validityDuration: savedSub?.validityDuration,
+      });
+    } else if (meta.category === "guarantee") {
+      if (meta.subType === "BANK_GUARANTEE") {
+        exDocxBlob = await generateExellentBankGuaranteeDocx({
+          ...commonParams,
+          bankRecipientPrefix: recipientPrefix,
+          bankName: savedSub?.bankName || "مصر",
+          bankBranch: savedSub?.bankNameAndBranch || "دمنهور",
+          guaranteeType: "نهائي",
+          authorityName: savedSub?.bankTargetAuthority || op.authority,
+          authorityAddress: savedSub?.bankTargetAddress || "البحيرة – دمنهور - خلف مستشفى الصدر",
+          actionText: "قبول إصدار خطاب ضمان",
+          bankGuaranteeAmount: savedSub?.amountPaid || "37547",
+          bankGuaranteeTafqeet: savedSub?.amountPaidTafqeet,
+          guaranteePercentage: `${savedSub?.guaranteeRate || 5} %`,
+          operationTotalAmount: savedSub?.totalAwardAmount,
+          operationTotalTafqeet: savedSub?.totalAwardTafqeet,
+          guaranteeDurationText: savedSub?.guaranteeDurationText || "سنة",
+          guaranteeStartDate: savedSub?.guaranteeStartDate,
+          guaranteeEndDate: savedSub?.guaranteeEndDate,
+          bankAccountNumber: savedSub?.bankAccountNumber,
+          accountBankName: savedSub?.bankNameAndBranch,
+          accountOwnerName: savedSub?.accountHolderName,
+          accountOwnerNationalId: savedSub?.accountNationalId,
+        });
+      } else if (meta.subType === "DEDUCTION") {
+        exDocxBlob = await generateExellentFinalInsuranceDeductionDocx({
+          ...commonParams,
+          insuranceAmount: savedSub?.amountPaid,
+          insuranceTafqeet: savedSub?.amountPaidTafqeet,
+          deductionOperationName: savedSub?.deductionOperationName,
+          deductionMonth: savedSub?.deductionMonth,
+          deductionYear: savedSub?.deductionYear,
+          guaranteePercentage: `${savedSub?.guaranteeRate || 5} %`,
+          operationTotalAmount: savedSub?.totalAwardAmount,
+          operationTotalTafqeet: savedSub?.totalAwardTafqeet,
+        });
+      } else if (meta.subType === "DEDUCTION_AND_INITIAL" || meta.subType === "INITIAL_TRANSFER") {
+        exDocxBlob = await generateExellentFinalInsuranceDeductionAndInitialDocx({
+          ...commonParams,
+          cashAmount: savedSub?.amountPaid,
+          cashTafqeet: savedSub?.amountPaidTafqeet,
+          initialTransferredAmount: savedSub?.initialGuaranteeFieldAmount,
+          initialTransferredTafqeet: savedSub?.initialGuaranteeFieldAmountTafqeet,
+          guaranteePercentage: `${savedSub?.guaranteeRate || 5} %`,
+          operationTotalAmount: savedSub?.totalAwardAmount,
+          operationTotalTafqeet: savedSub?.totalAwardTafqeet,
+        });
+      } else {
+        exDocxBlob = await generateExellentFinalInsuranceCashDocx({
+          ...commonParams,
+          insuranceAmount: savedSub?.amountPaid,
+          insuranceTafqeet: savedSub?.amountPaidTafqeet,
+          guaranteePercentage: `${savedSub?.guaranteeRate || 5} %`,
+          operationTotalAmount: savedSub?.totalAwardAmount,
+          operationTotalTafqeet: savedSub?.totalAwardTafqeet,
+        });
+      }
+    } else {
+      exDocxBlob = await generateExellentGeneralLetterDocx({
+        ...commonParams,
+        letterSubject: op.name,
+      });
+    }
+
+    const outFileName = `${meta.subType}_${regNum || op.serialNumber || "doc"}.docx`;
+    return {
+      blob: exDocxBlob,
+      fileName: outFileName,
+      title: meta.title,
+    };
+  }
 
   // توليد رمز QR الموثق
   let qrDrawingXml = "";
@@ -436,7 +689,7 @@ export async function generateUniversalLetterDocxBlob(
     }
   }
 
-  // بيانات خاصة بخطاب الضمان البنكي
+  // بيانات خاصة بخطاب الضمان البنكي (الابتدائي)
   if (meta.subType === "bank_guarantee_letter") {
     const bankName = savedSub?.bankName || "مصر";
     const bankBranch = savedSub?.bankBranch || "دمنهور";
@@ -453,6 +706,99 @@ export async function generateUniversalLetterDocxBlob(
     docXml = docXml.replace(/البحيرة – دمنهور - خلف مستشفى الصدر/g, escapeXml(authorityAddress));
     docXml = docXml.replace(/37547/g, escapeXml(bankGuaranteeAmount));
     docXml = docXml.replace(/سبعة وثلاثون ألفا وخمسمائة وسبعه وأربعون/g, escapeXml(bankGuaranteeTafqeet));
+
+    if (savedSub?.guaranteePercentage) {
+      docXml = docXml.replace(/5 %/g, escapeXml(savedSub.guaranteePercentage));
+    }
+    if (savedSub?.operationTotalAmount) {
+      docXml = docXml.replace(/47547/g, escapeXml(savedSub.operationTotalAmount));
+    }
+    if (savedSub?.operationTotalTafqeet) {
+      docXml = docXml.replace(/سبعه وأربعون ألفا وخمسمائة وسبعه وأربعون/g, escapeXml(savedSub.operationTotalTafqeet));
+    }
+
+    const durationVal = (savedSub?.guaranteeDurationText || "سنة").trim();
+    const durationRegex = /(<w:t[^>]*>[^<]*ومدة\s*الارتباط\s*بالتأمين[^<]*<\/w:t><\/w:r>)([\s\S]*?)(<w:r\b[^>]*>(?:(?!<\/w:r>)[\s\S])*?<w:t[^>]*>[^<]*تبدأ\s*من[^<]*<\/w:t>[\s\S]*?<\/w:r>)/;
+    if (durationRegex.test(docXml)) {
+      docXml = docXml.replace(
+        durationRegex,
+        `$1<w:r><w:rPr><w:rFonts w:hint="cs"/><w:b/><w:bCs/><w:sz w:val="32"/><w:szCs w:val="32"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t xml:space="preserve"> ${escapeXml(durationVal)} </w:t></w:r>$3`
+      );
+    } else {
+      docXml = docXml.replace(
+        /(?:<w:t[^>]*>\s*)?سنتين[\s\S]*?ثلاثة\s*أشهر(?:\s*<\/w:t>)?/g,
+        `<w:t xml:space="preserve"> ${escapeXml(durationVal)} </w:t>`
+      );
+    }
+    docXml = docXml.replace(/سنتين[\s\S]*?ثلاثة أشهر/g, escapeXml(durationVal));
+
+    if (savedSub?.guaranteeStartDate) {
+      docXml = docXml.replace(/12\/12\/2027/g, escapeXml(savedSub.guaranteeStartDate));
+    }
+    if (savedSub?.guaranteeEndDate) {
+      docXml = docXml.replace(/12\/12\s*\/2028/g, escapeXml(savedSub.guaranteeEndDate));
+    }
+
+    if (savedSub?.bankAccountNumber) {
+      docXml = docXml.replace(/2670220000004113/g, escapeXml(savedSub.bankAccountNumber));
+    }
+    if (savedSub?.accountBankName) {
+      docXml = docXml.replace(/مصر الاسلامى/g, escapeXml(savedSub.accountBankName));
+    }
+    if (savedSub?.accountOwnerName) {
+      docXml = docXml.replace(/سـ*حر حسن محمد أحمد عبد السلام(?:\s+جولدن سرفيس)?/g, escapeXml(savedSub.accountOwnerName));
+    }
+    if (savedSub?.accountOwnerNationalId) {
+      docXml = docXml.replace(/28912111802623/g, escapeXml(savedSub.accountOwnerNationalId));
+    }
+  }
+
+  // بيانات خاصة بخطاب الضمان البنكي للتأمين النهائي
+  if (meta.subType === "BANK_GUARANTEE") {
+    const bankNameAndBranch = savedSub?.bankNameAndBranch || "مصر الاسلامى فرع دمنهور";
+    const bankRecipientTitle = savedSub?.bankRecipientTitle || "مدير بنك مصر الاسلامي فرع دمنهور";
+    const bankTargetAuthority = savedSub?.bankTargetAuthority || op.authority;
+    const bankTargetAddress = savedSub?.bankTargetAddress || "البحيرة – دمنهور - خلف مستشفى الصدر";
+
+    const recipientRegex = /(<w:t[^>]*>\s*\/\s*<\/w:t><\/w:r>)([\s\S]*?)(<\/w:p>)/;
+    docXml = docXml.replace(recipientRegex, `$1<w:r><w:rPr><w:rFonts w:ascii="Arabic Typesetting" w:hAnsi="Arabic Typesetting" w:cs="Arabic Typesetting" w:hint="cs"/><w:b/><w:bCs/><w:sz w:val="56"/><w:szCs w:val="56"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t xml:space="preserve"> ${escapeXml(bankRecipientTitle)}</w:t></w:r>$3`);
+
+    const bankAuthRegex = /(<w:t[^>]*>[^<]*الجهه[^<]*<\/w:t><\/w:r>)([\s\S]*?)(<\/w:p>)/;
+    docXml = docXml.replace(bankAuthRegex, `$1<w:r><w:rPr><w:rFonts w:hint="cs"/><w:b/><w:bCs/><w:sz w:val="32"/><w:szCs w:val="32"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t xml:space="preserve"> ${escapeXml(bankTargetAuthority)} وعنوانها : ${escapeXml(bankTargetAddress)}</w:t></w:r>$3`);
+
+    const durationVal = (savedSub?.guaranteeDurationText || "سنة").trim();
+    const durationRegex = /(<w:t[^>]*>[^<]*ومدة\s*الارتباط\s*بالتأمين[^<]*<\/w:t><\/w:r>)([\s\S]*?)(<w:r\b[^>]*>(?:(?!<\/w:r>)[\s\S])*?<w:t[^>]*>[^<]*تبدأ\s*من[^<]*<\/w:t>[\s\S]*?<\/w:r>)/;
+    if (durationRegex.test(docXml)) {
+      docXml = docXml.replace(
+        durationRegex,
+        `$1<w:r><w:rPr><w:rFonts w:hint="cs"/><w:b/><w:bCs/><w:sz w:val="32"/><w:szCs w:val="32"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t xml:space="preserve"> ${escapeXml(durationVal)} </w:t></w:r>$3`
+      );
+    } else {
+      docXml = docXml.replace(
+        /(?:<w:t[^>]*>\s*)?سنتين[\s\S]*?ثلاثة\s*أشهر(?:\s*<\/w:t>)?/g,
+        `<w:t xml:space="preserve"> ${escapeXml(durationVal)} </w:t>`
+      );
+    }
+    docXml = docXml.replace(/سنتين[\s\S]*?ثلاثة أشهر/g, escapeXml(durationVal));
+
+    if (savedSub?.guaranteeStartDate) {
+      docXml = docXml.replace(/12\/12\/2027/g, escapeXml(savedSub.guaranteeStartDate));
+    }
+    if (savedSub?.guaranteeEndDate) {
+      docXml = docXml.replace(/12\/12\s*\/2028/g, escapeXml(savedSub.guaranteeEndDate));
+    }
+    if (savedSub?.bankAccountNumber) {
+      docXml = docXml.replace(/2670220000004113/g, escapeXml(savedSub.bankAccountNumber));
+    }
+    docXml = docXml.replace(/مصر الاسلامى\s+فرع\s+:\s+دمنهور/g, escapeXml(bankNameAndBranch));
+    docXml = docXml.replace(/مصر الاسلامى/g, escapeXml(bankNameAndBranch));
+    if (savedSub?.accountHolderName) {
+      docXml = docXml.replace(/ســـحر حسن محمد أحمد عبد السلام(?:\s+جولدن سرفيس)?/g, escapeXml(savedSub.accountHolderName));
+      docXml = docXml.replace(/سحر حسن محمد أحمد عبد السلام/g, escapeXml(savedSub.accountHolderName));
+    }
+    if (savedSub?.accountNationalId) {
+      docXml = docXml.replace(/28912111802623/g, escapeXml(savedSub.accountNationalId));
+    }
   }
 
   // بيانات خاصة بسداد التأمين بخصم من مستحقات أخرى
@@ -477,41 +823,18 @@ export async function generateUniversalLetterDocxBlob(
 
   zip.file("word/document.xml", docXml);
 
-  // 2. ترويسات الصفحات (header1, header2, header3)
-  const headerFiles = ["word/header1.xml", "word/header2.xml", "word/header3.xml"];
-  for (const hf of headerFiles) {
-    if (zip.file(hf)) {
-      let hXml = await zip.file(hf)!.async("text");
-      hXml = hXml.replace(/110200700036620/g, escapeXml(companyCommercialRegister));
-      hXml = hXml.replace(/658369652/g, escapeXml(companyTaxCard));
-      hXml = hXml.replace(/\(\s*كود العملية بالشركه\s*\)/g, `( ${escapeXml(companyOpCode)} )`);
-      hXml = hXml.replace(/كود العملية بالشركه/g, escapeXml(companyOpCode));
-      hXml = hXml.replace(/<w:highlight\s+[^>]*\/>/g, "");
-      hXml = hXml.replace(/<w:color\s+w:val=\"(red|FF0000)\"[^>]*\/>/g, "");
-      zip.file(hf, hXml);
-    }
-  }
-
-  // 3. تذييلات الصفحات (footer1, footer2, footer3)
-  const footerFiles = ["word/footer1.xml", "word/footer2.xml", "word/footer3.xml"];
-  for (const ff of footerFiles) {
-    if (zip.file(ff)) {
-      let fXml = await zip.file(ff)!.async("text");
-      fXml = fXml.replace(/15\/10\/2026/g, escapeXml(outgoingDate));
-      if (fXml.includes("رقم القيد")) {
-        fXml = fXml.replace(/رقم القيد/g, `رقم القيد : ${escapeXml(regNum)}`);
-      }
-      fXml = fXml.replace(/\(\s*باركود المستند أو العمليه/g, `رقم القيد : ${escapeXml(regNum)}`);
-      fXml = fXml.replace(/01091708818/g, escapeXml(phoneWhatsapp));
-      fXml = fXml.replace(/01557018818/g, escapeXml(phoneMobile));
-      fXml = fXml.replace(/بجوار مستشفى ليدى كير\s*-\s*بدمنهور\s*-\s*البح\s*يره/g, escapeXml(companyAddress));
-      fXml = fXml.replace(/بجوار مستشفى ليدى كير\s*-\s*بدمنهور\s*-\s*البحيره/g, escapeXml(companyAddress));
-      fXml = fXml.replace(/goldengolden8818@gmail.com/g, escapeXml(companyEmail));
-      fXml = fXml.replace(/<w:highlight\s+[^>]*\/>/g, "");
-      fXml = fXml.replace(/<w:color\s+w:val=\"(red|FF0000)\"[^>]*\/>/g, "");
-      zip.file(ff, fXml);
-    }
-  }
+  // 2. ترويسات وتذييلات الصفحات (header & footer للشركتين جولدن وإكسلنت)
+  await replaceDocxStandardHeaderFooter(zip, {
+    companyCommercialRegister,
+    companyTaxCard,
+    companyOpCode,
+    outgoingDate,
+    registrationNumber: regNum,
+    companyAddress,
+    phoneWhatsapp,
+    phoneMobile,
+    companyEmail,
+  });
 
   // تنظيف شامل
   await cleanAllDocxXml(zip);

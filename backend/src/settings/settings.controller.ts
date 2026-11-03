@@ -7,7 +7,6 @@ import { UserRole } from '@prisma/client';
 
 @Controller('settings')
 @UseGuards(JwtAuthGuard, RolesGuard)
-@Roles(UserRole.GENERAL_MANAGER, UserRole.DEPUTY_MANAGER)
 export class SettingsController {
   constructor(private readonly service: SettingsService) {}
 
@@ -17,6 +16,7 @@ export class SettingsController {
   }
 
   @Patch()
+  @Roles(UserRole.GENERAL_MANAGER, UserRole.DEPUTY_MANAGER)
   updateMany(@Body() settings: { key: string; value: string; label?: string; group?: string; type?: string }[]) {
     return this.service.updateMany(settings);
   }

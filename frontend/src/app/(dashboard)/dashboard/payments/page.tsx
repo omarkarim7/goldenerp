@@ -295,7 +295,7 @@ export default function MasterFinancePage() {
   const [masterTab, setMasterTab] = useState<"OPERATIONS" | "PAYMENTS" | "ANALYTICS">("OPERATIONS");
 
   // Operations Financial Matrix State
-  const [operations, setOperations] = useState<OperationFinancialRecord[]>(INITIAL_DEMO_OPERATIONS);
+  const [operations, setOperations] = useState<OperationFinancialRecord[]>([]);
   const [opSearch, setOpSearch] = useState("");
   const [opFilterStatus, setOpFilterStatus] = useState("ALL");
   const [opFilterCompany, setOpFilterCompany] = useState("ALL");
@@ -304,7 +304,7 @@ export default function MasterFinancePage() {
   const [opDossierModalOpen, setOpDossierModalOpen] = useState(false);
 
   // Supplier Payments Records State
-  const [payments, setPayments] = useState<PaymentRecord[]>(INITIAL_PAYMENTS);
+  const [payments, setPayments] = useState<PaymentRecord[]>([]);
   const [paySearch, setPaySearch] = useState("");
   const [payFilterMethod, setPayFilterMethod] = useState("ALL");
   const [payFilterStatus, setPayFilterStatus] = useState("ALL");
@@ -341,7 +341,7 @@ export default function MasterFinancePage() {
       setLoading(true);
       const compParam = selectedCompany && selectedCompany !== "ALL" ? `?company=${selectedCompany}` : "";
       const res = await api.get(`/finance/operations-overview${compParam}`);
-      if (res.data && Array.isArray(res.data) && res.data.length > 0) {
+      if (res.data && Array.isArray(res.data)) {
         const mapped: OperationFinancialRecord[] = res.data.map((op: any) => {
           const fin = op.operationFinance;
           const rev = fin ? Number(fin.totalRevenue) : 0;
@@ -390,9 +390,11 @@ export default function MasterFinancePage() {
         });
 
         setOperations(mapped);
+      } else {
+        setOperations([]);
       }
     } catch {
-      // Keep rich demo operations
+      setOperations([]);
     } finally {
       setLoading(false);
     }

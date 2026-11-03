@@ -107,32 +107,52 @@ export function TabFinance({
   );
   const totalBlockedGuarantees = totalInitialGuarAmount + totalFinalGuarAmount;
 
-  // Real figures derived from all operation tabs
+  // Real figures dynamically derived from all operation tabs (Awards, Supplies, Invoices, Guarantees)
   const autoSupplyCost = Number(existingNotes.supplyPreparationData?.totalCost || 0);
   const autoSupplyTotal = Number(existingNotes.supplyPreparationData?.totalSupply || 0);
   const autoInvoiceGrandTotal = Number(existingNotes.invoicingData?.grandTotal || 0);
+
+  // 1. Winning Award or Award Price (Checking Prisma column winnerPrice)
+  const ourWinningAward = (op.awards || []).find((a: any) => a.isOurCompany) || op.awards?.[0];
   const autoAwardedAmount = Number(
-    op.awards?.[0]?.awardedAmount ||
+    ourWinningAward?.winnerPrice ||
+    (ourWinningAward as any)?.amount ||
     existingNotes.finalGuaranteeLetter?.totalAwardAmount ||
     0
   );
+
+  // 2. Financial Offer Grand Total if available
+  const autoFinancialOfferTotal = Number(
+    op.financialOffers?.[0]?.grandTotal ||
+    op.financialOffers?.[0]?.totalPrice ||
+    0
+  );
+
   const autoOperationValue = Number((op as any).value || (op as any).estimatedBudget || 0);
 
-  // Baseline real revenue (No fake 850,000)
+  // 3. Purchases from purchases module
+  const autoPurchasesTotal = (op.purchases || []).reduce(
+    (acc: number, p: any) => acc + Number(p.totalAmount || 0),
+    0
+  );
+
+  // Baseline real revenue (Dynamic from Award, Offer, Invoices or Budget - No fake 850,000)
   const defaultRevenue =
     (fin?.totalRevenue && Number(fin.totalRevenue) > 0 && Number(fin.totalRevenue) !== 850000)
       ? Number(fin.totalRevenue)
-      : (autoAwardedAmount || autoInvoicesTotal || autoInvoiceGrandTotal || autoSupplyTotal || autoOperationValue || 0);
+      : (autoAwardedAmount || autoFinancialOfferTotal || autoInvoicesTotal || autoInvoiceGrandTotal || autoSupplyTotal || autoOperationValue || 0);
 
-  // Baseline real supply cost (No fake 540,000)
+  // Baseline real supply cost (Dynamic from Supply Preparation or Purchases - No fake 540,000)
   const defaultSupplyCost =
     (existingDetailed.directSupplyCost && Number(existingDetailed.directSupplyCost) !== 540000)
       ? Number(existingDetailed.directSupplyCost)
       : (autoSupplyCost > 0
           ? autoSupplyCost
-          : (fin?.totalCost && Number(fin.totalCost) !== 540000
-              ? Number(fin.totalCost)
-              : (defaultRevenue > 0 ? Math.round(Number(defaultRevenue) * 0.78) : 0)));
+          : (autoPurchasesTotal > 0
+              ? autoPurchasesTotal
+              : (fin?.totalCost && Number(fin.totalCost) !== 540000 && Number(fin.totalCost) > 0
+                  ? Number(fin.totalCost)
+                  : (defaultRevenue > 0 ? Math.round(Number(defaultRevenue) * 0.75) : 0))));
 
   // Baseline real labor/social insurances (No fake 2,600)
   const defaultLaborSocial =

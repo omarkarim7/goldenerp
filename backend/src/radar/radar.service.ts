@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, BadRequestException, HttpException, Logger } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, HttpException, Logger, OnModuleInit } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import fs from 'fs';
 import path from 'path';
@@ -56,7 +56,7 @@ function mapStageToDateType(stageLabel: string): OperationDateType {
 }
 
 @Injectable()
-export class RadarService {
+export class RadarService implements OnModuleInit {
   private readonly logger = new Logger(RadarService.name);
 
   constructor(
@@ -96,367 +96,64 @@ export class RadarService {
     }
   }
 
-  private readonly dynamicOpportunityPool = [
-    {
-      title: 'توريد وتركيب شبكات ألياف ضوئية وكابلات نحاسية وتجهيز غرف الخوادم المركزية',
-      authority: 'الهيئة العامة للرقابة المالية - القرية الذكية',
-      governorate: 'الجيزة',
-      tenderType: 'مناقصة عامة',
-      tenderKind: 'توريدات',
-      category: 'توريدات عامة • شبكات واتصالات • أعمال كهروميكانيكية',
-      temporaryInsurance: 65000,
-      bookletPrice: 1200,
-      matchedCompanyCode: 'A',
-      matchScore: 95,
-      parts: [
-        { serial: 1, name: 'كابلات الفايبر والمسارات' },
-        { serial: 2, name: 'أجهزة السويتشات ووحدات الطاقة' },
-      ],
-      items: [
-        { serial: 1, name: 'كابل ألياف ضوئية Single Mode 24 Core خارجي مسلح', quantity: 2500, type: 'متر' },
-        { serial: 2, name: 'سويتش شبكات Managed Layer 3 48-Port PoE+ مع كروت SFP', quantity: 8, type: 'جهاز' },
-        { serial: 3, name: 'كابينة راك 42U مع وحدات PDU ومراوح تهوية ذكية', quantity: 4, type: 'وحدة' },
-      ],
-    },
-    {
-      title: 'أعمال الصيانة الشاملة وتطوير محطة طلمبات مياه الشرب وتوريد لوحات التحكم الآلي PLC',
-      authority: 'شركة مياه الشرب والصرف الصحي بالقاهرة الكبرى',
-      governorate: 'القاهرة',
-      tenderType: 'مناقصة عامة',
-      tenderKind: 'مقاولات وأعمال كهروميكانيكية',
-      category: 'أعمال كهروميكانيكية • محطات مياه • صيانة وتشغيل',
-      temporaryInsurance: 95000,
-      bookletPrice: 1500,
-      matchedCompanyCode: 'C',
-      matchScore: 92,
-      parts: [
-        { serial: 1, name: 'الطلمبات والمحركات الكهربائية' },
-        { serial: 2, name: 'لوحات التحكم الآلي والحساسات' },
-      ],
-      items: [
-        { serial: 1, name: 'طلمبة مياه أفقية طاردة مركزية تصرف 350 لتر/ثانية ضغط 60 متر', quantity: 2, type: 'طلمبة' },
-        { serial: 2, name: 'لوحة تحكم وتوزيع جهد منخفض مزودة بجهاز PLC ومغيرات سرعة VFD', quantity: 2, type: 'لوحة' },
-        { serial: 3, name: 'محبس فراشة هيدروليكي قطر 600 مم ضغط 16 بار مع وحدة تشغيل', quantity: 6, type: 'محبس' },
-      ],
-    },
-    {
-      title: 'توريد أدوات كتابية وأوراق تصوير ومستلزمات أحبار طابعات أصلية لمقرات وفروع الهيئة',
-      authority: 'الهيئة العامة للتأمين الصحي الشامل',
-      governorate: 'القاهرة',
-      tenderType: 'ممارسة محدودة',
-      tenderKind: 'توريدات',
-      category: 'توريدات عامة • أدوات مكتبية ومطبوعات • مستلزمات حاسب آلي',
-      temporaryInsurance: 30000,
-      bookletPrice: 600,
-      matchedCompanyCode: 'B',
-      matchScore: 91,
-      parts: [
-        { serial: 1, name: 'أوراق التصوير والمطبوعات' },
-        { serial: 2, name: 'أحبار الطابعات وماكينات التصوير' },
-      ],
-      items: [
-        { serial: 1, name: 'ورق تصوير A4 وزن 80 جرام خالي من الأحماض كرتونة 5 باكو', quantity: 800, type: 'كرتونة' },
-        { serial: 2, name: 'حبارة ليزر أسود أصلية متوافقة مع طابعات HP LaserJet Enterprise', quantity: 120, type: 'حبارة' },
-        { serial: 3, name: 'أدوات مكتبية متنوعة (ملفات كرتون، دبابيس، أقلام، أختام)', quantity: 1, type: 'لوط متكامل' },
-      ],
-    },
-    {
-      title: 'توريد وتركيب أجهزة تكييف هواء سبليت ومركزي وتجهيز شبكات التهوية بالمبنى التعليمي',
-      authority: 'جامعة عين شمس - كلية الحاسبات والمعلومات',
-      governorate: 'القاهرة',
-      tenderType: 'مناقصة عامة',
-      tenderKind: 'توريدات وتركيبات',
-      category: 'توريدات عامة • تكييف وتهوية • أعمال كهروميكانيكية',
-      temporaryInsurance: 45000,
-      bookletPrice: 800,
-      matchedCompanyCode: 'A',
-      matchScore: 94,
-      parts: [
-        { serial: 1, name: 'أجهزة التكييف السبليت' },
-        { serial: 2, name: 'شبكات مجاري الهواء وملحقات التركيب' },
-      ],
-      items: [
-        { serial: 1, name: 'جهاز تكييف سبليت حائطي 3 حصان بارد/ساخن انفرتر فريون R410A', quantity: 24, type: 'جهاز' },
-        { serial: 2, name: 'جهاز تكييف كاسيت 5 حصان ديجيتال 4 اتجاهات شامل وحدة التثبيت', quantity: 10, type: 'جهاز' },
-        { serial: 3, name: 'شبكة مواسير نحاسية عازلة وكابلات إشارة وتغذية قوى معتمدة', quantity: 350, type: 'متر طولي' },
-      ],
-    },
-    {
-      title: 'صيانة وترميم ورفع كفاءة مجمع الخدمات الجماهيرية وأعمال الدهانات والتشطيبات',
-      authority: 'ديوان عام محافظة الجيزة - حي الهرم',
-      governorate: 'الجيزة',
-      tenderType: 'مناقصة محلية',
-      tenderKind: 'مقاولات وترميمات',
-      category: 'مقاولات عامة • تشطيبات وترميم • أعمال مدنية',
-      temporaryInsurance: 55000,
-      bookletPrice: 900,
-      matchedCompanyCode: 'C',
-      matchScore: 90,
-      parts: [
-        { serial: 1, name: 'الأعمال المدنية والدهانات' },
-        { serial: 2, name: 'الأرضيات والأبواب والألوميتال' },
-      ],
-      items: [
-        { serial: 1, name: 'أعمال دهانات بلاستيك نصف لامع قابل للغسيل مع معالجة الحوائط', quantity: 4500, type: 'متر مسطح' },
-        { serial: 2, name: 'أرضيات بورسلين فرز أول مقاس 60*60 سم مانع للانزلاق للممرات', quantity: 1200, type: 'متر مسطح' },
-        { serial: 3, name: 'قطاعات ألوميتال جامبو بزجاج دبل عاكس للصوت والحرارة', quantity: 180, type: 'متر مسطح' },
-      ],
-    },
-    {
-      title: 'توريد وتركيب أجهزة تعقيم مركزية ومستلزمات جراحية لمستشفى الطوارئ',
-      authority: 'جامعة المنصورة - إدارة المستشفيات الجامعية',
-      governorate: 'الدقهلية',
-      tenderType: 'مناقصة عامة',
-      tenderKind: 'توريدات أجهزة طبية',
-      category: 'أجهزة ومستلزمات طبية • تعقيم ورعاية مركزة',
-      temporaryInsurance: 85000,
-      bookletPrice: 1400,
-      matchedCompanyCode: 'D',
-      matchScore: 93,
-      parts: [
-        { serial: 1, name: 'أجهزة التعقيم بالأوتوكلاف' },
-        { serial: 2, name: 'المستلزمات الجراحية والمهمات' },
-      ],
-      items: [
-        { serial: 1, name: 'جهاز أوتوكلاف تعقيم بخاري سعة 500 لتر ببابين وتحكم إلكتروني', quantity: 2, type: 'جهاز' },
-        { serial: 2, name: 'وحدة معالجة مياه نقية خاصة بمحطة التعقيم المركزي 50 لتر/ساعة', quantity: 1, type: 'وحدة' },
-        { serial: 3, name: 'بكر ومغلفات تعقيم مؤشرية بأحجام متعددة مطابقة للمواصفات', quantity: 500, type: 'لفة' },
-      ],
-    },
-    {
-      title: 'توريد وتركيب كاميرات مراقبة شبكية IP ذكية وغرفة تحكم أمني مركزية',
-      authority: 'الهيئة القومية لسكك حديد مصر - مبنى المحطة المركزية',
-      governorate: 'القاهرة',
-      tenderType: 'مناقصة عامة',
-      tenderKind: 'توريدات وتركيبات أمنية',
-      category: 'توريدات عامة • شبكات واتصالات • أنظمة أمنية',
-      temporaryInsurance: 70000,
-      bookletPrice: 1100,
-      matchedCompanyCode: 'A',
-      matchScore: 96,
-      parts: [
-        { serial: 1, name: 'الكاميرات وأجهزة التسجيل NVR' },
-        { serial: 2, name: 'شاشات العرض وغرفة التحكم' },
-      ],
-      items: [
-        { serial: 1, name: 'كاميرا شبكية IP بدقة 8 ميجابكسل زووم بصري 30x مع رؤية ليلية 150م', quantity: 45, type: 'كاميرا' },
-        { serial: 2, name: 'جهاز تسجيل شبكي NVR 64-Channel يدعم RAID 5 مع أقراص 64 تيرابايت', quantity: 3, type: 'جهاز' },
-        { serial: 3, name: 'شاشة حائطية Video Wall مقاس 55 بوصة ذات إطار فائق النحافة', quantity: 6, type: 'شاشة' },
-      ],
-    },
-    {
-      title: 'توريد مهمات أمن صناعي ووقاية شخصية وأحذية أمان وملابس تشغيل مقاومة للحريق',
-      authority: 'شركة بترول بلاعيم (بتروبل) - حقول أبورديس',
-      governorate: 'جنوب سيناء',
-      tenderType: 'ممارسة عامة',
-      tenderKind: 'توريدات عامة ومهمات أمان',
-      category: 'توريدات عامة • مهمات وقاية وسلامة وصحة مهنية',
-      temporaryInsurance: 40000,
-      bookletPrice: 750,
-      matchedCompanyCode: 'B',
-      matchScore: 92,
-      parts: [
-        { serial: 1, name: 'ملابس التشغيل والأحذية الآمنة' },
-        { serial: 2, name: 'أقنعة الغاز وخوذ الحماية' },
-      ],
-      items: [
-        { serial: 1, name: 'بدلة عمل قطن معالج مقاوم للهب والشرر مع شرائط عاكسة للضوء', quantity: 1500, type: 'بدلة' },
-        { serial: 2, name: 'حذاء أمان جلد طبيعي بنعل عازل ومقدمة فولاذية Steel Toe طبقاً لـ EN ISO 20345', quantity: 1200, type: 'زوج' },
-        { serial: 3, name: 'خوذة أمان مزودة بقناع شفاف ونظام تهوية مدمج', quantity: 600, type: 'خوذة' },
-      ],
-    },
-    {
-      title: 'إحلال وتجديد محولات القوى الكهربائية وتوريد كابلات الجهد المتوسط',
-      authority: 'شركة توزيع كهرباء جنوب الدلتا - قطاع القليوبية',
-      governorate: 'القليوبية',
-      tenderType: 'مناقصة عامة',
-      tenderKind: 'أعمال كهروميكانيكية وتوريدات',
-      category: 'أعمال كهروميكانيكية • محولات وشبكات قوى',
-      temporaryInsurance: 110000,
-      bookletPrice: 1800,
-      matchedCompanyCode: 'C',
-      matchScore: 95,
-      parts: [
-        { serial: 1, name: 'المحولات الكهربائية الزيتية' },
-        { serial: 2, name: 'كابلات الجهد المتوسط والملحقات' },
-      ],
-      items: [
-        { serial: 1, name: 'محول كهربائي قوى ثلاثي الأوجه قدرة 1000 ك.ف.أ 11/0.4 ك.ف خافض للجهد', quantity: 3, type: 'محول' },
-        { serial: 2, name: 'كابل نحاسي معزول XLPE مسلح قطاع 3*150 مم2 جهد 11 ك.ف', quantity: 1800, type: 'متر طولي' },
-        { serial: 3, name: 'خلايا جهد متوسط 11 ك.ف مزودة بقواطع تفريغ هواء ومحولات تيار', quantity: 4, type: 'خلية' },
-      ],
-    },
-    {
-      title: 'توريد أجهزة مونيتور لمتابعة العلامات الحيوية ومضخات محاليل وريدية ذكية',
-      authority: 'الهيئة العامة للمستشفيات والمعاهد التعليمية - معهد القلب القومي',
-      governorate: 'القاهرة',
-      tenderType: 'مناقصة عامة',
-      tenderKind: 'توريدات أجهزة طبية دقيقة',
-      category: 'أجهزة ومستلزمات طبية • عناية مركزة وقلب',
-      temporaryInsurance: 80000,
-      bookletPrice: 1300,
-      matchedCompanyCode: 'D',
-      matchScore: 94,
-      parts: [
-        { serial: 1, name: 'أجهزة مراقبة المرضى Multiparameter Monitor' },
-        { serial: 2, name: 'مضخات الحقن والمحاليل الدقيقة' },
-      ],
-      items: [
-        { serial: 1, name: 'شاشة مراقبة مريض 12.1 بوصة تاتش متعددة القياسات ECG/NIBP/SpO2/Temp/EtCO2', quantity: 20, type: 'جهاز' },
-        { serial: 2, name: 'مضخة محاليل وريدية ذكية مزودة بمكتبة أدوية ونظام إنذار مبكر', quantity: 30, type: 'مضخة' },
-        { serial: 3, name: 'مضخة سرنجات دقيقة سعة 10-60 مل مع بطارية طوارئ 8 ساعات', quantity: 25, type: 'مضخة' },
-      ],
-    },
-  ];
-
-  // --- Dynamic Opportunity Discovery Engine ---
-  async dynamicMarketDiscovery(): Promise<{
-    success: boolean;
-    totalScanned: number;
-    newCount: number;
-    updatedCount: number;
-    message: string;
-  }> {
-    let source = await this.prisma.radarSource.findFirst({
-      where: { url: 'https://gcs.digitalegypt.gov.eg' },
-    });
-    if (!source) {
-      source = await this.prisma.radarSource.create({
-        data: {
-          name: 'منظومة التعاقدات الحكومية — مصر الرقمية',
-          url: 'https://gcs.digitalegypt.gov.eg',
-          isActive: true,
-        },
-      });
-    }
-
-    const existingItems = await this.prisma.radarItem.findMany({
-      select: { externalId: true, title: true },
-    });
-    const existingTitles = new Set(existingItems.map((i) => i.title.trim()));
-
-    // Find opportunities from the pool not yet in the database
-    let candidates = this.dynamicOpportunityPool.filter((p) => !existingTitles.has(p.title.trim()));
-
-    // If all static pool items exist, dynamically generate fresh variants with random serials
-    if (candidates.length === 0) {
-      const baseCandidate = this.dynamicOpportunityPool[Math.floor(Math.random() * this.dynamicOpportunityPool.length)];
-      const randSuffix = Math.floor(100 + Math.random() * 900);
-      candidates = [
-        {
-          ...baseCandidate,
-          title: `${baseCandidate.title} (مرحلة تكميلية #${randSuffix})`,
-        },
-      ];
-    }
-
-    // If total existing items is small, populate full pool; otherwise take 2-3 fresh opportunities
-    const toInsert = existingItems.length < 8 ? candidates : candidates.slice(0, 3);
-    let newCount = 0;
-
-    for (const opp of toInsert) {
-      const extId = `dyn-eg-${Date.now().toString(36)}-${Math.random().toString(36).substring(2, 7)}`;
-      const pubDate = new Date();
-      const deadlineDate = new Date(Date.now() + (22 + Math.floor(Math.random() * 12)) * 24 * 60 * 60 * 1000);
-
-      const rawFull = {
-        externalId: extId,
-        refNo: `${Math.floor(10 + Math.random() * 90)}/${pubDate.getFullYear()}`,
-        title: opp.title,
-        authority: opp.authority,
-        governorate: opp.governorate,
-        tenderMethod: opp.tenderType,
-        tenderKind: opp.tenderKind,
-        temporaryInsurance: opp.temporaryInsurance,
-        finalInsuranceRate: 5,
-        bookletPrice: opp.bookletPrice,
-        currency: 'جنيه مصري',
-        fiscalYear: '2026/2027',
-        biddingType: 'مظروفين (فني ومالي)',
-        publishingDays: 30,
-        tags: opp.category.split(' • '),
-        parts: opp.parts,
-        items: opp.items,
-        timeline: {
-          stages: [
-            { label: 'تاريخ نشر الإعلان', date: pubDate.toLocaleDateString('ar-EG') },
-            { label: 'آخر موعد لتقديم العطاءات والمظاريف', date: deadlineDate.toLocaleDateString('ar-EG') },
-            { label: 'جلسة فتح المظاريف الفنية', date: deadlineDate.toLocaleDateString('ar-EG') },
-          ],
-          announcementDate: pubDate.toISOString(),
-          techEnvelopeOpenDate: deadlineDate.toISOString(),
-        },
-        attachments: [],
-        sourceUrl: 'https://gcs.digitalegypt.gov.eg/Landing/Tenders',
-      };
-
-      await this.prisma.radarItem.create({
-        data: {
-          sourceId: source.id,
-          externalId: extId,
-          referenceNumber: rawFull.refNo,
-          title: opp.title,
-          authority: opp.authority,
-          tenderType: opp.tenderType,
-          governorate: opp.governorate,
-          category: opp.category,
-          temporaryInsurance: opp.temporaryInsurance,
-          bookletPrice: opp.bookletPrice,
-          publicationDate: pubDate,
-          deadline: deadlineDate,
-          sourceUrl: rawFull.sourceUrl,
-          matchedCompanyCode: opp.matchedCompanyCode,
-          matchScore: opp.matchScore,
-          isImported: false,
-          rawData: JSON.stringify(rawFull),
-        },
-      });
-
-      newCount++;
-    }
-
-    await this.prisma.radarSource.update({
-      where: { id: source.id },
-      data: { lastFetched: new Date() },
-    });
-
-    const totalCount = await this.prisma.radarItem.count();
-    const message = `تم فحص وتحديث الرادار بنجاح: تم رصد ${newCount} مناقصات حكومية جديدة اليوم ومطابقتها مع شركات المجموعة!`;
-
-    this.logger.log(`Dynamic Market Discovery complete: added ${newCount} new tenders. Total in radar: ${totalCount}`);
-
-    return {
-      success: true,
-      totalScanned: totalCount,
-      newCount,
-      updatedCount: totalCount,
-      message,
-    };
+  async onModuleInit() {
+    await this.cleanupLegacyMockData();
   }
 
-  // --- Live Scan ---
-  async scan(pagesCount: number = 2) {
+  /**
+   * Purges any legacy synthetic mock data and scrubs fake attachment placeholders from database records
+   */
+  async cleanupLegacyMockData() {
     try {
-      const scanPromise = this.scraper.scan(pagesCount);
-      const timeoutPromise = new Promise<{
-        success: boolean;
-        totalScanned: number;
-        newCount: number;
-        updatedCount: number;
-        message: string;
-      }>((_, reject) =>
-        setTimeout(() => reject(new Error('مهلة استجابة بوابة التعاقدات الحكومية تجاوزت الحد المسموح')), 10000),
-      );
-
-      const result = await Promise.race([scanPromise, timeoutPromise]);
-      if (result && result.newCount > 0) {
-        return result;
+      // 1. Delete all synthetic mock items
+      const deleted = await this.prisma.radarItem.deleteMany({
+        where: {
+          OR: [
+            { externalId: { startsWith: 'dyn-eg-' } },
+            { title: { contains: 'مرحلة تكميلية' } },
+          ],
+        },
+      });
+      if (deleted.count > 0) {
+        this.logger.log(`Cleaned up ${deleted.count} legacy synthetic mock radar items.`);
       }
-      return await this.dynamicMarketDiscovery();
-    } catch (err: any) {
-      this.logger.warn(`Radar live crawl timeout/fallback: ${err.message}. Initiating dynamic discovery...`);
-      return await this.dynamicMarketDiscovery();
+
+      // 2. Scrub fake placeholder attachment names from real items' rawData
+      const itemsToScrub = await this.prisma.radarItem.findMany({
+        where: {
+          rawData: {
+            contains: 'كراسة الشروط والمواصفات الفنية المعتمدة',
+          },
+        },
+      });
+      for (const item of itemsToScrub) {
+        if (!item.rawData) continue;
+        try {
+          const raw = JSON.parse(item.rawData);
+          if (Array.isArray(raw.attachments)) {
+            raw.attachments = raw.attachments.filter(
+              (a: any) =>
+                a &&
+                !a.name?.includes('كراسة الشروط والمواصفات الفنية المعتمدة') &&
+                !a.name?.includes('جدول الكميات والمقايسة التثمينية'),
+            );
+          }
+          await this.prisma.radarItem.update({
+            where: { id: item.id },
+            data: { rawData: JSON.stringify(raw) },
+          });
+        } catch {}
+      }
+    } catch (e: any) {
+      this.logger.warn(`Legacy mock cleanup skipped: ${e.message}`);
     }
+  }
+
+  // --- Live Scan (100% Real Portal Scraper with Smart Incremental Crawling — Zero Synthetic Generation) ---
+  async scan(pagesCount: number = 10) {
+    // Run automatic cleanup first to keep DB pristine
+    await this.cleanupLegacyMockData().catch(() => {});
+    return this.scraper.scan(pagesCount);
   }
 
   // --- Auto Daily Scan Scheduled Task (Checks dynamically against configured scheduledTime) ---
@@ -652,19 +349,23 @@ export class RadarService {
       this.prisma.radarItem.count({ where }),
     ]);
 
-    // If no items found and no specific search query was performed, auto-discover dynamic market opportunities
+    // If no items found and no specific search query was performed, automatically crawl live portal
     if (total === 0 && !filters?.search) {
-      await this.dynamicMarketDiscovery();
-      [items, total] = await Promise.all([
-        this.prisma.radarItem.findMany({
-          where,
-          include: { source: { select: { id: true, name: true, url: true } } },
-          orderBy,
-          take: limit,
-          skip,
-        }),
-        this.prisma.radarItem.count({ where }),
-      ]);
+      try {
+        await this.scraper.scan(5);
+        [items, total] = await Promise.all([
+          this.prisma.radarItem.findMany({
+            where,
+            include: { source: { select: { id: true, name: true, url: true } } },
+            orderBy,
+            take: limit,
+            skip,
+          }),
+          this.prisma.radarItem.count({ where }),
+        ]);
+      } catch (err: any) {
+        this.logger.warn(`Live portal initial scan skipped: ${err.message}`);
+      }
     }
 
     // Parse rawData into clean object for frontend

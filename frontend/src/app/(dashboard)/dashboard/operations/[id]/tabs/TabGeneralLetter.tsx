@@ -42,7 +42,16 @@ import {
   getStandardDocQrPayload,
   buildOfficialSignaturesTableXml,
   replaceDocxRecipient,
+  replaceDocxSignatures,
+  replaceDocxAdditionalNotes,
+  fetchDocxTemplateArrayBuffer,
+  replaceDocxStandardHeaderFooter,
+  useLetterApproval,
 } from "./letter-utils";
+import {
+  isExellentCompany,
+  generateExellentGeneralLetterDocx,
+} from "./exellent-letter-engine";
 import JSZip from "jszip";
 import QRCode from "qrcode";
 import { getPdfBlobFromDocx, uploadPdfToFreeCloud, getExpectedCloudPdfUrl } from "./client-pdf";
@@ -96,6 +105,7 @@ export function TabGeneralLetter({
   }, [op.companies, selectedCompanyId]);
 
   const currentCompany = currentCompanyLink?.company;
+  const isEx = isExellentCompany(currentCompanyLink || currentCompany || op);
 
   // رقم القيد الصادر الذكي المستقل الخاص بالخطاب العام
   const [registrationNumber, setRegistrationNumber] = useState(() => {
@@ -144,7 +154,18 @@ export function TabGeneralLetter({
     return savedLetter?.companyAddress || currentCompany?.address || "بجوار مستشفى ليدى كير  -  بدمنهور -  البحيره";
   });
   const [companyEmail, setCompanyEmail] = useState(() => {
-    return savedLetter?.companyEmail || currentCompany?.email || "goldengolden8818@gmail.com";
+    if (savedLetter?.companyOtherDetails) return savedLetter.companyOtherDetails;
+    if (savedLetter?.companyEmail) return savedLetter.companyEmail;
+    if (currentCompany?.email) return currentCompany.email;
+    const isEx = isExellentCompany(currentCompanyLink || currentCompany || op);
+    return isEx ? "exellentservice@gmail.com" : "goldengolden8818@gmail.com";
+  });
+  const [companyOtherDetails, setCompanyOtherDetails] = useState(() => {
+    if (savedLetter?.companyOtherDetails) return savedLetter.companyOtherDetails;
+    if (savedLetter?.companyEmail) return savedLetter.companyEmail;
+    if (currentCompany?.email) return currentCompany.email;
+    const isEx = isExellentCompany(currentCompanyLink || currentCompany || op);
+    return isEx ? "exellentservice@gmail.com" : "goldengolden8818@gmail.com";
   });
   const [outgoingDate, setOutgoingDate] = useState(() => {
     return savedLetter?.outgoingDate || new Date().toLocaleDateString("en-GB");
@@ -241,9 +262,25 @@ export function TabGeneralLetter({
   // ━━━ 4. الرابط السحابي ورمز QR ━━━
   const [cloudPdfUrl, setCloudPdfUrl] = useState<string>(() => {
     const url = savedLetter?.cloudPdfUrl || "";
+    if (url && (url.includes("/official_docs/67656e6572") || url.includes("/official_docs/626f6f6b6c"))) {
+      return "";
+    }
     return isValidCloudDocUrl(url) ? url : "";
   });
   const [uploadingCloud, setUploadingCloud] = useState(false);
+
+  // إدارة صلاحيات واعتماد الطباعة والتنزيل
+  const {
+    currentUserRole,
+    isApproved,
+    isApprovalPending,
+    requestApproval,
+  } = useLetterApproval({
+    registrationNumber,
+    letterTitle: "الخطاب الرسمي العام الموجه لجهة الإسناد",
+    op,
+    companyCode: currentCompanyLink?.displayCode,
+  });
 
   // Modals & Document state
   const [previewModalOpen, setPreviewModalOpen] = useState(false);
@@ -268,6 +305,7 @@ export function TabGeneralLetter({
       phoneMobile,
       companyAddress,
       companyEmail,
+      companyOtherDetails,
       outgoingDate,
       recipientPrefix,
       recipientTitleAndAuthority,
@@ -292,6 +330,7 @@ export function TabGeneralLetter({
     phoneMobile,
     companyAddress,
     companyEmail,
+    companyOtherDetails,
     outgoingDate,
     recipientPrefix,
     recipientTitleAndAuthority,
@@ -334,6 +373,7 @@ export function TabGeneralLetter({
       setPhoneMobile(snap.phoneMobile);
       setCompanyAddress(snap.companyAddress);
       setCompanyEmail(snap.companyEmail);
+      setCompanyOtherDetails(snap.companyOtherDetails || "");
       setOutgoingDate(snap.outgoingDate);
       setRecipientPrefix(snap.recipientPrefix);
       setRecipientTitleAndAuthority(snap.recipientTitleAndAuthority);
@@ -367,13 +407,56 @@ export function TabGeneralLetter({
 
   // ━━━ محرك استبدال المتغيرات في قالب الخطاب العام (general_letter_template.docx) ━━━
   const generateGeneralLetterDocxBlob = async (): Promise<Blob> => {
-    const response = await fetch("/templates/general_letter_template.docx");
-    if (!response.ok) throw new Error("فشل قراءة قالب الخطاب العام من الخادم");
-    const templateBuffer = await response.arrayBuffer();
+    // ━━━ المسار المخصص المستقل لشركة إكسلنت (B) ━━━
+    const isB = isExellentCompany(currentCompanyLink || currentCompany || op);
+    if (isB) {
+      let qrBinary: Uint8Array | null = null;
+      try {
+        const filename = `general_letter_${registrationNumber || op.serialNumber || "doc"}.pdf`;
+        const docTitle = generalSubject || "الخطاب الرسمي الموجه لجهة الإسناد";
+        const qrPayload = await getStandardDocQrPayload(
+          cloudPdfUrl,
+          registrationNumber,
+          docTitle,
+          currentCompany?.name || "إكسلنت سرفيس",
+          filename
+        );
+        qrBinary = await generateHighResDocQrBuffer(qrPayload);
+      } catch (e) {
+        console.warn("QR generation failed for Exellent general letter:", e);
+      }
+
+      return await generateExellentGeneralLetterDocx({
+        recipientPrefix,
+        recipientTitleAndAuthority,
+        letterSubject: generalSubject,
+        letterBody: generalLetterBody,
+        additionalNotes: additionalNotes || "",
+        specialistTitle,
+        specialistName,
+        financeManagerName,
+        boardChairman,
+        companyCommercialRegister,
+        companyTaxCard,
+        companyOpCode,
+        outgoingDate,
+        registrationNumber,
+        companyAddress,
+        phoneWhatsapp,
+        phoneMobile,
+        companyEmail: companyEmail || currentCompany?.email || (isB ? "exellentservice@gmail.com" : "goldengolden8818@gmail.com"),
+        companyOtherDetails: companyOtherDetails || "",
+        qrBinary,
+      });
+    }
+
+    // ━━━ المسار المعتمد الأصلي لشركة جولدن (A) ━━━
+    const templateBuffer = await fetchDocxTemplateArrayBuffer("general_letter_template.docx", currentCompanyLink || currentCompany || op);
 
     const zip = await JSZip.loadAsync(templateBuffer);
 
     let qrDrawingXml = "";
+    let qrBinary: Uint8Array | null = null;
     try {
       const filename = `general_letter_${registrationNumber || op.serialNumber || "doc"}.pdf`;
       const docTitle = generalSubject || "خطاب رسمي موجه للجهة";
@@ -384,7 +467,7 @@ export function TabGeneralLetter({
         currentCompany?.name || "المجموعة الذهبية",
         filename
       );
-      const qrBinary = await generateHighResDocQrBuffer(qrPayload);
+      qrBinary = await generateHighResDocQrBuffer(qrPayload);
 
       zip.file("word/media/doc_qr.png", qrBinary);
 
@@ -420,14 +503,17 @@ export function TabGeneralLetter({
     // 1. لقب وصفة المرسل إليه والجهة بتوسيط وتنسيق متوازن
     docXml = replaceDocxRecipient(docXml, recipientPrefix, recipientTitleAndAuthority);
 
-    // 2. الموضوع (استبدال الفقرة بالكامل بدقة مع التسطير والخط الأصلي)
-    const subjectPattern = /<w:p\b[^>]*>(?:(?!<\/w:p>)[\s\S])*?الموضوع بخصوص(?:(?!<\/w:p>)[\s\S])*?<\/w:p>/;
-    const subjectXml = `<w:p><w:pPr><w:tabs><w:tab w:val="left" w:pos="5387"/></w:tabs><w:spacing w:after="0"/><w:ind w:left="-567"/><w:jc w:val="both"/><w:rPr><w:rFonts w:ascii="Arabic Typesetting" w:hAnsi="Arabic Typesetting" w:cs="Arabic Typesetting"/><w:b/><w:bCs/><w:sz w:val="56"/><w:szCs w:val="56"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr></w:pPr><w:r><w:rPr><w:rFonts w:ascii="Arabic Typesetting" w:hAnsi="Arabic Typesetting" w:cs="Arabic Typesetting" w:hint="cs"/><w:b/><w:bCs/><w:sz w:val="36"/><w:szCs w:val="36"/><w:u w:val="single"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t xml:space="preserve">الموضوع بخصوص : ${escapeXml(generalSubject || "")}</w:t></w:r></w:p>`;
+    // 2. الموضوع (استبدال الفقرة بالكامل بدقة مع التسطير والخط الأصلي ومنع تكرار كلمة تمهيد أو بخصوص)
+    const cleanSubject = (generalSubject || "")
+      .replace(/^(?:تمهيد\s*:?\s*)?(?:بخصوص\s*:?\s*)?/i, "")
+      .replace(/^[:\-\s]+/, "")
+      .trim();
+
+    const subjectPattern = /<w:p\b[^>]*>(?:(?!<\/w:p>)[\s\S])*?(?:تمهيد|الموضوع\s*بخصوص)(?:(?!<\/w:p>)[\s\S])*?<\/w:p>/;
+    const subjectPrefix = docXml.includes("الموضوع بخصوص") ? "الموضوع بخصوص :" : "تمهيد :";
+    const subjectXml = `<w:p><w:pPr><w:tabs><w:tab w:val="left" w:pos="5387"/></w:tabs><w:spacing w:after="0"/><w:ind w:left="-567"/><w:jc w:val="both"/><w:rPr><w:rFonts w:ascii="Arabic Typesetting" w:hAnsi="Arabic Typesetting" w:cs="Arabic Typesetting"/><w:b/><w:bCs/><w:sz w:val="56"/><w:szCs w:val="56"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr></w:pPr><w:r><w:rPr><w:rFonts w:ascii="Arabic Typesetting" w:hAnsi="Arabic Typesetting" w:cs="Arabic Typesetting" w:hint="cs"/><w:b/><w:bCs/><w:sz w:val="36"/><w:szCs w:val="36"/><w:u w:val="single"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t xml:space="preserve">${subjectPrefix} ${escapeXml(cleanSubject || "بشأن العمليات الرسمية")}</w:t></w:r></w:p>`;
     if (subjectPattern.test(docXml)) {
       docXml = docXml.replace(subjectPattern, subjectXml);
-    } else {
-      docXml = docXml.replace(/الموضوع بخصوص\s*:\s*\.{3,}/g, `الموضوع بخصوص : ${escapeXml(generalSubject)}`);
-      docXml = docXml.replace(/\.{3,}/g, escapeXml(generalSubject));
     }
 
     // محاذاة سطر (تحيه طيبه وبعد) في وسط السطر تماماً بدون أي مسافات بادئة أو انحياز جانبي
@@ -453,73 +539,37 @@ export function TabGeneralLetter({
       docXml = docXml.replace(closingPattern, closingXml);
     }
 
-    // 4. جدول التوقيعات والاعتمادات الرسمية الثلاثي المتوازن في صف أفقي واحد (بدون أي التفاف Wrap)
-    const fullSigBlockRegex = /<w:p\b[^>]*>(?:(?!<w:p\b)[\s\S])*?المختص[\s\S]*?رئيس مجلس\s*ا?ل?ادارة(?:(?!<\/w:p>)[\s\S])*?<\/w:p>/;
-    if (fullSigBlockRegex.test(docXml)) {
-      const sigTableXml = buildOfficialSignaturesTableXml({
-        specialistTitle: specialistTitle || "المختص :",
-        specialistName: specialistName || " ",
-        financeManagerName: financeManagerName || " ",
-        boardChairman: boardChairman || "رئيس مجلس الإدارة",
-      });
-      docXml = docXml.replace(fullSigBlockRegex, sigTableXml);
-    } else {
-      docXml = docXml.replace(/المختص\s*:/g, escapeXml(specialistTitle || "المختص :"));
-      docXml = docXml.replace(/أحمد محمد/g, escapeXml(specialistName || " "));
-      docXml = docXml.replace(/أو اسم/g, escapeXml(financeManagerName || " "));
-      docXml = docXml.replace(/رئيس مجلس الادارة/g, escapeXml(boardChairman || "رئيس مجلس الإدارة"));
-    }
+    // 4. جدول التوقيعات والاعتمادات الرسمية الثلاثي المتوازن لكلا الشركتين
+    docXml = replaceDocxSignatures(docXml, {
+      specialistTitle: specialistTitle || "المختص :",
+      specialistName: specialistName || " ",
+      financeManagerTitle: "المدير العام",
+      financeManagerName: financeManagerName || " ",
+      chairmanTitle: "يعتمد ،،،،،،",
+      chairmanName: boardChairman || "رئيس مجلس الإدارة",
+    });
 
-    // 5. استبدال أو إزالة خانة الملاحظات الإضافية
-    if (additionalNotes && additionalNotes.trim()) {
-      const notesXml = `<w:p><w:pPr><w:spacing w:before="120" w:after="60" w:line="240" w:lineRule="auto"/><w:jc w:val="right"/><w:rPr><w:rFonts w:ascii="Arabic Typesetting" w:hAnsi="Arabic Typesetting" w:cs="Arabic Typesetting"/><w:sz w:val="28"/><w:szCs w:val="28"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr></w:pPr><w:r><w:rPr><w:rFonts w:ascii="Arabic Typesetting" w:hAnsi="Arabic Typesetting" w:cs="Arabic Typesetting" w:hint="cs"/><w:b/><w:bCs/><w:sz w:val="28"/><w:szCs w:val="28"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t xml:space="preserve">ملاحظات: ${escapeXml(additionalNotes.trim())}</w:t></w:r></w:p>`;
-      docXml = docXml.replace(/<w:p\b[^>]*>(?:(?!<\/w:p>)[\s\S])*?خانه خاليه للملاحظات(?:(?!<\/w:p>)[\s\S])*?<\/w:p>/gi, notesXml);
-    } else {
-      docXml = docXml.replace(/<w:p\b[^>]*>(?:(?!<\/w:p>)[\s\S])*?خانه خاليه للملاحظات(?:(?!<\/w:p>)[\s\S])*?<\/w:p>/gi, "");
-    }
+    // 5. استبدال أو إزالة خانة الملاحظات الإضافية (حذف تام عند الفراغ لمنع ظهور نقاط وهمية)
+    docXml = replaceDocxAdditionalNotes(docXml, additionalNotes);
 
     // تنظيف الفقرات الفارغة المتتالية بأسفل المستند لضمان بقائه في صفحة واحدة رسمية كاملة
     docXml = docXml.replace(/(?:<w:p\b[^>]*>(?:<w:pPr>[\s\S]*?<\/w:pPr>)?(?:\s*|<w:r[^>]*>\s*<\/w:r>|<w:r[^>]*><w:t[^>]*>\s*<\/w:t><\/w:r>)*<\/w:p>\s*){3,}(?=<\/w:body>)/gi, "");
 
     zip.file("word/document.xml", docXml);
 
-    // 2. ترويسة الصفحة (word/header2.xml)
-    let hdrXml = await zip.file("word/header2.xml")?.async("text");
-    if (hdrXml) {
-      hdrXml = hdrXml.replace(/110200700036620/g, escapeXml(companyCommercialRegister));
-      hdrXml = hdrXml.replace(/658369652/g, escapeXml(companyTaxCard));
-      hdrXml = hdrXml.replace(/\(\s*كود العملية بالشركه\s*\)/g, `( ${escapeXml(companyOpCode)} )`);
-      hdrXml = hdrXml.replace(/كود العملية بالشركه/g, escapeXml(companyOpCode));
-      hdrXml = hdrXml.replace(/<w:highlight\b[^>]*\/>/gi, "");
-      hdrXml = hdrXml.replace(/<w:color\b[^>]*w:val="(?:red|FF0000|ff0000)"[^>]*\/>/gi, "");
-      hdrXml = hdrXml.replace(/<w:color\b[^>]*w:val="red"[^>]*\/>/gi, "");
-      zip.file("word/header2.xml", hdrXml);
-    }
-
-    // 3. تذييل الصفحة (word/footer1.xml)
-    let ftrXml = await zip.file("word/footer1.xml")?.async("text");
-    if (ftrXml) {
-      ftrXml = ftrXml.replace(/15\/10\/2026/g, escapeXml(outgoingDate));
-      if (ftrXml.includes("رقم القيد")) {
-        ftrXml = ftrXml.replace(/رقم القيد/g, `رقم القيد : ${escapeXml(registrationNumber)}`);
-      }
-      ftrXml = ftrXml.replace(/\(\s*باركود المستند أو العمليه/g, `رقم القيد : ${escapeXml(registrationNumber)}`);
-      ftrXml = ftrXml.replace(/01091708818/g, escapeXml(phoneWhatsapp));
-      ftrXml = ftrXml.replace(/01557018818/g, escapeXml(phoneMobile));
-      // استبدال العنوان عبر كافة الوسوم المتقطعة بدقة
-      const addrRegex = /<w:r\b[^>]*>(?:(?!<\/w:r>)[\s\S])*?<w:t[^>]*>[^<]*بجوار\s*مستشفى[\s\S]*?<w:t[^>]*>[^<]*يره<\/w:t>[\s\S]*?<\/w:r>/;
-      if (addrRegex.test(ftrXml)) {
-        ftrXml = ftrXml.replace(addrRegex, `<w:r><w:rPr><w:rFonts w:ascii="Times New Roman" w:eastAsia="Franklin Gothic Medium" w:hAnsi="Times New Roman" w:cs="Times New Roman" w:hint="cs"/><w:b/><w:bCs/><w:i/><w:iCs/><w:sz w:val="20"/><w:szCs w:val="20"/><w:rtl/></w:rPr><w:t>${escapeXml(companyAddress)}</w:t></w:r>`);
-      } else {
-        ftrXml = ftrXml.replace(/بجوار مستشفى ليدى كير\s*-\s*بدمنهور\s*-\s*البح\s*يره/g, escapeXml(companyAddress));
-        ftrXml = ftrXml.replace(/بجوار مستشفى ليدى كير\s*-\s*بدمنهور\s*-\s*البحيره/g, escapeXml(companyAddress));
-      }
-      ftrXml = ftrXml.replace(/goldengolden8818@gmail.com/g, escapeXml(companyEmail));
-      ftrXml = ftrXml.replace(/<w:highlight\b[^>]*\/>/gi, "");
-      ftrXml = ftrXml.replace(/<w:color\b[^>]*w:val="(?:red|FF0000|ff0000)"[^>]*\/>/gi, "");
-      ftrXml = ftrXml.replace(/<w:color\b[^>]*w:val="red"[^>]*\/>/gi, "");
-      zip.file("word/footer1.xml", ftrXml);
-    }
+    // 2. ترويسات وتذييلات الصفحة (للشركتين جولدن وإكسلنت وحقن الباركود في الهيدر)
+    await replaceDocxStandardHeaderFooter(zip, {
+      companyCommercialRegister,
+      companyTaxCard,
+      companyOpCode,
+      outgoingDate,
+      registrationNumber,
+      companyAddress,
+      phoneWhatsapp,
+      phoneMobile,
+      companyEmail,
+      qrBinary,
+    });
 
     await cleanAllDocxXml(zip);
 
@@ -588,7 +638,7 @@ export function TabGeneralLetter({
       }
 
       // رفع سحابي صامت في الخلفية لضمان توفر ملف الـ PDF فوراً على Cloudflare R2 عند مسح الـ QR بكاميرا الهاتف
-      if (!cloudPdfUrl) {
+      if (!cloudPdfUrl || isCloudOutOfSync || forceRefresh) {
         setTimeout(async () => {
           try {
             const filename = `general_letter_${registrationNumber || op.serialNumber || "doc"}.pdf`;
@@ -722,7 +772,7 @@ export function TabGeneralLetter({
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `خطاب_عام_${registrationNumber || op.name}.docx`;
+      a.download = `${isEx ? "خطاب عام سيستم اكسلانت" : "خطاب_عام"}_${registrationNumber || op.name}.docx`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
@@ -740,6 +790,13 @@ export function TabGeneralLetter({
     setDownloadingPdf(true);
     try {
       const blob = await generateGeneralLetterPdfBlob();
+      const dlFilename = `general_letter_${registrationNumber || op.serialNumber || "doc"}.pdf`;
+      uploadPdfToFreeCloud(blob, dlFilename).then(uploadRes => {
+        if (uploadRes?.url) {
+          setCloudPdfUrl(uploadRes.url);
+          setLastUploadedSnapshot(currentSnapshot);
+        }
+      }).catch(e => console.warn("Background upload error on download:", e));
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
@@ -799,7 +856,7 @@ export function TabGeneralLetter({
         registrationNumber,
       });
 
-      toast.success(`تمت إضافة المستند للأرشيف بنجاح (${versionName})! 📦✨`);
+      toast.success(`تم حفظ وأرشفة المستند بنجاح في أرشيف العملية (تخزين Hostinger المحلي) (${versionName})! 📦🔒`);
       onRefresh();
     } catch (err: any) {
       toast.error("فشل حفظ المستند في الأرشيف: " + (err?.message || ""));
@@ -813,6 +870,20 @@ export function TabGeneralLetter({
     setPrintingDocx(true);
     try {
       const pdf = await generateGeneralLetterPdfBlob();
+      const printFilename = `general_letter_${registrationNumber || op.serialNumber || "doc"}.pdf`;
+      uploadPdfToFreeCloud(pdf, printFilename).then(uploadRes => {
+        if (uploadRes?.url) {
+          setCloudPdfUrl(uploadRes.url);
+          setLastUploadedSnapshot(currentSnapshot);
+          let notesObj: any = {};
+          if (op.notes && op.notes.startsWith("{")) {
+            try { notesObj = JSON.parse(op.notes); } catch {}
+          }
+          if (!notesObj.generalLetterDocx) notesObj.generalLetterDocx = {};
+          notesObj.generalLetterDocx.cloudPdfUrl = uploadRes.url;
+          api.patch(`/operations/${op.id}`, { notes: JSON.stringify(notesObj) }).catch(() => {});
+        }
+      }).catch(e => console.warn("Background upload error on print:", e));
       const url = URL.createObjectURL(pdf);
 
       const printWindow = window.open(url, "_blank");
@@ -927,6 +998,9 @@ export function TabGeneralLetter({
                     }
                     if (matched.company?.email) {
                       setCompanyEmail(matched.company.email);
+                    } else {
+                      const isEx = isExellentCompany(matched);
+                      setCompanyEmail(isEx ? "exellentservice@gmail.com" : "goldengolden8818@gmail.com");
                     }
                     setCompanyOpCode(matched.displayCode || `AZ-0${op.serialNumber || 1}`);
                   }
@@ -1008,9 +1082,9 @@ export function TabGeneralLetter({
             </div>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
             <div className="space-y-1.5">
-              <Label className="text-xs font-bold text-foreground">واتساب الشركة (Footer)</Label>
+              <Label className="text-xs font-bold text-foreground">واتساب / هاتف الشركة (Footer)</Label>
               <Input
                 value={phoneWhatsapp}
                 onChange={(e) => setPhoneWhatsapp(e.target.value)}
@@ -1025,14 +1099,27 @@ export function TabGeneralLetter({
                 className="h-9.5 text-xs font-mono rounded-xl"
               />
             </div>
-            <div className="space-y-1.5">
-              <Label className="text-xs font-bold text-foreground">العنوان بالتذييل (Footer)</Label>
+                        <div className="space-y-1.5 sm:col-span-2">
+              <Label className="text-xs font-bold text-foreground">البريد الإلكتروني / تفاصيل أخرى بالتذييل (Footer)</Label>
               <Input
-                value={companyAddress}
-                onChange={(e) => setCompanyAddress(e.target.value)}
+                value={companyEmail}
+                onChange={(e) => {
+                  setCompanyEmail(e.target.value);
+                  setCompanyOtherDetails(e.target.value);
+                }}
+                placeholder="exellentservice@gmail.com أو تفاصيل أخرى..."
                 className="h-9.5 text-xs rounded-xl"
               />
             </div>
+          </div>
+
+          <div className="space-y-1.5">
+            <Label className="text-xs font-bold text-foreground">العنوان بالتذييل (Footer)</Label>
+            <Input
+              value={companyAddress}
+              onChange={(e) => setCompanyAddress(e.target.value)}
+              className="h-9.5 text-xs rounded-xl"
+            />
           </div>
         </div>
       </SectionCard>
@@ -1286,7 +1373,7 @@ export function TabGeneralLetter({
                   </div>
                   <div>
                     <h3 className="font-extrabold text-sm sm:text-base text-foreground">
-                      معاينة الخطاب العام الرسمي المعتمد (Word & PDF)
+                      معاينة قالب الوورد المعتمد: {isEx ? "خطاب عام سيستم اكسلانت.docx" : "خطاب عام رسمي.docx"}
                     </h3>
                     <p className="text-xs text-muted-foreground font-mono">
                       رقم القيد: {registrationNumber} • {generalSubject}
@@ -1348,10 +1435,14 @@ export function TabGeneralLetter({
                   </div>
                 ) : (
                   <OnlyOfficeDocViewer
-                    documentTitle={`خطاب_عام_${registrationNumber || op.name}.docx`}
+                    documentTitle={`${isEx ? "خطاب عام سيستم اكسلانت" : "خطاب_عام"}_${registrationNumber || op.name}.docx`}
                     docxBlob={previewDocxBlob}
                     pdfBlob={previewPdfBlob}
                     pdfUrl={previewPdfUrl}
+                    userRole={currentUserRole}
+                    isApproved={isApproved}
+                    isApprovalPending={isApprovalPending}
+                    onRequestApproval={requestApproval}
                     onDownloadDocx={handleDownloadDocx}
                     onDownloadPdf={handleDownloadPdf}
                     onPrint={handlePrintWordDocument}

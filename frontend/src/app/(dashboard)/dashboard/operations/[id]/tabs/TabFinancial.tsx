@@ -55,6 +55,7 @@ import JSZip from "jszip";
 import QRCode from "qrcode";
 import { getPdfBlobFromDocx, uploadPdfToFreeCloud, getExpectedCloudPdfUrl } from "./client-pdf";
 import { OnlyOfficeDocViewer } from "@/components/OnlyOfficeDocViewer";
+import { SmartArabicDatePicker } from "@/components/ui/arabic-date-picker";
 
 // ━━━ تعريف بيانات بنود وبدائل العرض المالي ━━━
 export interface FinancialVariant {
@@ -408,55 +409,87 @@ export function TabFinancial({
     if (savedFin?.items && savedFin.items.length > 0) {
       return savedFin.items;
     }
+
+    let notesObj: any = {};
+    if (op.notes && op.notes.startsWith("{")) {
+      try { notesObj = JSON.parse(op.notes); } catch {}
+    }
+
+    // 1. استيراد من دراسة السوق المعتمدة للعملية
+    const mQuotes = notesObj.marketQuotes || [];
+    if (Array.isArray(mQuotes) && mQuotes.length > 0) {
+      return mQuotes.map((mq: any, idx: number) => {
+        const costPrice = Number(mq.unitPrice) || 0;
+        const supplyPrice = Math.round(costPrice * 1.25);
+        const qty = Number(mq.quantity) || 1;
+        return {
+          id: `item-${idx + 1}`,
+          itemNumber: idx + 1,
+          itemName: mq.itemName || `صنف #${idx + 1}`,
+          unit: mq.unit || "عدد",
+          quantity: String(qty),
+          variants: [
+            {
+              id: `v-${idx + 1}-1`,
+              variantType: "basic" as const,
+              variantLabel: "أساسى",
+              description: mq.specsMatch || mq.notes || "مطابق للمواصفات الفنية المعتمدة",
+              subDescription: "",
+              branch1: "",
+              unitPrice: supplyPrice,
+              totalPrice: supplyPrice * qty,
+              notes: mq.notes || "",
+            },
+          ],
+        };
+      });
+    }
+
+    // 2. استيراد من العرض الفني المسجل للعملية
+    const tItems = notesObj.technicalOfferDocx?.items || [];
+    if (Array.isArray(tItems) && tItems.length > 0) {
+      return tItems.map((ti: any, idx: number) => {
+        const qty = Number(ti.quantity) || 1;
+        return {
+          id: `item-${idx + 1}`,
+          itemNumber: idx + 1,
+          itemName: ti.itemName || `صنف #${idx + 1}`,
+          unit: ti.unit || "عدد",
+          quantity: String(qty),
+          variants: (ti.variants || []).map((tv: any, vIdx: number) => ({
+            id: `v-${idx + 1}-${vIdx + 1}`,
+            variantType: tv.variantType || "basic",
+            variantLabel: tv.variantLabel || "أساسى",
+            description: tv.description || "",
+            subDescription: tv.subDescription || "",
+            branch1: tv.branch1 || "",
+            unitPrice: 0,
+            totalPrice: 0,
+            notes: tv.notes || "",
+          })),
+        };
+      });
+    }
+
+    // 3. البند الافتراضي من مسمى العملية الفعلي المسجل
     return [
       {
         id: "item-1",
         itemNumber: 1,
-        itemName: "إطار كاوتش مقاس 1200 / 20 سلك",
-        unit: "عدد",
-        quantity: "24",
+        itemName: op.name || "أصناف ومهمات العملية",
+        unit: "دفعة",
+        quantity: "1",
         variants: [
           {
             id: "v-1-1",
-            variantType: "basic",
+            variantType: "basic" as const,
             variantLabel: "أساسى",
-            description: "إطارات ماركة ميشلان فرنسي إنتاج 2026",
-            subDescription: "حمولة 18PR سرعة K",
-            branch1: "نقشة شجري",
-            unitPrice: 12500,
-            totalPrice: 300000,
-            notes: "شامل البلف والشريط والشنبر",
-          },
-          {
-            id: "v-1-2",
-            variantType: "alternative",
-            variantLabel: "بديل 1",
-            description: "إطارات ماركة بريدجستون ياباني إنتاج 2026",
-            subDescription: "حمولة 18PR سرعة L",
-            branch1: "نقشة خطوط طولية",
-            unitPrice: 11800,
-            totalPrice: 283200,
-            notes: "بديل 1 معتمد ومطابق",
-          },
-        ],
-      },
-      {
-        id: "item-2",
-        itemNumber: 2,
-        itemName: "بطارية جافة 70 أمبير",
-        unit: "عدد",
-        quantity: "10",
-        variants: [
-          {
-            id: "v-2-1",
-            variantType: "basic",
-            variantLabel: "أساسى",
-            description: "بطارية فارتا ألماني 70 أمبير قطب شمالي",
-            subDescription: "جهد 12 فولت تيار بدء 640A",
-            branch1: "صيانة مجانية",
-            unitPrice: 3500,
-            totalPrice: 35000,
-            notes: "ضمان 18 شهر ضد عيوب الصناعة",
+            description: "مطابق لكراسة الشروط والمواصفات الفنية المعتمدة",
+            subDescription: "",
+            branch1: "",
+            unitPrice: 0,
+            totalPrice: 0,
+            notes: "",
           },
         ],
       },
@@ -1499,7 +1532,7 @@ export function TabFinancial({
         registrationNumber,
       });
 
-      toast.success(`تمت إضافة المستند للأرشيف بنجاح (${versionName})! 📦✨`);
+      toast.success(`تم حفظ وأرشفة المستند بنجاح في أرشيف العملية (تخزين Hostinger المحلي) (${versionName})! 📦🔒`);
       onRefresh();
     } catch (err: any) {
       toast.error("فشل حفظ المستند في الأرشيف: " + (err?.message || ""));
@@ -1672,10 +1705,9 @@ export function TabFinancial({
 
             <div className="space-y-1">
               <Label className="text-[11px] font-bold">تاريخ إصدار العرض المالي *</Label>
-              <Input
+              <SmartArabicDatePicker
                 value={issueDate}
-                onChange={(e) => setIssueDate(e.target.value)}
-                placeholder="DD/MM/YYYY"
+                onChange={setIssueDate}
                 className="h-9 text-xs font-mono"
               />
             </div>
@@ -1771,10 +1803,9 @@ export function TabFinancial({
                   <span>تحديث</span>
                 </button>
               </div>
-              <Input
+              <SmartArabicDatePicker
                 value={financialOpeningDate}
-                onChange={(e) => setFinancialOpeningDate(e.target.value)}
-                placeholder="24/10/2026"
+                onChange={setFinancialOpeningDate}
                 className="h-9 text-xs font-mono text-center font-bold"
               />
             </div>

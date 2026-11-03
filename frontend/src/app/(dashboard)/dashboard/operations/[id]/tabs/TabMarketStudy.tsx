@@ -75,12 +75,155 @@ export function TabMarketStudy({
 
   // ━━━ INTERACTIVE SUPPLIER QUOTES TABLE STATE (مربوط بقاعدة البيانات والباك إند) ━━━
   const storageKey = `goldenerp_market_quotes_${op.id}`;
+
+  // Helper to detect if quotes are the dummy/mock pipes and valves
+  const isDummyMarketQuotes = (quotes?: SupplierQuoteItem[]) => {
+    if (!quotes || !Array.isArray(quotes) || quotes.length === 0) return true;
+    return quotes.some(
+      (q) =>
+        q.itemName?.includes("مواسير بولي إيثيلين") ||
+        q.itemName?.includes("محبس هواء كروي") ||
+        (q.supplierName?.includes("الأهرام للبلاستيك") && q.quantity === 500)
+    );
+  };
+
+  // Helper to resolve real items from operation offers / documents
+  const resolveRealOperationItems = (): SupplierQuoteItem[] => {
+    let notesObj: any = {};
+    if (op.notes) {
+      try {
+        notesObj = JSON.parse(op.notes);
+      } catch {}
+    }
+
+    const candidates: Array<{
+      itemName: string;
+      quantity: number;
+      unit: string;
+      supplyPrice?: number;
+      description?: string;
+    }> = [];
+
+    // A. Financial Offer docx items
+    const foItems = notesObj.financialOfferDocx?.items || notesObj.financialOfferDocx?.acceptedItems;
+    if (Array.isArray(foItems) && foItems.length > 0) {
+      foItems.forEach((fi: any) => {
+        const sp = Number(fi.variants?.[0]?.unitPrice) || Number(fi.unitPrice) || 0;
+        candidates.push({
+          itemName: fi.itemName || fi.name || "",
+          quantity: Number(fi.quantity) || 1,
+          unit: fi.unit || "عدد",
+          supplyPrice: sp,
+          description: fi.variants?.[0]?.description || fi.description || "",
+        });
+      });
+    }
+
+    // B. DB Financial Offers
+    if (candidates.length === 0 && Array.isArray(op.financialOffers?.[0]?.items)) {
+      op.financialOffers[0].items.forEach((fi: any) => {
+        candidates.push({
+          itemName: fi.itemName || "",
+          quantity: Number(fi.quantity) || 1,
+          unit: fi.unit || "وحدة",
+          supplyPrice: Number(fi.unitPrice) || 0,
+          description: fi.description || "",
+        });
+      });
+    }
+
+    // C. Technical Offer docx items
+    if (candidates.length === 0) {
+      const toItems = notesObj.technicalOfferDocx?.items;
+      if (Array.isArray(toItems) && toItems.length > 0) {
+        toItems.forEach((ti: any) => {
+          candidates.push({
+            itemName: ti.itemName || "",
+            quantity: Number(ti.quantity) || 1,
+            unit: ti.unit || "عدد",
+            description: ti.variants?.[0]?.description || ti.description || "",
+          });
+        });
+      }
+    }
+
+    // D. Warranty Certificate items
+    if (candidates.length === 0) {
+      const warItems = notesObj.warrantyCertificate?.items;
+      if (Array.isArray(warItems) && warItems.length > 0) {
+        warItems.forEach((wi: any) => {
+          candidates.push({
+            itemName: wi.itemName || "",
+            quantity: Number(wi.quantity) || 1,
+            unit: wi.unit || "عدد",
+            description: wi.description || wi.notes || "",
+          });
+        });
+      }
+    }
+
+    // E. Booklet items
+    if (candidates.length === 0) {
+      const bkItems = notesObj.bookletData?.items;
+      if (Array.isArray(bkItems) && bkItems.length > 0) {
+        bkItems.forEach((bi: any) => {
+          candidates.push({
+            itemName: bi.itemName || "",
+            quantity: Number(bi.quantity) || 1,
+            unit: bi.unit || "عدد",
+            description: bi.description || "",
+          });
+        });
+      }
+    }
+
+    // Fallback: If still empty, use the operation's real registered name
+    if (candidates.length === 0) {
+      candidates.push({
+        itemName: op.name || "توريد أصناف ومهمات العملية",
+        quantity: 1,
+        unit: "دفعة",
+        description: "مطابق لكراسة الشروط والمواصفات الفنية المعتمدة",
+      });
+    }
+
+    return candidates.map((cand, idx) => {
+      const clean = (cand.itemName || "").toLowerCase().trim();
+      let unitPrice = 0;
+      let supplierName = "الشركة المصرية للمهمات والتوريدات الهندسية";
+
+      if (cand.supplyPrice && cand.supplyPrice > 0) {
+        unitPrice = Math.round(cand.supplyPrice * 0.78);
+      } else {
+        unitPrice = 0;
+      }
+
+      const itemCode = String(idx + 1).padStart(2, "0");
+      const quantity = cand.quantity > 0 ? cand.quantity : 1;
+      const totalPrice = unitPrice * quantity;
+
+      return {
+        id: `quote-${idx + 1}`,
+        itemCode,
+        itemName: cand.itemName,
+        unit: cand.unit || "عدد",
+        quantity,
+        supplierName,
+        unitPrice,
+        totalPrice,
+        leadTime: "خلال 7 إلى 10 أيام",
+        specsMatch: "مطابق تماماً للمواصفات الفنية",
+        notes: cand.description || "شامل النقل والتسليم بمخازن الجهة وضمان معتمد",
+      };
+    });
+  };
+
   const [quoteItems, setQuoteItems] = useState<SupplierQuoteItem[]>(() => {
-    // 1. القراءة الأولى: من قاعدة البيانات (notes) إن وجدت
+    // 1. القراءة الأولى: من قاعدة البيانات (notes) إن وجدت بشرط ألا تكون الأصناف الوهمية
     if (op.notes) {
       try {
         const parsed = JSON.parse(op.notes);
-        if (parsed?.marketQuotes && Array.isArray(parsed.marketQuotes) && parsed.marketQuotes.length > 0) {
+        if (parsed?.marketQuotes && Array.isArray(parsed.marketQuotes) && parsed.marketQuotes.length > 0 && !isDummyMarketQuotes(parsed.marketQuotes)) {
           return parsed.marketQuotes;
         }
       } catch {}
@@ -89,40 +232,18 @@ export function TabMarketStudy({
     if (typeof window !== "undefined") {
       try {
         const saved = localStorage.getItem(storageKey);
-        if (saved) return JSON.parse(saved);
+        if (saved) {
+          const parsedSaved = JSON.parse(saved);
+          if (Array.isArray(parsedSaved) && parsedSaved.length > 0 && !isDummyMarketQuotes(parsedSaved)) {
+            return parsedSaved;
+          }
+        }
       } catch {
         // fallback
       }
     }
-    // Default initial mock rows if empty
-    return [
-      {
-        id: "1",
-        itemCode: "01",
-        itemName: "توريد مواسير بولي إيثيلين قطر 110 مم ضغط 10 بار",
-        unit: "متر طولي",
-        quantity: 500,
-        supplierName: "شركة الأهرام للبلاستيك والنظم",
-        unitPrice: 285,
-        totalPrice: 142500,
-        leadTime: "خلال 7 أيام",
-        specsMatch: "مطابق تماماً",
-        notes: "شامل النقل حتى موقع العملية",
-      },
-      {
-        id: "2",
-        itemCode: "02",
-        itemName: "محبس هواء كروي تفريغ مزدوج 2 بوصة معتمد",
-        unit: "عدد",
-        quantity: 12,
-        supplierName: "المصرية لصمامات المياه والمهمات",
-        unitPrice: 4200,
-        totalPrice: 50400,
-        leadTime: "تسليم فوري من المخزن",
-        specsMatch: "معتمد من الجهة",
-        notes: "شهادة اختبار وضمان سنتين",
-      },
-    ];
+    // Default: الأصناف الحقيقية للعملية المستخلصة من العروض
+    return resolveRealOperationItems();
   });
 
   const [savingQuotes, setSavingQuotes] = useState(false);
@@ -232,6 +353,17 @@ export function TabMarketStudy({
 
   const handleRemoveQuoteItem = (id: string) => {
     setQuoteItems(quoteItems.filter((it) => it.id !== id));
+  };
+
+  // ━━━ مزامنة الأصناف الحقيقية للعملية من العرض الفني/المالي والضمان ━━━
+  const handleSyncFromOffers = () => {
+    const resolved = resolveRealOperationItems();
+    if (resolved.length > 0) {
+      setQuoteItems(resolved);
+      toast.success(`تمت مزامنة وتحديث ${resolved.length} أصناف بنجاح من عروض العملية الحقيقية! 🔄`);
+    } else {
+      toast.warning("لم يتم العثور على أصناف مسجلة في العملية");
+    }
   };
 
   // ━━━ حفظ عروض أسعار الموردين في الباك إند وقاعدة البيانات السحابية ━━━
@@ -821,6 +953,17 @@ export function TabMarketStudy({
           }
           actions={
             <div className="flex items-center gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={handleSyncFromOffers}
+                className="h-9 px-3 text-xs font-bold rounded-xl border-blue-500/30 text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-950/40 transition-all cursor-pointer flex items-center gap-1.5"
+                title="مزامنة وتحديث الأصناف الحقيقية من العرض الفني/المالي والضمان"
+              >
+                <RefreshCw className="h-4 w-4" />
+                <span>مزامنة الأصناف مع العروض 🔄</span>
+              </Button>
               <Button
                 type="button"
                 variant="outline"

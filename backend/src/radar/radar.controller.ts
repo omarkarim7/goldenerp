@@ -9,7 +9,14 @@ import {
   UseGuards,
   Req,
   Res,
+  UseInterceptors,
+  UploadedFile,
+  BadRequestException,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { diskStorage } from 'multer';
+import path from 'path';
+import fs from 'fs';
 import { RadarService } from './radar.service.js';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard.js';
 
@@ -27,7 +34,7 @@ export class RadarController {
   // 2. Trigger on-demand live radar crawl/scan
   @Post('scan')
   scan(@Body('pagesCount') pagesCount?: number) {
-    return this.service.scan(pagesCount ? Number(pagesCount) : 2);
+    return this.service.scan(pagesCount ? Number(pagesCount) : 10);
   }
 
   // Auto-scan daily config
@@ -143,7 +150,38 @@ export class RadarController {
     return this.service.deleteItem(id);
   }
 
-  // 10. Download or preview attachment document directly from government portal or synthesized official booklet
+  // 9d. Upload or replace real tender booklet document in Hostinger storage
+  @Post('items/:id/upload-booklet')
+  @UseInterceptors(
+    FileInterceptor('file', {
+      storage: diskStorage({
+        destination: (req, file, cb) => {
+          const uploadDir = path.resolve(process.cwd(), 'uploads/radar-booklets');
+          if (!fs.existsSync(uploadDir)) {
+            fs.mkdirSync(uploadDir, { recursive: true });
+          }
+          cb(null, uploadDir);
+        },
+        filename: (req, file, cb) => {
+          const unique = Date.now() + '-' + Math.round(Math.random() * 1e9);
+          const ext = path.extname(file.originalname);
+          cb(null, `booklet-${unique}${ext}`);
+        },
+      }),
+      limits: { fileSize: 60 * 1024 * 1024 }, // 60MB
+    }),
+  )
+  async uploadBooklet(
+    @Param('id') id: string,
+    @UploadedFile() file: Express.Multer.File,
+  ) {
+    if (!file) {
+      throw new BadRequestException('يرجى اختيار ملف كراسة الشروط (PDF / Word / Excel)');
+    }
+    return this.service.uploadRadarBooklet(id, file);
+  }
+
+  // 10. Download or preview attachment document directly from government portal or local storage
   @Get('download-doc')
   async downloadDoc(
     @Query('docId') docId: string,
@@ -168,7 +206,8 @@ export class RadarController {
       res.setHeader('Content-Length', file.buffer.length);
       return res.end(file.buffer);
     } catch (err: any) {
-      return res.status(500).json({ success: false, message: err.message || 'فشل تحميل كراسة الشروط أو المستند' });
+      const statusCode = err.status || (err.getStatus && typeof err.getStatus === 'function' ? err.getStatus() : 404);
+      return res.status(statusCode).json({ success: false, message: err.message || 'فشل تحميل كراسة الشروط أو المستند' });
     }
   }
 

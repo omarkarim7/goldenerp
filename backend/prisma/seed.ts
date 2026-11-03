@@ -4,7 +4,7 @@
 // =============================================================================
 
 import { PrismaClient, UserRole } from '@prisma/client';
-import * as argon2 from 'argon2';
+import bcrypt from 'bcryptjs';
 
 const prisma = new PrismaClient();
 
@@ -97,58 +97,43 @@ async function main() {
   console.log(`  ✅ ${permissions.length} صلاحية`);
 
   // =========================================================================
-  // 3. المستخدمين
+  // 3. حساب المدير العام الرسمي المعتمد للعميل
   // =========================================================================
-  console.log('\n👤 إنشاء المستخدمين...');
+  console.log('\n👤 تهيئة حساب المدير العام (Enterprise GM Account)...');
 
-  const adminPassword = await argon2.hash('admin123');
-  const deputyPassword = await argon2.hash('deputy123');
-  const employeePassword = await argon2.hash('emp123');
+  // تنظيف وحذف أي حسابات تجريبية قديمة
+  await prisma.user.deleteMany({
+    where: {
+      username: { in: ['admin', 'deputy', 'employee'] }
+    }
+  });
 
-  // المدير العام
+  const adminPassword = await bcrypt.hash('Ahd@Golden#2026!Sec', 10);
+
+  // المدير العام الرسمي الوحيد
   const admin = await prisma.user.upsert({
-    where: { username: 'admin' },
-    update: { displayPassword: 'admin123' },
-    create: {
-      username: 'admin',
-      email: 'admin@goldenerp.com',
+    where: { username: 'ahd2026' },
+    update: {
       password: adminPassword,
-      displayPassword: 'admin123',
+      displayPassword: 'Ahd@Golden#2026!Sec',
       fullName: 'المدير العام',
       role: UserRole.GENERAL_MANAGER,
+      isActive: true,
+      isLocked: false,
+      failedAttempts: 0,
     },
-  });
-  console.log(`  ✅ المدير العام (admin / admin123)`);
-
-  // النائب
-  await prisma.user.upsert({
-    where: { username: 'deputy' },
-    update: { displayPassword: 'deputy123' },
     create: {
-      username: 'deputy',
-      email: 'deputy@goldenerp.com',
-      password: deputyPassword,
-      displayPassword: 'deputy123',
-      fullName: 'نائب المدير',
-      role: UserRole.DEPUTY_MANAGER,
+      username: 'ahd2026',
+      email: 'admin@ahdahd.eu',
+      password: adminPassword,
+      displayPassword: 'Ahd@Golden#2026!Sec',
+      fullName: 'المدير العام',
+      role: UserRole.GENERAL_MANAGER,
+      isActive: true,
+      isLocked: false,
     },
   });
-  console.log(`  ✅ نائب المدير (deputy / deputy123)`);
-
-  // الموظف
-  await prisma.user.upsert({
-    where: { username: 'employee' },
-    update: { displayPassword: 'emp123' },
-    create: {
-      username: 'employee',
-      email: 'employee@goldenerp.com',
-      password: employeePassword,
-      displayPassword: 'emp123',
-      fullName: 'موظف إدخال بيانات',
-      role: UserRole.EMPLOYEE,
-    },
-  });
-  console.log(`  ✅ موظف (employee / emp123)`);
+  console.log(`  ✅ حساب المدير العام المعتمد (ahd2026)`);
 
   // Assign all permissions to admin
   const allPerms = await prisma.permission.findMany();

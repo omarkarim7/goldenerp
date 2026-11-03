@@ -33,7 +33,30 @@ export class TelegramController {
 
     return {
       success,
-      message: success ? 'تم إرسال التنبيه التجريبي إلى تليجرام بنجاح' : 'لم يتم إرسال التنبيه، تأكد من ربط الحساب أولاً',
+      message: success ? 'تم إرسال التنبيه التجريبي إلى تليجرام بنجاح' : 'لم يتم إرسال التنبيه، تأكد من تشغيل البوت وربط الشات أولاً',
+    };
+  }
+
+  @Post('trigger-proactive-alerts')
+  @UseGuards(JwtAuthGuard)
+  async triggerProactiveAlerts() {
+    return this.telegramService.triggerProactiveAlertsCheck();
+  }
+
+  @Post('trigger-morning-briefing')
+  @UseGuards(JwtAuthGuard)
+  async triggerMorningBriefing() {
+    return this.telegramService.triggerMorningBriefing();
+  }
+
+  @Post('reconnect')
+  @UseGuards(JwtAuthGuard)
+  async reconnect() {
+    await this.telegramService.initBot();
+    return {
+      success: true,
+      status: this.telegramService.getStatus(),
+      message: 'تمت إعادة تهيئة وربط بوت تليجرام بنجاح',
     };
   }
 }

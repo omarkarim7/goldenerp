@@ -12,7 +12,9 @@ interface JwtPayload {
 @Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy) {
   constructor(config: ConfigService) {
-    const secret = config.get<string>('JWT_SECRET', 'fallback-secret');
+    const secret =
+      (config.get<string>('JWT_SECRET') || '').replace(/['"]/g, '').trim() ||
+      'prod-jwt-secret-goldenerp-2026-ahdahd-eu';
     super({
       jwtFromRequest: ExtractJwt.fromExtractors([
         ExtractJwt.fromAuthHeaderAsBearerToken(),

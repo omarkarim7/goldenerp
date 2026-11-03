@@ -51,7 +51,15 @@ import {
   getStandardDocQrPayload,
   buildOfficialSignaturesTableXml,
   replaceDocxRecipient,
+  replaceDocxSignatures,
+  replaceDocxAdditionalNotes,
+  fetchDocxTemplateArrayBuffer,
+  replaceDocxStandardHeaderFooter,
 } from "./letter-utils";
+import {
+  isExellentCompany,
+  generateExellentClarificationDocx,
+} from "./exellent-letter-engine";
 import { GOLDEN_STAMP_BASE64, GOLDEN_LOGO_BASE64 } from "./stamp-assets";
 import JSZip from "jszip";
 import QRCode from "qrcode";
@@ -158,6 +166,7 @@ export function TabClarification({
   );
   const currentCompanyLink = (op.companies || []).find((c: any) => c.companyId === selectedCompanyId) || op.companies?.[0];
   const currentCompany = currentCompanyLink?.company;
+  const isEx = isExellentCompany(currentCompanyLink || currentCompany || op);
 
   // ━━━ 1. الترويسة ورقم القيد والصادر وبيانات التذييل (Header & Footer) ━━━
   const [outgoingDate, setOutgoingDate] = useState(() => {
@@ -195,10 +204,13 @@ export function TabClarification({
     savedLetter?.companyMobile || currentCompany?.phone || "01557018818"
   );
   const [companyEmail, setCompanyEmail] = useState(
-    savedLetter?.companyEmail || "goldengolden8818@gmail.com"
+    savedLetter?.companyEmail || (isExellentCompany(currentCompanyLink || currentCompany || op) ? "exellentservice@gmail.com" : "goldengolden8818@gmail.com")
   );
   const [companyAddress, setCompanyAddress] = useState(
     savedLetter?.companyAddress || currentCompany?.address || "بجوار مستشفى ليدى كير - بدمنهور - البحيره"
+  );
+  const [companyOtherDetails, setCompanyOtherDetails] = useState(
+    savedLetter?.companyOtherDetails || ""
   );
 
   // الرابط السحابي المعتمد للنسخة الرقمية (Cloudflare R2 / Gofile)
@@ -252,6 +264,15 @@ export function TabClarification({
 
   const [subjectTarget, setSubjectTarget] = useState(
     savedLetter?.subjectTarget || "للأصناف"
+  );
+  const [clarificationSubject, setClarificationSubject] = useState(
+    savedLetter?.clarificationSubject || "توضيح واستفسار للأصناف والمواعيد"
+  );
+  const [clarificationScopeText, setClarificationScopeText] = useState(
+    savedLetter?.clarificationScopeText || "التوضيح والاستفسار عن الأصناف – المواعيد – بعض البنود الفنيه والقانونيه"
+  );
+  const [clarificationResponseDemand, setClarificationResponseDemand] = useState(
+    savedLetter?.clarificationResponseDemand || "بخطاب معتمد وموافاتنا قبل الموعد المحدد لتقديم العطاءات وإصدار ملحق توضيحى وموافاتنا قبل المواعيد المحدده لفتح المظاريف الفنيه بوقت كاف والبنود والموضوعات المطلوب توضيحها"
   );
   const [operationRegisteredName, setOperationRegisteredName] = useState(
     savedLetter?.operationRegisteredName || op.name || ""
@@ -335,6 +356,7 @@ export function TabClarification({
   const [boardChairman, setBoardChairman] = useState(() => {
     return sanitizeChairmanTitle(savedLetter?.boardChairman);
   });
+  const [additionalNotes, setAdditionalNotes] = useState(() => savedLetter?.additionalNotes || "");
 
   // مسمى البند بترويسة الجدول (البند / الصنف / ...)
   const [itemHeaderLabel, setItemHeaderLabel] = useState(
@@ -368,6 +390,7 @@ export function TabClarification({
       companyWhatsapp,
       companyMobile,
       companyEmail,
+      companyOtherDetails,
       companyAddress,
       recipientPrefix,
       recipientTitleAndAuthority,
@@ -377,12 +400,16 @@ export function TabClarification({
       tenderMethod,
       operationScope,
       fiscalYear,
+      clarificationSubject,
+      clarificationScopeText,
+      clarificationResponseDemand,
       technicalOpeningDate,
       inquiryAspect,
       companyRequest,
       inquiries,
       itemHeaderLabel,
       inquiryColumnLabel,
+      additionalNotes,
       specialistTitle,
       specialistName,
       financeManagerName,
@@ -391,11 +418,11 @@ export function TabClarification({
     });
   }, [
     selectedCompanyId, registrationNumber, outgoingDate, companyCommercialRegister,
-    companyTaxCard, companyOpCode, companyWhatsapp, companyMobile, companyEmail,
+    companyTaxCard, companyOpCode, companyWhatsapp, companyMobile, companyEmail, companyOtherDetails,
     companyAddress, recipientPrefix, recipientTitleAndAuthority, subjectTarget,
     operationRegisteredName, operationNumber, tenderMethod, operationScope,
     fiscalYear, technicalOpeningDate, inquiryAspect, companyRequest, inquiries,
-    itemHeaderLabel, inquiryColumnLabel, specialistTitle, specialistName,
+    itemHeaderLabel, inquiryColumnLabel, additionalNotes, specialistTitle, specialistName,
     financeManagerName, boardChairman, cloudPdfUrl,
   ]);
 
@@ -424,6 +451,7 @@ export function TabClarification({
       setCompanyWhatsapp(snap.companyWhatsapp);
       setCompanyMobile(snap.companyMobile);
       setCompanyEmail(snap.companyEmail);
+      setCompanyOtherDetails(snap.companyOtherDetails || "");
       setCompanyAddress(snap.companyAddress);
       setRecipientPrefix(snap.recipientPrefix);
       setRecipientTitleAndAuthority(snap.recipientTitleAndAuthority);
@@ -439,6 +467,7 @@ export function TabClarification({
       setInquiries(snap.inquiries);
       setItemHeaderLabel(snap.itemHeaderLabel);
       setInquiryColumnLabel(snap.inquiryColumnLabel);
+      setAdditionalNotes(snap.additionalNotes || "");
       setSpecialistTitle(snap.specialistTitle);
       setSpecialistName(snap.specialistName);
       setFinanceManagerName(snap.financeManagerName);
@@ -516,14 +545,72 @@ export function TabClarification({
 
   // ━━━ محرك استبدال المتغيرات مباشرة في قالب الوورد الأصلي (خطاب توضيح.docx) ━━━
   const generateClarificationDocxBlob = async (): Promise<Blob> => {
-    const response = await fetch("/templates/clarification_template.docx");
-    if (!response.ok) throw new Error("فشل قراءة قالب الوورد الأصلي من الخادم");
-    const templateBuffer = await response.arrayBuffer();
+    // ━━━ المسار المخصص المستقل لشركة إكسلنت (B) ━━━
+    const isB = isExellentCompany(currentCompanyLink || currentCompany || op);
+    if (isB) {
+      let qrBinary: Uint8Array | undefined = undefined;
+      try {
+        const activeCloud = cloudPdfUrl;
+        const filename = `clarification_${registrationNumber || op.serialNumber || "doc"}.pdf`;
+        const qrPayload = await getStandardDocQrPayload(
+          activeCloud,
+          registrationNumber,
+          op.name ? `استفسارات عملية ${op.name}` : "خطاب استفسارات وتوضيحات فنية",
+          currentCompany?.name || "إكسلنت سرفيس",
+          filename
+        );
+        qrBinary = await generateHighResDocQrBuffer(qrPayload);
+      } catch (e) {
+        console.warn("QR generation failed for Exellent clarification:", e);
+      }
+
+      return await generateExellentClarificationDocx({
+        recipientPrefix,
+        recipientTitleAndAuthority,
+        clarificationSubject: clarificationSubject || "توضيح واستفسار للأصناف والمواعيد",
+        operationRegisteredName,
+        operationNumber,
+        tenderMethod,
+        operationScope,
+        fiscalYear,
+        technicalOpeningDate,
+        clarificationTargetText: clarificationScopeText || "التوضيح والاستفسار عن الأصناف – المواعيد – بعض البنود الفنيه والقانونيه",
+        clarificationScopeText: clarificationScopeText || "التوضيح والاستفسار عن الأصناف – المواعيد – بعض البنود الفنيه والقانونيه",
+        clarificationResponseDemand: clarificationResponseDemand || "بخطاب معتمد وموافاتنا قبل الموعد المحدد لتقديم العطاءات وإصدار ملحق توضيحى وموافاتنا قبل المواعيد المحدده لفتح المظاريف الفنيه بوقت كاف والبنود والموضوعات المطلوب توضيحها",
+        items: inquiries.map((it) => ({
+          clauseName: it.itemName,
+          clauseNumber: it.clauseNumber,
+          description: it.description,
+          proposal: it.companyProposal,
+        })),
+        inquiryNatureText: inquiryAspect,
+        requestedAction: companyRequest,
+        additionalNotes: additionalNotes || "",
+        specialistName,
+        financeManagerName,
+        boardChairman,
+        companyCommercialRegister,
+        companyTaxCard,
+        companyOpCode,
+        outgoingDate,
+        registrationNumber,
+        companyAddress: companyAddress || currentCompany?.address,
+        phoneWhatsapp: companyWhatsapp,
+        phoneMobile: companyMobile,
+        companyEmail: companyEmail || currentCompany?.email,
+        companyOtherDetails: companyOtherDetails || "",
+        qrBinary,
+      });
+    }
+
+    // ━━━ المسار المعتمد الأصلي لشركة جولدن (A) ━━━
+    const templateBuffer = await fetchDocxTemplateArrayBuffer("clarification_template.docx", currentCompanyLink || currentCompany || op);
 
     const zip = await JSZip.loadAsync(templateBuffer);
 
     // توليد رمز التحقق الرقمي والباركود للنسخة الرقمية - فقط في حالة الرفع السحابي الفعلي
     let qrDrawingXml = "";
+    let qrBinary: Uint8Array | undefined = undefined;
     try {
       const activeCloud = cloudPdfUrl;
       const filename = `clarification_${registrationNumber || op.serialNumber || "doc"}.pdf`;
@@ -534,7 +621,7 @@ export function TabClarification({
         currentCompany?.name || "المجموعة الذهبية",
         filename
       );
-      const qrBinary = await generateHighResDocQrBuffer(qrPayload);
+      qrBinary = await generateHighResDocQrBuffer(qrPayload);
 
       zip.file("word/media/doc_qr.png", qrBinary);
 
@@ -602,19 +689,18 @@ export function TabClarification({
       docXml = docXml.replace(/\.{15,}/g, escapeXml(companyRequest));
     }
 
-    // صفة واسم المهندس / القانوني المختص والمدير المالي ورئيس مجلس الإدارة في جدول ثلاثي منضبط (بدون التفاف Wrap)
-    const clarSigBlockRegex = /<w:p\b[^>]*>(?:(?!<w:p\b)[\s\S])*?(?:المختص|المهندس)[\s\S]*?رئيس مجلس[\s\S]*?<\/w:p>/;
-    if (clarSigBlockRegex.test(docXml)) {
-      const sigTableXml = buildOfficialSignaturesTableXml({
-        specialistTitle: specialistTitle || "المهندس / القانونى المختص :",
-        specialistName: specialistName || " ",
-        financeManagerName: financeManagerName || " ",
-        boardChairman: boardChairman || "رئيس مجلس الإدارة",
-      });
-      docXml = docXml.replace(clarSigBlockRegex, sigTableXml);
-    } else {
-      docXml = replaceDocxChairman(docXml, boardChairman);
-    }
+    // صفة واسم المهندس / القانوني المختص والمدير المالي ورئيس مجلس الإدارة في جدول ثلاثي منضبط لكلا الشركتين
+    docXml = replaceDocxSignatures(docXml, {
+      specialistTitle: specialistTitle || "المهندس / القانونى المختص :",
+      specialistName: specialistName || " ",
+      financeManagerTitle: "المدير العام",
+      financeManagerName: financeManagerName || " ",
+      chairmanTitle: "يعتمد ،،،،،،",
+      chairmanName: boardChairman || "رئيس مجلس الإدارة",
+    });
+
+    // استبدال أو إزالة خانة الملاحظات الإضافية
+    docXml = replaceDocxAdditionalNotes(docXml, "");
 
     // مسمى البند بترويسة الجدول (البند / الصنف / ...)
     docXml = docXml.replace("<w:t>البند</w:t>", `<w:t>${escapeXml(itemHeaderLabel || "البند")}</w:t>`);
@@ -646,37 +732,19 @@ export function TabClarification({
 
     zip.file("word/document.xml", docXml);
 
-    // 2. استبدال بيانات الترويسة في word/header2.xml
-    if (zip.file("word/header2.xml")) {
-      let headerXml = await zip.file("word/header2.xml")!.async("text");
-      headerXml = headerXml.replace(/110200700036620/g, escapeXml(companyCommercialRegister));
-      headerXml = headerXml.replace(/658369652/g, escapeXml(companyTaxCard));
-      // يدعم "كود العملية بالشركه" بالهاء أو التاء وأي مسافات
-      headerXml = headerXml.replace(/\(\s*كود\s+العملي[ةه]\s+بالشرك[ةه]\s*\)/g, escapeXml(companyOpCode));
-      zip.file("word/header2.xml", headerXml);
-    }
-
-    // 3. استبدال بيانات التذييل في word/footer1.xml
-    if (zip.file("word/footer1.xml")) {
-      let footerXml = await zip.file("word/footer1.xml")!.async("text");
-      footerXml = footerXml.replace(/15\/10\/2026/g, escapeXml(outgoingDate));
-      
-      // استبدال رقم القيد بالتذييل بالكامل
-      if (footerXml.includes("رقم القيد")) {
-        footerXml = footerXml.replace(/رقم القيد/g, `رقم القيد : ${escapeXml(registrationNumber)}`);
-      }
-      footerXml = footerXml.replace(/\(باركود المستند أو العمليه/g, `رقم القيد : ${escapeXml(registrationNumber)}`);
-      footerXml = footerXml.replace(/01091708818/g, escapeXml(companyWhatsapp));
-      footerXml = footerXml.replace(/01557018818/g, escapeXml(companyMobile));
-
-      // العنوان في القالب موزع على مقاطع متعددة:
-      footerXml = footerXml.replace(/بجوار مستشفى ليدى كير/g, escapeXml(companyAddress));
-      footerXml = footerXml.replace(/\s*-\s*بدمنهور\s*-\s*البح/g, "");
-      footerXml = footerXml.replace(/<w:t>يره<\/w:t>/g, "<w:t></w:t>");
-
-      footerXml = footerXml.replace(/goldengolden8818@gmail.com/g, escapeXml(companyEmail));
-      zip.file("word/footer1.xml", footerXml);
-    }
+    // 2. ترويسات وتذييلات الصفحات (للشركتين جولدن وإكسلنت وحقن الباركود في الهيدر)
+    await replaceDocxStandardHeaderFooter(zip, {
+      companyCommercialRegister,
+      companyTaxCard,
+      companyOpCode,
+      outgoingDate,
+      registrationNumber,
+      companyAddress,
+      phoneWhatsapp: companyWhatsapp,
+      phoneMobile: companyMobile,
+      companyEmail,
+      qrBinary,
+    });
 
     // الختم ثابت دائماً في قالب الوورد كما طلب العميل (بدون أي تعديل على ملفات الصور)
 
@@ -976,6 +1044,10 @@ export function TabClarification({
       iframe.onload = () => setTimeout(triggerPrint, 350);
       setTimeout(triggerPrint, 1500);
 
+      // رفع فوري سحابياً في الخلفية لضمان عمل رمز الـ QR فور طباعته ومنع خطأ NoSuchKey نهائياً
+      const cloudPrintFilename = `clarification_${registrationNumber || op.serialNumber || "doc"}.pdf`;
+      uploadPdfToFreeCloud(pdfBlob, cloudPrintFilename).catch((e) => console.warn("Print cloud upload:", e));
+
       // تحديث سجل الطباعة وحفظه تلقائياً
       const currentUser = getCurrentUserName();
       const prev = printHistory["clarification"] || { printCount: 0 };
@@ -1082,7 +1154,7 @@ export function TabClarification({
         registrationNumber,
       });
 
-      toast.success(`تمت إضافة المستند للأرشيف بنجاح (${versionName})! 📦✨`);
+      toast.success(`تم حفظ وأرشفة المستند بنجاح في أرشيف العملية (تخزين Hostinger المحلي) (${versionName})! 📦🔒`);
       onRefresh();
     } catch (err: any) {
       toast.error("فشل حفظ المستند في الأرشيف: " + (err?.message || ""));
@@ -1320,9 +1392,9 @@ export function TabClarification({
             </div>
           </div>
 
-          {/* Row 3: العنوان والإيميل */}
+          {/* Row 3: العنوان والإيميل والتفاصيل الإضافية */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5 pt-1">
-            <div className="space-y-1.5 sm:col-span-2">
+            <div className="space-y-1.5">
               <Label className="text-xs font-bold text-foreground">عنوان مقر الشركة (المطبوع بالتذييل)</Label>
               <Input
                 value={companyAddress}
@@ -1332,13 +1404,16 @@ export function TabClarification({
               />
             </div>
 
-            <div className="space-y-1.5">
-              <Label className="text-xs font-bold text-foreground">البريد الإلكتروني للشركة (التذييل)</Label>
+                        <div className="space-y-1.5 sm:col-span-2">
+              <Label className="text-xs font-bold text-foreground">البريد الإلكتروني / تفاصيل أخرى بالتذييل (Footer)</Label>
               <Input
                 value={companyEmail}
-                onChange={(e) => setCompanyEmail(e.target.value)}
-                placeholder="goldengolden8818@gmail.com"
-                className="h-9.5 text-xs font-mono rounded-xl"
+                onChange={(e) => {
+                  setCompanyEmail(e.target.value);
+                  setCompanyOtherDetails(e.target.value);
+                }}
+                placeholder="exellentservice@gmail.com أو تفاصيل أخرى..."
+                className="h-9.5 text-xs rounded-xl"
               />
             </div>
           </div>
@@ -1413,6 +1488,18 @@ export function TabClarification({
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
+            <div className="space-y-1.5 sm:col-span-3">
+              <Label className="text-xs font-bold text-foreground">
+                موضوع التمهيد للخطاب (تمهيد : خطاب ...) *
+              </Label>
+              <Input
+                value={clarificationSubject}
+                onChange={(e) => setClarificationSubject(e.target.value)}
+                placeholder="توضيح واستفسار للأصناف والمواعيد"
+                className="h-9.5 text-xs font-semibold rounded-xl"
+              />
+            </div>
+
             <div className="space-y-1.5 sm:col-span-2">
               <Label className="text-xs font-bold text-foreground">
                 اسم العملية المسجلة (لعملية ...) *
@@ -1466,14 +1553,42 @@ export function TabClarification({
 
       {/* ━━━ SECTION 3: أسباب التوضيح والطلب الرسمي (وحيث... لذا...) ━━━ */}
       <SectionCard
-        title="3. صياغة الاستفسار والطلب (وحيث... لذا فالرجاء التكرم...)"
+        title="3. صياغة الاستفسار والفقرة القانونية (قانون 182 لسنة 2018 والطلب المعتمد)"
         icon={Sparkles}
         iconColor="text-purple-600"
       >
         <div className="space-y-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 p-3.5 rounded-2xl bg-amber-500/10 border border-amber-500/20">
+            <div className="space-y-1.5">
+              <Label className="text-xs font-bold text-foreground">
+                نطاق الاستفسار في الفقرة القانونية (المتعلم بالأحمر في القالب) *
+              </Label>
+              <Textarea
+                rows={2}
+                value={clarificationScopeText}
+                onChange={(e) => setClarificationScopeText(e.target.value)}
+                placeholder="التوضيح والاستفسار عن الأصناف – المواعيد – بعض البنود الفنيه والقانونيه"
+                className="text-xs rounded-xl leading-relaxed bg-background"
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <Label className="text-xs font-bold text-foreground">
+                صيغة طلب إصدار الملحق وميعاده (المتعلم بالأحمر في القالب) *
+              </Label>
+              <Textarea
+                rows={2}
+                value={clarificationResponseDemand}
+                onChange={(e) => setClarificationResponseDemand(e.target.value)}
+                placeholder="بخطاب معتمد وموافاتنا قبل الموعد المحدد لتقديم العطاءات وإصدار ملحق توضيحى وموافاتنا قبل المواعيد المحدده لفتح المظاريف الفنيه بوقت كاف والبنود والموضوعات المطلوب توضيحها"
+                className="text-xs rounded-xl leading-relaxed bg-background"
+              />
+            </div>
+          </div>
+
           <div className="space-y-1.5">
             <Label className="text-xs font-bold text-foreground">
-              وحيث: نوع الاستفسار من الناحية *
+              وحيث: نوع الاستفسار من الناحية الفنية التفصيلية *
             </Label>
             <Textarea
               rows={2}
@@ -1718,6 +1833,16 @@ export function TabClarification({
                 className="h-9.5 text-xs font-bold rounded-xl"
               />
             </div>
+
+            <div className="space-y-1.5 sm:col-span-2 lg:col-span-4">
+              <Label className="text-xs font-bold text-foreground">ملاحظات إضافية بأسفل الخطاب (اختياري)</Label>
+              <Input
+                value={additionalNotes}
+                onChange={(e) => setAdditionalNotes(e.target.value)}
+                placeholder="ملاحظات تظهر بالقالب أو اتركها فارغة..."
+                className="h-9.5 text-xs rounded-xl"
+              />
+            </div>
           </div>
         </div>
       </SectionCard>
@@ -1816,7 +1941,7 @@ export function TabClarification({
                   <div>
                     <div className="flex items-center gap-2">
                       <h3 className="font-extrabold text-foreground text-base">
-                        معاينة قالب الوورد المعتمد: خطاب توضيح.docx
+                        معاينة قالب الوورد المعتمد: {isEx ? "خطاب توضيح سيستم اكسلانت.docx" : "خطاب توضيح.docx"}
                       </h3>
                       <Badge className="bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/30 text-[10px] font-bold">
                         معاينة Word COM الرسمية 100% ✓
@@ -1876,7 +2001,7 @@ export function TabClarification({
                     isArchived={isArchived}
                     addingToArchive={addingToArchive}
                     cloudUploadWarning={
-                      !cloudPdfUrl || (lastGeneratedSnapshot !== "" && lastGeneratedSnapshot !== currentSnapshot)
+                      Boolean(cloudPdfUrl && lastGeneratedSnapshot !== "" && lastGeneratedSnapshot !== currentSnapshot)
                         ? "⚠️ تنبيه هام: هذا الخطاب يحتوي على تعديلات جديدة لم يتم رفعها سحابياً — يرجى الضغط على 'إعادة الرفع والتحديث' لكي يتطابق الباركود مع أحدث بيانات!"
                         : null
                     }

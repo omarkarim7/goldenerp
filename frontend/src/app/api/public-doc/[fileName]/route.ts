@@ -27,8 +27,8 @@ export async function GET(
 
     for (const dir of searchDirs) {
       const p = path.join(dir, safeName);
-      if (fs.existsSync(p)) {
-        foundBuffer = await fs.promises.readFile(p);
+      if (fs.existsSync(/*turbopackIgnore: true*/ p)) {
+        foundBuffer = await fs.promises.readFile(/*turbopackIgnore: true*/ p);
         break;
       }
     }

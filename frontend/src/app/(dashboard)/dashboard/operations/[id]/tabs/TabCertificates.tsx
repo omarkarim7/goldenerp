@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import {
   Calculator,
   Plus,
@@ -50,7 +50,7 @@ export function TabCertificates({
   const [certificateNo, setCertificateNo] = useState((op.certificates?.length || 0) + 1);
   const [grossAmount, setGrossAmount] = useState("500000");
 
-  // Detailed Deductions State
+  // Detailed Deductions State - Dynamic from System Settings
   const [vatRate, setVatRate] = useState("14");
   const [profitTaxRate, setProfitTaxRate] = useState("1"); // 1% أ.ت.ص
   const [socialInsuranceDeduction, setSocialInsuranceDeduction] = useState("0");
@@ -59,6 +59,27 @@ export function TabCertificates({
   const [penaltyDeduction, setPenaltyDeduction] = useState("0"); // غرامات تأخير
   const [notes, setNotes] = useState("");
   const [saving, setSaving] = useState(false);
+  const [settingsLoaded, setSettingsLoaded] = useState(false);
+
+  // تحميل نسب الضرائب والرسوم المعتمدة من صفحة الإعدادات تلقائياً
+  useEffect(() => {
+    api
+      .get("/settings")
+      .then((res) => {
+        const settings = Array.isArray(res.data) ? res.data : [];
+        const vatSetting = settings.find((s: any) => s.key === "vat_rate");
+        const taxDeductSetting = settings.find((s: any) => s.key === "tax_deduction_rate");
+        const retentionSetting = settings.find((s: any) => s.key === "performance_bond_rate");
+
+        if (vatSetting?.value) setVatRate(String(vatSetting.value));
+        if (taxDeductSetting?.value) setProfitTaxRate(String(taxDeductSetting.value));
+        if (retentionSetting?.value) setRetentionRate(String(retentionSetting.value));
+        setSettingsLoaded(true);
+      })
+      .catch((err) => {
+        console.warn("Failed to load tax settings in TabCertificates:", err);
+      });
+  }, []);
 
   // Calculations
   const gross = Number(grossAmount) || 0;
@@ -209,8 +230,13 @@ export function TabCertificates({
           </Button>
         }
       >
-        <div className="p-3.5 rounded-xl bg-teal-500/5 border border-teal-500/20 text-xs text-foreground mb-2 leading-relaxed">
-          <strong>حساب الاستقطاعات وأوامر الصرف الحكومية:</strong> يحسب النظام أوتوماتيكياً: ضريبة القيمة المضافة 14% + خصم 1% أرباح تجارية وصناعية (أ.ت.ص) + استقطاعات التأمينات والعمالة + 5% ضمان أعمال وحسن تنفيذ، ويحدد صافي المبلغ المعتمد بأمر الدفع الإلكتروني.
+        <div className="p-3.5 rounded-xl bg-teal-500/5 border border-teal-500/20 text-xs text-foreground mb-2 leading-relaxed flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
+          <div>
+            <strong>حساب الاستقطاعات وأوامر الصرف الحكومية:</strong> يحسب النظام أوتوماتيكياً: ضريبة القيمة المضافة {vatRate}% + خصم {profitTaxRate}% أرباح تجارية وصناعية (أ.ت.ص) + استقطاعات التأمينات والعمالة + {retentionRate}% ضمان أعمال وحسن تنفيذ، ويحدد صافي المبلغ المعتمد بأمر الدفع الإلكتروني.
+          </div>
+          <span className="shrink-0 px-2.5 py-1 rounded-lg bg-teal-500/15 text-teal-800 dark:text-teal-200 border border-teal-500/30 text-[11px] font-bold flex items-center gap-1 font-mono">
+            <span>مربوط بصفحة الإعدادات ⚙️</span>
+          </span>
         </div>
 
         {adding && (

@@ -58,3 +58,13 @@ backend/scripts/sync-*.ts
 backend/scripts/debug-*.ts
 backend/scripts/test-*.ts
 
+
+# Archives and deployment packages
+*.zip
+*.tar.gz
+temp_*/
+backend-dist.tar.gz
+frontend-dist.tar.gz
+frontend-next.tar.gz
+public-dist.tar.gz
+scratch_portal_user_dump.html

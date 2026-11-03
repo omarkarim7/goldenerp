@@ -171,7 +171,7 @@ const INITIAL_VISITS: SiteVisitRecord[] = [
 export default function VisitsPage() {
   const { selectedCompany, setSelectedCompany, currentCompany, companies } = useCompany();
   const [mounted, setMounted] = useState(false);
-  const [visits, setVisits] = useState<SiteVisitRecord[]>(INITIAL_VISITS);
+  const [visits, setVisits] = useState<SiteVisitRecord[]>([]);
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState("");
   const [filterReadiness, setFilterReadiness] = useState("ALL");
@@ -216,7 +216,7 @@ export default function VisitsPage() {
       setLoading(true);
       const compParam = selectedCompany && selectedCompany !== "ALL" ? `?company=${selectedCompany}` : "";
       const res = await api.get(`/employees/visits${compParam}`);
-      if (res.data && Array.isArray(res.data) && res.data.length > 0) {
+      if (res.data && Array.isArray(res.data)) {
         const mapped: SiteVisitRecord[] = res.data.map((v: any) => {
           let extra: any = {};
           if (v.notes && v.notes.includes("{")) {
@@ -232,7 +232,7 @@ export default function VisitsPage() {
             location: v.location || "الموقع الميداني",
             employeeName: v.employee?.name || "الموظف المسؤول",
             employeeId: v.employeeId,
-            operationCode: v.operationId || "A15",
+            operationCode: v.operationId || "A01",
             operationName: extra.operationName || undefined,
             visitDate: v.visitDate ? v.visitDate.split("T")[0] : new Date().toISOString().split("T")[0],
             status: "COMPLETED",
@@ -249,9 +249,11 @@ export default function VisitsPage() {
           };
         });
         setVisits(mapped);
+      } else {
+        setVisits([]);
       }
     } catch {
-      // Keep rich demo visits
+      setVisits([]);
     } finally {
       setLoading(false);
     }

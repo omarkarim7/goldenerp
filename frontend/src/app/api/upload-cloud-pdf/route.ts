@@ -1,15 +1,29 @@
 import { NextRequest, NextResponse } from "next/server";
 import { S3Client, PutObjectCommand, GetObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
+import crypto from "crypto";
 
 export const maxDuration = 45;
 export const dynamic = "force-dynamic";
 
 /**
+ * دالة توليد مفتاح S3 آمن وفريد 100% يمنع أي تعارض أو تكرار بين الخطابات والعمليات
+ */
+function getDeterministicR2Key(finalFileName: string): string {
+  const baseName = finalFileName.replace(/\.pdf$/i, "");
+  const safeAscii = baseName.replace(/[^a-zA-Z0-9_-]/g, "_");
+  const hash = crypto.createHash("sha256").update(finalFileName).digest("hex").slice(0, 16);
+  const hasAlphanumeric = /[a-zA-Z0-9]/.test(safeAscii);
+  const safeKeySuffix = (hasAlphanumeric && safeAscii.length >= 3)
+    ? `${safeAscii.slice(0, 60)}_${hash}.pdf`
+    : `doc_${hash}.pdf`;
+  return `official_docs/${safeKeySuffix}`;
+}
+
+/**
  * محرك رفع وتوثيق ملفات الـ PDF سحابياً لمسح الباركود
  * يعتمد حصرياً على:
- * 1. Cloudflare R2 المعتمد للشركة (goldenerp-storage) كرابط أساسي دائم ومباشر 100%
- * 2. Gofile.io كخيار احتياطي ثانٍ
+ * Cloudflare R2 المعتمد للشركة (goldenerp-storage) كرابط أساسي دائم ومباشر 100%
  */
 export async function POST(req: NextRequest) {
   try {
@@ -37,8 +51,7 @@ export async function POST(req: NextRequest) {
       credentials: { accessKeyId, secretAccessKey },
     });
 
-    const safeKeySuffix = `${Buffer.from(finalFileName).toString("hex").slice(0, 24)}.pdf`;
-    const key = `official_docs/${safeKeySuffix}`;
+    const key = getDeterministicR2Key(finalFileName);
     const contentDisposition = `inline; filename="official_document.pdf"; filename*=UTF-8''${encodeURIComponent(finalFileName)}`;
 
     await s3.send(
@@ -48,6 +61,7 @@ export async function POST(req: NextRequest) {
         Body: buffer,
         ContentType: "application/pdf",
         ContentDisposition: contentDisposition,
+        CacheControl: "no-cache, no-store, must-revalidate, max-age=0",
       })
     );
 
@@ -64,6 +78,7 @@ export async function POST(req: NextRequest) {
           Key: key,
           ResponseContentType: "application/pdf",
           ResponseContentDisposition: contentDisposition,
+          ResponseCacheControl: "no-cache, no-store, must-revalidate, max-age=0",
         }),
         { expiresIn: 604800 }
       );
@@ -105,8 +120,7 @@ export async function GET(req: NextRequest) {
       credentials: { accessKeyId, secretAccessKey },
     });
 
-    const safeKeySuffix = `${Buffer.from(finalFileName).toString("hex").slice(0, 24)}.pdf`;
-    const key = `official_docs/${safeKeySuffix}`;
+    const key = getDeterministicR2Key(finalFileName);
     const contentDisposition = `inline; filename="official_document.pdf"; filename*=UTF-8''${encodeURIComponent(finalFileName)}`;
     const publicDomain = process.env.R2_PUBLIC_DOMAIN;
     let directUrl: string;
@@ -121,6 +135,7 @@ export async function GET(req: NextRequest) {
           Key: key,
           ResponseContentType: "application/pdf",
           ResponseContentDisposition: contentDisposition,
+          ResponseCacheControl: "no-cache, no-store, must-revalidate, max-age=0",
         }),
         { expiresIn: 604800 }
       );
@@ -139,4 +154,3 @@ export async function GET(req: NextRequest) {
     );
   }
 }
-

@@ -63,8 +63,8 @@ export function TabGuarantees({
   const [paymentMethod, setPaymentMethod] = useState("BANK_GUARANTEE");
 
   // Auto calculate 5% if final guarantee based on award price
-  const awardedPrice = Number(op.awards?.[0]?.winnerPrice) || 850000;
-  const defaultAmount = type === "FINAL" ? String(Math.round(awardedPrice * 0.05)) : "15000";
+  const awardedPrice = Number(op.awards?.[0]?.winnerPrice || (op as any).estimatedBudget || (op as any).value || 0);
+  const defaultAmount = type === "FINAL" ? (awardedPrice > 0 ? String(Math.round(awardedPrice * 0.05)) : "") : ((op as any).initialInsuranceAmount ? String((op as any).initialInsuranceAmount) : "");
 
   const [amount, setAmount] = useState(defaultAmount);
   const [percentage, setPercentage] = useState(type === "INITIAL" ? "1.5" : "5");

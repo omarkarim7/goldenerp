@@ -119,117 +119,136 @@ export function TabSupply({
   const supplyData = existingNotes.supplyPreparationData || {};
   const marketQuotes = existingNotes.marketQuotes || [];
 
-  // Helper to detect if saved items is just the stale single-item placeholder with operation title or has 0 prices
+  // Helper to detect if saved items is just a stale dummy placeholder list
   const isStalePlaceholderList = (items?: SupplyItemRow[]) => {
     if (!items || !Array.isArray(items) || items.length === 0) return true;
-    if (items.length === 1) {
-      const it = items[0];
-      const name = (it.itemName || "").trim();
-      const opName = (op.name || "").trim();
-      if (
-        name === opName ||
-        name.includes("تأجير") ||
-        name.includes("المزايدة المحلية") ||
-        name.includes("المزايدة") ||
-        name.includes("المناقصة") ||
-        name.includes("توريد أصناف ومهمات مطابقة للمواصفات") ||
-        (it.costPrice === 42000 && it.supplyPrice === 58000)
-      ) {
-        return true;
-      }
+    if (items.length === 1 && items[0].costPrice === 42000 && items[0].supplyPrice === 58000) {
+      return true;
     }
-    // إذا كانت كافة البنود بدون تسعير (0 و 0) فيتم تحديثها بالأسعار المعتمدة
-    if (items.length > 0 && items.every((it) => (!it.costPrice || it.costPrice === 0) && (!it.supplyPrice || it.supplyPrice === 0))) {
+    if (items.length === 1 && items[0].itemName === "صنف توريد جديد" && items[0].costPrice === 0) {
       return true;
     }
     return false;
   };
 
-  // Helper to resolve detailed items from offers or market study
-  const resolveDetailedItems = () => {
-    // 1. Helper to find market quote price for an item
-    const findCost = (name: string, fallbackSupplyPrice: number = 0) => {
-      const clean = (name || "").trim().toLowerCase();
-      if (!clean) return fallbackSupplyPrice > 0 ? Math.round(fallbackSupplyPrice * 0.78) : 0;
-
-      // 1. Search in market quotes (from op.notes or localStorage)
-      let quotesList = [...marketQuotes];
-      if (typeof window !== "undefined") {
-        try {
-          const localQuotes = localStorage.getItem(`goldenerp_market_quotes_${op.id}`);
-          if (localQuotes) {
-            const parsed = JSON.parse(localQuotes);
-            if (Array.isArray(parsed)) quotesList.push(...parsed);
+  // Helper to resolve detailed items strictly from real operation offers and market study
+  const resolveDetailedItems = (): SupplyItemRow[] => {
+    // 1. Gather all Market Study Quotes (from op.notes or localStorage)
+    let quotesList: any[] = [];
+    if (Array.isArray(marketQuotes) && marketQuotes.length > 0) {
+      quotesList = [...marketQuotes];
+    }
+    if (typeof window !== "undefined") {
+      try {
+        const localQuotes = localStorage.getItem(`goldenerp_market_quotes_${op.id}`);
+        if (localQuotes) {
+          const parsed = JSON.parse(localQuotes);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            parsed.forEach((pq: any) => {
+              if (!quotesList.some((q) => (q.itemName || "").trim() === (pq.itemName || "").trim())) {
+                quotesList.push(pq);
+              }
+            });
           }
-        } catch {}
-      }
+        }
+      } catch {}
+    }
 
-      const found = quotesList.find((mq: any) => {
-        const mqName = (mq.itemName || "").trim().toLowerCase();
-        return (
-          mqName === clean ||
-          clean.includes(mqName) ||
-          mqName.includes(clean) ||
-          (clean.includes("كاوتش") && mqName.includes("كاوتش")) ||
-          (clean.includes("إطار") && mqName.includes("إطار")) ||
-          (clean.includes("بطارية") && mqName.includes("بطارية"))
-        );
-      });
-      if (found && Number(found.unitPrice) > 0) return Number(found.unitPrice);
+    // 2. Gather all Financial Offer Items (from op.notes, DB, or localStorage)
+    const foItems: any[] = [
+      ...(existingNotes.financialOfferDocx?.items || []),
+      ...(op.financialOffers?.[0]?.items || []),
+      ...(existingNotes.financialOfferDocx?.acceptedItems || []),
+    ];
+    if (typeof window !== "undefined") {
+      try {
+        const localFin = localStorage.getItem(`goldenerp_financial_offer_${op.id}`);
+        if (localFin) {
+          const parsed = JSON.parse(localFin);
+          if (Array.isArray(parsed?.items)) {
+            parsed.items.forEach((fi: any) => {
+              if (!foItems.some((f) => (f.itemName || "").trim() === (fi.itemName || "").trim())) {
+                foItems.push(fi);
+              }
+            });
+          }
+        }
+      } catch {}
+    }
 
-      // 2. Specific benchmark cost from market study
-      if (clean.includes("كاوتش") || clean.includes("إطار")) return 9800;
-      if (clean.includes("بطارية")) return 2800;
-
-      // 3. Fallback from supply price
-      if (fallbackSupplyPrice > 0) return Math.round(fallbackSupplyPrice * 0.78);
-
-      return 0;
-    };
-
-    // 2. Helper to find supply price from financial offer if available
-    const findSupplyPrice = (name: string, fallbackCost: number = 0) => {
-      const foItems = [
-        ...(existingNotes.financialOfferDocx?.items || []),
-        ...(op.financialOffers?.[0]?.items || []),
-        ...(existingNotes.financialOfferDocx?.acceptedItems || []),
-      ];
+    // Helper to find financial supply price for a given item name or index
+    const findSupplyPrice = (name: string, index: number, costPrice: number = 0): number => {
       const clean = (name || "").trim().toLowerCase();
-
       const found = foItems.find((fi: any) => {
         const fiName = (fi.itemName || "").trim().toLowerCase();
         return (
           fiName === clean ||
           clean.includes(fiName) ||
-          fiName.includes(clean) ||
-          (clean.includes("كاوتش") && fiName.includes("كاوتش")) ||
-          (clean.includes("إطار") && fiName.includes("إطار")) ||
-          (clean.includes("بطارية") && fiName.includes("بطارية"))
+          fiName.includes(clean)
         );
       });
       if (found) {
         const price = Number(found.variants?.[0]?.unitPrice) || Number(found.unitPrice) || 0;
         if (price > 0) return price;
       }
-
-      // Benchmark prices from financial offer
-      if (clean.includes("كاوتش") || clean.includes("إطار")) return 12500;
-      if (clean.includes("بطارية")) return 3500;
-
-      if (fallbackCost > 0) return Math.round(fallbackCost * 1.25);
-
+      if (foItems[index]) {
+        const fi = foItems[index];
+        const price = Number(fi.variants?.[0]?.unitPrice) || Number(fi.unitPrice) || 0;
+        if (price > 0) return price;
+      }
+      if (costPrice > 0) return Math.round(costPrice * 1.25);
       return 0;
     };
 
-    // A. Check financial offer docx items
-    const foDocxItems = existingNotes.financialOfferDocx?.items;
-    if (Array.isArray(foDocxItems) && foDocxItems.length > 0) {
-      return foDocxItems.map((fi: any, idx: number) => {
+    // Helper to find market cost price for a given item name or index
+    const findCostPrice = (name: string, index: number, supplyPrice: number = 0): number => {
+      const clean = (name || "").trim().toLowerCase();
+      const found = quotesList.find((mq: any) => {
+        const mqName = (mq.itemName || "").trim().toLowerCase();
+        return (
+          mqName === clean ||
+          clean.includes(mqName) ||
+          mqName.includes(clean)
+        );
+      });
+      if (found && Number(found.unitPrice) > 0) {
+        return Number(found.unitPrice);
+      }
+      if (quotesList[index] && Number(quotesList[index].unitPrice) > 0) {
+        return Number(quotesList[index].unitPrice);
+      }
+      if (supplyPrice > 0) return Math.round(supplyPrice * 0.78);
+      return 0;
+    };
+
+    // A. Priority 1: If Market Study has items, use them directly with their prices from Market Study and Financial Award!
+    if (quotesList.length > 0) {
+      return quotesList.map((mq: any, idx: number) => {
+        const costPrice = Number(mq.unitPrice) || 0;
+        const supplyPrice = findSupplyPrice(mq.itemName, idx, costPrice);
+        return {
+          id: mq.id || `mq-item-${idx + 1}`,
+          itemCode: mq.itemCode || `بند-${idx + 1}`,
+          itemName: mq.itemName || `صنف #${idx + 1}`,
+          unit: mq.unit || "عدد",
+          quantity: Number(mq.quantity) || 1,
+          costPrice,
+          supplyPrice,
+          prepStatus: "PREPARING" as const,
+          inspectionStatus: "MATCHED" as const,
+          notes: mq.notes || mq.specsMatch || "وفق دراسة أسعار السوق المعتمدة والبت المالي",
+        };
+      });
+    }
+
+    // B. Priority 2: If Financial Offer has items, use them!
+    if (foItems.length > 0) {
+      return foItems.map((fi: any, idx: number) => {
         const supplyPrice = Number(fi.variants?.[0]?.unitPrice) || Number(fi.unitPrice) || 0;
-        const costPrice = findCost(fi.itemName, supplyPrice);
+        const costPrice = findCostPrice(fi.itemName, idx, supplyPrice);
         return {
           id: fi.id || `fo-item-${idx + 1}`,
-          itemCode: `بند-${idx + 1}`,
+          itemCode: fi.itemNumber ? `بند-${fi.itemNumber}` : `بند-${idx + 1}`,
           itemName: fi.itemName || `صنف #${idx + 1}`,
           unit: fi.unit || "عدد",
           quantity: Number(fi.quantity) || 1,
@@ -237,39 +256,20 @@ export function TabSupply({
           supplyPrice,
           prepStatus: "PREPARING" as const,
           inspectionStatus: "MATCHED" as const,
-          notes: fi.variants?.[0]?.description || fi.variants?.[0]?.notes || fi.description || "معتمد بالعرض المالي",
+          notes: fi.variants?.[0]?.description || fi.variants?.[0]?.notes || fi.description || "معتمد بالبت المالي",
         };
       });
     }
 
-    // B. Check DB financial offer items
-    const foDbItems = op.financialOffers?.[0]?.items;
-    if (Array.isArray(foDbItems) && foDbItems.length > 0) {
-      return foDbItems.map((fi: any, idx: number) => {
-        const supplyPrice = Number(fi.unitPrice) || 0;
-        const costPrice = findCost(fi.itemName, supplyPrice);
-        return {
-          id: fi.id || `fo-db-${idx + 1}`,
-          itemCode: `بند-${idx + 1}`,
-          itemName: fi.itemName || `صنف #${idx + 1}`,
-          unit: fi.unit || "وحدة",
-          quantity: Number(fi.quantity) || 1,
-          costPrice,
-          supplyPrice,
-          prepStatus: "PREPARING" as const,
-          inspectionStatus: "MATCHED" as const,
-          notes: fi.description || "معتمد بالعرض المالي",
-        };
-      });
-    }
-
-    // C. Check technical offer docx items
-    const toDocxItems = existingNotes.technicalOfferDocx?.items;
-    if (Array.isArray(toDocxItems) && toDocxItems.length > 0) {
-      return toDocxItems.map((ti: any, idx: number) => {
-        const notes = ti.variants?.[0]?.description || ti.variants?.[0]?.notes || "مطابق للمواصفات الفنية";
-        const supplyPrice = findSupplyPrice(ti.itemName);
-        const costPrice = findCost(ti.itemName, supplyPrice);
+    // C. Priority 3: Technical Offer Items
+    const toItems = [
+      ...(existingNotes.technicalOfferDocx?.items || []),
+      ...(op.technicalOffers?.[0]?.items || []),
+    ];
+    if (toItems.length > 0) {
+      return toItems.map((ti: any, idx: number) => {
+        const supplyPrice = findSupplyPrice(ti.itemName, idx, 0);
+        const costPrice = findCostPrice(ti.itemName, idx, supplyPrice);
         return {
           id: ti.id || `to-item-${idx + 1}`,
           itemCode: `بند-${idx + 1}`,
@@ -277,61 +277,20 @@ export function TabSupply({
           unit: ti.unit || "عدد",
           quantity: Number(ti.quantity) || 1,
           costPrice,
-          supplyPrice: supplyPrice > 0 ? supplyPrice : Math.round(costPrice * 1.25),
-          prepStatus: "PREPARING" as const,
-          inspectionStatus: "MATCHED" as const,
-          notes,
-        };
-      });
-    }
-
-    // D. Check DB technical offer items
-    const toDbItems = op.technicalOffers?.[0]?.items;
-    if (Array.isArray(toDbItems) && toDbItems.length > 0) {
-      return toDbItems.map((ti: any, idx: number) => {
-        const supplyPrice = findSupplyPrice(ti.itemName);
-        const costPrice = findCost(ti.itemName, supplyPrice);
-        return {
-          id: ti.id || `to-db-${idx + 1}`,
-          itemCode: `بند-${idx + 1}`,
-          itemName: ti.itemName || `صنف #${idx + 1}`,
-          unit: ti.unit || "عدد",
-          quantity: Number(ti.quantity) || 1,
-          costPrice,
-          supplyPrice: supplyPrice > 0 ? supplyPrice : Math.round(costPrice * 1.25),
-          prepStatus: "PREPARING" as const,
-          inspectionStatus: "MATCHED" as const,
-          notes: ti.description || "مطابق للمواصفات الفنية",
-        };
-      });
-    }
-
-    // E. Check market quotes
-    if (marketQuotes.length > 0) {
-      return marketQuotes.map((mq: any, idx: number) => {
-        const costPrice = Number(mq.unitPrice) || 0;
-        const supplyPrice = Math.round(costPrice * 1.25);
-        return {
-          id: mq.id || `mq-item-${idx + 1}`,
-          itemCode: mq.itemCode || `بند-${idx + 1}`,
-          itemName: mq.itemName || `صنف #${idx + 1}`,
-          unit: mq.unit || "وحدة",
-          quantity: Number(mq.quantity) || 1,
-          costPrice,
           supplyPrice,
           prepStatus: "PREPARING" as const,
           inspectionStatus: "MATCHED" as const,
-          notes: mq.notes || mq.specsMatch || "وفق دراسة أسعار السوق المعتمدة",
+          notes: ti.variants?.[0]?.description || ti.description || "مطابق للمواصفات الفنية",
         };
       });
     }
 
-    // F. Check warranty certificate items
+    // D. Priority 4: Warranty certificate items if present
     const warItems = existingNotes.warrantyCertificate?.items;
     if (Array.isArray(warItems) && warItems.length > 0) {
       return warItems.map((wi: any, idx: number) => {
-        const costPrice = findCost(wi.itemName);
-        const supplyPrice = findSupplyPrice(wi.itemName, costPrice);
+        const supplyPrice = findSupplyPrice(wi.itemName, idx, 0);
+        const costPrice = findCostPrice(wi.itemName, idx, supplyPrice);
         return {
           id: wi.id || `war-item-${idx + 1}`,
           itemCode: `بند-${idx + 1}`,
@@ -339,7 +298,7 @@ export function TabSupply({
           unit: wi.unit || "عدد",
           quantity: Number(wi.quantity) || 1,
           costPrice,
-          supplyPrice: supplyPrice > 0 ? supplyPrice : Math.round(costPrice * 1.25),
+          supplyPrice,
           prepStatus: "PREPARING" as const,
           inspectionStatus: "MATCHED" as const,
           notes: wi.description || wi.notes || "شهادة الضمان والصيانة",
@@ -347,27 +306,24 @@ export function TabSupply({
       });
     }
 
-    // G. Check booklet items
-    const bookletItems = existingNotes.bookletData?.items;
-    if (Array.isArray(bookletItems) && bookletItems.length > 0) {
-      return bookletItems.map((bi: any, idx: number) => ({
-        id: bi.id || `bk-item-${idx + 1}`,
-        itemCode: `بند-${idx + 1}`,
-        itemName: bi.itemName || `صنف #${idx + 1}`,
-        unit: bi.unit || "عدد",
-        quantity: Number(bi.quantity) || 1,
-        costPrice: findCost(bi.itemName),
-        supplyPrice: findSupplyPrice(bi.itemName),
+    // E. Priority 5: Real operation registered name/scope (NEVER fake numbers or items from other operations)
+    return [
+      {
+        id: `op-scope-1`,
+        itemCode: "بند-1",
+        itemName: op.name || "أصناف ومهمات العملية",
+        unit: "عملية",
+        quantity: 1,
+        costPrice: 0,
+        supplyPrice: 0,
         prepStatus: "PREPARING" as const,
         inspectionStatus: "MATCHED" as const,
-        notes: bi.description || "كراسة الشروط والمواصفات",
-      }));
-    }
-
-    return [];
+        notes: "يرجى تسجيل وتحديث أصناف العملية من مرحلة دراسة السوق أو العرض المالي",
+      },
+    ];
   };
 
-  // Initialize Supply Items with detailed items
+    // Initialize Supply Items with detailed items
   const [supplyItems, setSupplyItems] = useState<SupplyItemRow[]>(() => {
     if (supplyData.items && Array.isArray(supplyData.items) && !isStalePlaceholderList(supplyData.items)) {
       return supplyData.items;
@@ -499,14 +455,39 @@ export function TabSupply({
     setSupplyItems(supplyItems.map((it) => (it.id === id ? { ...it, [field]: value } : it)));
   };
 
-  // Sync items from offers
-  const handleSyncDetailedItems = () => {
+  // Sync items from Market Study and Financial Offer and auto-persist
+  const handleSyncDetailedItems = async () => {
     const resolved = resolveDetailedItems();
     if (resolved.length > 0) {
       setSupplyItems(resolved);
-      toast.success(`تم استيراد ${resolved.length} أصناف تفصيلية بنجاح من عروض العملية! 🔄📦`);
+
+      try {
+        let existingNotesObj: Record<string, any> = {};
+        if (op.notes && op.notes.startsWith("{")) {
+          existingNotesObj = JSON.parse(op.notes);
+        }
+        const calcTotalCost = resolved.reduce((acc, it) => acc + (it.costPrice * it.quantity), 0);
+        const calcTotalSupply = resolved.reduce((acc, it) => acc + (it.supplyPrice * it.quantity), 0);
+        const calcTotalMargin = calcTotalSupply - calcTotalCost;
+
+        existingNotesObj.supplyPreparationData = {
+          ...(existingNotesObj.supplyPreparationData || {}),
+          items: resolved,
+          totalCost: calcTotalCost,
+          totalSupply: calcTotalSupply,
+          totalMargin: calcTotalMargin,
+          updatedAt: new Date().toISOString(),
+        };
+
+        await api.patch(`/operations/${op.id}`, { notes: JSON.stringify(existingNotesObj) });
+        onRefresh();
+      } catch (e) {
+        console.warn("Could not auto-persist synced supply items:", e);
+      }
+
+      toast.success(`تم استيراد ${resolved.length} أصناف بنجاح والربط بين دراسة السوق والبت المالي! 🔄📦✨`);
     } else {
-      toast.warning("لم يتم العثور على أصناف تفصيلية مسجلة في العرض الفني أو المالي أو دراسة السوق");
+      toast.warning("لم يتم العثور على أصناف مسجلة في دراسة السوق أو العرض المالي للعملية");
     }
   };
 

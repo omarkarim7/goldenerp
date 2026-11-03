@@ -57,7 +57,14 @@ import {
   buildQrAnchorXml,
   injectSingleQrIntoDocXml,
   replaceDocxRecipient,
+  fetchDocxTemplateArrayBuffer,
+  replaceDocxStandardHeaderFooter,
+  useLetterApproval,
 } from "./letter-utils";
+import {
+  isExellentCompany,
+  generateExellentGrievanceDocx,
+} from "./exellent-letter-engine";
 import JSZip from "jszip";
 import QRCode from "qrcode";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -162,6 +169,8 @@ export function GrievanceLetterSection({
       ) || op.companies?.[0]
     );
   }, [op.companies, selectedCompanyId]);
+
+  const isEx = isExellentCompany(currentCompanyLink || (selectedCompanyId ? { id: selectedCompanyId } : op));
 
   const currentCompany = currentCompanyLink?.company;
 
@@ -308,6 +317,12 @@ export function GrievanceLetterSection({
       "goldengolden8818@gmail.com"
     );
   });
+  const [companyOtherDetails, setCompanyOtherDetails] = useState(() => {
+    return savedGrievanceData?.companyOtherDetails || "";
+  });
+  const [additionalNotes, setAdditionalNotes] = useState(() => {
+    return savedGrievanceData?.additionalNotes || "";
+  });
   const [issueDate, setIssueDate] = useState(() => {
     return savedGrievanceData?.issueDate || new Date().toLocaleDateString("en-GB");
   });
@@ -408,6 +423,18 @@ export function GrievanceLetterSection({
       savedGrievanceData?.grievanceSubject ||
       (isTech ? "نتيجة البت الفني – ميعاد الفتح الفني" : "نتيجة البت المالي وفض المظاريف المالية")
     );
+  });
+
+  const {
+    currentUserRole,
+    isApproved,
+    isApprovalPending,
+    requestApproval,
+  } = useLetterApproval({
+    registrationNumber,
+    letterTitle: `خطاب تظلم ${isTech ? "فني" : "مالي"} رسمي`,
+    op,
+    companyCode: currentCompanyLink?.displayCode,
   });
 
   // 3. جدول بنود التظلم
@@ -519,6 +546,7 @@ export function GrievanceLetterSection({
       phoneMobile,
       companyAddress,
       companyEmail,
+      companyOtherDetails,
       issueDate,
       recipientPrefix,
       recipientTitleAndAuthority,
@@ -532,6 +560,7 @@ export function GrievanceLetterSection({
       grievanceAspect,
       grievanceItems,
       grievanceRequest,
+      additionalNotes,
       specialistTitle,
       specialistName,
       financeManagerName,
@@ -548,6 +577,7 @@ export function GrievanceLetterSection({
     phoneMobile,
     companyAddress,
     companyEmail,
+    companyOtherDetails,
     issueDate,
     recipientPrefix,
     recipientTitleAndAuthority,
@@ -561,6 +591,7 @@ export function GrievanceLetterSection({
     grievanceAspect,
     grievanceItems,
     grievanceRequest,
+    additionalNotes,
     specialistTitle,
     specialistName,
     financeManagerName,
@@ -602,12 +633,67 @@ export function GrievanceLetterSection({
 
   // توليد ملف Word (.docx) الأصلي المعتمد لخطاب التظلم
   const generateGrievanceDocx = async (): Promise<Blob> => {
-    const templatePath = "/templates/grievance_letter_template.docx";
-    const resp = await fetch(templatePath);
-    if (!resp.ok) {
-      throw new Error(`تعذر تحميل قالب خطاب التظلم من المسار: ${templatePath}`);
+    // ━━━ المسار المخصص المستقل لشركة إكسلنت (B) ━━━
+    const isB = isExellentCompany(currentCompanyLink || (selectedCompanyId ? { id: selectedCompanyId } : op));
+    if (isB) {
+      let qrBinary: Uint8Array | null = null;
+      try {
+        const docTitle = isTech ? "خطاب تظلم فني رسمي" : "خطاب تظلم مالي رسمي";
+        const filename = `${letterKey}_${registrationNumber || op.serialNumber || "doc"}.pdf`;
+        const qrPayload = await getStandardDocQrPayload(
+          cloudPdfUrl,
+          registrationNumber,
+          docTitle,
+          currentCompany?.name || "إكسلنت سرفيس",
+          filename
+        );
+        qrBinary = await generateHighResDocQrBuffer(qrPayload);
+      } catch (e) {
+        console.warn("QR generation failed for Exellent grievance:", e);
+      }
+
+      return await generateExellentGrievanceDocx({
+        recipientPrefix,
+        recipientTitleAndAuthority,
+        grievanceStageTitle: grievanceSubject || (isTech ? "نتيجة البت الفني – ميعاد الفتح الفني" : "نتيجة البت المالي"),
+        operationRegisteredName,
+        operationNumber,
+        tenderMethod,
+        operationScope,
+        fiscalYear,
+        technicalOpeningDate: sessionDate,
+        grievanceReasonSubject: grievanceSubject || "التظلمات وطلبات الاعتراض على النتيجة الفنيه",
+        items: grievanceItems.map((it) => ({
+          clauseName: it.clauseName,
+          clauseNumber: it.clauseNumber,
+          actionTakenOrReason: it.actionTakenOrReason,
+          correctiveAction: it.correctiveAction,
+        })),
+        grievanceAspectText: grievanceAspect || "عن نوع الاستفسار من الناحية الفنية",
+        grievanceRequestText: grievanceRequest || "النظر في التظلم وإعادة تقييم العطاء",
+        additionalNotes: additionalNotes || "",
+        specialistName,
+        financeManagerName,
+        boardChairman,
+        companyCommercialRegister,
+        companyTaxCard,
+        companyOpCode,
+        outgoingDate: issueDate,
+        registrationNumber,
+        companyAddress: companyAddress || currentCompany?.address,
+        phoneWhatsapp,
+        phoneMobile,
+        companyEmail: companyEmail || currentCompany?.email,
+        companyOtherDetails: companyOtherDetails || "",
+        qrBinary,
+      });
     }
-    const arrayBuffer = await resp.arrayBuffer();
+
+    // ━━━ المسار المعتمد الأصلي لشركة جولدن (A) ━━━
+    const arrayBuffer = await fetchDocxTemplateArrayBuffer(
+      "grievance_letter_template.docx",
+      currentCompanyLink || (selectedCompanyId ? { id: selectedCompanyId } : op)
+    );
     const zip = await JSZip.loadAsync(arrayBuffer);
 
     // 1. معالجة وتحديث مستند الوورد الرئيسي (word/document.xml)
@@ -763,6 +849,7 @@ export function GrievanceLetterSection({
 
     // 2. الباركود ورمز QR المعتمد
     let qrDrawingXml = "";
+    let qrBinary: Uint8Array | null = null;
     try {
       const targetFilename = `grievance_${isTech ? "tech" : "fin"}_${registrationNumber || op.serialNumber || "doc"}.pdf`;
       const qrPayload = await getStandardDocQrPayload(
@@ -773,6 +860,7 @@ export function GrievanceLetterSection({
         targetFilename
       );
       const qrBuffer = await generateHighResDocQrBuffer(qrPayload);
+      qrBinary = qrBuffer;
 
       if (qrBuffer) {
         zip.file("word/media/doc_qr.png", qrBuffer);
@@ -802,47 +890,20 @@ export function GrievanceLetterSection({
 
     zip.file("word/document.xml", docXml);
 
-    // 3. ترويسة وتذييل الشركة في القالب مطابق 100% لكافة خطابات النظام وكراسة الشروط
+    // 3. ترويسة وتذييل الشركة في القالب مطابق 100% لكافة خطابات النظام وكراسة الشروط (للشركتين جولدن وإكسلنت)
     const cleanCode = (companyOpCode || "").replace(/^\(|\)$/g, "").trim() || "AZ0005";
-    const headerFiles = ["word/header1.xml", "word/header2.xml", "word/header3.xml"];
-    for (const hf of headerFiles) {
-      const hFile = zip.file(hf);
-      if (hFile) {
-        let hXml = await hFile.async("text");
-        hXml = hXml.replace(/110200700036620/g, escapeXml(companyCommercialRegister || "110200700036620"));
-        hXml = hXml.replace(/658369652/g, escapeXml(companyTaxCard || "658369652"));
-        hXml = hXml.replace(/\(\s*كود العملية بالشرك[ةه]\s*\)/g, `( ${escapeXml(cleanCode)} )`);
-        hXml = hXml.replace(/كود العملية بالشرك[ةه]/g, escapeXml(cleanCode));
-        if (currentCompany?.name && currentCompany.name !== "جولدن" && currentCompany.name !== "جولدن سيرفيس") {
-          hXml = hXml.replace(/جــ\s*ـ\s*ـولـــ\s*ـ\s*دن\s*سـ\s*ـ\s*رفـ\s*ـ\s*ــيس/g, escapeXml(currentCompany.name));
-        }
-        hXml = hXml.replace(/<w:highlight\s+[^>]*\/>/g, "");
-        hXml = hXml.replace(/<w:color\s+w:val="(red|FF0000)"[^>]*\/>/g, "");
-        zip.file(hf, hXml);
-      }
-    }
-
-    const footerFiles = ["word/footer1.xml", "word/footer2.xml", "word/footer3.xml"];
-    for (const ff of footerFiles) {
-      const fFile = zip.file(ff);
-      if (fFile) {
-        let fXml = await fFile.async("text");
-        fXml = fXml.replace(/15\/10\/2026/g, escapeXml(issueDate));
-        fXml = fXml.replace(/التاريخ الصادر\s*:\s*[\d\/\-]+/g, `التاريخ الصادر: ${escapeXml(issueDate)}`);
-        if (fXml.includes("رقم القيد")) {
-          fXml = fXml.replace(/رقم القيد/g, `رقم القيد : ${escapeXml(registrationNumber)}`);
-        }
-        fXml = fXml.replace(/\(\s*باركود المستند أو العمليه/g, `رقم القيد : ${escapeXml(registrationNumber)}`);
-        fXml = fXml.replace(/01091708818/g, escapeXml(phoneWhatsapp));
-        fXml = fXml.replace(/01557018818/g, escapeXml(phoneMobile));
-        fXml = fXml.replace(/بجوار مستشفى ليدى كير\s*-\s*بدمنهور\s*-\s*البح\s*يره/g, escapeXml(companyAddress));
-        fXml = fXml.replace(/بجوار مستشفى ليدى كير\s*-\s*بدمنهور\s*-\s*البحيره/g, escapeXml(companyAddress));
-        fXml = fXml.replace(/goldengolden8818@gmail.com/g, escapeXml(companyEmail));
-        fXml = fXml.replace(/<w:highlight\s+[^>]*\/>/g, "");
-        fXml = fXml.replace(/<w:color\s+w:val="(red|FF0000)"[^>]*\/>/g, "");
-        zip.file(ff, fXml);
-      }
-    }
+    await replaceDocxStandardHeaderFooter(zip, {
+      companyCommercialRegister,
+      companyTaxCard,
+      companyOpCode: cleanCode,
+      outgoingDate: issueDate,
+      registrationNumber,
+      companyAddress,
+      phoneWhatsapp,
+      phoneMobile,
+      companyEmail,
+      qrBinary,
+    });
 
     await cleanAllDocxXml(zip);
 
@@ -916,10 +977,22 @@ export function GrievanceLetterSection({
         toast.success("تم تحديث المعاينة الرسمية بنجاح! 🔄✨");
       }
 
-      // رفع سحابي في الخلفية بدون حجب أو تعطيل شاشة المعاينة
-      if (!cloudPdfUrl) {
-        handleUploadToCloud(false).catch((e) => console.warn("Background cloud upload failed:", e));
-      }
+      // رفع سحابي تلقائي فوري في الخلفية لضمان عمل رمز الـ QR بدقة فورية
+      const cloudFilename = `${letterKey}_${registrationNumber || op.serialNumber || "doc"}.pdf`;
+      uploadPdfToFreeCloud(pdf, cloudFilename)
+        .then((res) => {
+          if (res?.url) {
+            setCloudPdfUrl(res.url);
+            try {
+              let existingNotesObj: any = {};
+              if (op.notes && op.notes.startsWith("{")) existingNotesObj = JSON.parse(op.notes);
+              if (!existingNotesObj[noteKey]) existingNotesObj[noteKey] = {};
+              existingNotesObj[noteKey].cloudPdfUrl = res.url;
+              api.patch(`/operations/${op.id}`, { notes: JSON.stringify(existingNotesObj) }).catch(() => {});
+            } catch {}
+          }
+        })
+        .catch((e) => console.warn("Background cloud upload failed:", e));
     } catch (err: any) {
       console.error(err);
       toast.error("فشل تجهيز مستند المعاينة: " + (err?.message || ""));
@@ -1035,6 +1108,21 @@ export function GrievanceLetterSection({
           URL.revokeObjectURL(url);
         }, 60000);
       };
+
+      // رفع فوري سحابياً في الخلفية لضمان عمل رمز الـ QR فور طباعته ومنع خطأ NoSuchKey نهائياً
+      const cloudPrintFilename = `${letterKey}_${registrationNumber || op.serialNumber || "doc"}.pdf`;
+      uploadPdfToFreeCloud(pdfBlob, cloudPrintFilename).then((res) => {
+        if (res?.url) {
+          setCloudPdfUrl(res.url);
+          try {
+            let existingNotesObj: any = {};
+            if (op.notes && op.notes.startsWith("{")) existingNotesObj = JSON.parse(op.notes);
+            if (!existingNotesObj[noteKey]) existingNotesObj[noteKey] = {};
+            existingNotesObj[noteKey].cloudPdfUrl = res.url;
+            api.patch(`/operations/${op.id}`, { notes: JSON.stringify(existingNotesObj) }).catch(() => {});
+          } catch {}
+        }
+      }).catch((e) => console.warn("Background cloud upload on print failed:", e));
     } catch {
       toast.error("تعذر إرسال الخطاب للطباعة");
     } finally {
@@ -1070,7 +1158,7 @@ export function GrievanceLetterSection({
         setPreviewPdfUrl(URL.createObjectURL(pdf));
       }
 
-      const fileName = `خطاب_تظلم_${isTech ? "فني" : "مالي"}_${op.id}_${registrationNumber || op.serialNumber}.pdf`;
+      const fileName = `${letterKey}_${registrationNumber || op.serialNumber || "doc"}.pdf`;
       const res = await uploadPdfToFreeCloud(pdf, fileName);
       const cloudUrl = typeof res === "string" ? res : res?.url;
 
@@ -1402,9 +1490,9 @@ export function GrievanceLetterSection({
             </div>
           </div>
 
-          {/* العنوان والإيميل */}
+          {/* العنوان والإيميل والتفاصيل الإضافية */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5 pt-1">
-            <div className="space-y-1.5 sm:col-span-2">
+            <div className="space-y-1.5">
               <Label className="text-xs font-bold text-foreground">عنوان مقر الشركة (التذييل)</Label>
               <Input
                 value={companyAddress}
@@ -1412,12 +1500,16 @@ export function GrievanceLetterSection({
                 className="h-9.5 text-xs rounded-xl bg-background"
               />
             </div>
-            <div className="space-y-1.5">
-              <Label className="text-xs font-bold text-foreground">البريد الإلكتروني للشركة (التذييل)</Label>
+                        <div className="space-y-1.5 sm:col-span-2">
+              <Label className="text-xs font-bold text-foreground">البريد الإلكتروني / تفاصيل أخرى بالتذييل (Footer)</Label>
               <Input
                 value={companyEmail}
-                onChange={(e) => setCompanyEmail(e.target.value)}
-                className="h-9.5 text-xs font-mono rounded-xl bg-background"
+                onChange={(e) => {
+                  setCompanyEmail(e.target.value);
+                  setCompanyOtherDetails(e.target.value);
+                }}
+                placeholder="exellentservice@gmail.com أو تفاصيل أخرى..."
+                className="h-9.5 text-xs rounded-xl"
               />
             </div>
           </div>
@@ -1508,10 +1600,9 @@ export function GrievanceLetterSection({
 
           <div className="space-y-1 sm:col-span-1">
             <Label className="text-xs font-bold text-foreground">تاريخ الجلسة</Label>
-            <Input
+            <SmartArabicDatePicker
               value={sessionDate}
-              onChange={(e) => setSessionDate(e.target.value)}
-              placeholder="يوم/شهر/سنة"
+              onChange={setSessionDate}
               className="h-9 text-xs text-center font-mono font-bold"
             />
           </div>
@@ -1744,6 +1835,16 @@ export function GrievanceLetterSection({
               className="h-9.5 text-xs font-bold rounded-xl"
             />
           </div>
+
+          <div className="space-y-1.5 sm:col-span-3">
+            <Label className="text-xs font-bold text-foreground">ملاحظات إضافية بأسفل الخطاب (اختياري)</Label>
+            <Input
+              value={additionalNotes}
+              onChange={(e) => setAdditionalNotes(e.target.value)}
+              placeholder="ملاحظات تظهر بالقالب أو اتركها فارغة..."
+              className="h-9.5 text-xs rounded-xl"
+            />
+          </div>
         </div>
       </SectionCard>
 
@@ -1774,7 +1875,7 @@ export function GrievanceLetterSection({
                   </div>
                   <div>
                     <h3 className="font-bold text-white text-sm">
-                      {isTech ? "معاينة خطاب التظلم الفني المعتمد (.docx)" : "معاينة خطاب التظلم المالي المعتمد (.docx)"}
+                      {isEx ? "معاينة قالب الوورد المعتمد: خطاب تظلم سيستم اكسلانت.docx" : isTech ? "معاينة خطاب التظلم الفني المعتمد (.docx)" : "معاينة خطاب التظلم المالي المعتمد (.docx)"}
                     </h3>
                     <p className="text-[11px] text-slate-400">
                       معاينة حية ومطابقة 100% لقالب الوورد الأصلي مع دعم التحميل والطباعة المباشرة
@@ -1841,6 +1942,10 @@ export function GrievanceLetterSection({
                     onAddToArchive={handleToggleArchive}
                     isArchived={isArchived}
                     addingToArchive={addingToArchive}
+                    userRole={currentUserRole}
+                    isApproved={isApproved}
+                    isApprovalPending={isApprovalPending}
+                    onRequestApproval={requestApproval}
                     cloudUploadWarning={
                       cloudPdfUrl && currentSnapshot !== lastGeneratedSnapshot
                         ? "تنبيه هام: هذا الخطاب يحتوي على تعديلات جديدة لم يتم رفعها سحابياً — يرجى الضغط على 'إعادة الرفع والتحديث' لكي يتطابق الباركود مع أحدث بيانات!"

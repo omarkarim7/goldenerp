@@ -12,12 +12,15 @@ import { JwtStrategy } from './strategies/jwt.strategy.js';
     JwtModule.registerAsync({
       imports: [ConfigModule],
       inject: [ConfigService],
-      useFactory: (config: ConfigService) => ({
-        secret: config.get<string>('JWT_SECRET', 'fallback-secret'),
-        signOptions: {
-          expiresIn: config.get<string>('JWT_EXPIRES_IN', '7d') as any,
-        },
-      }),
+      useFactory: (config: ConfigService) => {
+        const secret = (config.get<string>('JWT_SECRET') || '').replace(/['"]/g, '').trim() || 'prod-jwt-secret-goldenerp-2026-ahdahd-eu';
+        return {
+          secret,
+          signOptions: {
+            expiresIn: 60 * 60 * 24 * 7, // 7 days
+          },
+        };
+      },
     }),
   ],
   controllers: [AuthController],

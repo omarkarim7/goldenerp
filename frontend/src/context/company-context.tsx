@@ -288,93 +288,27 @@ function parseAllowedCodes(role?: string | null, allowedStr?: string | null): st
       setLoadingOverview(false);
     }
 
-    // Default realistic data if backend API is offline or cold
-    setOverviewData([
-      {
-        id: "comp_a",
-        name: "جولدن",
-        code: "A",
-        fullName: "المجموعة الذهبية للتوريدات والمقاولات",
-        commercialRegister: "102948",
-        taxCard: "402-182-991",
-        totalOperations: 60,
-        activeOperations: 18,
-        completedOperations: 42,
-        draftOperations: 4,
-        pendingGuarantees: 7,
-        actionsRequired: 3,
-        pendingPrintRequests: 2,
-        totalRevenue: "2.4M ج.م",
-        systemStatus: "منتظم",
-        urgentAlerts: [
-          { id: "a1", title: "عملية A15 — جلسة فتح مالي غداً بالهيئة العامة", operationCode: "A15", severity: "warning", link: "/dashboard/operations", actionLabel: "تفاصيل الجلسة" },
-          { id: "a2", title: "ضمان نهائي A11 — موعد الاسترداد قريب (10 أيام)", operationCode: "A11", severity: "info", link: "/dashboard/operations", actionLabel: "متابعة الضمان" },
-          { id: "a3", title: "طلب طباعة تظلم — بانتظار موافقة الإدارة وتوليد الهاش", operationCode: "A15", severity: "danger", link: "/dashboard/approvals?company=A", actionLabel: "مراجعة الاعتماد" },
-        ],
-      },
-      {
-        id: "comp_b",
-        name: "إكسلنت",
-        code: "B",
-        fullName: "العالمية للتوريدات والتجارة العمومية",
-        commercialRegister: "209418",
-        taxCard: "518-992-104",
-        totalOperations: 38,
-        activeOperations: 12,
-        completedOperations: 26,
-        draftOperations: 2,
-        pendingGuarantees: 4,
-        actionsRequired: 2,
-        pendingPrintRequests: 1,
-        totalRevenue: "1.8M ج.م",
-        systemStatus: "منتظم",
-        urgentAlerts: [
-          { id: "b1", title: "عملية B04 — سحب كراسة الشروط قبل انتهاء الموعد بـ 48 ساعة", operationCode: "B04", severity: "warning", link: "/dashboard/operations", actionLabel: "سحب الكراسة" },
-          { id: "b2", title: "طلب طباعة خطاب ضمان — معلق للاعتماد", operationCode: "B04", severity: "info", link: "/dashboard/approvals?company=B", actionLabel: "فحص الطلب" },
-        ],
-      },
-      {
-        id: "comp_c",
-        name: "العهد",
-        code: "C",
-        fullName: "المتحدة للمقاولات العامة والتجارة",
-        commercialRegister: "392019",
-        taxCard: "603-441-290",
-        totalOperations: 45,
-        activeOperations: 21,
-        completedOperations: 24,
-        draftOperations: 3,
-        pendingGuarantees: 6,
-        actionsRequired: 2,
-        pendingPrintRequests: 2,
-        totalRevenue: "3.1M ج.م",
-        systemStatus: "منتظم",
-        urgentAlerts: [
-          { id: "c1", title: "عملية C08 — سداد التأمين الابتدائي بخزينة الجهة", operationCode: "C08", severity: "warning", link: "/dashboard/operations", actionLabel: "إيصال التأمين" },
-          { id: "c2", title: "طلب طباعة عرض فني — بانتظار الاعتماد الأمني", operationCode: "C08", severity: "danger", link: "/dashboard/approvals?company=C", actionLabel: "مراجعة الاعتماد" },
-        ],
-      },
-      {
-        id: "comp_d",
-        name: "الحديثة",
-        code: "D",
-        fullName: "الحديثة للتجارة العامة والتوريدات",
-        commercialRegister: "440192",
-        taxCard: "712-304-188",
-        totalOperations: 22,
-        activeOperations: 9,
-        completedOperations: 13,
-        draftOperations: 1,
-        pendingGuarantees: 2,
-        actionsRequired: 1,
+    // Clean zero-state data if backend API is offline or cold
+    setOverviewData(
+      companies.map((c) => ({
+        id: c.id,
+        name: c.name,
+        code: c.code,
+        fullName: c.fullName || `${c.name} (${c.code})`,
+        commercialRegister: "---",
+        taxCard: "---",
+        totalOperations: 0,
+        activeOperations: 0,
+        completedOperations: 0,
+        draftOperations: 0,
+        pendingGuarantees: 0,
+        actionsRequired: 0,
         pendingPrintRequests: 0,
-        totalRevenue: "950K ج.م",
+        totalRevenue: "0 ج.م",
         systemStatus: "منتظم",
-        urgentAlerts: [
-          { id: "d1", title: "عملية D02 — مطابقة كراسة الشروط وبنود التوريد", operationCode: "D02", severity: "info", link: "/dashboard/operations", actionLabel: "مطابقة الشروط" },
-        ],
-      },
-    ]);
+        urgentAlerts: [],
+      }))
+    );
   };
 
   useEffect(() => {

@@ -2,6 +2,7 @@
 
 import React, { createContext, useContext, useState, useEffect, useMemo } from "react";
 import { toast } from "sonner";
+import api from "@/lib/api";
 
 export type StageApprovalStatus = "DRAFT" | "PENDING_REVIEW" | "APPROVED";
 
@@ -25,9 +26,13 @@ const StageLockContext = createContext<StageLockContextType | null>(null);
 
 export function StageLockProvider({
   opId,
+  opCode,
+  opName,
   children,
 }: {
   opId: string;
+  opCode?: string;
+  opName?: string;
   children: React.ReactNode;
 }) {
   const [lockedStages, setLockedStages] = useState<Record<string, boolean>>({});
@@ -140,11 +145,41 @@ export function StageLockProvider({
   };
 
   // الموظف: يحفظ البيانات ويرسلها لمراجعة واعتماد الإدارة
-  const submitStageForReview = (stageId: string, stageName?: string) => {
+  const submitStageForReview = async (stageId: string, stageName?: string) => {
     const updated = { ...stageStatuses, [stageId]: "PENDING_REVIEW" as StageApprovalStatus };
     persistStatuses(updated);
+
+    const resolvedOpCode = opCode || (() => {
+      try {
+        const c = sessionStorage.getItem(`cached_op_${opId}`);
+        if (c) return JSON.parse(c).code;
+      } catch {}
+      return "A";
+    })();
+    const resolvedOpName = opName || (() => {
+      try {
+        const c = sessionStorage.getItem(`cached_op_${opId}`);
+        if (c) return JSON.parse(c).name;
+      } catch {}
+      return "عملية مناقصة وتوريد";
+    })();
+
+    try {
+      await api.post("/approvals", {
+        type: "PRINT_DOCUMENT",
+        entityType: "STAGE_REVIEW",
+        entityId: `${opId}-${stageId}`,
+        documentTitle: `طلب اعتماد ومراجعة مرحلة: ${stageName || stageId}`,
+        operationCode: resolvedOpCode,
+        operationName: resolvedOpName,
+        notes: `قام الموظف بإتمام بيانات مرحلة (${stageName || stageId}) وأرسلها لمراجعة واعتماد المدير العام أو النائب قبل الانتقال للمرحلة التالية.`,
+      });
+    } catch (err: any) {
+      console.warn("Could not dispatch approval request to backend:", err);
+    }
+
     toast.success(
-      `تم حفظ بيانات مرحلة "${stageName || stageId}" بنجاح! 📥 — جاري المراجعة من المدير العام أو النائب للموافقة عليها قبل الانتقال للمرحلة التالية.`
+      `تم إرسال طلب مراجعة واعتماد مرحلة "${stageName || stageId}" بنجاح! 📥 — بانتظار موافقة المدير العام أو النائب عليها لتصريح الانتقال.`
     );
   };
 

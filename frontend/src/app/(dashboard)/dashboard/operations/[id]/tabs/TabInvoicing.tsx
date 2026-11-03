@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import {
   FileText,
   Building2,
@@ -156,6 +156,23 @@ export function TabInvoicing({
   const [uploadingInvoice, setUploadingInvoice] = useState(false);
   const [uploadingDelivery, setUploadingDelivery] = useState(false);
 
+  // نسبة ضريبة القيمة المضافة ديناميكياً من إعدادات المنظومة
+  const [defaultVatRate, setDefaultVatRate] = useState(14);
+
+  useEffect(() => {
+    api
+      .get("/settings")
+      .then((res) => {
+        const settings = Array.isArray(res.data) ? res.data : [];
+        const vatSetting = settings.find((s: any) => s.key === "vat_rate");
+        if (vatSetting?.value) {
+          const v = Number(vatSetting.value);
+          if (!isNaN(v) && v > 0) setDefaultVatRate(v);
+        }
+      })
+      .catch(() => {});
+  }, []);
+
   // Items State (Extract from financial offers or supply data if empty/stale)
   const [items, setItems] = useState<InvoiceItem[]>(() => {
     const isStale = (arr?: any[]) => {
@@ -208,10 +225,12 @@ export function TabInvoicing({
     // 3. Check technicalOfferDocx items
     const toDocxItems = existingNotes.technicalOfferDocx?.items;
     if (Array.isArray(toDocxItems) && toDocxItems.length > 0) {
+      const supplyItems = existingNotes.supplyPreparationData?.items || [];
+      const marketQuotes = existingNotes.marketQuotes || [];
       return toDocxItems.map((ti: any, idx: number) => {
-        let price = 1000;
-        if (ti.itemName?.includes("كاوتش") || ti.itemName?.includes("إطار")) price = 12500;
-        else if (ti.itemName?.includes("بطارية")) price = 3500;
+        const foundSup = supplyItems.find((s: any) => s.itemName === ti.itemName || (s.itemName && ti.itemName && (s.itemName.includes(ti.itemName) || ti.itemName.includes(s.itemName))));
+        const foundMkt = marketQuotes.find((m: any) => m.itemName === ti.itemName || (m.itemName && ti.itemName && (m.itemName.includes(ti.itemName) || ti.itemName.includes(m.itemName))));
+        const price = Number(foundSup?.supplyPrice) || Number(foundSup?.costPrice) || Number(foundMkt?.unitPrice) || 0;
         return {
           id: String(idx + 1),
           itemCode: `بند-${idx + 1}`,
@@ -314,7 +333,7 @@ export function TabInvoicing({
         unit: "عدد",
         quantity: 1,
         unitPrice: 1000,
-        vatRate: 14,
+        vatRate: defaultVatRate,
       },
     ]);
   };
@@ -379,10 +398,12 @@ export function TabInvoicing({
     // 3. Check technicalOfferDocx items
     const toDocxItems = existingNotes.technicalOfferDocx?.items;
     if (Array.isArray(toDocxItems) && toDocxItems.length > 0) {
+      const supplyItems = existingNotes.supplyPreparationData?.items || [];
+      const marketQuotes = existingNotes.marketQuotes || [];
       const imported = toDocxItems.map((ti: any, idx: number) => {
-        let price = 1000;
-        if (ti.itemName?.includes("كاوتش") || ti.itemName?.includes("إطار")) price = 12500;
-        else if (ti.itemName?.includes("بطارية")) price = 3500;
+        const foundSup = supplyItems.find((s: any) => s.itemName === ti.itemName || (s.itemName && ti.itemName && (s.itemName.includes(ti.itemName) || ti.itemName.includes(s.itemName))));
+        const foundMkt = marketQuotes.find((m: any) => m.itemName === ti.itemName || (m.itemName && ti.itemName && (m.itemName.includes(ti.itemName) || ti.itemName.includes(m.itemName))));
+        const price = Number(foundSup?.supplyPrice) || Number(foundSup?.costPrice) || Number(foundMkt?.unitPrice) || 0;
         return {
           id: String(idx + 1),
           itemCode: `بند-${idx + 1}`,
@@ -696,7 +717,7 @@ export function TabInvoicing({
 
       {/* ━━━ SECTION 2: جدول بنود وتفاصيل الفاتورة وحساب ضريبة القيمة المضافة ━━━ */}
       <SectionCard
-        title="2. جدول بنود الفاتورة وحساب ضريبة القيمة المضافة (14%)"
+        title={`2. جدول بنود الفاتورة وحساب ضريبة القيمة المضافة (${defaultVatRate}% مجهزة من الإعدادات)`}
         icon={DollarSign}
         iconColor="text-emerald-600"
         badge={

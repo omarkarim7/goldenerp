@@ -1673,7 +1673,7 @@ export function TabInspectionReport({
                     isArchived={isArchived}
                     addingToArchive={addingToArchive}
                     cloudUploadWarning={
-                      !cloudPdfUrl || (lastGeneratedSnapshot !== "" && lastGeneratedSnapshot !== currentSnapshot)
+                      Boolean(cloudPdfUrl && lastGeneratedSnapshot !== "" && lastGeneratedSnapshot !== currentSnapshot)
                         ? "⚠️ تنبيه هام: هذا المحضر يحتوي على تعديلات جديدة لم يتم رفعها سحابياً — يرجى الضغط على 'إعادة الرفع والتحديث' لكي يتطابق الباركود مع أحدث بيانات!"
                         : null
                     }

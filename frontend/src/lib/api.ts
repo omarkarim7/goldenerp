@@ -1,7 +1,12 @@
 import axios from "axios";
 
 const rawUrl = process.env.NEXT_PUBLIC_API_URL ?? "";
-export const API_BASE_URL = rawUrl ? rawUrl.replace(/\/api\/?$/, "").replace(/\/+$/, "") : "";
+export const API_BASE_URL =
+  typeof window !== "undefined"
+    ? ""
+    : rawUrl
+    ? rawUrl.replace(/\/api\/?$/, "").replace(/\/+$/, "")
+    : "";
 
 const api = axios.create({
   baseURL: API_BASE_URL ? `${API_BASE_URL}/api` : "/api",
@@ -17,6 +22,17 @@ api.interceptors.request.use(
       const token = localStorage.getItem("accessToken");
       if (token) {
         config.headers.Authorization = `Bearer ${token}`;
+      }
+    }
+    // Delete preset Content-Type when sending FormData so Axios/browser sets boundary
+    if (typeof FormData !== "undefined" && config.data instanceof FormData) {
+      if (config.headers) {
+        delete config.headers["Content-Type"];
+        delete config.headers["content-type"];
+        if (typeof (config.headers as any).delete === "function") {
+          (config.headers as any).delete("Content-Type");
+          (config.headers as any).delete("content-type");
+        }
       }
     }
     return config;

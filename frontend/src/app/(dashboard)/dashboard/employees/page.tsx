@@ -773,7 +773,7 @@ export default function EmployeesPage() {
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               {filteredUsers.map((u) => {
                 const allowedList = parseAllowedCompanies(u.allowedCompanies, u.role);
-                const isGM = u.role === "GENERAL_MANAGER";
+                const isGM = u.role === "GENERAL_MANAGER" || u.username === "admin";
                 const isDeputy = u.role === "DEPUTY_MANAGER";
 
                 return (
@@ -1073,16 +1073,26 @@ export default function EmployeesPage() {
                       )}
                     </div>
 
-                    {/* زر إدارة وتخصيص الصلاحيات المتقدمة */}
-                    <Button
-                      size="sm"
-                      onClick={() => openPermissionsModal(u)}
-                      className="w-full mt-2.5 bg-gradient-to-r from-blue-700 via-indigo-600 to-blue-700 hover:from-blue-800 hover:to-indigo-700 text-white font-black rounded-xl text-xs h-9 shadow-sm cursor-pointer flex items-center justify-center gap-1.5 active:scale-98 transition-all"
-                      title="تخصيص وتحديد صلاحيات الحساب التفصيلية"
-                    >
-                      <Shield className="h-4 w-4" />
-                      <span>تخصيص الصلاحيات المتقدمة 🛡️</span>
-                    </Button>
+                    {/* زر إدارة وتخصيص الصلاحيات المتقدمة (محصن للمدير العام تلقائياً) */}
+                    {isGM ? (
+                      <div
+                        className="w-full mt-2.5 bg-amber-500/10 border border-amber-500/25 text-amber-700 dark:text-amber-300 font-bold rounded-xl text-xs h-9 flex items-center justify-center gap-1.5 select-none shadow-xs"
+                        title="حساب المدير العام محصن ويمتلك كامل الصلاحيات تلقائياً وبشكل دائم"
+                      >
+                        <ShieldCheck className="h-4 w-4 text-amber-600 dark:text-amber-400" />
+                        <span>كامل الصلاحيات محصنة تلقائياً 👑</span>
+                      </div>
+                    ) : (
+                      <Button
+                        size="sm"
+                        onClick={() => openPermissionsModal(u)}
+                        className="w-full mt-2.5 bg-gradient-to-r from-blue-700 via-indigo-600 to-blue-700 hover:from-blue-800 hover:to-indigo-700 text-white font-black rounded-xl text-xs h-9 shadow-sm cursor-pointer flex items-center justify-center gap-1.5 active:scale-98 transition-all"
+                        title="تخصيص وتحديد صلاحيات الحساب التفصيلية"
+                      >
+                        <Shield className="h-4 w-4" />
+                        <span>تخصيص الصلاحيات المتقدمة 🛡️</span>
+                      </Button>
+                    )}
                   </div>
                 );
               })}

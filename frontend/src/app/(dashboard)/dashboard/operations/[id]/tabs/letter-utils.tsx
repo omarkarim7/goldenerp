@@ -175,12 +175,32 @@ export function BarcodeVisual({
  */
 export async function cleanAllDocxXml(zip: any): Promise<void> {
   if (!zip || !zip.files) return;
+  let isExellentTemplate = false;
+
+  for (const fileName of Object.keys(zip.files)) {
+    if (!fileName.endsWith(".xml") || !fileName.startsWith("word/")) continue;
+    const entry = zip.file(fileName);
+    if (!entry) continue;
+    const xml = await entry.async("text");
+    if (/Exellent Service|04042|7755731744|إكسلانت|اكسلانت/i.test(xml)) {
+      isExellentTemplate = true;
+      break;
+    }
+  }
+
   for (const fileName of Object.keys(zip.files)) {
     if (fileName.endsWith(".xml")) {
       const entry = zip.file(fileName);
       if (!entry) continue;
       let xml = await entry.async("text");
       let changed = false;
+
+      if (
+        fileName.startsWith("word/") &&
+        /Exellent Service|04042|7755731744|إكسلانت|اكسلانت/i.test(xml)
+      ) {
+        isExellentTemplate = true;
+      }
 
       // 1. Remove red highlights and colorings
       if (xml.includes("highlight") || xml.includes("color")) {
@@ -201,7 +221,10 @@ export async function cleanAllDocxXml(zip: any): Promise<void> {
 
       // 3. Normalize Arabic justification to prevent broken kashidas/tatweel stretching across engines
       if (xml.includes("highKashida") || xml.includes("mediumKashida")) {
-        xml = xml.replace(/<w:jc\s+w:val="(?:highKashida|mediumKashida)"\s*\/>/gi, '<w:jc w:val="both"/>');
+        xml = xml.replace(
+          /<w:jc\s+w:val="(?:highKashida|mediumKashida)"\s*\/>/gi,
+          `<w:jc w:val="${isExellentTemplate ? "right" : "both"}"/>`
+        );
         changed = true;
       }
 
@@ -227,8 +250,46 @@ export async function cleanAllDocxXml(zip: any): Promise<void> {
         changed = true;
       }
 
+      // 7. Purge duplicate tafqeet phrases (فقط وقدره / لا غير)
+      if (xml.includes("فقط") || xml.includes("غير")) {
+        xml = xml
+          .replace(/(?:فقط\s*وقدره\s*[:\s]*){2,}/g, "فقط وقدره : ")
+          .replace(/فقط\s*وقدره\s*[:\s]*فقط\s*وقدره/g, "فقط وقدره : ")
+          .replace(/فقط\s*:\s*فقط\s*وقدره/g, "فقط وقدره : ")
+          .replace(/فقط\s*:\s*فقط\s*:/g, "فقط : ")
+          .replace(/(?:لا\s*غير\s*){2,}/g, "لا غير")
+          .replace(/لا\s*غير\s+لا\s*غير/g, "لا غير")
+          .replace(/لا\s*غير\s+(?:جنيهاً?\s*)?لا\s*غير/g, "جنيهاً لا غير")
+          .replace(/جنيها\s*لا\s*غير\s+جنيها\s*لا\s*غير/g, "جنيهاً لا غير");
+        changed = true;
+      }
+
       if (changed) {
         zip.file(fileName, xml);
+      }
+    }
+  }
+
+  // Exellent templates use high-kashida justification and a small negative
+  // paragraph indent. Some DOCX-to-PDF engines expand those lines outside the
+  // page border instead of wrapping them. Keep Golden untouched and normalize
+  // only the Exellent document layout.
+  if (isExellentTemplate) {
+    for (const fileName of Object.keys(zip.files)) {
+      if (
+        !fileName.endsWith(".xml") ||
+        !/^word\/(?:document|header|footer)\d*\.xml$/.test(fileName)
+      ) {
+        continue;
+      }
+
+      const entry = zip.file(fileName);
+      if (!entry) continue;
+      let xml = await entry.async("text");
+      const normalized = xml.replace(/\s+w:(?:left|right)="-\d+"/gi, "");
+
+      if (normalized !== xml) {
+        zip.file(fileName, normalized);
       }
     }
   }
@@ -676,8 +737,8 @@ export function replaceDocxFiscalAndDate(
   fiscalYear: string,
   openingDate: string
 ): string {
-  const safeFiscal = escapeXml((fiscalYear || "2024 / 2025").trim());
-  const safeDate = escapeXml((openingDate || "14/ 1 /2024").trim());
+  const safeFiscal = escapeXml((fiscalYear || `${new Date().getFullYear()} / ${new Date().getFullYear() + 1}`).trim());
+  const safeDate = escapeXml((openingDate || formatNumericDate(new Date())).trim());
 
   // Anchor 1: نهاية وسم <w:r> الحاوي لـ "للعام المالى"
   // Anchor 2: كامل وسم <w:r> الحاوي لـ "لفتح المظروف" (يُحفظ كما هو كاملاً مع "الفنى ." وخطه الأصلي)
@@ -755,20 +816,24 @@ export function replaceDocxRecipient(
   recipientPrefix?: string,
   recipientTitleAndAuthority?: string
 ): string {
-  const cleanPrefix = escapeXml((recipientPrefix || "الأستاذ").trim());
+  const rawPrefix = (recipientPrefix || "الأستاذ").trim();
   const cleanTitle = escapeXml((recipientTitleAndAuthority || "مدير الادارة العامة للمشتريات والمخازن").trim());
+  const prefixNormalized = rawPrefix.startsWith("السيد") || rawPrefix.startsWith("السادة") || rawPrefix.startsWith("الساده")
+    ? rawPrefix
+    : `السيد ${rawPrefix}`;
+  const cleanPrefix = escapeXml(prefixNormalized);
 
-  // مطابقة فقرة المرسل إليه في كافة قوالب الوورد الرسمية
-  const recipientPattern = /<w:p\b[^>]*>(?:(?!<\/w:p>)[\s\S])*?السيد(?:(?!<\/w:p>)[\s\S])*?(?:مشتريات|دمنهو|الأستاذ|المهندس|الدكتور|المستشار|عميد|رئيس|مدير|المحترم|\/)(?:(?!<\/w:p>)[\s\S])*?<\/w:p>/;
+  // مطابقة فقرة المرسل إليه في كافة قوالب الوورد الرسمية (سواء بدأت بالسيد أو السادة أو الساده أو تضمنت دمنهور أو أي جهة)
+  const recipientPattern = /<w:p\b[^>]*>(?:(?!<\/w:p>)[\s\S])*?(?:السيد|السادة|الساده)(?:(?!<\/w:p>)[\s\S])*?(?:مشتريات|دمنهو|الأستاذ|المهندس|الدكتور|المستشار|عميد|رئيس|مدير|المحترم|\/)(?:(?!<\/w:p>)[\s\S])*?<\/w:p>/;
 
-  const centeredRecipientXml = `<w:p><w:pPr><w:spacing w:after="0"/><w:jc w:val="center"/><w:rPr><w:rFonts w:ascii="Arabic Typesetting" w:hAnsi="Arabic Typesetting" w:cs="Arabic Typesetting"/><w:b/><w:bCs/><w:sz w:val="50"/><w:szCs w:val="50"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr></w:pPr><w:r><w:rPr><w:rFonts w:ascii="Arabic Typesetting" w:hAnsi="Arabic Typesetting" w:cs="Arabic Typesetting" w:hint="cs"/><w:b/><w:bCs/><w:sz w:val="50"/><w:szCs w:val="50"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t xml:space="preserve">السيد ${cleanPrefix} / ${cleanTitle}</w:t></w:r></w:p>`;
+  const centeredRecipientXml = `<w:p><w:pPr><w:spacing w:after="0"/><w:jc w:val="center"/><w:rPr><w:rFonts w:ascii="Arabic Typesetting" w:hAnsi="Arabic Typesetting" w:cs="Arabic Typesetting"/><w:b/><w:bCs/><w:sz w:val="50"/><w:szCs w:val="50"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr></w:pPr><w:r><w:rPr><w:rFonts w:ascii="Arabic Typesetting" w:hAnsi="Arabic Typesetting" w:cs="Arabic Typesetting" w:hint="cs"/><w:b/><w:bCs/><w:sz w:val="50"/><w:szCs w:val="50"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t xml:space="preserve">${cleanPrefix} / ${cleanTitle}</w:t></w:r></w:p>`;
 
   if (recipientPattern.test(docXml)) {
     return docXml.replace(recipientPattern, centeredRecipientXml);
   }
 
   // استبدال احتياطي بالنصوص في حال لم تتطابق الفقرة بالكامل
-  docXml = docXml.replace(/السيد\s+الأستاذ/g, `السيد ${cleanPrefix}`);
+  docXml = docXml.replace(/(?:السيد|السادة|الساده)\s+الأستاذ/g, cleanPrefix);
   docXml = docXml.replace(/مدير الادارة العامة للمشتريات والمخازن بجامعة دمنهور/g, cleanTitle);
   return docXml;
 }
@@ -1015,7 +1080,7 @@ export function formatPrintedBy(printedBy?: string): string {
  * - Supports wrapThrough and wrapSquare formatting to allow text to flow naturally
  */
 export function buildQrAnchorXml(
-  size: number = 952000,
+  size: number = 1020000,
   posX: number = 440000,
   posY: number = 1200000,
   wrapType: "square" | "through" = "through"
@@ -1029,7 +1094,7 @@ export function buildQrAnchorXml(
   return `<w:r><w:rPr><w:noProof/></w:rPr><w:drawing><wp:anchor distT="36000" distB="36000" distL="36000" distR="48000" simplePos="0" relativeHeight="251658240" behindDoc="0" locked="1" layoutInCell="0" allowOverlap="0" wp14:anchorId="435524D4" wp14:editId="1E16E09C"><wp:simplePos x="0" y="0"/><wp:positionH relativeFrom="page"><wp:posOffset>${posX}</wp:posOffset></wp:positionH><wp:positionV relativeFrom="page"><wp:posOffset>${posY}</wp:posOffset></wp:positionV><wp:extent cx="${sz}" cy="${sz}"/><wp:effectExtent l="0" t="0" r="0" b="0"/>${wrapXml}<wp:docPr id="777" name="DocQR"/><wp:cNvGraphicFramePr><a:graphicFrameLocks xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" noChangeAspect="1"/></wp:cNvGraphicFramePr><a:graphic xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:pic xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:nvPicPr><pic:cNvPr id="0" name="qr.png"/><pic:cNvPicPr/></pic:nvPicPr><pic:blipFill><a:blip r:embed="rIdQR" cstate="print"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill><pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="${sz}" cy="${sz}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr></pic:pic></a:graphicData></a:graphic></wp:anchor></w:drawing></w:r>`;
 }
 
-export function buildQrInlineXml(size: number = 952000): string {
+export function buildQrInlineXml(size: number = 1020000): string {
   const sz = Math.round(size);
   return `<w:r><w:rPr><w:noProof/></w:rPr><w:drawing><wp:inline distT="36000" distB="36000" distL="36000" distR="36000"><wp:extent cx="${sz}" cy="${sz}"/><wp:effectExtent l="0" t="0" r="0" b="0"/><wp:docPr id="777" name="DocQR"/><wp:cNvGraphicFramePr><a:graphicFrameLocks xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" noChangeAspect="1"/></wp:cNvGraphicFramePr><a:graphic xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:pic xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:nvPicPr><pic:cNvPr id="0" name="qr.png"/><pic:cNvPicPr/></pic:nvPicPr><pic:blipFill><a:blip r:embed="rIdQR" cstate="print"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill><pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="${sz}" cy="${sz}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr></pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r>`;
 }
@@ -1131,7 +1196,7 @@ export async function generateHighResDocQrBuffer(payload: string | Promise<strin
 
   const qrDataUrl = await QRCode.toDataURL(cleanPayload, {
     width: 1600,
-    margin: 2,
+    margin: 1,
     errorCorrectionLevel: "M",
     color: {
       dark: "#000000",
@@ -1154,13 +1219,34 @@ export async function getStandardDocQrPayload(
   opId?: string,
   fileName?: string
 ): Promise<string> {
-  // 1. إذا توفر رابط سحابي معتمد ومباشر لملف PDF على سحابة Cloudflare R2
+  const targetFileName = fileName || `${docType || "official_doc"}_${registrationNumber || Date.now()}.pdf`;
+
+  // 1. فحص ما إذا كان الرابط المخزن صالحاً ومطابقاً تماماً للملف ورقم القيد الحالي
   if (isValidCloudDocUrl(cloudUrl)) {
-    return cloudUrl!;
+    // استبعاد المفاتيح القديمة المقتطعة (المقتطعة إلى 24 حرف ستة عشري وتسبب تعارضاً وتفتح ملفات قديمة)
+    const isOldTruncatedKey =
+      cloudUrl!.includes("/official_docs/67656e6572") ||
+      cloudUrl!.includes("/official_docs/626f6f6b6c") ||
+      cloudUrl!.includes("/official_docs/746563686e") ||
+      cloudUrl!.includes("/official_docs/66696e616e") ||
+      cloudUrl!.includes("/official_docs/636c617269");
+
+    const matchesReg = registrationNumber
+      ? cloudUrl!.includes(encodeURIComponent(registrationNumber)) || cloudUrl!.includes(registrationNumber)
+      : true;
+
+    const matchesFile = fileName
+      ? cloudUrl!.includes(encodeURIComponent(fileName)) ||
+        cloudUrl!.includes(fileName.replace(/\.pdf$/i, ""))
+      : true;
+
+    // إذا كان الرابط يطابق رقم القيد واسم الملف ولا يستخدم المفاتيح القديمة المقتطعة
+    if (!isOldTruncatedKey && matchesReg && matchesFile) {
+      return cloudUrl!;
+    }
   }
 
-  // 2. إذا لم يكن الرابط مسجلاً مسبقاً، يتم جلب رابط Cloudflare R2 المعتمد والموقع مسبقاً لهذا الملف
-  const targetFileName = fileName || `${docType || "official_doc"}_${registrationNumber || Date.now()}.pdf`;
+  // 2. إذا لم يكن مطابقاً أو كان مقتطعاً/قديماً، يتم جلب رابط Cloudflare R2 الفوري المعتمد والموقع مسبقاً لهذا الملف تحديداً
   try {
     const cloudflareUrl = await getExpectedCloudPdfUrl(targetFileName);
     if (isValidCloudDocUrl(cloudflareUrl)) {
@@ -1170,7 +1256,7 @@ export async function getStandardDocQrPayload(
     console.warn("Could not pre-fetch Cloudflare R2 URL in getStandardDocQrPayload:", err);
   }
 
-  return "";
+  return cloudUrl && isValidCloudDocUrl(cloudUrl) ? cloudUrl : "";
 }
 
 
@@ -2431,3 +2517,388 @@ export function OperationDocArchiveCard({
 
 
 
+
+
+/**
+ * ━━━ HOOK: إدارة صلاحيات اعتماد الطباعة والتنزيل للخطابات الرسمية ━━━
+ * - الموظف (EMPLOYEE): يحق له المعاينة بحرية، وتقفل الطباعة والتنزيل حتى يعتمد المدير العام أو النائب الطلب.
+ * - الإدارة العليا (GENERAL_MANAGER / DEPUTY_MANAGER): كامل الصلاحيات فورية بدون قيد.
+ */
+export function useLetterApproval(params: {
+  registrationNumber: string;
+  letterTitle: string;
+  op: any;
+  companyCode?: string;
+}) {
+  const { registrationNumber, letterTitle, op, companyCode } = params;
+  const [currentUserRole, setCurrentUserRole] = useState<string>("GENERAL_MANAGER");
+  const [approvalStatus, setApprovalStatus] = useState<"NONE" | "PENDING" | "APPROVED">("NONE");
+  const [securityHash, setSecurityHash] = useState<string | null>(null);
+  const [requesting, setRequesting] = useState(false);
+
+  useEffect(() => {
+    try {
+      const rawUser = localStorage.getItem("user");
+      if (rawUser) {
+        const u = JSON.parse(rawUser);
+        setCurrentUserRole(u.role || "GENERAL_MANAGER");
+      }
+      const saved = localStorage.getItem(`letter_approval_status_${registrationNumber}`);
+      if (saved) setApprovalStatus(saved as any);
+      const savedHash = localStorage.getItem(`letter_approval_hash_${registrationNumber}`);
+      if (savedHash) setSecurityHash(savedHash);
+    } catch {}
+
+    // تحقق استباقي من الخادم لحالة الاعتماد
+    if (registrationNumber) {
+      api.get("/approvals", { params: { entityId: `letter-${registrationNumber}` } })
+        .then((res) => {
+          if (Array.isArray(res.data) && res.data.length > 0) {
+            const latest = res.data[0];
+            if (latest.status === "APPROVED") {
+              setApprovalStatus("APPROVED");
+              localStorage.setItem(`letter_approval_status_${registrationNumber}`, "APPROVED");
+              if (latest.notes && latest.notes.includes("[HASH:")) {
+                const match = latest.notes.match(/\[HASH:\s*([^\]]+)\]/);
+                if (match?.[1]) {
+                  setSecurityHash(match[1]);
+                  localStorage.setItem(`letter_approval_hash_${registrationNumber}`, match[1]);
+                }
+              }
+            } else if (latest.status === "PENDING") {
+              setApprovalStatus("PENDING");
+              localStorage.setItem(`letter_approval_status_${registrationNumber}`, "PENDING");
+            }
+          }
+        })
+        .catch(() => {});
+    }
+  }, [registrationNumber]);
+
+  const isEmployee = currentUserRole === "EMPLOYEE";
+  const isApproved = !isEmployee || approvalStatus === "APPROVED";
+  const isApprovalPending = isEmployee && approvalStatus === "PENDING";
+
+  const requestApproval = async () => {
+    if (approvalStatus === "PENDING") {
+      toast.warning("يوجد طلب اعتماد قيد المراجعة حالياً لهذا المستند بانتظار قرار المدير أو النائب.");
+      return;
+    }
+    setRequesting(true);
+    try {
+      await api.post("/approvals", {
+        type: "PRINT_DOCUMENT",
+        entityType: "document",
+        entityId: `letter-${registrationNumber}`,
+        documentTitle: letterTitle,
+        operationCode: companyCode || op?.serialNumber || "A15",
+        operationName: op?.name || "عملية مناقصة وتوريد",
+        notes: `طلب تصريح طباعة/تحميل للمستند (${letterTitle}) - قيد [${registrationNumber}] للعملية [${op?.name}]`,
+        status: "PENDING",
+      });
+      setApprovalStatus("PENDING");
+      localStorage.setItem(`letter_approval_status_${registrationNumber}`, "PENDING");
+      toast.success("تم إرسال طلب تصريح الطباعة والتنزيل للإدارة العليا بنجاح! 📥 بانتظار موافقة المدير العام أو النائب.");
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message || "فشل إرسال طلب الاعتماد");
+    } finally {
+      setRequesting(false);
+    }
+  };
+
+  return {
+    currentUserRole,
+    isEmployee,
+    isApproved,
+    isApprovalPending,
+    securityHash,
+    requestApproval,
+    requesting,
+  };
+}
+
+
+/**
+ * تحميل بافر ملف قالب الوورد (.docx) ديناميكياً بناءً على الشركة التابعة المحددة
+ * إذا كانت العملية تتبع الشركة (ب - إكسلنت)، يتم جلب القالب الحصري من مجلد /templates/exellent/
+ * وإلا يتم الاعتماد على القالب الأصلي المعتمد بالمنظومة من /templates/
+ */
+export async function fetchDocxTemplateArrayBuffer(
+  templateName: string,
+  companyOrOp?: any
+): Promise<ArrayBuffer> {
+  const code = (
+    companyOrOp?.displayCode ||
+    companyOrOp?.company?.code ||
+    companyOrOp?.code ||
+    ""
+  ).toUpperCase();
+  const name = String(companyOrOp?.company?.name || companyOrOp?.name || "");
+  const isCompanyB =
+    code === "B" ||
+    code.startsWith("B") ||
+    name.includes("إكسلنت") ||
+    name.includes("إكسلانت") ||
+    name.includes("اكسلانت") ||
+    name.includes("العالمية") ||
+    name.includes("Exellent") ||
+    name.includes("exellent");
+
+  const cleanName = templateName
+    .replace(/^\/+/, "")
+    .replace(/^templates\//, "")
+    .replace(/^exellent\//, "");
+
+  if (isCompanyB) {
+    try {
+      const resB = await fetch(`/templates/exellent/${cleanName}`, { cache: "no-store" });
+      if (resB.ok) {
+        return await resB.arrayBuffer();
+      }
+    } catch (error) {
+      console.warn(`تعذر تحميل قالب إكسلنت (${cleanName}) من المسار المخصص`, error);
+    }
+
+    throw new Error(`قالب إكسلنت غير موجود أو غير قابل للقراءة (${cleanName})`);
+  }
+
+  const res = await fetch(`/templates/${cleanName}`, { cache: "no-store" });
+  if (!res.ok) {
+    throw new Error(`تعذر تحميل قالب المستند (${cleanName}): ${res.statusText}`);
+  }
+  return await res.arrayBuffer();
+}
+
+export interface ReplaceDocxSignaturesParams {
+  specialistTitle?: string;
+  specialistName?: string;
+  financeManagerTitle?: string;
+  financeManagerName?: string;
+  chairmanTitle?: string;
+  chairmanName?: string;
+}
+
+/**
+ * استبدال التوقيعات والاعتمادات الرسمية الثلاثية بدقة لكلا الشركتين:
+ * 1. شركة إكسلنت (B): الجدول الثلاثي (المختص | المدير العام | يعتمد)
+ * 2. شركة جولدن (A): فقرات التوقيعات الرسمية أو الجدول
+ * مع إزالة أي تحديد أحمر (red highlight) بشكل تام
+ */
+export function replaceDocxSignatures(
+  docXml: string,
+  params: ReplaceDocxSignaturesParams
+): string {
+  const specTitle = escapeXml((params.specialistTitle || "المختص :").trim());
+  const specName = escapeXml((params.specialistName || "").trim());
+  const gmTitle = escapeXml((params.financeManagerTitle || "المدير العام").trim());
+  const gmName = escapeXml((params.financeManagerName || "").trim());
+  const chairTitle = escapeXml((params.chairmanTitle || "يعتمد ،،،،،،").trim());
+  const rawChairName = (params.chairmanName || "").replace(/يعتمد\s*،*/g, "").trim();
+  const chairName = escapeXml(rawChairName || "..................");
+
+  // استبدال جدول التوقيعات الثلاثي بقوالب إكسلنت (المختص | المدير العام | يعتمد)
+  docXml = docXml.replace(
+    /(<w:tc\b[^>]*>(?:(?!<\/w:tc>)[\s\S])*?<w:t[^>]*>[^<]*المختص[^<]*<\/w:t>[\s\S]*?<\/w:tc>\s*<w:tc\b[^>]*>(?:(?!<\/w:tc>)[\s\S])*?<w:t[^>]*>[^<]*المدير\s*ا?لعام[^<]*<\/w:t>[\s\S]*?<\/w:tc>\s*<w:tc\b[^>]*>(?:(?!<\/w:tc>)[\s\S])*?<w:t[^>]*>[^<]*يعتمد[^<]*<\/w:t>[\s\S]*?<\/w:tc>\s*<\/w:tr>\s*<w:tr\b[^>]*>\s*<w:trPr>[\s\S]*?<\/w:trPr>\s*<w:tc\b[^>]*>)([\s\S]*?)(<\/w:tc>\s*<w:tc\b[^>]*>)([\s\S]*?)(<\/w:tc>\s*<w:tc\b[^>]*>)([\s\S]*?)(<\/w:tc>)/,
+    (_match, trStart, cell1Content, sep1, cell2Content, sep2, cell3Content, cell3End) => {
+      const newCell1 = cell1Content
+        .replace(/<w:highlight\s+[^>]*\/>/g, "")
+        .replace(/<w:t[^>]*>[\s\S]*?<\/w:t>/g, `<w:t>${specName || " "}</w:t>`);
+      const newCell2 = cell2Content
+        .replace(/<w:highlight\s+[^>]*\/>/g, "")
+        .replace(/<w:t[^>]*>[\s\S]*?<\/w:t>/g, `<w:t>${gmName || " "}</w:t>`);
+      const newCell3 = cell3Content
+        .replace(/<w:highlight\s+[^>]*\/>/g, "")
+        .replace(/<w:t[^>]*>[\s\S]*?<\/w:t>/g, `<w:t>${chairName || "................."}</w:t>`);
+      return `${trStart}${newCell1}${sep1}${newCell2}${sep2}${newCell3}${cell3End}`;
+    }
+  );
+
+  // استبدال احتياطي على مستوى النصوص والخلايا الفردية
+  docXml = docXml.replace(/(<w:t[^>]*>)أحمد محمد(<\/w:t>)/g, `$1${specName || " "}$2`);
+  docXml = docXml.replace(/(<w:t[^>]*>)\s*اسم\s*(<\/w:t>)/g, `$1${gmName || " "}$2`);
+
+  // استبدال توقيعات شركة جولدن (فقرات أو جدول المدير المالي ورئيس مجلس الإدارة)
+  docXml = replaceDocxChairman(docXml, rawChairName || "رئيس مجلس الإدارة");
+  if (gmName) {
+    docXml = docXml.replace(
+      /(<w:t[^>]*>المدير\s*المال[ىي]<\/w:t>[\s\S]*?<w:t[^>]*>)[\s\S]*?(<\/w:t>)/,
+      `$1${gmName}$2`
+    );
+  }
+
+  // إزالة أي تحديد أحمر من جداول التوقيعات
+  docXml = docXml.replace(/<w:highlight\s+w:val="red"\s*\/>/g, "");
+
+  return docXml;
+}
+
+/**
+ * استبدال أو إزالة خانة الملاحظات الإضافية:
+ * إذا تم إدخال نص بالملاحظات -> يتم استبدال النقاط به مع إزالة اللون الأحمر.
+ * إذا كانت فارغة -> يتم حذف الفقرة بالكامل حتى لا يظهر سطر "اضافية : .........." ولا "خانه خاليه للملاحظات".
+ */
+export function replaceDocxAdditionalNotes(
+  docXml: string,
+  additionalNotes?: string
+): string {
+  const notes = (additionalNotes || "").trim();
+  if (notes) {
+    const safeNotes = escapeXml(notes);
+    docXml = docXml.replace(
+      /(<w:p\b[^>]*>(?:(?!<\/w:p>)[\s\S])*?(?:اضافية|إضافية)[\s\S]*?<w:t[^>]*>)\s*\.{3,}\s*(<\/w:t>[\s\S]*?<\/w:p>)/,
+      `$1${safeNotes}$2`
+    );
+    docXml = docXml.replace(
+      /(<w:p\b[^>]*>(?:(?!<\/w:p>)[\s\S])*?<w:t[^>]*>)خانه خاليه للملاحظات(<\/w:t>[\s\S]*?<\/w:p>)/,
+      `$1${safeNotes}$2`
+    );
+  } else {
+    docXml = docXml.replace(
+      /<w:p\b[^>]*>(?:(?!<\/w:p>)[\s\S])*?(?:اضافية|إضافية)(?:(?!<\/w:p>)[\s\S])*?<\/w:p>/g,
+      ""
+    );
+    docXml = docXml.replace(
+      /<w:p\b[^>]*>(?:(?!<\/w:p>)[\s\S])*?خانه خاليه للملاحظات(?:(?!<\/w:p>)[\s\S])*?<\/w:p>/g,
+      ""
+    );
+  }
+  return docXml;
+}
+
+export interface ReplaceDocxStandardHeaderFooterParams {
+  companyCommercialRegister?: string;
+  companyTaxCard?: string;
+  companyOpCode?: string;
+  outgoingDate?: string;
+  registrationNumber?: string;
+  companyAddress?: string;
+  phoneWhatsapp?: string;
+  phoneMobile?: string;
+  companyEmail?: string;
+  qrBinary?: Uint8Array | null;
+}
+
+/**
+ * معالجة ترويسات وتذييلات صفحات Word (.docx) للشركتين (جولدن وإكسلنت):
+ * 1. استبدال نص "الباركود" برمز QR الحقيقي القابل للمسح والمسجل بالمنظومة
+ * 2. ربط العلاقات في header rels و [Content_Types].xml
+ * 3. استبدال السجل التجاري والبطاقة الضريبية وكود العملية وتاريخ الصادر ورقم القيد
+ * 4. تنظيف كافة التحديدات الحمراء والمسافات الزائدة في الهيدر والفوتر
+ */
+export async function replaceDocxStandardHeaderFooter(
+  zip: any,
+  params: ReplaceDocxStandardHeaderFooterParams
+): Promise<void> {
+  const safeCR = escapeXml((params.companyCommercialRegister || "").trim());
+  const safeTax = escapeXml((params.companyTaxCard || "").trim());
+  const safeCode = escapeXml((params.companyOpCode || "").trim());
+  const safeDate = escapeXml((params.outgoingDate || formatNumericDate(new Date())).trim());
+  const safeReg = escapeXml((params.registrationNumber || "").trim());
+
+  // 1. معالجة وتضمين صورة الباركود في الترويسة
+  if (params.qrBinary) {
+    try {
+      zip.file("word/media/header_qr.png", params.qrBinary);
+
+      const relsEntries = Object.keys(zip.files).filter((k) =>
+        k.startsWith("word/_rels/header") && k.endsWith(".xml.rels")
+      );
+
+      for (const relPath of relsEntries) {
+        let relsContent = await zip.file(relPath)?.async("text");
+        if (relsContent && !relsContent.includes("rIdHeaderQr")) {
+          relsContent = relsContent.replace(
+            "</Relationships>",
+            '<Relationship Id="rIdHeaderQr" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/header_qr.png"/></Relationships>'
+          );
+          zip.file(relPath, relsContent);
+        }
+      }
+
+      if (!relsEntries.includes("word/_rels/header2.xml.rels") && zip.file("word/header2.xml")) {
+        zip.file(
+          "word/_rels/header2.xml.rels",
+          '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdHeaderQr" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/header_qr.png"/></Relationships>'
+        );
+      }
+
+      let ct = await zip.file("[Content_Types].xml")?.async("text");
+      if (ct && !ct.includes('Extension="png"')) {
+        ct = ct.replace("</Types>", '<Default Extension="png" ContentType="image/png"/></Types>');
+        zip.file("[Content_Types].xml", ct);
+      }
+    } catch (err) {
+      console.warn("Failed to attach header QR image:", err);
+    }
+  }
+
+  // 2. معالجة ملفات الترويسة (header1.xml, header2.xml, header3.xml)
+  const headerFiles = Object.keys(zip.files).filter((k) =>
+    k.startsWith("word/header") && k.endsWith(".xml")
+  );
+
+  for (const hFile of headerFiles) {
+    let hXml = await zip.file(hFile)?.async("text");
+    if (!hXml) continue;
+
+    const barcodeRunRegex = /<w:r\b[^>]*>(?:(?!<\/w:r>)[\s\S])*?الباركود[\s\S]*?<\/w:r>/g;
+    if (params.qrBinary) {
+      const qrInlineDrawing = buildQrInlineXml(1150000);
+      const replacedDrawing = qrInlineDrawing.replace(/rIdQR/g, "rIdHeaderQr");
+      hXml = hXml.replace(barcodeRunRegex, replacedDrawing);
+    } else {
+      hXml = hXml.replace(barcodeRunRegex, '<w:r><w:t></w:t></w:r>');
+    }
+    hXml = hXml.replace(/<w:t[^>]*>\s*الباركود\s*<\/w:t>/g, '<w:t></w:t>');
+    hXml = hXml.replace(/الباركود/g, '');
+
+    // استبدال قيم الترويسة لشركة إكسلنت (B)
+    if (safeCR) {
+      hXml = hXml.replace(/(<w:t[^>]*>\s*س\.ت\s*:\s*<\/w:t>\s*<w:t[^>]*>)04042(<\/w:t>)/g, `$1${safeCR}$2`);
+      hXml = hXml.replace(/04042/g, safeCR);
+    }
+    if (safeTax) {
+      hXml = hXml.replace(/(<w:t[^>]*>\s*ب\.ض\s*:\s*<\/w:t>\s*<w:t[^>]*>)7755731744(<\/w:t>)/g, `$1${safeTax}$2`);
+      hXml = hXml.replace(/7755731744/g, safeTax);
+    }
+    if (safeCode) {
+      hXml = hXml.replace(/\(\s*كود العملية بالشركه\s*\)/g, `( ${safeCode} )`);
+      hXml = hXml.replace(/BZ0001/g, safeCode);
+    }
+    if (safeDate) {
+      hXml = hXml.replace(/(<w:t[^>]*>\s*صادر في\s*:\s*<\/w:t>\s*<w:t[^>]*>)[\s\S]*?(<\/w:t>)/g, `$1 ${safeDate}$2`);
+      hXml = hXml.replace(/15\/10\/2026/g, safeDate);
+    }
+    if (safeReg) {
+      hXml = hXml.replace(/(<w:t[^>]*>\s*رقم القيد\s*:\s*<\/w:t>\s*<w:t[^>]*>)[\s\S]*?(<\/w:t>)/g, `$1 ${safeReg}$2`);
+      hXml = hXml.replace(/BZ26102837605/g, safeReg);
+    }
+
+    // استبدال قيم الترويسة لشركة جولدن (A)
+    if (safeReg) {
+      hXml = hXml.replace(/AZ\d{10,14}/g, safeReg);
+    }
+    if (safeDate) {
+      hXml = hXml.replace(/تاريخ الصادر\s*:\s*\d{1,2}\/\s*\d{1,2}\/\s*\d{4}/g, `تاريخ الصادر : ${safeDate}`);
+    }
+
+    hXml = hXml.replace(/<w:highlight\s+[^>]*\/>/g, "");
+
+    zip.file(hFile, hXml);
+  }
+
+  // 3. معالجة ملفات التذييل (footer1.xml, footer2.xml, footer3.xml)
+  const footerFiles = Object.keys(zip.files).filter((k) =>
+    k.startsWith("word/footer") && k.endsWith(".xml")
+  );
+
+  for (const fFile of footerFiles) {
+    let fXml = await zip.file(fFile)?.async("text");
+    if (!fXml) continue;
+
+    fXml = fXml.replace(/\s{4,}/g, " ");
+    fXml = fXml.replace(/<w:highlight\s+[^>]*\/>/g, "");
+
+    zip.file(fFile, fXml);
+  }
+}

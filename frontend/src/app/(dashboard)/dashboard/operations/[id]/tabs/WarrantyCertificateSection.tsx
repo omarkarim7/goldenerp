@@ -59,8 +59,19 @@ import {
   getOperationFiscalYear,
   getOperationTechnicalOpeningDate,
   getOperationTenderMethod,
+  fetchDocxTemplateArrayBuffer,
+  replaceDocxStandardHeaderFooter,
+  replaceDocxSignatures,
+  replaceDocxAdditionalNotes,
+  useLetterApproval,
+  formatNumericDate,
 } from "./letter-utils";
+import {
+  isExellentCompany,
+  generateExellentWarrantyCertificateDocx,
+} from "./exellent-letter-engine";
 import { getPdfBlobFromDocx, uploadPdfToFreeCloud, getExpectedCloudPdfUrl } from "./client-pdf";
+import { SmartArabicDatePicker } from "@/components/ui/arabic-date-picker";
 import {
   getArchivedLetterInfo,
   saveLetterToArchiveWithVersion,
@@ -137,6 +148,16 @@ export function WarrantyCertificateSection({
     return null;
   }, [op.notes]);
 
+  const savedMarketQuotes = useMemo(() => {
+    try {
+      if (op.notes && op.notes.startsWith("{")) {
+        const parsed = JSON.parse(op.notes);
+        return parsed.marketQuotes || null;
+      }
+    } catch {}
+    return null;
+  }, [op.notes]);
+
   // الشركة وبيانات الترويسة
   const [selectedCompanyId, setSelectedCompanyId] = useState(() => {
     return (
@@ -160,6 +181,7 @@ export function WarrantyCertificateSection({
   }, [op.companies, selectedCompanyId]);
 
   const currentCompany = currentCompanyLink?.company;
+  const isEx = isExellentCompany(currentCompanyLink || currentCompany || op);
 
   const [registrationNumber, setRegistrationNumber] = useState(() => {
     return getLetterSpecificRegistrationNumber(
@@ -181,6 +203,19 @@ export function WarrantyCertificateSection({
       },
     });
   };
+
+  // إدارة صلاحيات واعتماد الطباعة والتنزيل
+  const {
+    currentUserRole,
+    isApproved,
+    isApprovalPending,
+    requestApproval,
+  } = useLetterApproval({
+    registrationNumber,
+    letterTitle: "شهادة الضمان والصيانة المعتمدة",
+    op,
+    companyCode: currentCompanyLink?.displayCode,
+  });
 
   const [companyOpCode, setCompanyOpCode] = useState(() => {
     return (
@@ -224,6 +259,17 @@ export function WarrantyCertificateSection({
       currentCompany?.address ||
       "بجوار مستشفى ليدى كير  -  بدمنهور -  البحيره"
     );
+  });
+
+  const [companyEmail, setCompanyEmail] = useState(() => {
+    if (savedWarranty?.companyEmail) return savedWarranty.companyEmail;
+    if (currentCompany?.email) return currentCompany.email;
+    const isEx = isExellentCompany(currentCompany || op);
+    return isEx ? "exellentservice@gmail.com" : "goldengolden8818@gmail.com";
+  });
+
+  const [companyOtherDetails, setCompanyOtherDetails] = useState(() => {
+    return savedWarranty?.companyOtherDetails || "";
   });
 
   const [issueDate, setIssueDate] = useState(() => {
@@ -391,22 +437,24 @@ export function WarrantyCertificateSection({
         notes: item.variants?.[0]?.notes || "مطابق للمواصفة القياسية",
       }));
     }
+    if (savedMarketQuotes && Array.isArray(savedMarketQuotes) && savedMarketQuotes.length > 0) {
+      return savedMarketQuotes.map((item: any, idx: number) => ({
+        id: `w-item-${idx + 1}`,
+        itemName: item.itemName || `صنف #${idx + 1}`,
+        unit: item.unit || "عدد",
+        quantity: String(item.quantity || "1"),
+        description: item.notes || item.specsMatch || "مطابق للمواصفة القياسية المعتمدة",
+        notes: item.notes || "شامل الضمان والصيانة",
+      }));
+    }
     return [
       {
         id: "w-1",
-        itemName: "إطار كاوتش 22.5/80/315",
-        unit: "عدد",
-        quantity: "12",
-        description: "إطارات ماركة ياباني إنتاج حديث",
-        notes: "ضمان سنة ضد عيوب الصناعة",
-      },
-      {
-        id: "w-2",
-        itemName: "بطارية سيارة جافة 70 أمبير",
-        unit: "عدد",
-        quantity: "8",
-        description: "بطاريات كلورايد جافة أصلية",
-        notes: "ضمان 12 شهر استبدال فوري",
+        itemName: op.name || "أصناف ومهمات العملية",
+        unit: "دفعة",
+        quantity: "1",
+        description: "مطابق لكراسة الشروط والمواصفات الفنية المعتمدة",
+        notes: "شهادة ضمان رسمية معتمدة ومطابقة لأحكام العقد",
       },
     ];
   });
@@ -444,6 +492,8 @@ export function WarrantyCertificateSection({
       phoneWhatsapp,
       phoneMobile,
       companyAddress,
+      companyEmail,
+      companyOtherDetails,
       issueDate,
       recipientPrefix,
       recipientTitleAndAuthority,
@@ -479,6 +529,8 @@ export function WarrantyCertificateSection({
     phoneWhatsapp,
     phoneMobile,
     companyAddress,
+    companyEmail,
+    companyOtherDetails,
     issueDate,
     recipientPrefix,
     recipientTitleAndAuthority,
@@ -537,16 +589,73 @@ export function WarrantyCertificateSection({
 
   // ━━━ محرك توليد مستند الوورد الرسمي لشهادة الضمان ━━━
   const generateWarrantyDocxBlob = async (): Promise<Blob> => {
-    const response = await fetch("/templates/warranty_certificate_template.docx");
-    if (!response.ok) throw new Error("فشل قراءة قالب شهادة الضمان من الخادم");
-    const templateBuffer = await response.arrayBuffer();
+    // ━━━ المسار المخصص المستقل لشركة إكسلنت (B) ━━━
+    const isB = isExellentCompany(currentCompanyLink || currentCompany || op);
+    if (isB) {
+      let qrBinary: Uint8Array | null = null;
+      try {
+        const filename = `warranty_certificate_${registrationNumber || op.serialNumber || "doc"}.pdf`;
+        const qrPayload = await getStandardDocQrPayload(
+          cloudPdfUrl,
+          registrationNumber,
+          "شهادة الضمان المعتمدة للأصناف الموردة",
+          currentCompany?.name || "إكسلنت سرفيس",
+          filename
+        );
+        qrBinary = await generateHighResDocQrBuffer(qrPayload);
+      } catch (e) {
+        console.warn("QR generation failed for Exellent warranty:", e);
+      }
+
+      return await generateExellentWarrantyCertificateDocx({
+        recipientPrefix,
+        recipientTitleAndAuthority,
+        subjectTarget,
+        operationRegisteredName,
+        operationNumber,
+        companyName: currentCompany?.name || "إكسلنت سرفيس",
+        suppliedItemsCategory,
+        authorityShort,
+        tenderMethod,
+        operationScope,
+        fiscalYear,
+        technicalOpeningDate,
+        items,
+        warrantyDuration,
+        warrantyCoverage,
+        case1,
+        case2,
+        case3,
+        case4,
+        validityDuration,
+        additionalNotes: warrantyNotes,
+        engineerSpecialist,
+        financeManager,
+        boardChairman,
+        companyCommercialRegister,
+        companyTaxCard,
+        companyOpCode,
+        outgoingDate: issueDate,
+        registrationNumber,
+        companyAddress,
+        phoneWhatsapp,
+        phoneMobile,
+        companyEmail: companyEmail || currentCompany?.email,
+        companyOtherDetails: companyOtherDetails || "",
+        qrBinary,
+      });
+    }
+
+    // ━━━ المسار المعتمد الأصلي لشركة جولدن (A) ━━━
+    const templateBuffer = await fetchDocxTemplateArrayBuffer("warranty_certificate_template.docx", currentCompanyLink || currentCompany || op);
 
     const zip = await JSZip.loadAsync(templateBuffer);
 
     let qrDrawingXml = "";
+    let qrBinary: Uint8Array | null = null;
     try {
       const activeCloud = cloudPdfUrl;
-      const filename = `warranty_${registrationNumber || op.serialNumber || "doc"}.pdf`;
+      const filename = `warranty_certificate_${registrationNumber || op.serialNumber || "doc"}.pdf`;
       const qrPayload = await getStandardDocQrPayload(
         activeCloud,
         registrationNumber,
@@ -554,9 +663,11 @@ export function WarrantyCertificateSection({
         currentCompany?.name || "المجموعة الذهبية",
         filename
       );
-      const qrBinary = await generateHighResDocQrBuffer(qrPayload);
+      qrBinary = await generateHighResDocQrBuffer(qrPayload);
 
-      zip.file("word/media/doc_qr.png", qrBinary);
+      if (qrBinary) {
+        zip.file("word/media/doc_qr.png", qrBinary);
+      }
 
       let relsXml = await zip.file("word/_rels/document.xml.rels")?.async("text");
       if (relsXml && !relsXml.includes("rIdQR")) {
@@ -614,7 +725,7 @@ export function WarrantyCertificateSection({
     }
 
     // 4. فقرة بيان العملية والتعهد
-    docXml = docXml.replace(/جولدن سرفيس/g, escapeXml(companyName || "جولدن سرفيس"));
+    docXml = docXml.replace(/جولدن سرفيس|إكسلانت سرفيس|اكسلانت سرفيس|إكسلنت سرفيس/g, escapeXml(companyName || "إكسلنت"));
     docXml = docXml.replace(/(<w:t[^>]*>)كاوتش وبطاريات(<\/w:t>)/, `$1${escapeXml(suppliedItemsCategory || "الأصناف والمهمات")}$2`);
     docXml = docXml.replace(/(<w:t[^>]*>)الجامعه(<\/w:t>)/, `$1${escapeXml(authorityShort || "الجهة الإدارية")}$2`);
     docXml = docXml.replace(/(<w:t[^>]*>)بالمناقصة المحدودة(<\/w:t>)/, `$1${escapeXml(tenderMethod || "بالمناقصة العامة")}$2`);
@@ -623,71 +734,104 @@ export function WarrantyCertificateSection({
       `$1 ${escapeXml(operationScope || op.name || "أصناف ومهمات")}$2`
     );
     docXml = docXml.replace(/(<w:t[^>]*>)2024 \/ 2025(<\/w:t>)/, `$1${escapeXml(fiscalYear || "2024 / 2025")}$2`);
-    docXml = docXml.replace(/(<w:t[^>]*>)14\/\s*1\s*\/2024(<\/w:t>)/, `$1${escapeXml(technicalOpeningDate || "14/ 1 /2024")}$2`);
+    docXml = docXml.replace(/(<w:t[^>]*>)14\/\s*1\s*\/2024(<\/w:t>)/, `$1${escapeXml(technicalOpeningDate || formatNumericDate(new Date()))}$2`);
 
-    // 5. مدة الضمان وتغطيته
+    // 5. مدة الضمان وتغطيته بدقة متناهية ومنع أي تكرار
     const safeDuration = (warrantyDuration || "سنة").trim();
-    const safeCoverage = (warrantyCoverage || "ضد كافة عيوب الصناعة وعيوب المواد والخامات المصنعية")
-      .replace(/^ضد عيوب الصناع[ةه]\s*في\s*/i, "")
-      .trim();
-    docXml = docXml.replace(/(<w:t[^>]*>)سنة(<\/w:t>)/, `$1${escapeXml(safeDuration)}$2`);
-    docXml = docXml.replace(/(<w:t[^>]*>)مداس الكاوتش\s*فقط(<\/w:t>)/, `$1${escapeXml(safeCoverage)}$2`);
+    let safeCoverage = (warrantyCoverage || "ضد كافة عيوب الصناعة وعيوب المواد والخامات المصنعية").trim();
+    safeCoverage = safeCoverage.replace(/^في\s+/i, "").trim();
+    safeCoverage = safeCoverage.replace(/^ضد\s+عيوب\s+الصناع[ةه]\s+في\s+/i, "").trim();
+    if (!safeCoverage.startsWith("ضد")) {
+      safeCoverage = `ضد ${safeCoverage}`;
+    }
+    const durationCombined = `${escapeXml(safeDuration)} ${escapeXml(safeCoverage)}`.trim();
 
-    // 6. استثناءات الضمان (الحالات الأربعة)
-    docXml = docXml.replace(/(<w:t[^>]*>)زيادة ضغط الهواء بالاطارات(<\/w:t>)/, `$1${escapeXml((case1 || "زيادة ضغط الهواء بالاطارات").replace(/\.$/, ""))}$2`);
-    docXml = docXml.replace(/(<w:t[^>]*>)التعرض للصدمات أو اى الات حادة(<\/w:t>)/, `$1${escapeXml((case2 || "التعرض للصدمات أو اى الات حادة").replace(/\.$/, ""))}$2`);
-    docXml = docXml.replace(/(<w:t[^>]*>)سوء الاستخدام(<\/w:t>)/, `$1${escapeXml((case3 || "سوء الاستخدام").replace(/\.$/, ""))}$2`);
-    docXml = docXml.replace(/(<w:t[^>]*>)أي شطب أو تعديل في هذه الشهادة تعتبر لاغيه(<\/w:t>)/, `$1${escapeXml((case4 || "أي شطب أو تعديل في هذه الشهادة تعتبر لاغيه").replace(/\.$/, ""))}$2`);
+    const warrantyDurationPXml =
+      `<w:p w14:paraId="6EC61F2C" w14:textId="60BF4A65" w:rsidR="00C113B2" w:rsidRDefault="00C113B2" w:rsidP="00E75FA0">` +
+      `<w:pPr><w:pStyle w:val="ListParagraph"/><w:numPr><w:ilvl w:val="0"/><w:numId w:val="4"/></w:numPr>` +
+      `<w:spacing w:after="0" w:line="240" w:lineRule="auto"/><w:ind w:left="679" w:hanging="270"/><w:jc w:val="mediumKashida"/>` +
+      `<w:rPr><w:b/><w:bCs/><w:sz w:val="44"/><w:szCs w:val="44"/><w:u w:val="single"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr></w:pPr>` +
+      `<w:r w:rsidRPr="00D36FD3"><w:rPr><w:b/><w:bCs/><w:sz w:val="36"/><w:szCs w:val="36"/><w:u w:val="single"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t>مدة الضمان</w:t></w:r>` +
+      `<w:r w:rsidRPr="00D36FD3"><w:rPr><w:rFonts w:hint="cs"/><w:b/><w:bCs/><w:sz w:val="36"/><w:szCs w:val="36"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t>:</w:t></w:r>` +
+      `<w:r w:rsidRPr="00D36FD3"><w:rPr><w:b/><w:bCs/><w:sz w:val="28"/><w:szCs w:val="28"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t xml:space="preserve"> ${durationCombined}</w:t></w:r></w:p>`;
+
+    docXml = docXml.replace(/<w:p\b(?:(?!<\/w:p>)[\s\S])*?مدة\s*الضمان[\s\S]*?<\/w:p>/, warrantyDurationPXml);
+    // 6. استثناءات الضمان (الحذف التام عند تفريغ الخانة)
+    const gc1 = (case1 || "").trim();
+    const gc2 = (case2 || "").trim();
+    const gc3 = (case3 || "").trim();
+    const gc4 = (case4 || "").trim();
+
+    if (gc1) {
+      docXml = docXml.replace(/زيادة ضغط الهواء بالاطارات\.?\s*/g, escapeXml(gc1.replace(/\.$/, "")) + ".");
+    } else {
+      docXml = docXml.replace(/<w:p\b[^>]*>(?:(?!<\/w:p>)[\s\S])*?زيادة ضغط الهواء بالاطارات(?:(?!<\/w:p>)[\s\S])*?<\/w:p>/g, "");
+    }
+
+    if (gc2) {
+      docXml = docXml.replace(/التعرض للصدمات أو اى الات حادة\.?\s*/g, escapeXml(gc2.replace(/\.$/, "")) + ".");
+    } else {
+      docXml = docXml.replace(/<w:p\b[^>]*>(?:(?!<\/w:p>)[\s\S])*?التعرض للصدمات(?:(?!<\/w:p>)[\s\S])*?<\/w:p>/g, "");
+    }
+
+    if (gc3) {
+      docXml = docXml.replace(/سوء الاستخدام\.?\s*/g, escapeXml(gc3.replace(/\.$/, "")) + ".");
+    } else {
+      docXml = docXml.replace(/<w:p\b[^>]*>(?:(?!<\/w:p>)[\s\S])*?سوء الاستخدام(?:(?!<\/w:p>)[\s\S])*?<\/w:p>/g, "");
+    }
+
+    if (gc4) {
+      docXml = docXml.replace(/أي شطب أو تعديل في هذه الشهادة تعتبر لاغيه\.?\s*/g, escapeXml(gc4.replace(/\.$/, "")) + ".");
+    } else {
+      docXml = docXml.replace(/<w:p\b[^>]*>(?:(?!<\/w:p>)[\s\S])*?أي شطب أو تعديل(?:(?!<\/w:p>)[\s\S])*?<\/w:p>/g, "");
+    }
+
+    if (!gc1 && !gc2 && !gc3 && !gc4) {
+      docXml = docXml.replace(/<w:p\b[^>]*>(?:(?!<\/w:p>)[\s\S])*?لا يسرى الضمان في الحالات الاتيه(?:(?!<\/w:p>)[\s\S])*?<\/w:p>/g, "");
+    }
 
     // 7. مدة سريان الشهادة
-    docXml = docXml.replace(/(<w:t[^>]*>)مدة سريان الشهادة ستة أشهر\s*(<\/w:t>)/, `$1مدة سريان الشهادة ${escapeXml(validityDuration || "ستة أشهر")}$2`);
-
-    // 8. التوقيعات الرسمية المعتمدة بجدول ثلاثي متوازن بدون تداخل أو ملامسة للإطار
-    const warrantySigBlockRegex = /<w:p\b[^>]*>(?:(?!<\/w:p>)[\s\S])*?(?:المهندس المختص|المدير المالى)[\s\S]*?يعتمد[\s\S]*?<\/w:p>\s*<w:p\b[^>]*>(?:(?!<\/w:p>)[\s\S])*?رئيس مجلس[\s\S]*?<\/w:p>/;
-    if (warrantySigBlockRegex.test(docXml)) {
-      const sigTableXml = buildOfficialSignaturesTableXml({
-        specialistTitle: "المهندس المختص :",
-        specialistName: engineerSpecialist || " ",
-        financeManagerName: financeManager || " ",
-        boardChairman: boardChairman || "رئيس مجلس الإدارة",
-      });
-      docXml = docXml.replace(warrantySigBlockRegex, sigTableXml);
+    const gValDur = (validityDuration || "").trim();
+    if (gValDur) {
+      docXml = docXml.replace(
+        /مدة سريان الشهادة\s*\(\s*ستة أشهر\s*\)/g,
+        `مدة سريان الشهادة ( ${escapeXml(gValDur)} )`
+      );
     } else {
-      docXml = docXml.replace(/(<w:t[^>]*>)أحمد محمد(<\/w:t>)/, `$1${escapeXml(engineerSpecialist || " ")}$2`);
-      docXml = docXml.replace(/(<w:t[^>]*>)\s*اسم(<\/w:t>)/, `$1${escapeXml(financeManager || " ")}$2`);
-      docXml = docXml.replace(/(<w:t[^>]*>)رئيس مجلس الإدارة(<\/w:t>)/, `$1${escapeXml(boardChairman || "رئيس مجلس الإدارة")}$2`);
+      docXml = docXml.replace(/<w:p\b[^>]*>(?:(?!<\/w:p>)[\s\S])*?مدة سريان الشهادة(?:(?!<\/w:p>)[\s\S])*?<\/w:p>/g, "");
     }
+
+    // 8. التوقيعات الرسمية المعتمدة بجدول ثلاثي متوازن للشركتين جولدن وإكسلنت
+    docXml = replaceDocxSignatures(docXml, {
+      specialistTitle: "المهندس المختص :",
+      specialistName: engineerSpecialist || " ",
+      financeManagerTitle: "المدير العام",
+      financeManagerName: financeManager || " ",
+      chairmanTitle: "يعتمد ،،،،،،",
+      chairmanName: boardChairman || "رئيس مجلس الإدارة",
+    });
 
     // إزالة أي إزاحات سالبة تدفع النصوص للتصادم مع إطار الصفحة
     docXml = docXml.replace(/<w:ind\s+w:left="-\d+"\s*\/>/g, "");
 
-    // 9. الملاحظات
-    docXml = docXml.replace(/(<w:t[^>]*>)خانة لكتابة ملاحظة(<\/w:t>)/, `$1${escapeXml(warrantyNotes || " ")}$2`);
+    // 9. استبدال أو إزالة خانة الملاحظات الإضافية
+    docXml = replaceDocxAdditionalNotes(docXml, warrantyNotes);
 
     zip.file("word/document.xml", docXml);
 
-    // 2. تحديث الترويسة والتذييل
-    for (const fileName of Object.keys(zip.files)) {
-      if (fileName.startsWith("word/header") && fileName.endsWith(".xml")) {
-        let hdr = await zip.file(fileName)!.async("text");
-        hdr = hdr.replace(/110200700036620/g, escapeXml(companyCommercialRegister || "110200700036620"));
-        hdr = hdr.replace(/658369652/g, escapeXml(companyTaxCard || "658369652"));
-        hdr = hdr.replace(/\(?\s*كود العملية بالشركه\s*\)?/g, `( ${escapeXml(companyOpCode || "AZ-01")} )`);
-        zip.file(fileName, hdr);
-      }
-      if (fileName.startsWith("word/footer") && fileName.endsWith(".xml")) {
-        let ftr = await zip.file(fileName)!.async("text");
-        ftr = ftr.replace(/15\/10\/2026/g, escapeXml(issueDate || "15/10/2026"));
-        ftr = ftr.replace(/رقم القيد/g, `رقم القيد: ${escapeXml(registrationNumber || "")}`);
-        ftr = ftr.replace(/01091708818/g, escapeXml(phoneWhatsapp || "01091708818"));
-        ftr = ftr.replace(/01557018818/g, escapeXml(phoneMobile || "01557018818"));
-        ftr = ftr.replace(/بجوار مستشفى ليدى كير/g, escapeXml(companyAddress || "بجوار مستشفى ليدى كير  -  بدمنهور -  البحيره"));
-        ftr = ftr.replace(/\s*-\s*بدمنهور\s*-\s*البح/g, "");
-        ftr = ftr.replace(/يره/g, "");
-        ftr = ftr.replace(/goldengolden8818@gmail.com/g, escapeXml(currentCompany?.email || "goldengolden8818@gmail.com"));
-        zip.file(fileName, ftr);
-      }
-    }
+    // 2. تحديث الترويسة والتذييل (للشركتين جولدن وإكسلنت)
+    await replaceDocxStandardHeaderFooter(zip, {
+      companyCommercialRegister,
+      companyTaxCard,
+      companyOpCode,
+      outgoingDate: issueDate,
+      registrationNumber,
+      companyAddress,
+      phoneWhatsapp,
+      phoneMobile,
+      companyEmail: currentCompany?.email,
+      qrBinary,
+    });
 
     // تنظيف كل علامات التحديد الأحمر
     await cleanAllDocxXml(zip);
@@ -763,7 +907,7 @@ export function WarrantyCertificateSection({
         setPreviewPdfBlob(pdf);
       }
 
-      const fileName = `warranty_certificate_${registrationNumber || op.serialNumber}.pdf`;
+      const fileName = `warranty_certificate_${registrationNumber || op.serialNumber || "doc"}.pdf`;
       const res = await uploadPdfToFreeCloud(pdf, fileName);
 
       if (res?.url) {
@@ -864,6 +1008,28 @@ export function WarrantyCertificateSection({
       iframe.style.border = "0";
       iframe.src = url;
       document.body.appendChild(iframe);
+
+      // رفع فوري سحابياً في الخلفية لضمان عمل رمز الـ QR فور طباعته ومنع خطأ NoSuchKey نهائياً
+      const isDirtyPrint = !cloudPdfUrl || (savedSnapshot !== "" && savedSnapshot !== currentSnapshot);
+      if (isDirtyPrint) {
+        uploadPdfToFreeCloud(
+          pdf,
+          `warranty_certificate_${registrationNumber || op.serialNumber || "doc"}.pdf`
+        ).then(async (res) => {
+          if (res?.url) {
+            setCloudPdfUrl(res.url);
+            try {
+              let existingNotesObj: Record<string, any> = {};
+              if (op.notes && op.notes.startsWith("{")) existingNotesObj = JSON.parse(op.notes);
+              existingNotesObj.warrantyCertificate = {
+                ...(existingNotesObj.warrantyCertificate || {}),
+                cloudPdfUrl: res.url,
+              };
+              await api.patch(`/operations/${op.id}`, { notes: JSON.stringify(existingNotesObj) });
+            } catch (e) {}
+          }
+        }).catch((e) => console.warn("Auto background upload on print:", e));
+      }
 
       iframe.onload = () => {
         try {
@@ -1001,6 +1167,27 @@ export function WarrantyCertificateSection({
       a.click();
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
+      // رفع فوري سحابياً في الخلفية لضمان عمل رمز الـ QR فور تحميله ومنع خطأ NoSuchKey نهائياً
+      const isDirtyDownload = !cloudPdfUrl || (savedSnapshot !== "" && savedSnapshot !== currentSnapshot);
+      if (isDirtyDownload) {
+        uploadPdfToFreeCloud(
+          pdf,
+          `warranty_certificate_${registrationNumber || op.serialNumber || "doc"}.pdf`
+        ).then(async (res) => {
+          if (res?.url) {
+            setCloudPdfUrl(res.url);
+            try {
+              let existingNotesObj: Record<string, any> = {};
+              if (op.notes && op.notes.startsWith("{")) existingNotesObj = JSON.parse(op.notes);
+              existingNotesObj.warrantyCertificate = {
+                ...(existingNotesObj.warrantyCertificate || {}),
+                cloudPdfUrl: res.url,
+              };
+              await api.patch(`/operations/${op.id}`, { notes: JSON.stringify(existingNotesObj) });
+            } catch (e) {}
+          }
+        }).catch((e) => console.warn("Auto background upload on download:", e));
+      }
       toast.success("تم تحميل ملف الـ PDF بنجاح! 📥");
     } catch (err: any) {
       toast.error("فشل تحميل ملف PDF: " + (err?.message || ""));
@@ -1118,12 +1305,52 @@ export function WarrantyCertificateSection({
             </div>
             <div className="space-y-1.5">
               <Label className="text-xs font-bold text-foreground">التاريخ الصادر (Footer) *</Label>
-              <Input
+              <SmartArabicDatePicker
                 value={issueDate}
-                onChange={(e) => setIssueDate(e.target.value)}
+                onChange={setIssueDate}
                 className="h-9.5 text-xs font-mono rounded-xl"
               />
             </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
+            <div className="space-y-1.5">
+              <Label className="text-xs font-bold text-foreground">واتساب الشركة (Footer)</Label>
+              <Input
+                value={phoneWhatsapp}
+                onChange={(e) => setPhoneWhatsapp(e.target.value)}
+                className="h-9.5 text-xs font-mono rounded-xl"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs font-bold text-foreground">الموبايل (Footer)</Label>
+              <Input
+                value={phoneMobile}
+                onChange={(e) => setPhoneMobile(e.target.value)}
+                className="h-9.5 text-xs font-mono rounded-xl"
+              />
+            </div>
+                        <div className="space-y-1.5 sm:col-span-2">
+              <Label className="text-xs font-bold text-foreground">البريد الإلكتروني / تفاصيل أخرى بالتذييل (Footer)</Label>
+              <Input
+                value={companyEmail}
+                onChange={(e) => {
+                  setCompanyEmail(e.target.value);
+                  setCompanyOtherDetails(e.target.value);
+                }}
+                placeholder="exellentservice@gmail.com أو تفاصيل أخرى..."
+                className="h-9.5 text-xs rounded-xl"
+              />
+            </div>
+          </div>
+
+          <div className="space-y-1.5">
+            <Label className="text-xs font-bold text-foreground">العنوان بالتذييل (Footer)</Label>
+            <Input
+              value={companyAddress}
+              onChange={(e) => setCompanyAddress(e.target.value)}
+              className="h-9.5 text-xs rounded-xl"
+            />
           </div>
         </div>
       </SectionCard>
@@ -1240,10 +1467,10 @@ export function WarrantyCertificateSection({
               </div>
               <div className="space-y-1">
                 <Label className="text-[11px] font-bold text-foreground">تاريخ جلسة فتح المظروف الفني *</Label>
-                <Input
+                <SmartArabicDatePicker
                   value={technicalOpeningDate}
-                  onChange={(e) => setTechnicalOpeningDate(e.target.value)}
-                  className="h-8.5 text-xs font-mono rounded-xl bg-background"
+                  onChange={setTechnicalOpeningDate}
+                  className="h-8.5 text-xs font-mono rounded-xl bg-background font-bold text-center"
                 />
               </div>
             </div>
@@ -1450,15 +1677,51 @@ export function WarrantyCertificateSection({
                 placeholder="سنة"
                 className="h-9.5 text-xs font-bold rounded-xl"
               />
+              <div className="flex items-center gap-1 flex-wrap pt-0.5">
+                {["سنة", "سنتين", "ثلاث سنوات", "ستة أشهر"].map((d) => (
+                  <button
+                    key={d}
+                    type="button"
+                    onClick={() => setWarrantyDuration(d)}
+                    className={`px-1.5 py-0.5 text-[9.5px] font-bold rounded-md border transition-all ${
+                      warrantyDuration === d
+                        ? "bg-amber-500/20 text-amber-700 dark:text-amber-300 border-amber-500/40"
+                        : "bg-muted/40 text-muted-foreground hover:text-foreground border-border"
+                    }`}
+                  >
+                    {d}
+                  </button>
+                ))}
+              </div>
             </div>
             <div className="space-y-1.5 sm:col-span-2">
               <Label className="text-xs font-bold text-foreground">شروط وتغطية الضمان *</Label>
               <Input
                 value={warrantyCoverage}
                 onChange={(e) => setWarrantyCoverage(e.target.value)}
-                placeholder="ضد عيوب الصناعه في مداس الكاوتش فقط"
+                placeholder="ضد كافة عيوب الصناعة وعيوب المواد والخامات المصنعية"
                 className="h-9.5 text-xs rounded-xl"
               />
+              <div className="flex items-center gap-1 flex-wrap pt-0.5">
+                {[
+                  "ضد كافة عيوب الصناعة وعيوب المواد والخامات المصنعية",
+                  "ضد كافة عيوب الصناعة",
+                  "ضد كافة عيوب الصناعة والمصنعية",
+                ].map((cov) => (
+                  <button
+                    key={cov}
+                    type="button"
+                    onClick={() => setWarrantyCoverage(cov)}
+                    className={`px-1.5 py-0.5 text-[9.5px] font-bold rounded-md border transition-all ${
+                      warrantyCoverage === cov
+                        ? "bg-amber-500/20 text-amber-700 dark:text-amber-300 border-amber-500/40"
+                        : "bg-muted/40 text-muted-foreground hover:text-foreground border-border"
+                    }`}
+                  >
+                    {cov}
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
 
@@ -1597,7 +1860,7 @@ export function WarrantyCertificateSection({
                   <div>
                     <div className="flex items-center gap-2">
                       <h3 className="font-extrabold text-foreground text-base">
-                        معاينة قالب الوورد المعتمد: شهادة ضمان.docx
+                        معاينة قالب الوورد المعتمد: {isEx ? "ضمان سيستم اكسلانت.docx" : "شهادة ضمان.docx"}
                       </h3>
                       <Badge className="bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/30 text-[10px] font-bold">
                         معاينة Word COM الرسمية 100% ✓
@@ -1654,6 +1917,17 @@ export function WarrantyCertificateSection({
                     onAddToArchive={handleToggleArchive}
                     isArchived={isArchived}
                     addingToArchive={addingToArchive}
+                    userRole={currentUserRole}
+                    isApproved={isApproved}
+                    isApprovalPending={isApprovalPending}
+                    onRequestApproval={requestApproval}
+                    cloudUploadWarning={
+                      cloudPdfUrl && savedSnapshot && savedSnapshot !== currentSnapshot
+                        ? "⚠️ تنبيه ذكي: هذه الشهادة تحتوي على تعديلات جديدة لم يتم رفعها سحابياً — يرجى الضغط على 'إعادة الرفع والتحديث' لكي يتطابق الباركود مع أحدث بيانات!"
+                        : null
+                    }
+                    onUploadCloud={() => handleUploadToCloud(true)}
+                    isUploadingCloud={uploadingCloud}
                   />
                 )}
               </div>

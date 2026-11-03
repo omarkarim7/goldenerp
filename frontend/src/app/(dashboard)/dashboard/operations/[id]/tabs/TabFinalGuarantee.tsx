@@ -7,7 +7,7 @@ import {
   Building2, Calendar, Hash, FileCheck, Copy, ArrowRight, ArrowLeft,
   Paperclip, QrCode, Cloud, Globe, ExternalLink, CheckCircle2, RotateCcw,
   Save, Lock, Sparkles, Receipt, Landmark, RefreshCw, Trash2, Edit, X, Plus, Loader2, FolderOpen, Clock,
-  Percent
+  Percent, UserCheck
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -51,7 +51,18 @@ import {
   generateHighResDocQrBuffer,
   getStandardDocQrPayload,
   buildOfficialSignaturesTableXml,
+  fetchDocxTemplateArrayBuffer,
+  replaceDocxStandardHeaderFooter,
+  useLetterApproval,
 } from "./letter-utils";
+import {
+  isExellentCompany,
+  cleanTafqeetForTemplate,
+  generateExellentBankGuaranteeDocx,
+  generateExellentFinalInsuranceCashDocx,
+  generateExellentFinalInsuranceDeductionDocx,
+  generateExellentFinalInsuranceDeductionAndInitialDocx,
+} from "./exellent-letter-engine";
 import JSZip from "jszip";
 import QRCode from "qrcode";
 import { getPdfBlobFromDocx, uploadPdfToFreeCloud, getExpectedCloudPdfUrl } from "./client-pdf";
@@ -105,12 +116,12 @@ export function TabFinalGuarantee({
 
   // Winning Award Details
   const ourWinningAward = (op.awards || []).find((a: any) => a.isOurCompany) || op.awards?.[0];
-  const totalAwardPrice = Number(ourWinningAward?.winnerPrice || 850000);
+  const totalAwardPrice = Number(ourWinningAward?.winnerPrice || op.awards?.[0]?.winnerPrice || (op as any).estimatedBudget || (op as any).value || 0);
   const calculated5Percent = Math.round(totalAwardPrice * 0.05);
 
   // Initial Guarantee Details
   const initialGuar = (op.guarantees || []).find((g: any) => g.type === "INITIAL");
-  const initialGuarAmount = initialGuar ? Number(initialGuar.amount) : 10000;
+  const initialGuarAmount = initialGuar ? Number(initialGuar.amount) : Number((op as any).initialInsuranceAmount || 0);
 
   // Company Selection
   const [selectedCompanyId, setSelectedCompanyId] = useState<string>(() => {
@@ -125,6 +136,7 @@ export function TabFinalGuarantee({
   }, [op.companies, selectedCompanyId]);
 
   const currentCompany = currentCompanyLink?.company;
+  const isEx = isExellentCompany(currentCompanyLink || currentCompany || op);
 
   // Smart Outgoing Registration Number (Letter-specific for Final Guarantee)
   const [registrationNumber, setRegistrationNumber] = useState(() => {
@@ -143,7 +155,13 @@ export function TabFinalGuarantee({
   const [phoneWhatsapp, setPhoneWhatsapp] = useState(() => savedSettings?.phoneWhatsapp || currentCompany?.phone || "01091708818");
   const [phoneMobile, setPhoneMobile] = useState(() => savedSettings?.phoneMobile || "01557018818");
   const [companyAddress, setCompanyAddress] = useState(() => savedSettings?.companyAddress || currentCompany?.address || "بجوار مستشفى ليدى كير  -  بدمنهور -  البحيره");
-  const [companyEmail, setCompanyEmail] = useState(() => savedSettings?.companyEmail || currentCompany?.email || "goldengolden8818@gmail.com");
+  const [companyEmail, setCompanyEmail] = useState(() => {
+    if (savedSettings?.companyEmail) return savedSettings.companyEmail;
+    if (currentCompany?.email) return currentCompany.email;
+    const isEx = isExellentCompany(currentCompanyLink || currentCompany || op);
+    return isEx ? "exellentservice@gmail.com" : "goldengolden8818@gmail.com";
+  });
+  const [companyOtherDetails, setCompanyOtherDetails] = useState(() => savedSettings?.companyOtherDetails || "");
   const [outgoingDate, setOutgoingDate] = useState(() => savedSettings?.outgoingDate || new Date().toLocaleDateString("en-GB"));
 
   // Addressee & Operation Fields
@@ -206,6 +224,12 @@ export function TabFinalGuarantee({
   });
   const [initialGuaranteeFieldAmount, setInitialGuaranteeFieldAmount] = useState<string>(() => savedSettings?.initialGuaranteeFieldAmount || String(initialGuarAmount));
 
+  // تفويض المندوب (خاص بنماذج شركة إكسلنت)
+  const [delegateName, setDelegateName] = useState(() => savedSettings?.delegateName || "أحمد محمد أحمد");
+  const [delegateTitle, setDelegateTitle] = useState(() => savedSettings?.delegateTitle || "مندوب التعاقدات المفوض");
+  const [delegateNationalId, setDelegateNationalId] = useState(() => savedSettings?.delegateNationalId || "23056289523202");
+  const [delegatePowers, setDelegatePowers] = useState(() => savedSettings?.delegatePowers || "وسداد المبالغ واستلام الايصالات وحضور الجلسات وجميع الأوراق والتوقيع على العقود واستلام الخطابات والمكاتبات الرسميه");
+
   // الربط التلقائي بنسبة التأمين النهائي من إعدادات النظام العامة
   useEffect(() => {
     let isMounted = true;
@@ -262,8 +286,16 @@ export function TabFinalGuarantee({
       if (currentCompanyLink?.displayCode) {
         setCompanyOpCode(currentCompanyLink.displayCode);
       }
+      if (isEx) {
+        if (!savedSettings?.accountHolderName || accountHolderName.includes("سحر حسن")) {
+          setAccountHolderName(currentCompany?.managerName || "إيهاب كامل عبدربه محمد");
+        }
+        if (!savedSettings?.accountNationalId || accountNationalId === "28912111802623") {
+          setAccountNationalId(currentCompany?.managerNationalId || "2831210021512");
+        }
+      }
     }
-  }, [currentCompany, currentCompanyLink]);
+  }, [currentCompany, currentCompanyLink, isEx]);
 
   // دوال الحساب ثنائي الاتجاه بين النسبة المئوية والمبلغ بالجنيه
   const handleRateChange = (newRate: number) => {
@@ -306,14 +338,32 @@ export function TabFinalGuarantee({
   const [deductionMonth, setDeductionMonth] = useState(() => savedSettings?.deductionMonth || "أكتوبر");
   const [deductionYear, setDeductionYear] = useState(() => savedSettings?.deductionYear || "2026");
 
+  const {
+    currentUserRole,
+    isApproved,
+    isApprovalPending,
+    requestApproval,
+  } = useLetterApproval({
+    registrationNumber,
+    letterTitle: "خطاب سداد التأمين النهائي",
+    op,
+    companyCode: currentCompanyLink?.displayCode,
+  });
+
   // Bank Guarantee Fields (for bank template)
   const [bankRecipientTitle, setBankRecipientTitle] = useState(() => savedSettings?.bankRecipientTitle || "مدير بنك مصر   فرع    دمنهور");
   const [bankTargetAuthority, setBankTargetAuthority] = useState(() => savedSettings?.bankTargetAuthority || (op.authority || "مديرية الصحة بالبحيرة"));
   const [bankTargetAddress, setBankTargetAddress] = useState(() => savedSettings?.bankTargetAddress || "البحيرة – دمنهور - خلف مستشفى الصدر");
   const [bankAccountNumber, setBankAccountNumber] = useState(() => savedSettings?.bankAccountNumber || "2670220000004113");
   const [bankNameAndBranch, setBankNameAndBranch] = useState(() => savedSettings?.bankNameAndBranch || "مصر الاسلامى — فرع دمنهور");
-  const [accountHolderName, setAccountHolderName] = useState(() => savedSettings?.accountHolderName || "سحر حسن محمد أحمد عبد السلام جولدن سرفيس");
-  const [accountNationalId, setAccountNationalId] = useState(() => savedSettings?.accountNationalId || "28912111802623");
+  const [accountHolderName, setAccountHolderName] = useState(() => {
+    if (savedSettings?.accountHolderName) return savedSettings.accountHolderName;
+    return isEx ? (currentCompany?.managerName || "إيهاب كامل عبدربه محمد") : "سحر حسن محمد أحمد عبد السلام جولدن سرفيس";
+  });
+  const [accountNationalId, setAccountNationalId] = useState(() => {
+    if (savedSettings?.accountNationalId) return savedSettings.accountNationalId;
+    return isEx ? (currentCompany?.managerNationalId || "2831210021512") : "28912111802623";
+  });
   const [guaranteeDurationText, setGuaranteeDurationText] = useState(() => savedSettings?.guaranteeDurationText || "سنة واحدة");
   const [guaranteeStartDate, setGuaranteeStartDate] = useState(() => savedSettings?.guaranteeStartDate || new Date().toLocaleDateString("en-GB"));
   const [guaranteeEndDate, setGuaranteeEndDate] = useState(() => {
@@ -331,6 +381,7 @@ export function TabFinalGuarantee({
     const comp = currentCompanyLink?.company || op.companies?.[0]?.company;
     return sanitizeChairmanTitle(comp?.managerName || "سحر حسن محمد أحمد عبد السلام");
   });
+  const [additionalNotes, setAdditionalNotes] = useState(() => savedSettings?.additionalNotes || "");
   // Cloud URLs per letter type (Cloudflare R2 / Gofile)
   const [cloudUrls, setCloudUrls] = useState<Record<string, string>>(() => {
     const initial = savedSettings?.cloudUrls || {};
@@ -395,6 +446,7 @@ export function TabFinalGuarantee({
       phoneMobile,
       companyAddress,
       companyEmail,
+      companyOtherDetails,
       outgoingDate,
       recipientPrefix,
       recipientTitleAndAuthority,
@@ -422,6 +474,7 @@ export function TabFinalGuarantee({
       guaranteeDurationText,
       guaranteeStartDate,
       guaranteeEndDate,
+      additionalNotes,
       specialistTitle,
       specialistName,
       financeManagerName,
@@ -429,13 +482,13 @@ export function TabFinalGuarantee({
     });
   }, [
     activeLetterType, selectedCompanyId, registrationNumber, companyOpCode, companyCommercialRegister,
-    companyTaxCard, phoneWhatsapp, phoneMobile, companyAddress, companyEmail, outgoingDate,
+    companyTaxCard, phoneWhatsapp, phoneMobile, companyAddress, companyEmail, companyOtherDetails, outgoingDate,
     recipientPrefix, recipientTitleAndAuthority, operationRegisteredName, operationNumber, tenderMethod,
     operationScope, fiscalYear, technicalOpeningDate, amountPaid, totalAwardAmount,
     initialGuaranteeFieldAmount, guaranteeRate, calcMode, deductionOperationName, deductionMonth, deductionYear,
     bankRecipientTitle, bankTargetAuthority, bankTargetAddress, bankAccountNumber, bankNameAndBranch,
     accountHolderName, accountNationalId, guaranteeDurationText, guaranteeStartDate, guaranteeEndDate,
-    specialistTitle, specialistName, financeManagerName, boardChairman,
+    additionalNotes, specialistTitle, specialistName, financeManagerName, boardChairman,
   ]);
 
   const [savedSnapshot, setSavedSnapshot] = useState<string>(() => currentSnapshot);
@@ -447,6 +500,10 @@ export function TabFinalGuarantee({
       setActiveLetterType(snap.activeLetterType);
       setSelectedCompanyId(snap.selectedCompanyId);
       setRegistrationNumber(snap.registrationNumber);
+      setCompanyEmail(snap.companyEmail || "");
+      setCompanyOtherDetails(snap.companyOtherDetails || "");
+      setCompanyAddress(snap.companyAddress || "");
+      setAdditionalNotes(snap.additionalNotes || "");
       setAmountPaid(snap.amountPaid);
       setTotalAwardAmount(snap.totalAwardAmount);
       if (snap.guaranteeRate !== undefined) setGuaranteeRate(snap.guaranteeRate);
@@ -477,16 +534,207 @@ export function TabFinalGuarantee({
 
   // ━━━ Word Document Generation Engine (محرك توليد مستندات الوورد المعتمدة بدقة 100%) ━━━
   const generateGuaranteeDocxBlob = async (type: FinalGuaranteeLetterType = activeLetterType): Promise<Blob> => {
+    const numPaid = Number(amountPaid) || calculated5Percent;
+    const tafqeetPaid = tafqeetArabic(numPaid);
+    const numTotal = Number(totalAwardAmount) || totalAwardPrice;
+    const tafqeetTotal = tafqeetArabic(numTotal);
+    const numInitial = Number(initialGuaranteeFieldAmount) || initialGuarAmount;
+    const tafqeetInitial = tafqeetArabic(numInitial);
+
+    // ━━━ المسار المخصص المستقل لشركة إكسلنت (B) ━━━
+    const isB = isExellentCompany(currentCompanyLink || currentCompany || op);
+    if (isB) {
+      let qrBinary: Uint8Array | undefined = undefined;
+      try {
+        const activeCloud = cloudUrls[type];
+        const filename = `final_guarantee_${type}_${registrationNumber || op.serialNumber || "doc"}.pdf`;
+        const qrPayload = await getStandardDocQrPayload(
+          activeCloud,
+          registrationNumber,
+          type === "BANK_GUARANTEE"
+            ? "خطاب إصدار خطاب ضمان بنكي نهائي"
+            : type === "DEDUCTION"
+            ? "خطاب خصم التأمين النهائي من المستحقات"
+            : type === "DEDUCTION_AND_INITIAL" || type === "INITIAL_TRANSFER"
+            ? "خطاب خصم النهائي من المستحقات والتأمين الابتدائي"
+            : "خطاب سداد التأمين النهائي نقداً بالخزينة",
+          currentCompany?.name || "إكسلنت سرفيس",
+          filename
+        );
+        qrBinary = await generateHighResDocQrBuffer(qrPayload);
+      } catch (e) {
+        console.warn("QR generation failed for Exellent final guarantee:", e);
+      }
+
+      if (type === "BANK_GUARANTEE") {
+        const branchParts = (bankNameAndBranch || "").split(/—|-|فرع/);
+        const accBank = (branchParts[0] || bankNameAndBranch || "بنك مصر الاسلامي").trim();
+        const accBranch = (branchParts.slice(1).join(" ") || "دمنهور").replace(/^فرع\s*/, "").trim() || "دمنهور";
+
+        return await generateExellentBankGuaranteeDocx({
+          bankRecipientPrefix: recipientPrefix,
+          bankRecipientTitle: bankRecipientTitle || `مدير بنك مصر فرع دمنهور`,
+          bankName,
+          bankBranch: accBranch,
+          guaranteeType: "نهائي",
+          operationRegisteredName,
+          operationNumber,
+          authorityName: bankTargetAuthority,
+          authorityAddress: bankTargetAddress,
+          actionText: "قبول إصدار خطاب ضمان",
+          bankGuaranteeAmount: String(numPaid),
+          bankGuaranteeTafqeet: cleanTafqeetForTemplate(tafqeetPaid),
+          tenderMethod,
+          operationScope,
+          fiscalYear,
+          technicalOpeningDate,
+          guaranteePercentage: `${guaranteeRate} %`,
+          operationTotalAmount: String(numTotal),
+          operationTotalTafqeet: cleanTafqeetForTemplate(tafqeetTotal),
+          guaranteeDurationText,
+          guaranteeStartDate,
+          guaranteeEndDate,
+          bankAccountNumber,
+          accountBankName: accBank,
+          accountBankBranch: accBranch,
+          accountOwnerName: accountHolderName || (currentCompany?.managerName || "إيهاب كامل عبدربه محمد"),
+          accountOwnerNationalId: accountNationalId || (currentCompany?.managerNationalId || "2831210021512"),
+          authorizedSignatoryName: accountHolderName || (currentCompany?.managerName || "إيهاب كامل عبدربه محمد"),
+          companyCommercialRegister,
+          companyTaxCard,
+          companyOpCode,
+          outgoingDate,
+          registrationNumber,
+          companyAddress,
+          phoneWhatsapp,
+          phoneMobile,
+          companyEmail: companyEmail || currentCompany?.email,
+          companyOtherDetails: companyOtherDetails || "",
+          qrBinary,
+        });
+      }
+      if (type === "DEDUCTION") {
+        return await generateExellentFinalInsuranceDeductionDocx({
+          recipientPrefix,
+          recipientTitleAndAuthority,
+          operationRegisteredName,
+          operationNumber,
+          insuranceAmount: String(numPaid),
+          insuranceTafqeet: cleanTafqeetForTemplate(tafqeetPaid),
+          deductionOperationName,
+          deductionMonth,
+          deductionYear,
+          tenderMethod,
+          operationScope,
+          fiscalYear,
+          technicalOpeningDate,
+          delegateName,
+          delegateTitle,
+          delegateNationalId,
+          delegatePowers,
+          guaranteePercentage: `${guaranteeRate} %`,
+          operationTotalAmount: String(numTotal),
+          operationTotalTafqeet: cleanTafqeetForTemplate(tafqeetTotal),
+          additionalNotes: additionalNotes || "",
+          specialistName,
+          financeManagerName,
+          boardChairman,
+          companyCommercialRegister,
+          companyTaxCard,
+          companyOpCode,
+          outgoingDate,
+          registrationNumber,
+          companyAddress,
+          phoneWhatsapp,
+          phoneMobile,
+          companyEmail: companyEmail || currentCompany?.email,
+          companyOtherDetails: companyOtherDetails || "",
+          qrBinary,
+        });
+      }
+      if (type === "DEDUCTION_AND_INITIAL" || type === "INITIAL_TRANSFER") {
+        return await generateExellentFinalInsuranceDeductionAndInitialDocx({
+          recipientPrefix,
+          recipientTitleAndAuthority,
+          operationRegisteredName,
+          operationNumber,
+          cashAmount: String(numPaid),
+          cashTafqeet: cleanTafqeetForTemplate(tafqeetPaid),
+          initialTransferredAmount: String(numInitial),
+          initialTransferredTafqeet: cleanTafqeetForTemplate(tafqeetInitial),
+          tenderMethod,
+          operationScope,
+          fiscalYear,
+          technicalOpeningDate,
+          delegateName,
+          delegateTitle,
+          delegateNationalId,
+          delegatePowers,
+          guaranteePercentage: `${guaranteeRate} %`,
+          operationTotalAmount: String(numTotal),
+          operationTotalTafqeet: cleanTafqeetForTemplate(tafqeetTotal),
+          additionalNotes: additionalNotes || "",
+          specialistName,
+          financeManagerName,
+          boardChairman,
+          companyCommercialRegister,
+          companyTaxCard,
+          companyOpCode,
+          outgoingDate,
+          registrationNumber,
+          companyAddress,
+          phoneWhatsapp,
+          phoneMobile,
+          companyEmail: companyEmail || currentCompany?.email,
+          companyOtherDetails: companyOtherDetails || "",
+          qrBinary,
+        });
+      }
+      // CASH fallback
+      return await generateExellentFinalInsuranceCashDocx({
+        recipientPrefix,
+        recipientTitleAndAuthority,
+        operationRegisteredName,
+        operationNumber,
+        insuranceAmount: String(numPaid),
+        insuranceTafqeet: cleanTafqeetForTemplate(tafqeetPaid),
+        tenderMethod,
+        operationScope,
+        fiscalYear,
+        technicalOpeningDate,
+        delegateName,
+        delegateTitle,
+        delegateNationalId,
+        delegatePowers,
+        guaranteePercentage: `${guaranteeRate} %`,
+        operationTotalAmount: String(numTotal),
+        operationTotalTafqeet: cleanTafqeetForTemplate(tafqeetTotal),
+        additionalNotes: additionalNotes || "",
+        specialistName,
+        financeManagerName,
+        boardChairman,
+        companyCommercialRegister,
+        companyTaxCard,
+        companyOpCode,
+        outgoingDate,
+        registrationNumber,
+        companyAddress,
+        phoneWhatsapp,
+        phoneMobile,
+        companyEmail: companyEmail || currentCompany?.email,
+        companyOtherDetails: companyOtherDetails || "",
+        qrBinary,
+      });
+    }
+
+    // ━━━ المسار المعتمد الأصلي لشركة جولدن (A) ━━━
     let templateFilename = "final_insurance_cash_template.docx";
     if (type === "DEDUCTION") templateFilename = "final_insurance_deduction_template.docx";
     else if (type === "DEDUCTION_AND_INITIAL") templateFilename = "final_insurance_deduction_and_initial_template.docx";
     else if (type === "INITIAL_TRANSFER") templateFilename = "final_insurance_initial_transfer_template.docx";
     else if (type === "BANK_GUARANTEE") templateFilename = "final_insurance_bank_guarantee_template.docx";
 
-    const response = await fetch(`/templates/${templateFilename}`);
-    if (!response.ok) throw new Error(`فشل قراءة قالب التأمين النهائي (${type}) من الخادم`);
-    const templateBuffer = await response.arrayBuffer();
-
+    const templateBuffer = await fetchDocxTemplateArrayBuffer(templateFilename, currentCompanyLink || currentCompany || op);
     const zip = await JSZip.loadAsync(templateBuffer);
 
     // QR Code Generation - فقط في حالة الرفع السحابي الفعلي
@@ -535,13 +783,6 @@ export function TabFinalGuarantee({
 
     let docXml = await zip.file("word/document.xml")!.async("text");
     docXml = injectSingleQrIntoDocXml(docXml, qrDrawingXml, escapeXml(registrationNumber));
-
-    const numPaid = Number(amountPaid) || calculated5Percent;
-    const tafqeetPaid = tafqeetArabic(numPaid);
-    const numTotal = Number(totalAwardAmount) || totalAwardPrice;
-    const tafqeetTotal = tafqeetArabic(numTotal);
-    const numInitial = Number(initialGuaranteeFieldAmount) || initialGuarAmount;
-    const tafqeetInitial = tafqeetArabic(numInitial);
 
     // 1. استبدال السيد / الموجه إليه بدقة 100%
     if (type === "BANK_GUARANTEE") {
@@ -636,33 +877,18 @@ export function TabFinalGuarantee({
     docXml = docXml.replace(/<w:highlight\s+[^>]*\/>/g, "");
     docXml = docXml.replace(/<w:color\s+w:val=\"(red|FF0000)\"[^>]*\/>/g, "");
 
-    // 11. الترويسة والتذييل
-    let hdrXml = await zip.file("word/header2.xml")?.async("text");
-    if (hdrXml) {
-      hdrXml = hdrXml.replace(/110200700036620/g, escapeXml(companyCommercialRegister));
-      hdrXml = hdrXml.replace(/658369652/g, escapeXml(companyTaxCard));
-      hdrXml = hdrXml.replace(/\(\s*كود العملية بالشركه\s*\)/g, `( ${escapeXml(companyOpCode)} )`);
-      hdrXml = hdrXml.replace(/كود العملية بالشركه/g, escapeXml(companyOpCode));
-      hdrXml = hdrXml.replace(/<w:highlight\s+[^>]*\/>/g, "");
-      hdrXml = hdrXml.replace(/<w:color\s+w:val=\"(red|FF0000)\"[^>]*\/>/g, "");
-      zip.file("word/header2.xml", hdrXml);
-    }
-
-    let ftrXml = await zip.file("word/footer1.xml")?.async("text");
-    if (ftrXml) {
-      ftrXml = ftrXml.replace(/15\/10\/2026/g, escapeXml(outgoingDate));
-      if (ftrXml.includes("رقم القيد")) {
-        ftrXml = ftrXml.replace(/رقم القيد/g, `رقم القيد : ${escapeXml(registrationNumber)}`);
-      }
-      ftrXml = ftrXml.replace(/\(\s*باركود المستند أو العمليه/g, `رقم القيد : ${escapeXml(registrationNumber)}`);
-      ftrXml = ftrXml.replace(/01091708818/g, escapeXml(phoneWhatsapp));
-      ftrXml = ftrXml.replace(/01557018818/g, escapeXml(phoneMobile));
-      ftrXml = ftrXml.replace(/بجوار مستشفى ليدى كير\s*-\s*بدمنهور\s*-\s*البح\s*يره/g, escapeXml(companyAddress));
-      ftrXml = ftrXml.replace(/goldengolden8818@gmail.com/g, escapeXml(companyEmail));
-      ftrXml = ftrXml.replace(/<w:highlight\s+[^>]*\/>/g, "");
-      ftrXml = ftrXml.replace(/<w:color\s+w:val=\"(red|FF0000)\"[^>]*\/>/g, "");
-      zip.file("word/footer1.xml", ftrXml);
-    }
+    // 11. الترويسة والتذييل (للشركتين جولدن وإكسلنت)
+    await replaceDocxStandardHeaderFooter(zip, {
+      companyCommercialRegister,
+      companyTaxCard,
+      companyOpCode,
+      outgoingDate,
+      registrationNumber,
+      companyAddress,
+      phoneWhatsapp,
+      phoneMobile,
+      companyEmail,
+    });
 
     // 12. حفظ مستند Word الأساسي بعد تطبيق كافة التعديلات والمتغيرات والباركود
     zip.file("word/document.xml", docXml);
@@ -691,8 +917,8 @@ export function TabFinalGuarantee({
       return;
     }
 
-    // التحميل الفوري من الأرشيف إذا كان المستند مضافاً مسبقاً وغير معدل (0ms)
-    if (!forceRefresh && !isDirty) {
+    // التحميل الفوري من الأرشيف إذا كان المستند مضافاً مسبقاً وغير معدل (فقط قبل أي توليد أو حفظ حديث)
+    if (!forceRefresh && !isDirty && !lastGeneratedSnapshot && !previewPdfBlob) {
       try {
         const cached = await loadArchivedPdfBlob(op, `letter-final-guarantee-${type}`);
         if (cached?.blob) {
@@ -722,6 +948,26 @@ export function TabFinalGuarantee({
       const url = URL.createObjectURL(pdf);
       setPreviewPdfUrl(url);
       setLastGeneratedSnapshot(currentSnapshot);
+
+      // رفع تلقائي فوري لسحابة Cloudflare R2 حصرياً لضمان توفر الملف دائماً عند مسح الباركود
+      const cloudFilename = `final_guarantee_${type}_${registrationNumber || op.serialNumber || "doc"}.pdf`;
+      uploadPdfToFreeCloud(pdf, cloudFilename)
+        .then((res) => {
+          if (res?.url) {
+            setCloudUrls((prev) => ({ ...prev, [type]: res.url }));
+            try {
+              let existingNotesObj: any = {};
+              if (op.notes && op.notes.startsWith("{")) existingNotesObj = JSON.parse(op.notes);
+              if (!existingNotesObj.finalGuaranteeLetters) existingNotesObj.finalGuaranteeLetters = {};
+              existingNotesObj.finalGuaranteeLetters[type] = {
+                ...(existingNotesObj.finalGuaranteeLetters[type] || {}),
+                cloudPdfUrl: res.url,
+              };
+              api.patch(`/operations/${op.id}`, { notes: JSON.stringify(existingNotesObj) }).catch(() => {});
+            } catch {}
+          }
+        })
+        .catch((e) => console.warn("Background Cloudflare R2 upload on preview:", e));
 
       if (forceRefresh) {
         toast.success("تم تحديث المعاينة الرسمية بنجاح! 🔄✨");
@@ -760,7 +1006,7 @@ export function TabFinalGuarantee({
         pdfBlob = await generateGuaranteePdfBlob(type);
       }
 
-      const fileName = `final_guarantee_${type}_${registrationNumber || op.serialNumber}.pdf`;
+      const fileName = `final_guarantee_${type}_${registrationNumber || op.serialNumber || "doc"}.pdf`;
       const cloudRes = await uploadPdfToFreeCloud(pdfBlob, fileName);
 
       if (cloudRes?.url) {
@@ -861,6 +1107,26 @@ export function TabFinalGuarantee({
         },
       };
       setPrintHistory(updatedHistory);
+
+      // رفع فوري سحابياً في الخلفية لضمان عمل رمز الـ QR فور طباعته ومنع خطأ NoSuchKey نهائياً
+      const cloudFilename = `final_guarantee_${activeLetterType}_${registrationNumber || op.serialNumber || "doc"}.pdf`;
+      uploadPdfToFreeCloud(pdfBlob, cloudFilename)
+        .then((res) => {
+          if (res?.url) {
+            setCloudUrls((prev) => ({ ...prev, [activeLetterType]: res.url }));
+            try {
+              let existingNotesObj: any = {};
+              if (op.notes && op.notes.startsWith("{")) existingNotesObj = JSON.parse(op.notes);
+              if (!existingNotesObj.finalGuaranteeLetters) existingNotesObj.finalGuaranteeLetters = {};
+              existingNotesObj.finalGuaranteeLetters[activeLetterType] = {
+                ...(existingNotesObj.finalGuaranteeLetters[activeLetterType] || {}),
+                cloudPdfUrl: res.url,
+              };
+              api.patch(`/operations/${op.id}`, { notes: JSON.stringify(existingNotesObj) }).catch(() => {});
+            } catch {}
+          }
+        })
+        .catch((e) => console.warn("Background Cloudflare R2 upload on print:", e));
 
       try {
         let notesObj: any = {};
@@ -964,7 +1230,7 @@ export function TabFinalGuarantee({
         registrationNumber,
       });
 
-      toast.success(`تمت إضافة المستند للأرشيف بنجاح (${versionName})! 📦✨`);
+      toast.success(`تم حفظ وأرشفة المستند بنجاح في أرشيف العملية (تخزين Hostinger المحلي) (${versionName})! 📦🔒`);
       onRefresh();
     } catch (err: any) {
       toast.error("فشل حفظ المستند في الأرشيف: " + (err?.message || ""));
@@ -1052,6 +1318,12 @@ export function TabFinalGuarantee({
     const snapToSave = currentSnapshot;
     setSavedSnapshot(snapToSave);
     setSavingState(true);
+    setLastGeneratedSnapshot(null);
+    setPreviewPdfBlob(null);
+    if (previewPdfUrl) {
+      URL.revokeObjectURL(previewPdfUrl);
+      setPreviewPdfUrl(null);
+    }
     toast.success("تم حفظ إعدادات وبيانات التأمين النهائي بنجاح! 💾✨");
 
     try {
@@ -1148,14 +1420,20 @@ export function TabFinalGuarantee({
     }
   };
 
+  const [deletingGuarId, setDeletingGuarId] = useState<string | null>(null);
+
   const handleDeleteGuarantee = async (guarId: string) => {
+    if (deletingGuarId) return;
     if (!confirm("هل أنت متأكد من حذف هذا السجل؟")) return;
+    setDeletingGuarId(guarId);
     try {
       await api.delete(`/operations/${op.id}/guarantees/${guarId}`);
       toast.success("تم الحذف بنجاح");
       onRefresh();
     } catch {
       toast.error("فشل الحذف");
+    } finally {
+      setDeletingGuarId(null);
     }
   };
 
@@ -1647,6 +1925,50 @@ export function TabFinalGuarantee({
                 />
               </div>
             </div>
+
+            {/* البريد الإلكتروني وتفاصيل أخرى وعنوان الشركة بالتذييل */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5 pt-1">
+                          <div className="space-y-1.5 sm:col-span-2">
+              <Label className="text-xs font-bold text-foreground">البريد الإلكتروني / تفاصيل أخرى بالتذييل (Footer)</Label>
+              <Input
+                value={companyEmail}
+                onChange={(e) => {
+                  setCompanyEmail(e.target.value);
+                  setCompanyOtherDetails(e.target.value);
+                }}
+                placeholder="exellentservice@gmail.com أو تفاصيل أخرى..."
+                className="h-9.5 text-xs rounded-xl"
+              />
+            </div>
+
+              <div className="space-y-1.5">
+                <Label className="text-xs font-bold text-foreground">العنوان بالتذييل (Footer)</Label>
+                <Input
+                  value={companyAddress}
+                  onChange={(e) => setCompanyAddress(e.target.value)}
+                  className="h-9.5 text-xs rounded-xl bg-background"
+                />
+              </div>
+            </div>
+
+            {/* العام المالي وموعد جلسة المظروف الفني لخطاب الضمان */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 pt-1">
+              <div className="space-y-1.5">
+                <FiscalYearSelect
+                  value={fiscalYear}
+                  onChange={setFiscalYear}
+                  label="العام المالي للعملية *"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs font-bold text-foreground">موعد جلسة فتح المظروف الفني *</Label>
+                <SmartArabicDatePicker
+                  value={technicalOpeningDate}
+                  onChange={setTechnicalOpeningDate}
+                  className="h-9.5 text-xs font-mono rounded-xl font-bold text-center"
+                />
+              </div>
+            </div>
           </div>
 
           {/* Conditional Template Fields */}
@@ -1729,33 +2051,147 @@ export function TabFinalGuarantee({
                   </div>
 
                   <div className="space-y-1.5">
-                    <Label className="text-xs font-bold text-foreground">مدة الارتباط بالتأمين *</Label>
+                    <div className="flex items-center justify-between">
+                      <Label className="text-xs font-bold text-foreground">مدة الارتباط بالتأمين *</Label>
+                      <span className="text-[10px] text-muted-foreground">اختر أو اكتب</span>
+                    </div>
                     <Input
                       value={guaranteeDurationText}
                       onChange={(e) => setGuaranteeDurationText(e.target.value)}
-                      placeholder="سنة واحدة / ستة أشهر"
+                      placeholder="سنة / سنتين / ستة أشهر"
                       className="h-9.5 text-xs font-bold rounded-xl text-center"
                     />
+                    <div className="flex flex-wrap justify-center gap-1 pt-1">
+                      {["سنة", "سنتين", "ستة أشهر", "أربعة أشهر", "ثلاثة أشهر"].map((preset) => {
+                        const isActive = guaranteeDurationText === preset;
+                        return (
+                          <button
+                            key={preset}
+                            type="button"
+                            onClick={() => setGuaranteeDurationText(preset)}
+                            className={`text-[10px] font-bold px-2 py-0.5 rounded-lg border transition-all ${
+                              isActive
+                                ? "bg-purple-600 text-white border-purple-600 shadow-sm"
+                                : "bg-muted/60 text-muted-foreground border-transparent hover:bg-muted hover:text-foreground"
+                            }`}
+                          >
+                            {preset}
+                          </button>
+                        );
+                      })}
+                    </div>
                   </div>
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div className="space-y-1.5">
                     <Label className="text-xs font-bold text-foreground">تبدأ من تاريخ *</Label>
-                    <Input
+                    <SmartArabicDatePicker
                       value={guaranteeStartDate}
-                      onChange={(e) => setGuaranteeStartDate(e.target.value)}
+                      onChange={setGuaranteeStartDate}
                       className="h-9.5 text-xs font-mono rounded-xl text-center"
                     />
                   </div>
 
                   <div className="space-y-1.5">
                     <Label className="text-xs font-bold text-foreground">وتنتهي في تاريخ *</Label>
-                    <Input
+                    <SmartArabicDatePicker
                       value={guaranteeEndDate}
-                      onChange={(e) => setGuaranteeEndDate(e.target.value)}
+                      onChange={setGuaranteeEndDate}
                       className="h-9.5 text-xs font-mono rounded-xl text-center"
                     />
+                  </div>
+                </div>
+
+                {/* مبالغ ونسبة خطاب الضمان البنكي للتأمين النهائي */}
+                <div className="p-4 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 space-y-3">
+                  <div className="flex items-center justify-between flex-wrap gap-2">
+                    <div className="flex items-center gap-2">
+                      <ShieldCheck className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
+                      <Label className="text-xs font-bold text-emerald-950 dark:text-emerald-200">
+                        مبلغ ونسبة خطاب الضمان البنكي المطلوب:
+                      </Label>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-[11px] font-bold text-muted-foreground">نسبة سريعة:</span>
+                      {[5, 10, 15].map((preset) => (
+                        <button
+                          key={preset}
+                          type="button"
+                          onClick={() => handleRateChange(preset)}
+                          className={`text-[10px] font-bold px-2 py-0.5 rounded-lg border transition-all ${
+                            guaranteeRate === preset
+                              ? "bg-emerald-600 text-white border-emerald-600 shadow-sm"
+                              : "bg-background/80 text-foreground border-border hover:bg-muted"
+                          }`}
+                        >
+                          {preset}%
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    {/* مبلغ خطاب الضمان المطلوب */}
+                    <div className="space-y-1.5 sm:col-span-1">
+                      <div className="flex items-center justify-between">
+                        <Label className="text-xs font-bold text-foreground">
+                          مبلغ الضمان المطلوب بالخطاب (ج.م) * ({guaranteeRate}%)
+                        </Label>
+                      </div>
+                      <div className="relative">
+                        <Input
+                          type="number"
+                          value={amountPaid}
+                          onChange={(e) => handleAmountPaidChange(e.target.value)}
+                          className="h-10 text-sm font-mono font-black rounded-xl text-center pl-10 pr-3 text-emerald-600 dark:text-emerald-400"
+                        />
+                        <span className="absolute left-3 top-2.5 text-xs text-muted-foreground font-bold pointer-events-none">ج.م</span>
+                      </div>
+                      <p className="text-[10px] text-muted-foreground font-mono leading-relaxed truncate" title={tafqeetArabic(Number(amountPaid))}>
+                        {tafqeetArabic(Number(amountPaid))}
+                      </p>
+                    </div>
+
+                    {/* نسبة الضمان */}
+                    <div className="space-y-1.5 sm:col-span-1">
+                      <div className="flex items-center justify-between">
+                        <Label className="text-xs font-bold text-foreground">نسبة التأمين المطلوبة (%) *</Label>
+                      </div>
+                      <div className="relative">
+                        <Input
+                          type="number"
+                          value={guaranteeRate}
+                          onChange={(e) => handleRateChange(Number(e.target.value))}
+                          min={0}
+                          max={100}
+                          className="h-10 text-sm font-mono font-bold rounded-xl text-center pl-8 pr-3"
+                        />
+                        <span className="absolute left-3 top-2.5 text-xs text-muted-foreground font-bold pointer-events-none">%</span>
+                      </div>
+                      <p className="text-[10px] text-muted-foreground">
+                        تحسب تلقائياً من قيمة الترسية الإجمالية
+                      </p>
+                    </div>
+
+                    {/* قيمة الترسية الإجمالية */}
+                    <div className="space-y-1.5 sm:col-span-1">
+                      <div className="flex items-center justify-between">
+                        <Label className="text-xs font-bold text-foreground">قيمة الترسية الإجمالية 100% (ج.م) *</Label>
+                      </div>
+                      <div className="relative">
+                        <Input
+                          type="number"
+                          value={totalAwardAmount}
+                          onChange={(e) => handleTotalAwardChange(e.target.value)}
+                          className="h-10 text-sm font-mono font-bold rounded-xl text-center pl-10 pr-3"
+                        />
+                        <span className="absolute left-3 top-2.5 text-xs text-muted-foreground font-bold pointer-events-none">ج.م</span>
+                      </div>
+                      <p className="text-[10px] text-muted-foreground font-mono leading-relaxed truncate" title={tafqeetArabic(Number(totalAwardAmount))}>
+                        {tafqeetArabic(Number(totalAwardAmount))}
+                      </p>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -1872,6 +2308,56 @@ export function TabFinalGuarantee({
               </div>
             )}
 
+            {/* تفويض المندوب لشركة إكسلنت */}
+            {isExellentCompany(currentCompanyLink || currentCompany || op) && activeLetterType !== "BANK_GUARANTEE" && (
+              <div className="p-4 rounded-2xl bg-amber-500/10 border border-amber-500/30 space-y-3">
+                <div className="flex items-center gap-2">
+                  <UserCheck className="h-4 w-4 text-amber-600" />
+                  <Label className="text-xs font-bold text-amber-900 dark:text-amber-200">
+                    بيانات تفويض المندوب الرسمي بالخطاب (شركة إكسلنت):
+                  </Label>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div className="space-y-1">
+                    <Label className="text-[11px] text-muted-foreground">اسم المندوب المفوض</Label>
+                    <Input
+                      value={delegateName}
+                      onChange={(e) => setDelegateName(e.target.value)}
+                      placeholder="أحمد محمد أحمد"
+                      className="h-9 text-xs rounded-xl"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-[11px] text-muted-foreground">صفة المندوب</Label>
+                    <Input
+                      value={delegateTitle}
+                      onChange={(e) => setDelegateTitle(e.target.value)}
+                      placeholder="مندوب التعاقدات المفوض"
+                      className="h-9 text-xs rounded-xl"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-[11px] text-muted-foreground">الرقم القومي للمندوب</Label>
+                    <Input
+                      value={delegateNationalId}
+                      onChange={(e) => setDelegateNationalId(e.target.value)}
+                      placeholder="23056289523202"
+                      className="h-9 text-xs font-mono rounded-xl text-center"
+                    />
+                  </div>
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-[11px] text-muted-foreground">صلاحيات التفويض</Label>
+                  <Input
+                    value={delegatePowers}
+                    onChange={(e) => setDelegatePowers(e.target.value)}
+                    placeholder="وسداد المبالغ واستلام الايصالات وحضور الجلسات وجميع الأوراق والتوقيع على العقود واستلام الخطابات والمكاتبات الرسميه"
+                    className="h-9 text-xs rounded-xl"
+                  />
+                </div>
+              </div>
+            )}
+
             {/* Signatures & Notes */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 pt-2 border-t border-border">
               <div className="space-y-1.5">
@@ -1900,6 +2386,16 @@ export function TabFinalGuarantee({
                   value={boardChairman}
                   onChange={(e) => setBoardChairman(e.target.value)}
                   className="h-9.5 text-xs font-bold rounded-xl border-emerald-500/30 focus-visible:ring-emerald-500"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <Label className="text-xs font-bold text-foreground">ملاحظات إضافية (اختياري)</Label>
+                <Input
+                  value={additionalNotes}
+                  onChange={(e) => setAdditionalNotes(e.target.value)}
+                  placeholder="ملاحظات تظهر بالقالب..."
+                  className="h-9.5 text-xs rounded-xl"
                 />
               </div>
             </div>
@@ -2176,10 +2672,15 @@ export function TabFinalGuarantee({
                     size="sm"
                     variant="ghost"
                     onClick={() => handleDeleteGuarantee(g.id)}
+                    disabled={deletingGuarId === g.id}
                     className="h-8.5 w-8.5 p-0 text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-xl"
                     title="حذف هذا السجل"
                   >
-                    <Trash2 className="h-4 w-4" />
+                    {deletingGuarId === g.id ? (
+                      <Loader2 className="h-4 w-4 animate-spin text-rose-600" />
+                    ) : (
+                      <Trash2 className="h-4 w-4" />
+                    )}
                   </Button>
                 </div>
               </div>
@@ -2330,7 +2831,7 @@ export function TabFinalGuarantee({
                   <div>
                     <div className="flex items-center gap-2">
                       <h3 className="font-extrabold text-foreground text-base">
-                        معاينة قالب الوورد المعتمد: خطاب سداد التأمين النهائي.docx
+                        معاينة قالب الوورد المعتمد: {isEx ? (activeLetterType === "DEDUCTION" ? "سداد تأمين  نهائى من مستحقات الشركة سيستم اكسلانت.docx" : activeLetterType === "DEDUCTION_AND_INITIAL" ? "سداد تأمين  نهائى وتحويل الابتدائى سيستم اكسلانت.docx" : activeLetterType === "BANK_GUARANTEE" ? "خطاب ضمان بنكى سيستم اكسلانت.docx" : activeLetterType === "INITIAL_TRANSFER" ? "سداد تأمين  نهائى وتحويل الابتدائى سيستم اكسلانت.docx" : "سداد تأمين  نهائى سيستم اكسلانت.docx") : "خطاب سداد التأمين النهائي.docx"}
                       </h3>
                       <Badge className="bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/30 text-[10px] font-bold">
                         معاينة Word COM الرسمية 100% ✓
@@ -2379,7 +2880,7 @@ export function TabFinalGuarantee({
                   </div>
                 ) : (
                   <OnlyOfficeDocViewer
-                    documentTitle={`تأمين_نهائي_${activeLetterType}_${op.externalNumber || op.serialNumber}_${registrationNumber}.docx`}
+                    documentTitle={`${isEx ? (activeLetterType === "DEDUCTION" ? "سداد تأمين  نهائى من مستحقات الشركة سيستم اكسلانت.docx" : activeLetterType === "DEDUCTION_AND_INITIAL" ? "سداد تأمين  نهائى وتحويل الابتدائى سيستم اكسلانت.docx" : activeLetterType === "BANK_GUARANTEE" ? "خطاب ضمان بنكى سيستم اكسلانت.docx" : activeLetterType === "INITIAL_TRANSFER" ? "سداد تأمين  نهائى وتحويل الابتدائى سيستم اكسلانت.docx" : "سداد تأمين  نهائى سيستم اكسلانت.docx") : `تأمين_نهائي_${activeLetterType}`}_${op.externalNumber || op.serialNumber}_${registrationNumber}.docx`}
                     docxBlob={previewDocxBlob}
                     pdfBlob={previewPdfBlob}
                     pdfUrl={previewPdfUrl}
@@ -2389,8 +2890,12 @@ export function TabFinalGuarantee({
                     onAddToArchive={handleToggleArchive}
                     isArchived={isArchived}
                     addingToArchive={addingToArchive}
+                    userRole={currentUserRole}
+                    isApproved={isApproved}
+                    isApprovalPending={isApprovalPending}
+                    onRequestApproval={requestApproval}
                     cloudUploadWarning={
-                      !currentCloudUrl || isDirty
+                      Boolean(currentCloudUrl && isDirty)
                         ? "⚠️ تنبيه هام: هذا الخطاب يحتوي على تعديلات جديدة لم يتم رفعها سحابياً — يرجى الضغط على 'إعادة الرفع والتحديث' لكي يتطابق الباركود مع أحدث بيانات!"
                         : null
                     }

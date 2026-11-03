@@ -21,6 +21,7 @@ export const DEFAULT_SYSTEM_SETTINGS = [
   // 4. التنبيهات والإشعارات الذكية
   { key: 'guarantee_reminder_days', value: '30,15,10,5', type: 'string', label: 'أيام التنبيه الاستباقي قبل انتهاء خطاب الضمان (مفصولة بفواصل)', group: 'notifications' },
   { key: 'deadline_reminder_hours', value: '48,24', type: 'string', label: 'ساعات التنبيه الاستباقي قبل موعد فتح المظاريف', group: 'notifications' },
+  { key: 'stage_alerts_config', value: '{"session_opening":{"enabled":true,"leadDays":2},"booklet_purchase":{"enabled":true,"leadDays":3},"inquiries_session":{"enabled":true,"leadDays":2},"auction_practice":{"enabled":true,"leadDays":2},"award_order":{"enabled":true,"leadDays":1},"supply_delivery":{"enabled":true,"leadDays":5},"inspection_committee":{"enabled":true,"leadDays":2},"guarantee_expiry":{"enabled":true,"leadDays":15},"warranty_visits":{"enabled":true,"leadDays":7},"invoice_certificate":{"enabled":true,"leadDays":3}}', type: 'string', label: 'تخصيص قواعد وتفاصيل تنبيهات جميع مراحل العمليات الحساسة', group: 'notifications' },
   { key: 'system_notifications_enabled', value: 'true', type: 'boolean', label: 'تفعيل نظام التنبيهات والإشعارات الفورية بالمنظومة', group: 'notifications' },
 
   // 5. رادار المناقصات والربط الذكي
@@ -38,6 +39,13 @@ export const DEFAULT_SYSTEM_SETTINGS = [
   { key: 'records_retention_years', value: '5', type: 'number', label: 'الحد الأدنى لحفظ وأرشفة سجلات العمليات (سنوات)', group: 'security' },
   { key: 'after_hours_start', value: '20', type: 'number', label: 'بداية ساعات الحظر المسائي (بتوقيت 24 ساعة)', group: 'security' },
   { key: 'after_hours_end', value: '6', type: 'number', label: 'نهاية ساعات الحظر الصباحي (بتوقيت 24 ساعة)', group: 'security' },
+
+  // 8. المساعد التنفيذي وإشعارات تليجرام
+  { key: 'telegram_bot_token', value: '8887272650:AAED3QzSPKcR6S9wRL2GBx94GitTHrzVgOM', type: 'string', label: 'رمز التوكن الرسمي للبوت (BotFather Token)', group: 'telegram' },
+  { key: 'telegram_admin_chat_id', value: '', type: 'string', label: 'معرف شات تليجرام المعتمد للسيد المدير العام (Chat ID)', group: 'telegram' },
+  { key: 'telegram_notifications_enabled', value: 'true', type: 'boolean', label: 'تفعيل إرسال التنبيهات الفورية عبر تليجرام', group: 'telegram' },
+  { key: 'telegram_alert_print_approvals', value: 'true', type: 'boolean', label: 'إرسال طلبات اعتماد الطباعة والتنزيل فوراً للبوت', group: 'telegram' },
+  { key: 'telegram_alert_sessions', value: 'true', type: 'boolean', label: 'إرسال تنبيهات اقتراب مواعيد فتح المظاريف وجلسات اليوم', group: 'telegram' },
 ];
 
 @Injectable()

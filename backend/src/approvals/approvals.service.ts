@@ -1,15 +1,17 @@
 import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service.js';
-import { ApprovalStatus, ApprovalType, UserRole } from '@prisma/client';
+import { ApprovalStatus, ApprovalType, UserRole, NotificationType, NotificationChannel } from '@prisma/client';
 import { CreateApprovalDto, UpdateApprovalDto } from './dto/approval.dto.js';
 import { randomBytes } from 'crypto';
 import { TelegramService } from '../telegram/telegram.service.js';
+import { NotificationsService } from '../notifications/notifications.service.js';
 
 @Injectable()
 export class ApprovalsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly telegramService: TelegramService,
+    private readonly notificationsService: NotificationsService,
   ) {}
 
   async findAll(filters?: { status?: ApprovalStatus; company?: string; requestedBy?: string }) {
@@ -86,7 +88,7 @@ export class ApprovalsService {
       },
     });
 
-    // If pending, dispatch to General Manager's Telegram
+    // If pending, dispatch to General Manager's Telegram and create in-app notification
     if (created.status === ApprovalStatus.PENDING) {
       this.telegramService.sendPrintApprovalRequest({
         id: created.id,
@@ -96,6 +98,16 @@ export class ApprovalsService {
         requestedBy: created.requestedBy,
         requestedAt: created.requestedAt,
         notes: created.notes,
+      }).catch(() => {});
+
+      const compCode = (created.operationCode ? created.operationCode.charAt(0) : 'A').toUpperCase();
+      this.notificationsService.create({
+        type: NotificationType.APPROVAL_REQUEST,
+        title: `طلب اعتماد طباعة: ${created.documentTitle || 'مستند رسمي'} (${created.operationCode || compCode})`,
+        message: `طلب اعتماد رسمي صادر من ${created.requestedBy} لعملية "${created.operationName || created.operationCode || 'مناقصة مسجلة'}". بانتظار قرار الإدارة العليا.`,
+        entityType: 'APPROVAL',
+        entityId: created.id,
+        channel: NotificationChannel.SYSTEM,
       }).catch(() => {});
     }
 
@@ -139,7 +151,7 @@ export class ApprovalsService {
 
     const approverTitle = user.role === UserRole.GENERAL_MANAGER ? 'المدير العام' : 'نائب المدير العام';
 
-    return this.prisma.approval.update({
+    const updated = await this.prisma.approval.update({
       where: { id },
       data: {
         status: ApprovalStatus.APPROVED,
@@ -148,6 +160,19 @@ export class ApprovalsService {
         notes: finalNotes,
       },
     });
+
+    const compCode = (approval.operationCode ? approval.operationCode.charAt(0) : 'A').toUpperCase();
+    this.notificationsService.markEntityNotificationsRead('APPROVAL', id).catch(() => {});
+    this.notificationsService.create({
+      type: NotificationType.APPROVAL_REQUEST,
+      title: `تم اعتماد طباعة: ${approval.documentTitle || 'مستند رسمي'} (${approval.operationCode || compCode}) ✅`,
+      message: `تم اعتماد الوثيقة بنجاح بواسطة ${approverTitle} وتوليد رمز الحوكمة التشفيري للطباعة الرسمية.`,
+      entityType: 'APPROVAL',
+      entityId: approval.id,
+      channel: NotificationChannel.SYSTEM,
+    }).catch(() => {});
+
+    return updated;
   }
 
   async reject(id: string, user: { sub: string; username: string; role: string }, notes?: string) {
@@ -158,7 +183,7 @@ export class ApprovalsService {
 
     const approverTitle = user.role === UserRole.GENERAL_MANAGER ? 'المدير العام' : 'نائب المدير العام';
 
-    return this.prisma.approval.update({
+    const updated = await this.prisma.approval.update({
       where: { id },
       data: {
         status: ApprovalStatus.REJECTED,
@@ -167,6 +192,19 @@ export class ApprovalsService {
         notes: notes || 'تم رفض طلب الاعتماد لمخالفة اللائحة أو نقص المستندات',
       },
     });
+
+    const compCode = (approval.operationCode ? approval.operationCode.charAt(0) : 'A').toUpperCase();
+    this.notificationsService.markEntityNotificationsRead('APPROVAL', id).catch(() => {});
+    this.notificationsService.create({
+      type: NotificationType.APPROVAL_REQUEST,
+      title: `تم رفض طلب: ${approval.documentTitle || 'مستند رسمي'} (${approval.operationCode || compCode}) ❌`,
+      message: `قرار الإدارة بواسطة ${approverTitle}: ${notes || 'تم رفض طلب الاعتماد لمخالفة اللائحة أو نقص المستندات'}.`,
+      entityType: 'APPROVAL',
+      entityId: approval.id,
+      channel: NotificationChannel.SYSTEM,
+    }).catch(() => {});
+
+    return updated;
   }
 
   async getPendingCount(company?: string) {

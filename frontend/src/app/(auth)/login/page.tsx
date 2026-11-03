@@ -58,10 +58,6 @@ export default function LoginPage() {
     }
   };
 
-  const quickFill = (u: string, p: string) => {
-    setUsername(u);
-    setPassword(p);
-  };
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-background p-4 relative overflow-hidden ambient-mesh">
@@ -143,38 +139,7 @@ export default function LoginPage() {
           </Button>
         </form>
 
-        {/* Quick Demo Access Pills */}
-        <div className="mt-6 pt-4 border-t border-border space-y-2">
-          <p className="text-[11px] text-muted-foreground font-semibold text-center">
-            تسجيل دخول سريع للتجربة (اضغط للملء التلقائي):
-          </p>
-          <div className="grid grid-cols-3 gap-2 text-xs">
-            <button
-              type="button"
-              onClick={() => quickFill("admin", "admin123")}
-              className="p-2 rounded-xl bg-muted/40 hover:bg-blue-500/15 hover:border-blue-500/40 border border-border text-muted-foreground hover:text-foreground text-center transition-all cursor-pointer"
-            >
-              <span className="block font-bold text-[11px] text-foreground">مدير عام</span>
-              <span className="text-[10px] text-muted-foreground font-mono">admin</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => quickFill("deputy", "deputy123")}
-              className="p-2 rounded-xl bg-muted/40 hover:bg-blue-500/15 hover:border-blue-500/40 border border-border text-muted-foreground hover:text-foreground text-center transition-all cursor-pointer"
-            >
-              <span className="block font-bold text-[11px] text-foreground">نائب مدير</span>
-              <span className="text-[10px] text-muted-foreground font-mono">deputy</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => quickFill("employee", "emp123")}
-              className="p-2 rounded-xl bg-muted/40 hover:bg-blue-500/15 hover:border-blue-500/40 border border-border text-muted-foreground hover:text-foreground text-center transition-all cursor-pointer"
-            >
-              <span className="block font-bold text-[11px] text-foreground">موظف</span>
-              <span className="text-[10px] text-muted-foreground font-mono">employee</span>
-            </button>
-          </div>
-        </div>
+
 
         <p className="text-center text-[11px] text-muted-foreground mt-5">
           GoldenERP V1.0 — جميع الحقوق محفوظة © 2026

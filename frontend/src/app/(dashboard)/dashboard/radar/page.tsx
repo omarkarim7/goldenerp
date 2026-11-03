@@ -287,7 +287,7 @@ export default function RadarPage() {
     const timer3 = setTimeout(() => setScanStep(3), 3600);
 
     try {
-      const res = await api.post("/radar/scan", { pagesCount: 2 });
+      const res = await api.post("/radar/scan", { pagesCount: 10 });
       if (res.data?.success) {
         setScanStep(4);
         const newCount = res.data.newCount ?? 0;

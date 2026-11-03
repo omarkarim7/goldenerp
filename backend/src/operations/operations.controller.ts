@@ -441,7 +441,7 @@ export class OperationsController {
 
   @Post(':id/guarantees')
   @UseGuards(RolesGuard)
-  @Roles(UserRole.GENERAL_MANAGER, UserRole.EMPLOYEE)
+  @Roles(UserRole.GENERAL_MANAGER, UserRole.DEPUTY_MANAGER, UserRole.EMPLOYEE)
   addGuarantee(
     @Param('id') id: string,
     @Body() body: any,
@@ -451,7 +451,7 @@ export class OperationsController {
 
   @Patch(':id/guarantees/:guaranteeId')
   @UseGuards(RolesGuard)
-  @Roles(UserRole.GENERAL_MANAGER, UserRole.EMPLOYEE)
+  @Roles(UserRole.GENERAL_MANAGER, UserRole.DEPUTY_MANAGER, UserRole.EMPLOYEE)
   updateGuarantee(
     @Param('id') id: string,
     @Param('guaranteeId') guaranteeId: string,
@@ -462,7 +462,7 @@ export class OperationsController {
 
   @Delete(':id/guarantees/:guaranteeId')
   @UseGuards(RolesGuard)
-  @Roles(UserRole.GENERAL_MANAGER, UserRole.EMPLOYEE)
+  @Roles(UserRole.GENERAL_MANAGER, UserRole.DEPUTY_MANAGER, UserRole.EMPLOYEE)
   deleteGuarantee(
     @Param('id') id: string,
     @Param('guaranteeId') guaranteeId: string,
@@ -474,7 +474,7 @@ export class OperationsController {
 
   @Post(':id/documents')
   @UseGuards(RolesGuard)
-  @Roles(UserRole.GENERAL_MANAGER, UserRole.EMPLOYEE)
+  @Roles(UserRole.GENERAL_MANAGER, UserRole.DEPUTY_MANAGER, UserRole.EMPLOYEE)
   @UseInterceptors(
     FileInterceptor('file', {
       storage: operationDocStorage,

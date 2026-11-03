@@ -10,7 +10,7 @@ import {
   Globe, Eye, Layers, ShieldAlert, ArrowRightCircle, ArrowLeft,
   Wallet, Landmark, Receipt, HardHat, Award, DollarSign, Search,
   Bell, MapPin, Zap, Activity, BarChart3, PieChart, Lock, ShieldCheck,
-  Send, AlertOctagon, HelpCircle, ClipboardCheck
+  Send, AlertOctagon, HelpCircle, ClipboardCheck, Briefcase
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -112,15 +112,19 @@ export default function DashboardPage() {
   } = useCompany();
 
   const [stats, setStats] = useState<Stats>({
-    total: 165,
-    active: 60,
-    awarded: 68,
-    closed: 37,
+    total: 0,
+    active: 0,
+    awarded: 0,
+    closed: 0,
   });
   const [user, setUser] = useState<{ fullName: string; role: string; username: string } | null>(null);
   const [recentOperations, setRecentOperations] = useState<OperationItem[]>([]);
+  const [dashboardRadarItems, setDashboardRadarItems] = useState<RadarItemBrief[]>([]);
+  const [dashboardVisits, setDashboardVisits] = useState<VisitItemBrief[]>([]);
+  const [dashboardGuarantees, setDashboardGuarantees] = useState<GuaranteeItemBrief[]>([]);
+  const [recentApprovalsLog, setRecentApprovalsLog] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [pendingApprovalsCount, setPendingApprovalsCount] = useState<number>(3);
+  const [pendingApprovalsCount, setPendingApprovalsCount] = useState<number>(0);
   const [activeSectionFilter, setActiveSectionFilter] = useState<"ALL" | "ALERTS" | "FINANCE" | "RADAR" | "VISITS" | "GUARANTEES">("ALL");
   const [alertCategoryFilter, setAlertCategoryFilter] = useState<string>("ALL");
 
@@ -185,40 +189,148 @@ export default function DashboardPage() {
           const opRes = await api.get(`/operations?limit=15${compParam}`);
           const ops = opRes.data;
           if (Array.isArray(ops) && ops.length > 0) {
-              const sampleRevenues = [2850000, 1800000, 1450000, 1200000, 2100000, 1650000, 3200000, 950000];
-              setRecentOperations(
-                ops.map((o: any, idx: number) => {
-                  const fin = o.operationFinance;
-                  const fallbackRev = sampleRevenues[idx % sampleRevenues.length];
-                  const rev = fin ? Number(fin.totalRevenue) : fallbackRev;
-                  const cost = fin ? Number(fin.totalCost) : Math.round(rev * 0.71);
-                  const profit = fin ? Number(fin.netProfit) : (rev - cost);
-                  const margin = rev > 0 ? (profit / rev) * 100 : 29;
-                  const certsTotal = (o.certificates || []).reduce(
-                    (s: number, c: any) => s + (Number(c.netAmount) || Number(c.grossAmount) || 0),
-                    0
-                  );
-                  const billedVal = certsTotal > 0 ? certsTotal : Math.round(rev * (0.55 + (idx % 4) * 0.1));
+            setRecentOperations(
+              ops.map((o: any, idx: number) => {
+                const fin = o.operationFinance;
+                const rev = fin ? Number(fin.totalRevenue) : Number(o.awardedAmount || o.estimatedValue || 0);
+                const cost = fin ? Number(fin.totalCost) : (rev > 0 ? Math.round(rev * 0.71) : 0);
+                const profit = fin ? Number(fin.netProfit) : (rev - cost);
+                const margin = rev > 0 ? (profit / rev) * 100 : 0;
+                const certsTotal = (o.certificates || []).reduce(
+                  (s: number, c: any) => s + (Number(c.netAmount) || Number(c.grossAmount) || 0),
+                  0
+                );
+                const billedVal = certsTotal > 0 ? certsTotal : (fin ? Number(fin.paidAmount || 0) : 0);
 
-                  return {
-                    id: o.id,
-                    name: o.name,
-                    authority: o.authority || "جهة حكومية",
-                    tenderType: o.tenderType || "TENDER",
-                    status: o.status || "AWARDED",
-                    code: o.companies?.[0]?.displayCode || `${selectedCompany === "ALL" ? "A" : selectedCompany}${String(15 - idx).padStart(2, "0")}`,
-                    companyName: o.companies?.[0]?.company?.name || `شركة ${selectedCompany || "جولدن"}`,
-                    companyCode: o.companies?.[0]?.company?.code || selectedCompany || "A",
-                    revenue: rev,
-                    cost: cost,
-                    profit: profit,
-                    margin: Math.round(margin * 10) / 10,
-                    billed: Math.min(rev, billedVal),
-                  };
-                })
-              );
-            }
+                return {
+                  id: o.id,
+                  name: o.name,
+                  authority: o.authority || "جهة حكومية",
+                  tenderType: o.tenderType || "TENDER",
+                  status: o.status || "AWARDED",
+                  code: o.companies?.[0]?.displayCode || `${selectedCompany === "ALL" ? "A" : selectedCompany}${String(15 - idx).padStart(2, "0")}`,
+                  companyName: o.companies?.[0]?.company?.name || `شركة ${selectedCompany || "جولدن"}`,
+                  companyCode: o.companies?.[0]?.company?.code || selectedCompany || "A",
+                  revenue: rev,
+                  cost: cost,
+                  profit: profit,
+                  margin: Math.round(margin * 10) / 10,
+                  billed: Math.min(rev, billedVal),
+                };
+              })
+            );
+          } else {
+            setRecentOperations([]);
+          }
+        } catch {
+          setRecentOperations([]);
+        }
+
+        // 4. Fetch real radar tenders
+        try {
+          const compFilter = selectedCompany && selectedCompany !== "ALL" ? `&companyCode=${selectedCompany}` : "";
+          const radarRes = await api.get(`/radar/items?limit=6&sortBy=newest${compFilter}`);
+          const rItems = radarRes.data?.items || [];
+          if (Array.isArray(rItems)) {
+            setDashboardRadarItems(
+              rItems.map((r: any) => {
+                const deadlineMs = r.deadline ? new Date(r.deadline).getTime() : 0;
+                const daysLeft = deadlineMs > 0 ? Math.max(0, Math.ceil((deadlineMs - Date.now()) / (1000 * 60 * 60 * 24))) : 14;
+                return {
+                  id: r.id,
+                  title: r.title,
+                  authority: r.authority || "جهة حكومية",
+                  insuranceAmount: Number(r.temporaryInsurance) || 0,
+                  sessionDate: r.deadline ? r.deadline.split("T")[0] : "قريباً",
+                  daysRemaining: daysLeft,
+                  matchScore: r.matchScore || 90,
+                  status: r.isImported ? "تم السحب ✓" : "جاهزة للسحب 🟢",
+                };
+              })
+            );
+          }
         } catch {}
+
+        // 5. Fetch real site visits
+        try {
+          const visitRes = await api.get("/site-visits");
+          const vData = visitRes.data;
+          if (Array.isArray(vData) && vData.length > 0) {
+            setDashboardVisits(
+              vData.slice(0, 4).map((v: any) => {
+                let extra: any = {};
+                try { if (v.notes && v.notes.includes("{")) extra = JSON.parse(v.notes); } catch {}
+                return {
+                  id: v.id,
+                  title: v.purpose || "معاينة ميدانية",
+                  authority: extra.authority || v.location || "الجهة المختصة",
+                  location: v.location || "الموقع الميداني",
+                  employeeName: v.employee?.name || "المسؤول الميداني",
+                  operationCode: v.operationId || "A01",
+                  visitDate: v.visitDate ? v.visitDate.split("T")[0] : "",
+                  siteReadiness: extra.siteReadiness || "READY",
+                  findings: extra.findings || v.notes || "تمت المعاينة ومطابقة الاشتراطات بنجاح.",
+                };
+              })
+            );
+          } else {
+            setDashboardVisits([]);
+          }
+        } catch {
+          setDashboardVisits([]);
+        }
+
+        // 6. Fetch real guarantees
+        try {
+          const guarRes = await api.get("/guarantees");
+          const gData = guarRes.data;
+          if (Array.isArray(gData) && gData.length > 0) {
+            setDashboardGuarantees(
+              gData.slice(0, 4).map((g: any) => {
+                const endMs = g.endDate ? new Date(g.endDate).getTime() : 0;
+                const daysLeft = endMs > 0 ? Math.max(0, Math.ceil((endMs - Date.now()) / (1000 * 60 * 60 * 24))) : 30;
+                return {
+                  id: g.id,
+                  guaranteeNumber: g.guaranteeNumber || "LG-000",
+                  bank: g.bankName || "البنك",
+                  type: g.type === "INITIAL" ? "ابتدائي (2%)" : "نهائي (5%)",
+                  amount: Number(g.amount) || 0,
+                  validUntil: g.endDate ? g.endDate.split("T")[0] : "",
+                  daysLeft: daysLeft,
+                  operationCode: g.operation?.companies?.[0]?.displayCode || "A01",
+                  operationName: g.operation?.name || "عملية مسجلة",
+                  status: daysLeft <= 30 ? "EXPIRING_SOON" : "ACTIVE",
+                };
+              })
+            );
+          } else {
+            setDashboardGuarantees([]);
+          }
+        } catch {
+          setDashboardGuarantees([]);
+        }
+
+        // 7. Fetch approvals log
+        try {
+          const appLogRes = await api.get("/approvals");
+          const aData = appLogRes.data;
+          if (Array.isArray(aData) && aData.length > 0) {
+            setRecentApprovalsLog(
+              aData.slice(0, 3).map((a: any) => ({
+                id: a.id,
+                doc: a.documentTitle || "مستند رسمي معتمد",
+                company: `شركة ${a.operationCode ? a.operationCode.charAt(0) : "A"}`,
+                hash: a.securityHash || "---",
+                approvedAt: a.decisionDate ? new Date(a.decisionDate).toLocaleDateString("ar-EG") : "معتمد",
+                approver: a.decisionBy?.name || "الإدارة العليا",
+              }))
+            );
+          } else {
+            setRecentApprovalsLog([]);
+          }
+        } catch {
+          setRecentApprovalsLog([]);
+        }
       } finally {
         setLoading(false);
       }
@@ -256,164 +368,14 @@ export default function DashboardPage() {
     DIRECT_ORDER: "أمر إسناد مباشر",
   };
 
-  // Demo fallback operations if DB has few entries
-  const companyDemoOperations: Record<string, OperationItem[]> = {
-    A: [
-      {
-        id: "demo-a1",
-        code: "A15",
-        name: "توريد وتركيب شبكة كابلات محولات الجهد المتوسط",
-        authority: "هيئة المجتمعات العمرانية الجديدة",
-        tenderType: "TENDER",
-        status: "SUPPLY_IN_PROGRESS",
-        companyName: "المجموعة الذهبية (A)",
-        companyCode: "A",
-        revenue: 2850000,
-        cost: 1980000,
-        profit: 870000,
-        margin: 30.5,
-        billed: 1720000,
-      },
-      {
-        id: "demo-a2",
-        code: "A12",
-        name: "توريد وتركيب منظومة كاميرات المراقبة وغرفة التحكم",
-        authority: "مديرية أمن الجيزة",
-        tenderType: "PRACTICE",
-        status: "AWARDED",
-        companyName: "المجموعة الذهبية (A)",
-        companyCode: "A",
-        revenue: 1800000,
-        cost: 1490000,
-        profit: 310000,
-        margin: 17.2,
-        billed: 650000,
-      },
-      {
-        id: "demo-a3",
-        code: "A09",
-        name: "أعمال الإحلال والتجديد لمحطات الرفع والضخ المركزية",
-        authority: "شركة مياه الشرب والصرف الصحي بالجيزة",
-        tenderType: "TENDER",
-        status: "TECHNICAL_ACCEPTED",
-        companyName: "المجموعة الذهبية (A)",
-        companyCode: "A",
-        revenue: 1200000,
-        cost: 880000,
-        profit: 320000,
-        margin: 26.7,
-        billed: 780000,
-      },
-    ],
-    B: [
-      {
-        id: "demo-b1",
-        code: "B08",
-        name: "إحلال وتجديد كابلات الفايبر والسنترالات المركزية",
-        authority: "وزارة الاتصالات وتكنولوجيا المعلومات",
-        tenderType: "TENDER",
-        status: "SUPPLY_IN_PROGRESS",
-        companyName: "العالمية للتوريدات (B)",
-        companyCode: "B",
-        revenue: 1450000,
-        cost: 1120000,
-        profit: 330000,
-        margin: 22.8,
-        billed: 980000,
-      },
-      {
-        id: "demo-b2",
-        code: "B04",
-        name: "توريد مهمات الوقاية وأجهزة الرعاية الطبية الفائقة",
-        authority: "الهيئة العامة للتأمين الصحي",
-        tenderType: "PRACTICE",
-        status: "AWARDED",
-        companyName: "العالمية للتوريدات (B)",
-        companyCode: "B",
-        revenue: 1950000,
-        cost: 1430000,
-        profit: 520000,
-        margin: 26.7,
-        billed: 1000000,
-      },
-    ],
-    C: [
-      {
-        id: "demo-c1",
-        code: "C04",
-        name: "تجهيز وتأثيث معامل الحاسب الآلي وغرف الخوادم",
-        authority: "الهيئة العامة للأبنية التعليمية",
-        tenderType: "TENDER",
-        status: "COMPLETED",
-        companyName: "المتحدة للمقاولات (C)",
-        companyCode: "C",
-        revenue: 920000,
-        cost: 680000,
-        profit: 240000,
-        margin: 26.1,
-        billed: 920000,
-      },
-      {
-        id: "demo-c2",
-        code: "C07",
-        name: "أعمال الصيانة المتكاملة وتطوير مجمع المدارس التجريبية",
-        authority: "مديرية التربية والتعليم بالقاهرة",
-        tenderType: "DIRECT_ORDER",
-        status: "SUPPLY_IN_PROGRESS",
-        companyName: "المتحدة للمقاولات (C)",
-        companyCode: "C",
-        revenue: 1230000,
-        cost: 900000,
-        profit: 330000,
-        margin: 26.8,
-        billed: 530000,
-      },
-    ],
-    D: [
-      {
-        id: "demo-d1",
-        code: "D05",
-        name: "أعمال العزل الحراري والمائي لمباني الخدمات المركزية",
-        authority: "جهاز تنمية مدينة 6 أكتوبر",
-        tenderType: "TENDER",
-        status: "TECHNICAL_ACCEPTED",
-        companyName: "الحديثة للخدمات الهندسية (D)",
-        companyCode: "D",
-        revenue: 1100000,
-        cost: 820000,
-        profit: 280000,
-        margin: 25.5,
-        billed: 350000,
-      },
-      {
-        id: "demo-d2",
-        code: "D03",
-        name: "تحديث وتطوير شبكات الإنذار ومكافحة الحريق الآلي",
-        authority: "الهيئة العامة للموانئ البرية والجافة",
-        tenderType: "LIMITED_TENDER",
-        status: "AWARDED",
-        companyName: "الحديثة للخدمات الهندسية (D)",
-        companyCode: "D",
-        revenue: 750000,
-        cost: 530000,
-        profit: 220000,
-        margin: 29.3,
-        billed: 750000,
-      },
-    ],
-  };
-
   // Filter operations based on selected company
   const filteredOperations = useMemo(() => {
     if (selectedCompany === "ALL") {
-      if (recentOperations.length > 0) return recentOperations;
-      return Object.values(companyDemoOperations).flat();
+      return recentOperations;
     }
-    const fromApi = recentOperations.filter(
+    return recentOperations.filter(
       (op) => op.companyCode === selectedCompany || op.code.startsWith(selectedCompany)
     );
-    if (fromApi.length > 0) return fromApi;
-    return companyDemoOperations[selectedCompany] || [];
   }, [recentOperations, selectedCompany]);
 
   // Current company stats item from overview data
@@ -428,14 +390,14 @@ export default function DashboardPage() {
     const totalCost = filteredOperations.reduce((s, o) => s + (o.cost || 0), 0);
     const totalProfit = filteredOperations.reduce((s, o) => s + (o.profit || 0), 0);
     const totalBilled = filteredOperations.reduce((s, o) => s + (o.billed || 0), 0);
-    const profitMargin = totalRev > 0 ? (totalProfit / totalRev) * 100 : 28.5;
-    const collectionRatio = totalRev > 0 ? (totalBilled / totalRev) * 100 : 65;
+    const profitMargin = totalRev > 0 ? (totalProfit / totalRev) * 100 : 0;
+    const collectionRatio = totalRev > 0 ? (totalBilled / totalRev) * 100 : 0;
 
     return {
-      totalRev: totalRev > 0 ? totalRev : 5850000,
-      totalCost: totalCost > 0 ? totalCost : 4120000,
-      totalProfit: totalProfit > 0 ? totalProfit : 1730000,
-      totalBilled: totalBilled > 0 ? totalBilled : 3520000,
+      totalRev: totalRev,
+      totalCost: totalCost,
+      totalProfit: totalProfit,
+      totalBilled: totalBilled,
       profitMargin: Math.round(profitMargin * 10) / 10,
       collectionRatio: Math.round(collectionRatio * 10) / 10,
     };
@@ -460,207 +422,31 @@ export default function DashboardPage() {
     return formatEGP(num);
   };
 
-  // 🚨 COMPANY-SPECIFIC URGENT ALERTS (Strict Isolation)
-  const companyAlertsRegistry: Record<string, CompanyAlertItem[]> = {
-    A: [
-      {
-        id: "alert-a1",
-        title: "جلسة الفتح المالي لعملية شبكة كابلات الجهد المتوسط (A15)",
-        companyCode: "A",
-        companyName: "جولدن",
-        operationCode: "A15",
-        category: "SESSION",
-        categoryLabel: "جلسة فتح مالي",
-        deadlineText: "غداً 10:00 AM 🔴",
-        severity: "danger",
-        requirement: "مراجعة الأسعار التنافسية واعتماد العرض المالي قبل موعد الجلسة بهيئة المجتمعات العمرانية.",
-        actionLabel: "تفاصيل الجلسة والأسعار",
-        link: "/dashboard/operations",
-      },
-      {
-        id: "alert-a2",
-        title: "خطاب الضمان الابتدائي للعملية A12 (كاميرات المراقبة) ينتهي قريباً",
-        companyCode: "A",
-        companyName: "جولدن",
-        operationCode: "A12",
-        category: "GUARANTEE",
-        categoryLabel: "تجديد ضمان بنكي",
-        deadlineText: "متبقي 18 يوم (10 نوفمبر) 🟡",
-        severity: "warning",
-        requirement: "بنك مصر يطلب كتاب مد الصلاحية لـ 60 يوماً إضافية لتفادي التسييل.",
-        actionLabel: "طلب مد الصلاحية",
-        link: "/dashboard/payments",
-      },
-      {
-        id: "alert-a3",
-        title: "طلب اعتماد طباعة تظلم استبعاد فني (A15) بانتظار توقيع الإدارة",
-        companyCode: "A",
-        companyName: "جولدن",
-        operationCode: "A15",
-        category: "APPROVAL",
-        categoryLabel: "اعتماد أمني للطباعة",
-        deadlineText: "معلق بانتظار التوقيع 🔴",
-        severity: "danger",
-        requirement: "يلزم فحص التظلم واعتماده وتوليد الهاش التشفيري الأمني (32 خانة) للطباعة.",
-        actionLabel: "مراجعة واعتماد الطباعة",
-        link: "/dashboard/approvals?company=A",
-      },
-      {
-        id: "alert-a4",
-        title: "إشعار سحب كراسة الشروط لعملية لوحات الجهد المنخفض (A09)",
-        companyCode: "A",
-        companyName: "جولدن",
-        operationCode: "A09",
-        category: "SESSION",
-        categoryLabel: "كراسة شروط",
-        deadlineText: "جلسة 18 نوفمبر 🔵",
-        severity: "info",
-        requirement: "تجهيز المظروفين الفني والمالي وسداد التأمين الابتدائي.",
-        actionLabel: "متابعة تجهيز العرض",
-        link: "/dashboard/operations",
-      },
-    ],
-    B: [
-      {
-        id: "alert-b1",
-        title: "جلسة الاستفسارات الرسمية لمناقصة كابلات الفايبر والسنترالات (B08)",
-        companyCode: "B",
-        companyName: "إكسلنت",
-        operationCode: "B08",
-        category: "SESSION",
-        categoryLabel: "جلسة استفسارات",
-        deadlineText: "بعد غد 11:00 AM 🟡",
-        severity: "warning",
-        requirement: "تسليم خطاب الاستفسارات الرسمي لمندوب وزارة الاتصالات بالقرية الذكية.",
-        actionLabel: "مراجعة خطاب الاستفسارات",
-        link: "/dashboard/operations",
-      },
-      {
-        id: "alert-b2",
-        title: "خطاب الضمان الابتدائي B08 ينتهي خلال 28 يوماً لدى CIB",
-        companyCode: "B",
-        companyName: "إكسلنت",
-        operationCode: "B08",
-        category: "GUARANTEE",
-        categoryLabel: "تجديد ضمان بنكي",
-        deadlineText: "متبقي 28 يوم (20 نوفمبر) 🟡",
-        severity: "warning",
-        requirement: "تجديد الضمان الابتدائي لدى البنك التجاري الدولي قبل انقضاء المهلة.",
-        actionLabel: "متابعة تجديد الضمان",
-        link: "/dashboard/payments",
-      },
-      {
-        id: "alert-b3",
-        title: "مهمات الوقاية الطبية B04 — بانتظار اعتماد إذن إضافة المخازن",
-        companyCode: "B",
-        companyName: "إكسلنت",
-        operationCode: "B04",
-        category: "SUPPLY",
-        categoryLabel: "توريد وفحص مخزني",
-        deadlineText: "خلال 48 ساعة 🔵",
-        severity: "info",
-        requirement: "مطابقة محضر الفحص الفني بمخازن العامرية لاعتماد المستخلص الأول.",
-        actionLabel: "فحص أذونات الإضافة",
-        link: "/dashboard/operations",
-      },
-    ],
-    C: [
-      {
-        id: "alert-c1",
-        title: "موعد تقديم العطاء المالي والضمان لمعامل الحاسب (C04)",
-        companyCode: "C",
-        companyName: "العهد",
-        operationCode: "C04",
-        category: "SESSION",
-        categoryLabel: "تقديم عطاء",
-        deadlineText: "متبقي 3 أيام 🔴",
-        severity: "danger",
-        requirement: "إيداع خطاب الضمان ومظاريف العرض بهيئة الأبنية التعليمية بمدينة نصر.",
-        actionLabel: "تجهيز المظاريف والضمان",
-        link: "/dashboard/operations",
-      },
-      {
-        id: "alert-c2",
-        title: "استرداد التأمين الابتدائي للعملية C01 المنتهية من وزارة الإسكان",
-        companyCode: "C",
-        companyName: "العهد",
-        operationCode: "C01",
-        category: "GUARANTEE",
-        categoryLabel: "استرداد تأمين",
-        deadlineText: "متاح للاسترداد الآن 🔵",
-        severity: "info",
-        requirement: "تقديم طلب رسمي لبنك القاهرة لفك حجز التأمين بعد صدور الاستلام النهائي.",
-        actionLabel: "بدء إجراءات الاسترداد",
-        link: "/dashboard/payments",
-      },
-      {
-        id: "alert-c3",
-        title: "معاينة مجمع المدارس التجريبية C07 بالنزهة للتنسيق الميداني",
-        companyCode: "C",
-        companyName: "العهد",
-        operationCode: "C07",
-        category: "VISIT",
-        categoryLabel: "معاينة موقع",
-        deadlineText: "الأحد القادم 🟡",
-        severity: "warning",
-        requirement: "التنسيق مع إدارة المدرسة لتحديد مواعيد تنفيذ الأعمال الإنشائية خارج اليوم الدراسي.",
-        actionLabel: "تفاصيل المعاينة والموقع",
-        link: "/dashboard/visits",
-      },
-    ],
-    D: [
-      {
-        id: "alert-d1",
-        title: "معوقات استلام موقع العزل الحراري لمباني 6 أكتوبر (D05)",
-        companyCode: "D",
-        companyName: "الحديثة",
-        operationCode: "D05",
-        category: "VISIT",
-        categoryLabel: "معوقات موقع ميداني",
-        deadlineText: "عاجل جداً 🔴",
-        severity: "danger",
-        requirement: "إخطار جهاز المدينة رسمياً بضرورة كشط الرواسب الخرسانية وتصريف المياه قبل فرد العزل.",
-        actionLabel: "إرسال إخطار رسمي للجهاز",
-        link: "/dashboard/visits",
-      },
-      {
-        id: "alert-d2",
-        title: "سريان خطاب ضمان عملية العزل D05 ينتهي خلال 20 يوماً",
-        companyCode: "D",
-        companyName: "الحديثة",
-        operationCode: "D05",
-        category: "GUARANTEE",
-        categoryLabel: "تجديد ضمان",
-        deadlineText: "متبقي 20 يوم (12 نوفمبر) 🟡",
-        severity: "warning",
-        requirement: "مخاطبة بنك الإسكندرية لمد الصلاحية 60 يوماً بناءً على إفادة جهاز المدينة.",
-        actionLabel: "طلب مد الضمان بالبنك",
-        link: "/dashboard/payments",
-      },
-      {
-        id: "alert-d3",
-        title: "جلسة الفتح الفني لأنظمة الإنذار الآلي بميناء 6 أكتوبر (D03)",
-        companyCode: "D",
-        companyName: "الحديثة",
-        operationCode: "D03",
-        category: "SESSION",
-        categoryLabel: "جلسة فتح فني",
-        deadlineText: "15 نوفمبر 🔵",
-        severity: "info",
-        requirement: "اعتماد شهادات المنشأ ومطابقة مضخات الحريق طبقاً للكود المصري.",
-        actionLabel: "متابعة كراسة الشروط",
-        link: "/dashboard/operations",
-      },
-    ],
-  };
-
-  // Scoped alerts list strictly for selected company
+  // 🚨 Scoped alerts list dynamically derived from real backend overviewData
   const activeAlertsList: CompanyAlertItem[] = useMemo(() => {
-    if (selectedCompany === "ALL") {
-      return Object.values(companyAlertsRegistry).flat();
-    }
-    return companyAlertsRegistry[selectedCompany] || [];
-  }, [selectedCompany]);
+    const list: CompanyAlertItem[] = [];
+    overviewData.forEach((comp) => {
+      if (selectedCompany === "ALL" || comp.code === selectedCompany) {
+        (comp.urgentAlerts || []).forEach((a) => {
+          list.push({
+            id: a.id,
+            title: a.title,
+            companyCode: comp.code,
+            companyName: comp.name || `شركة ${comp.code}`,
+            operationCode: a.operationCode || `${comp.code}01`,
+            category: a.severity === "danger" ? "APPROVAL" : "SESSION",
+            categoryLabel: a.severity === "danger" ? "طلب اعتماد" : "تنبيه تشغيلي",
+            deadlineText: "متابعة عاجلة",
+            severity: a.severity,
+            requirement: a.title,
+            actionLabel: a.actionLabel || "متابعة",
+            link: a.link || "/dashboard/operations",
+          });
+        });
+      }
+    });
+    return list;
+  }, [overviewData, selectedCompany]);
 
   // Filtered by category tab inside alerts
   const displayAlerts = useMemo(() => {
@@ -668,335 +454,20 @@ export default function DashboardPage() {
     return activeAlertsList.filter((a) => a.category === alertCategoryFilter);
   }, [activeAlertsList, alertCategoryFilter]);
 
-  // Company-tailored Radar Tenders
-  const companyRadarTenders: Record<string, RadarItemBrief[]> = {
-    A: [
-      {
-        id: "rad-a1",
-        title: "توريد وتركيب كابلات نحاسية معزولة ومحولات قدرة 1000 ك.ف.أ",
-        authority: "جهاز مدينة بدر الجديدة",
-        insuranceAmount: 180000,
-        sessionDate: "2026-11-05",
-        daysRemaining: 13,
-        matchScore: 96,
-        status: "تم رصدها اليوم 🟢",
-      },
-      {
-        id: "rad-a2",
-        title: "توريد كاميرات مراقبة رقمية IP مع منظومة تسجيل شبكي NVR ومغذيات UPS",
-        authority: "مديرية الشؤون الصحية بمحافظة القاهرة",
-        insuranceAmount: 95000,
-        sessionDate: "2026-11-12",
-        daysRemaining: 20,
-        matchScore: 92,
-        status: "مطابقة عالية ⭐",
-      },
-      {
-        id: "rad-a3",
-        title: "إحلال وتجديد لوحات الجهد المنخفض والمحركات الكهربائية بمحطة رفع جنوب",
-        authority: "شركة مياه الشرب والصرف الصحي بالقليوبية",
-        insuranceAmount: 140000,
-        sessionDate: "2026-11-18",
-        daysRemaining: 26,
-        matchScore: 89,
-        status: "جلسة قريبة ⏳",
-      },
-    ],
-    B: [
-      {
-        id: "rad-b1",
-        title: "تجهيز وتوريد شبكات ألياف ضوئية FTTH ومسارات كابلات أرضية ذكية",
-        authority: "الشركة المصرية للاتصالات",
-        insuranceAmount: 120000,
-        sessionDate: "2026-11-08",
-        daysRemaining: 16,
-        matchScore: 95,
-        status: "تم رصدها اليوم 🟢",
-      },
-      {
-        id: "rad-b2",
-        title: "توريد أجهزة حماية وتنفس صناعي ومهمات وقاية متطورة للمستشفيات",
-        authority: "الهيئة المصرية للشراء الموحد",
-        insuranceAmount: 85000,
-        sessionDate: "2026-11-15",
-        daysRemaining: 23,
-        matchScore: 91,
-        status: "مطابقة عالية ⭐",
-      },
-    ],
-    C: [
-      {
-        id: "rad-c1",
-        title: "توريد معامل حاسب آلي وتحديث خوادم التخزين السحابي للمدارس التكنولوجية",
-        authority: "الهيئة العامة للأبنية التعليمية",
-        insuranceAmount: 110000,
-        sessionDate: "2026-11-09",
-        daysRemaining: 17,
-        matchScore: 94,
-        status: "تم رصدها اليوم 🟢",
-      },
-      {
-        id: "rad-c2",
-        title: "أعمال الصيانة الإنشائية والترميمات المتكاملة لمباني القطاع الأوسط",
-        authority: "هيئة النقل العام بالقاهرة",
-        insuranceAmount: 60000,
-        sessionDate: "2026-11-20",
-        daysRemaining: 28,
-        matchScore: 88,
-        status: "مطابقة عالية ⭐",
-      },
-    ],
-    D: [
-      {
-        id: "rad-d1",
-        title: "أعمال العزل المائي والحراري المطور لأسطح المستودعات المركزية",
-        authority: "جامعة حلوان — إدارة المشروعات الهندسية",
-        insuranceAmount: 75000,
-        sessionDate: "2026-11-06",
-        daysRemaining: 14,
-        matchScore: 97,
-        status: "تم رصدها اليوم 🟢",
-      },
-      {
-        id: "rad-d2",
-        title: "توريد وتركيب شبكات إطفاء الحريق التلقائي بالغاز FM200 لغرف المحولات",
-        authority: "ميناء القاهرة الجوي — مبنى 2",
-        insuranceAmount: 90000,
-        sessionDate: "2026-11-14",
-        daysRemaining: 22,
-        matchScore: 93,
-        status: "مطابقة عالية ⭐",
-      },
-    ],
-  };
-
+  // Real Radar Tenders (Loaded from backend DB)
   const activeRadarList: RadarItemBrief[] = useMemo(() => {
-    if (selectedCompany === "ALL") {
-      return Object.values(companyRadarTenders).flat().slice(0, 6);
-    }
-    return companyRadarTenders[selectedCompany] || [];
-  }, [selectedCompany]);
+    return dashboardRadarItems;
+  }, [dashboardRadarItems]);
 
-  // Company-tailored Site Inspection Visits
-  const companyVisits: Record<string, VisitItemBrief[]> = {
-    A: [
-      {
-        id: "v-a1",
-        title: "معاينة مسارات شبكة كابلات الجهد المتوسط وغرف المحولات",
-        authority: "هيئة المجتمعات العمرانية الجديدة",
-        location: "العاصمة الإدارية الجديدة — محيط محطة التوزيع المركزية",
-        employeeName: "م. أحمد الشريف",
-        operationCode: "A15",
-        visitDate: "2026-10-24",
-        siteReadiness: "READY",
-        findings: "الموقع خالي من العوائق ومسارات الحفر مستوفاة للمخططات بنسبة 100%.",
-      },
-      {
-        id: "v-a2",
-        title: "معاينة نقاط تركيب كاميرات المراقبة وغرفة التحكم",
-        authority: "مديرية أمن الجيزة",
-        location: "إدارة 6 أكتوبر التعليمية — مجمع المدارس",
-        employeeName: "م. حسام الدين نبيل",
-        operationCode: "A12",
-        visitDate: "2026-10-28",
-        siteReadiness: "CONDITIONAL",
-        findings: "الموقع جاهز فنياً مع اشتراط استكمال تصاريح التكسير ومجاري الكابلات.",
-      },
-      {
-        id: "v-a3",
-        title: "فحص قواعد الطلمبات وخطوط الطرد بمحطة رفع الصرف",
-        authority: "شركة مياه الشرب والصرف الصحي بالجيزة",
-        location: "محطة الحوامدية الرئيسية",
-        employeeName: "م. أحمد الشريف",
-        operationCode: "A09",
-        visitDate: "2026-10-18",
-        siteReadiness: "READY",
-        findings: "تم استلام القواعد واعتماد نقاط التثبيت للطلمبات الجديدة بنجاح.",
-      },
-    ],
-    B: [
-      {
-        id: "v-b1",
-        title: "حضور جلسة الاستفسارات وفحص غرف السنترالات ومسارات الفايبر",
-        authority: "وزارة الاتصالات وتكنولوجيا المعلومات",
-        location: "القرية الذكية — مبنى B12 الرئيسي",
-        employeeName: "أ. محمود عبد الرحمن",
-        operationCode: "B08",
-        visitDate: "2026-10-26",
-        siteReadiness: "CONDITIONAL",
-        findings: "الموقع بانتظار إخلاء الكابلات القديمة ونشر الملحق الفني المعتمد.",
-      },
-      {
-        id: "v-b2",
-        title: "معاينة مخازن مهمات الوقاية الطبية والفحص الظاهري",
-        authority: "التأمين الصحي — مخازن العامرية",
-        location: "مخازن الهيئة بالعامرية — الإسكندرية",
-        employeeName: "د. إيهاب زكريا",
-        operationCode: "B04",
-        visitDate: "2026-10-20",
-        siteReadiness: "READY",
-        findings: "المستودع مكيف ومجهز بالكامل ومستوفٍ لكافة اشتراطات السلامة والجودة.",
-      },
-    ],
-    C: [
-      {
-        id: "v-c1",
-        title: "فحص واختبار عينات معامل الحاسب ومطابقة قاعات التدريب",
-        authority: "الهيئة العامة للأبنية التعليمية",
-        location: "مجمع مدينة نصر المركزي",
-        employeeName: "م. كريم صلاح",
-        operationCode: "C04",
-        visitDate: "2026-10-22",
-        siteReadiness: "READY",
-        findings: "اجتازت جميع العينات الفحص الفني وتم توقيع المحضر الرسمي بنجاح.",
-      },
-      {
-        id: "v-c2",
-        title: "معاينة أسطح وقاعات التدريس بمجمع المدارس التجريبية",
-        authority: "تعليم القاهرة — إدارة النزهة",
-        location: "مجمع المدارس التجريبية — النزهة الجديدة",
-        employeeName: "م. كريم صلاح",
-        operationCode: "C07",
-        visitDate: "2026-10-30",
-        siteReadiness: "CONDITIONAL",
-        findings: "تنسيق مسبق مطلوب مع إدارة المدرسة للعمل خارج أوقات اليوم الدراسي.",
-      },
-    ],
-    D: [
-      {
-        id: "v-d1",
-        title: "معاينة أسطح مباني مجمع الخدمات وقياس مناسيب العزل",
-        authority: "جهاز مدينة 6 أكتوبر",
-        location: "المحور المركزي — مجمع الخدمات",
-        employeeName: "م. تامر الشاذلي",
-        operationCode: "D05",
-        visitDate: "2026-10-25",
-        siteReadiness: "BLOCKED",
-        findings: "تراكم مياه أمطار ورواسب تستوجب كشط السطح أولاً قبل فرد العزل.",
-      },
-      {
-        id: "v-d2",
-        title: "اختبار ومطابقة مضخات مكافحة الحريق الآلي",
-        authority: "الهيئة العامة للموانئ الجافة — ميناء السادس من أكتوبر",
-        location: "الميناء الجاف بمدينة السادس من أكتوبر",
-        employeeName: "م. تامر الشاذلي",
-        operationCode: "D03",
-        visitDate: "2026-10-15",
-        siteReadiness: "READY",
-        findings: "تم تشغيل الخط التبادلي للمضخات بنجاح والضغوط مطابقة للمواصفات.",
-      },
-    ],
-  };
-
+  // Real Site Inspection Visits (Loaded from backend DB)
   const activeVisitsList: VisitItemBrief[] = useMemo(() => {
-    if (selectedCompany === "ALL") {
-      return Object.values(companyVisits).flat().slice(0, 4);
-    }
-    return companyVisits[selectedCompany] || [];
-  }, [selectedCompany]);
+    return dashboardVisits;
+  }, [dashboardVisits]);
 
-  // Company-tailored Bank Guarantees
-  const companyGuarantees: Record<string, GuaranteeItemBrief[]> = {
-    A: [
-      {
-        id: "g-a1",
-        guaranteeNumber: "LG-NBE-8821",
-        bank: "البنك الأهلي المصري",
-        type: "ابتدائي (2%)",
-        amount: 142500,
-        validUntil: "2026-12-15",
-        daysLeft: 53,
-        operationCode: "A15",
-        operationName: "شبكة كابلات محولات الجهد المتوسط",
-        status: "ACTIVE",
-      },
-      {
-        id: "g-a2",
-        guaranteeNumber: "LG-MISR-4109",
-        bank: "بنك مصر",
-        type: "نهائي (5%)",
-        amount: 90000,
-        validUntil: "2026-11-10",
-        daysLeft: 18,
-        operationCode: "A12",
-        operationName: "منظومة كاميرات المراقبة وغرفة التحكم",
-        status: "EXPIRING_SOON",
-      },
-      {
-        id: "g-a3",
-        guaranteeNumber: "LG-CIB-5520",
-        bank: "البنك التجاري الدولي CIB",
-        type: "دفعة مقدمة (10%)",
-        amount: 285000,
-        validUntil: "2027-02-28",
-        daysLeft: 128,
-        operationCode: "A15",
-        operationName: "شبكة كابلات محولات الجهد المتوسط",
-        status: "ACTIVE",
-      },
-    ],
-    B: [
-      {
-        id: "g-b1",
-        guaranteeNumber: "LG-CIB-9912",
-        bank: "البنك التجاري الدولي CIB",
-        type: "ابتدائي (2%)",
-        amount: 72500,
-        validUntil: "2026-11-20",
-        daysLeft: 28,
-        operationCode: "B08",
-        operationName: "إحلال وتجديد كابلات الفايبر",
-        status: "EXPIRING_SOON",
-      },
-      {
-        id: "g-b2",
-        guaranteeNumber: "LG-NBE-7714",
-        bank: "البنك الأهلي المصري",
-        type: "نهائي (5%)",
-        amount: 97500,
-        validUntil: "2027-01-15",
-        daysLeft: 84,
-        operationCode: "B04",
-        operationName: "توريد مهمات الوقاية الطبية",
-        status: "ACTIVE",
-      },
-    ],
-    C: [
-      {
-        id: "g-c1",
-        guaranteeNumber: "LG-CAI-3301",
-        bank: "بنك القاهرة",
-        type: "ابتدائي (2%)",
-        amount: 46000,
-        validUntil: "2026-12-01",
-        daysLeft: 39,
-        operationCode: "C04",
-        operationName: "تجهيز معامل الحاسب الآلي",
-        status: "ACTIVE",
-      },
-    ],
-    D: [
-      {
-        id: "g-d1",
-        guaranteeNumber: "LG-ALEX-1102",
-        bank: "بنك الإسكندرية",
-        type: "ابتدائي (2%)",
-        amount: 35000,
-        validUntil: "2026-11-12",
-        daysLeft: 20,
-        operationCode: "D05",
-        operationName: "أعمال العزل الحراري والمائي",
-        status: "EXPIRING_SOON",
-      },
-    ],
-  };
-
+  // Real Bank Guarantees (Loaded from backend DB)
   const activeGuaranteesList: GuaranteeItemBrief[] = useMemo(() => {
-    if (selectedCompany === "ALL") {
-      return Object.values(companyGuarantees).flat().slice(0, 4);
-    }
-    return companyGuarantees[selectedCompany] || [];
-  }, [selectedCompany]);
+    return dashboardGuarantees;
+  }, [dashboardGuarantees]);
 
   return (
     <div className="space-y-6 sm:space-y-8 animate-fade-in pb-16">
@@ -1123,7 +594,7 @@ export default function DashboardPage() {
       </div>
 
       {/* ━━━ STAGE REVIEW EXECUTIVE DECISION BANNER (خاص بالإدارة العليا: المدير العام والنائب فقط) ━━━ */}
-      {isManagerOrDeputy && !stageReviewDismissed && (
+      {isManagerOrDeputy && !stageReviewDismissed && pendingApprovalsCount > 0 && recentOperations.length > 0 && (
         <div
           className={`rounded-3xl p-5 sm:p-6 border transition-all duration-300 relative overflow-hidden shadow-xl ${
             stageReviewStatus === "approved"
@@ -1174,7 +645,7 @@ export default function DashboardPage() {
                   </Badge>
 
                   <span className="text-xs text-muted-foreground font-mono">
-                    عملية: شبكة كابلات الجهد المتوسط (A15) • مرحلة كراسة الشروط
+                    عملية: {recentOperations[0]?.name || "العملية الجارية"} ({recentOperations[0]?.code || "A01"}) • مرحلة كراسة الشروط
                   </span>
                 </div>
 
@@ -1349,10 +820,15 @@ export default function DashboardPage() {
           <div className="space-y-1 pt-1 border-t border-border/50">
             <div className="flex items-center justify-between text-[11px] text-muted-foreground font-semibold">
               <span>نسبة الإنجاز</span>
-              <span className="text-blue-600 dark:text-blue-400 font-bold">72%</span>
+              <span className="text-blue-600 dark:text-blue-400 font-bold">
+                {financialTotals.totalRev > 0 ? `${financialTotals.collectionRatio}%` : "0%"}
+              </span>
             </div>
             <div className="w-full bg-muted/60 rounded-full h-1.5 overflow-hidden">
-              <div className="bg-blue-600 h-full rounded-full transition-all" style={{ width: "72%" }} />
+              <div
+                className="bg-blue-600 h-full rounded-full transition-all"
+                style={{ width: `${financialTotals.totalRev > 0 ? financialTotals.collectionRatio : 0}%` }}
+              />
             </div>
           </div>
         </div>
@@ -1363,7 +839,9 @@ export default function DashboardPage() {
             <div className="w-10 h-10 rounded-xl bg-purple-600 text-white flex items-center justify-center shadow-md shrink-0">
               <TrendingUp className="h-5 w-5" />
             </div>
-            <Badge className="badge-purple text-[10px] font-bold">هامش +{financialTotals.profitMargin}%</Badge>
+            <Badge className="badge-purple text-[10px] font-bold">
+              {financialTotals.totalRev > 0 ? `هامش +${financialTotals.profitMargin}%` : "0%"}
+            </Badge>
           </div>
           <div>
             <p
@@ -1382,7 +860,10 @@ export default function DashboardPage() {
               </span>
             </div>
             <div className="w-full bg-muted/60 rounded-full h-1.5 overflow-hidden">
-              <div className="bg-purple-600 h-full rounded-full transition-all" style={{ width: `${financialTotals.profitMargin}%` }} />
+              <div
+                className="bg-purple-600 h-full rounded-full transition-all"
+                style={{ width: `${financialTotals.totalRev > 0 ? financialTotals.profitMargin : 0}%` }}
+              />
             </div>
           </div>
         </div>
@@ -1393,7 +874,9 @@ export default function DashboardPage() {
             <div className="w-10 h-10 rounded-xl bg-emerald-600 text-white flex items-center justify-center shadow-md shrink-0">
               <Receipt className="h-5 w-5" />
             </div>
-            <Badge className="badge-emerald text-[10px] font-bold">تحصيل {financialTotals.collectionRatio}%</Badge>
+            <Badge className="badge-emerald text-[10px] font-bold">
+              {financialTotals.totalRev > 0 ? `تحصيل ${financialTotals.collectionRatio}%` : "0%"}
+            </Badge>
           </div>
           <div>
             <p
@@ -1412,7 +895,10 @@ export default function DashboardPage() {
               </span>
             </div>
             <div className="w-full bg-muted/60 rounded-full h-1.5 overflow-hidden">
-              <div className="bg-emerald-600 h-full rounded-full transition-all" style={{ width: `${financialTotals.collectionRatio}%` }} />
+              <div
+                className="bg-emerald-600 h-full rounded-full transition-all"
+                style={{ width: `${financialTotals.totalRev > 0 ? financialTotals.collectionRatio : 0}%` }}
+              />
             </div>
           </div>
         </div>
@@ -1424,12 +910,16 @@ export default function DashboardPage() {
               <Shield className="h-5 w-5" />
             </div>
             <Badge className="badge-amber text-[10px] font-bold">
-              {activeGuaranteesList.filter((g) => g.status === "EXPIRING_SOON").length > 0 ? "تنبيه تجديد ⚠️" : "منتظم"}
+              {activeGuaranteesList.filter((g) => g.status === "EXPIRING_SOON").length > 0
+                ? "تنبيه تجديد ⚠️"
+                : activeGuaranteesList.length > 0
+                ? "منتظم"
+                : "لا توجد"}
             </Badge>
           </div>
           <div>
             <p className="text-xl sm:text-2xl font-black text-foreground truncate tracking-tight">
-              {currentCompanyOverview?.pendingGuarantees || activeGuaranteesList.length}
+              {activeGuaranteesList.length}
             </p>
             <p className="text-xs text-muted-foreground mt-0.5 truncate">خطابات الضمان القائمة</p>
           </div>
@@ -1441,7 +931,10 @@ export default function DashboardPage() {
               </span>
             </div>
             <div className="w-full bg-muted/60 rounded-full h-1.5 overflow-hidden">
-              <div className="bg-amber-500 h-full rounded-full transition-all" style={{ width: "85%" }} />
+              <div
+                className="bg-amber-500 h-full rounded-full transition-all"
+                style={{ width: `${activeGuaranteesList.length > 0 ? 100 : 0}%` }}
+              />
             </div>
           </div>
         </div>
@@ -1453,7 +946,7 @@ export default function DashboardPage() {
               <HardHat className="h-5 w-5" />
             </div>
             <Badge className="bg-cyan-500/15 text-cyan-600 dark:text-cyan-400 border border-cyan-500/30 text-[10px] font-bold">
-              مؤشر 83%
+              {activeVisitsList.length > 0 ? "جاهز 100%" : "0 معاينات"}
             </Badge>
           </div>
           <div>
@@ -1464,13 +957,16 @@ export default function DashboardPage() {
           </div>
           <div className="space-y-1 pt-1 border-t border-border/50">
             <div className="flex items-center justify-between text-[11px] text-muted-foreground font-semibold">
-              <span className="truncate">جاهز 100%:</span>
+              <span className="truncate">المواقع الجاهزة:</span>
               <span className="text-cyan-600 dark:text-cyan-400 font-bold text-xs truncate">
                 {activeVisitsList.filter((v) => v.siteReadiness === "READY").length} مواقع
               </span>
             </div>
             <div className="w-full bg-muted/60 rounded-full h-1.5 overflow-hidden">
-              <div className="bg-cyan-600 h-full rounded-full transition-all" style={{ width: "83%" }} />
+              <div
+                className="bg-cyan-600 h-full rounded-full transition-all"
+                style={{ width: `${activeVisitsList.length > 0 ? 100 : 0}%` }}
+              />
             </div>
           </div>
         </div>
@@ -1494,10 +990,23 @@ export default function DashboardPage() {
           <div className="space-y-1 pt-1 border-t border-border/50">
             <div className="flex items-center justify-between text-[11px] text-muted-foreground font-semibold">
               <span className="truncate">أعلى مطابقة:</span>
-              <span className="text-indigo-600 dark:text-indigo-400 font-bold text-xs truncate">96% ⭐</span>
+              <span className="text-indigo-600 dark:text-indigo-400 font-bold text-xs truncate">
+                {activeRadarList.length > 0
+                  ? `${Math.max(...activeRadarList.map((r) => r.matchScore || 90))}% ⭐`
+                  : "0%"}
+              </span>
             </div>
             <div className="w-full bg-muted/60 rounded-full h-1.5 overflow-hidden">
-              <div className="bg-indigo-600 h-full rounded-full transition-all" style={{ width: "96%" }} />
+              <div
+                className="bg-indigo-600 h-full rounded-full transition-all"
+                style={{
+                  width: `${
+                    activeRadarList.length > 0
+                      ? Math.max(...activeRadarList.map((r) => r.matchScore || 90))
+                      : 0
+                  }%`,
+                }}
+              />
             </div>
           </div>
         </div>
@@ -1519,9 +1028,9 @@ export default function DashboardPage() {
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
             {companies.map((c) => {
               const compData = overviewData.find((item) => item.code === c.code);
-              const opCount = compData?.activeOperations || (c.code === "A" ? 18 : c.code === "B" ? 14 : c.code === "C" ? 10 : 8);
-              const guarCount = compData?.pendingGuarantees || (c.code === "A" ? 7 : c.code === "B" ? 4 : c.code === "C" ? 2 : 2);
-              const revStr = compData?.totalRevenue || (c.code === "A" ? "5.85M ج.م" : c.code === "B" ? "3.40M ج.م" : c.code === "C" ? "2.15M ج.م" : "1.85M ج.م");
+              const opCount = compData?.activeOperations ?? 0;
+              const guarCount = compData?.pendingGuarantees ?? 0;
+              const revStr = compData?.totalRevenue || "0 ج.م";
 
               return (
                 <div
@@ -1628,93 +1137,101 @@ export default function DashboardPage() {
           </div>
 
           {/* Alerts Grid (Clean, readable, 2-column or 1-column responsive layout) */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-3.5">
-            {displayAlerts.map((alert) => {
-              const isDanger = alert.severity === "danger";
-              const isWarning = alert.severity === "warning";
+          {displayAlerts.length === 0 ? (
+            <div className="py-8 px-4 rounded-2xl bg-muted/20 border border-dashed border-border text-center flex flex-col items-center justify-center space-y-2">
+              <CheckCircle2 className="h-8 w-8 text-emerald-500" />
+              <p className="text-sm font-bold text-foreground">لا توجد إجراءات عاجلة معلقة حالياً</p>
+              <p className="text-xs text-muted-foreground">كافة العمليات والضمانات البنكية منتظمة ومحدثة بالكامل.</p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-3.5">
+              {displayAlerts.map((alert) => {
+                const isDanger = alert.severity === "danger";
+                const isWarning = alert.severity === "warning";
 
-              return (
-                <div
-                  key={alert.id}
-                  className={`p-4 rounded-2xl bg-card border transition-all flex flex-col justify-between space-y-3.5 shadow-2xs hover:shadow-md ${
-                    isDanger
-                      ? "border-red-500/40 hover:border-red-500/60 bg-red-500/[0.03]"
-                      : isWarning
-                      ? "border-amber-500/40 hover:border-amber-500/60 bg-amber-500/[0.03]"
-                      : "border-blue-500/40 hover:border-blue-500/60 bg-blue-500/[0.03]"
-                  }`}
-                >
-                  <div className="space-y-2.5">
-                    {/* Header Row: Company, Category, Deadline */}
-                    <div className="flex items-center justify-between gap-2 flex-wrap">
-                      <div className="flex items-center gap-1.5">
-                        <span
-                          className={`w-2.5 h-2.5 rounded-full shrink-0 ${
-                            isDanger
-                              ? "bg-red-500 animate-ping"
-                              : isWarning
-                              ? "bg-amber-500 animate-pulse"
-                              : "bg-blue-500"
-                          }`}
-                        />
-                        <Badge variant="outline" className="font-mono text-[10px] font-bold py-0.5 px-2 border-border text-foreground">
-                          شركة {alert.companyName} ({alert.companyCode})
-                        </Badge>
-                        <Badge
-                          className={`text-[10px] font-bold py-0.5 px-2 border-0 ${
-                            isDanger
-                              ? "bg-red-500/15 text-red-600 dark:text-red-400"
-                              : isWarning
-                              ? "bg-amber-500/15 text-amber-600 dark:text-amber-400"
-                              : "bg-blue-500/15 text-blue-600 dark:text-blue-400"
-                          }`}
-                        >
-                          {alert.categoryLabel}
-                        </Badge>
+                return (
+                  <div
+                    key={alert.id}
+                    className={`p-4 rounded-2xl bg-card border transition-all flex flex-col justify-between space-y-3.5 shadow-2xs hover:shadow-md ${
+                      isDanger
+                        ? "border-red-500/40 hover:border-red-500/60 bg-red-500/[0.03]"
+                        : isWarning
+                        ? "border-amber-500/40 hover:border-amber-500/60 bg-amber-500/[0.03]"
+                        : "border-blue-500/40 hover:border-blue-500/60 bg-blue-500/[0.03]"
+                    }`}
+                  >
+                    <div className="space-y-2.5">
+                      {/* Header Row: Company, Category, Deadline */}
+                      <div className="flex items-center justify-between gap-2 flex-wrap">
+                        <div className="flex items-center gap-1.5">
+                          <span
+                            className={`w-2.5 h-2.5 rounded-full shrink-0 ${
+                              isDanger
+                                ? "bg-red-500 animate-ping"
+                                : isWarning
+                                ? "bg-amber-500 animate-pulse"
+                                : "bg-blue-500"
+                            }`}
+                          />
+                          <Badge variant="outline" className="font-mono text-[10px] font-bold py-0.5 px-2 border-border text-foreground">
+                            شركة {alert.companyName} ({alert.companyCode})
+                          </Badge>
+                          <Badge
+                            className={`text-[10px] font-bold py-0.5 px-2 border-0 ${
+                              isDanger
+                                ? "bg-red-500/15 text-red-600 dark:text-red-400"
+                                : isWarning
+                                ? "bg-amber-500/15 text-amber-600 dark:text-amber-400"
+                                : "bg-blue-500/15 text-blue-600 dark:text-blue-400"
+                            }`}
+                          >
+                            {alert.categoryLabel}
+                          </Badge>
+                        </div>
+
+                        <span className="text-[11px] font-bold text-foreground bg-muted/60 px-2.5 py-0.5 rounded-full border border-border/60">
+                          {alert.deadlineText}
+                        </span>
                       </div>
 
-                      <span className="text-[11px] font-bold text-foreground bg-muted/60 px-2.5 py-0.5 rounded-full border border-border/60">
-                        {alert.deadlineText}
-                      </span>
+                      {/* Alert Title */}
+                      <h4 className="text-sm font-bold text-foreground leading-snug">
+                        {alert.title}
+                      </h4>
+
+                      {/* Requirement Note Box */}
+                      <p className="text-xs text-muted-foreground bg-muted/30 p-2.5 rounded-xl border border-border/50 leading-relaxed">
+                        <span className="font-bold text-foreground">الإجراء المطلوب: </span>
+                        {alert.requirement}
+                      </p>
                     </div>
 
-                    {/* Alert Title */}
-                    <h4 className="text-sm font-bold text-foreground leading-snug">
-                      {alert.title}
-                    </h4>
-
-                    {/* Requirement Note Box */}
-                    <p className="text-xs text-muted-foreground bg-muted/30 p-2.5 rounded-xl border border-border/50 leading-relaxed">
-                      <span className="font-bold text-foreground">الإجراء المطلوب: </span>
-                      {alert.requirement}
-                    </p>
+                    {/* Bottom Action Button */}
+                    <div className="pt-2 border-t border-border/50 flex items-center justify-between">
+                      <span className="text-[11px] text-muted-foreground font-mono font-bold">
+                        كود العملية: {alert.operationCode}
+                      </span>
+                      <Link href={alert.link}>
+                        <Button
+                          size="sm"
+                          className={`font-bold text-xs h-8 px-4 rounded-xl cursor-pointer shadow-xs ${
+                            isDanger
+                              ? "bg-red-600 hover:bg-red-700 text-white shadow-red-500/20"
+                              : isWarning
+                              ? "bg-amber-500 hover:bg-amber-600 text-slate-950 font-black shadow-amber-500/20"
+                              : "bg-blue-600 hover:bg-blue-700 text-white shadow-blue-500/20"
+                          }`}
+                        >
+                          <span>{alert.actionLabel}</span>
+                          <ArrowLeft className="h-3.5 w-3.5 mr-1" />
+                        </Button>
+                      </Link>
+                    </div>
                   </div>
-
-                  {/* Bottom Action Button */}
-                  <div className="pt-2 border-t border-border/50 flex items-center justify-between">
-                    <span className="text-[11px] text-muted-foreground font-mono font-bold">
-                      كود العملية: {alert.operationCode}
-                    </span>
-                    <Link href={alert.link}>
-                      <Button
-                        size="sm"
-                        className={`font-bold text-xs h-8 px-4 rounded-xl cursor-pointer shadow-xs ${
-                          isDanger
-                            ? "bg-red-600 hover:bg-red-700 text-white shadow-red-500/20"
-                            : isWarning
-                            ? "bg-amber-500 hover:bg-amber-600 text-slate-950 font-black shadow-amber-500/20"
-                            : "bg-blue-600 hover:bg-blue-700 text-white shadow-blue-500/20"
-                        }`}
-                      >
-                        <span>{alert.actionLabel}</span>
-                        <ArrowLeft className="h-3.5 w-3.5 mr-1" />
-                      </Button>
-                    </Link>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
+                );
+              })}
+            </div>
+          )}
         </div>
       )}
 
@@ -1752,106 +1269,132 @@ export default function DashboardPage() {
             </div>
           </div>
 
-          {/* Cards Grid (3 Columns on Desktop, 2 on Tablet, 1 on Mobile — Compact and Beautiful) */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {filteredOperations.slice(0, 6).map((op) => {
-              const rev = op.revenue || 2850000;
-              const cost = op.cost || 1980000;
-              const billed = op.billed || 1720000;
-              const billedPct = rev > 0 ? Math.min(100, Math.round((billed / rev) * 100)) : 60;
-              const profit = op.profit || (rev - cost);
-              const margin = op.margin || (rev > 0 ? Math.round((profit / rev) * 100) : 30);
+          {/* Cards Grid or Clean Empty State */}
+          {filteredOperations.length === 0 ? (
+            <div className="py-12 px-4 rounded-3xl border border-dashed border-border text-center flex flex-col items-center justify-center space-y-3 bg-muted/20">
+              <div className="w-12 h-12 rounded-2xl bg-purple-500/10 text-purple-600 dark:text-purple-400 flex items-center justify-center">
+                <Briefcase className="h-6 w-6" />
+              </div>
+              <h4 className="text-base font-bold text-foreground">لا توجد عمليات مسجلة حالياً</h4>
+              <p className="text-xs text-muted-foreground max-w-md">
+                ابدأ بإضافة عملية ومناقصة جديدة أو اسحب مناقصات نشطة مباشرة من رادار المناقصات الحكومية.
+              </p>
+              <div className="flex items-center gap-3 pt-2">
+                <Link href="/dashboard/operations">
+                  <Button size="sm" className="bg-purple-600 hover:bg-purple-700 text-white rounded-xl font-bold cursor-pointer">
+                    <Plus className="h-4 w-4 ml-1.5" />
+                    إضافة عملية جديدة
+                  </Button>
+                </Link>
+                <Link href="/dashboard/radar">
+                  <Button size="sm" variant="outline" className="rounded-xl font-bold border-border cursor-pointer">
+                    <Radar className="h-4 w-4 ml-1.5 text-cyan-500" />
+                    فحص رادار المناقصات
+                  </Button>
+                </Link>
+              </div>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {filteredOperations.slice(0, 6).map((op) => {
+                const rev = op.revenue || 0;
+                const cost = op.cost || 0;
+                const billed = op.billed || 0;
+                const billedPct = rev > 0 ? Math.min(100, Math.round((billed / rev) * 100)) : 0;
+                const profit = op.profit || (rev - cost);
+                const margin = op.margin || (rev > 0 ? Math.round((profit / rev) * 100) : 0);
 
-              return (
-                <div
-                  key={op.id}
-                  onClick={() => router.push(`/dashboard/operations/${op.id}`)}
-                  className="p-4 sm:p-5 rounded-3xl bg-card border border-border hover:border-purple-500/40 hover:bg-purple-50/5 dark:hover:bg-purple-950/10 transition-all cursor-pointer flex flex-col justify-between space-y-4 shadow-sm hover:shadow-md group"
-                >
-                  {/* Top Bar: Code, Margin, Status */}
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between gap-2">
-                      <div className="flex items-center gap-2">
-                        <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-purple-600 to-indigo-700 text-white font-mono font-black text-sm flex items-center justify-center shadow-xs shrink-0 group-hover:scale-105 transition-transform">
-                          {op.code}
+                return (
+                  <div
+                    key={op.id}
+                    onClick={() => router.push(`/dashboard/operations/${op.id}`)}
+                    className="p-4 sm:p-5 rounded-3xl bg-card border border-border hover:border-purple-500/40 hover:bg-purple-50/5 dark:hover:bg-purple-950/10 transition-all cursor-pointer flex flex-col justify-between space-y-4 shadow-sm hover:shadow-md group"
+                  >
+                    {/* Top Bar: Code, Margin, Status */}
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-2">
+                          <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-purple-600 to-indigo-700 text-white font-mono font-black text-sm flex items-center justify-center shadow-xs shrink-0 group-hover:scale-105 transition-transform">
+                            {op.code}
+                          </div>
+                          <Badge variant="outline" className="text-[10px] font-bold border-border text-foreground">
+                            {tenderTypeMap[op.tenderType] || op.tenderType}
+                          </Badge>
                         </div>
-                        <Badge variant="outline" className="text-[10px] font-bold border-border text-foreground">
-                          {tenderTypeMap[op.tenderType] || op.tenderType}
-                        </Badge>
+
+                        <div className="flex items-center gap-1.5">
+                          <Badge className="bg-purple-500/15 text-purple-600 dark:text-purple-400 border border-purple-500/30 text-[10px] font-bold">
+                            هامش +{margin}%
+                          </Badge>
+                          <Badge className={statusLabels[op.status]?.color || "bg-muted text-muted-foreground"}>
+                            {statusLabels[op.status]?.label || op.status}
+                          </Badge>
+                        </div>
                       </div>
 
-                      <div className="flex items-center gap-1.5">
-                        <Badge className="bg-purple-500/15 text-purple-600 dark:text-purple-400 border border-purple-500/30 text-[10px] font-bold">
-                          هامش +{margin}%
-                        </Badge>
-                        <Badge className={statusLabels[op.status]?.color || "bg-muted text-muted-foreground"}>
-                          {statusLabels[op.status]?.label || op.status}
-                        </Badge>
+                      {/* Title & Owning Authority */}
+                      <div>
+                        <h4 className="text-sm font-bold text-foreground line-clamp-2 leading-relaxed group-hover:text-purple-600 dark:group-hover:text-purple-400 transition-colors">
+                          {op.name}
+                        </h4>
+                        <p className="text-xs text-muted-foreground flex items-center gap-1.5 mt-1 line-clamp-1">
+                          <Building2 className="h-3.5 w-3.5 text-purple-500 shrink-0" />
+                          <span>{op.authority}</span>
+                        </p>
                       </div>
                     </div>
 
-                    {/* Title & Owning Authority */}
-                    <div>
-                      <h4 className="text-sm font-bold text-foreground line-clamp-2 leading-relaxed group-hover:text-purple-600 dark:group-hover:text-purple-400 transition-colors">
-                        {op.name}
-                      </h4>
-                      <p className="text-xs text-muted-foreground flex items-center gap-1.5 mt-1 line-clamp-1">
-                        <Building2 className="h-3.5 w-3.5 text-purple-500 shrink-0" />
-                        <span>{op.authority}</span>
-                      </p>
-                    </div>
-                  </div>
-
-                  {/* Financial 2x2 Clean Metrics Grid */}
-                  <div className="grid grid-cols-2 gap-2 p-2.5 rounded-2xl bg-muted/40 border border-border/60 text-xs">
-                    <div>
-                      <span className="text-[10px] text-muted-foreground block">قيمة التعاقد:</span>
-                      <span className="font-bold text-foreground truncate block" title={formatEGP(rev)}>
-                        {formatCompactEGP(rev)}
-                      </span>
-                    </div>
-                    <div>
-                      <span className="text-[10px] text-muted-foreground block">التكلفة الفعلية:</span>
-                      <span className="font-bold text-foreground truncate block" title={formatEGP(cost)}>
-                        {formatCompactEGP(cost)}
-                      </span>
-                    </div>
-                    <div>
-                      <span className="text-[10px] text-muted-foreground block">المستخلصات المحصلة:</span>
-                      <span className="font-bold text-emerald-600 dark:text-emerald-400 truncate block" title={formatEGP(billed)}>
-                        {formatCompactEGP(billed)}
-                      </span>
-                    </div>
-                    <div>
-                      <span className="text-[10px] text-muted-foreground block">صافي الربح:</span>
-                      <span className="font-bold text-purple-600 dark:text-purple-400 truncate block" title={formatEGP(profit)}>
-                        {formatCompactEGP(profit)}
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* Integrated Progress Bar & Footer */}
-                  <div className="space-y-1.5 pt-1">
-                    <div className="flex items-center justify-between text-xs font-semibold">
-                      <span className="text-muted-foreground text-[11px]">نسبة التحصيل:</span>
-                      <span className="font-bold text-foreground text-xs">{billedPct}%</span>
-                    </div>
-                    <div className="w-full bg-muted/60 rounded-full h-2 overflow-hidden">
-                      <div
-                        className="bg-gradient-to-r from-purple-600 to-indigo-600 h-full rounded-full transition-all"
-                        style={{ width: `${billedPct}%` }}
-                      />
+                    {/* Financial 2x2 Clean Metrics Grid */}
+                    <div className="grid grid-cols-2 gap-2 p-2.5 rounded-2xl bg-muted/40 border border-border/60 text-xs">
+                      <div>
+                        <span className="text-[10px] text-muted-foreground block">قيمة التعاقد:</span>
+                        <span className="font-bold text-foreground truncate block" title={formatEGP(rev)}>
+                          {formatCompactEGP(rev)}
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-[10px] text-muted-foreground block">التكلفة الفعلية:</span>
+                        <span className="font-bold text-foreground truncate block" title={formatEGP(cost)}>
+                          {formatCompactEGP(cost)}
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-[10px] text-muted-foreground block">المستخلصات المحصلة:</span>
+                        <span className="font-bold text-emerald-600 dark:text-emerald-400 truncate block" title={formatEGP(billed)}>
+                          {formatCompactEGP(billed)}
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-[10px] text-muted-foreground block">صافي الربح:</span>
+                        <span className="font-bold text-purple-600 dark:text-purple-400 truncate block" title={formatEGP(profit)}>
+                          {formatCompactEGP(profit)}
+                        </span>
+                      </div>
                     </div>
 
-                    <div className="pt-2 flex items-center justify-between text-xs text-purple-600 dark:text-purple-400 font-bold group-hover:translate-x-[-2px] transition-transform">
-                      <span>عرض تفاصيل العملية والملف المالي</span>
-                      <ArrowLeft className="h-3.5 w-3.5" />
+                    {/* Integrated Progress Bar & Footer */}
+                    <div className="space-y-1.5 pt-1">
+                      <div className="flex items-center justify-between text-xs font-semibold">
+                        <span className="text-muted-foreground text-[11px]">نسبة التحصيل:</span>
+                        <span className="font-bold text-foreground text-xs">{billedPct}%</span>
+                      </div>
+                      <div className="w-full bg-muted/60 rounded-full h-2 overflow-hidden">
+                        <div
+                          className="bg-gradient-to-r from-purple-600 to-indigo-600 h-full rounded-full transition-all"
+                          style={{ width: `${billedPct}%` }}
+                        />
+                      </div>
+
+                      <div className="pt-2 flex items-center justify-between text-xs text-purple-600 dark:text-purple-400 font-bold group-hover:translate-x-[-2px] transition-transform">
+                        <span>عرض تفاصيل العملية والملف المالي</span>
+                        <ArrowLeft className="h-3.5 w-3.5" />
+                      </div>
                     </div>
                   </div>
-                </div>
-              );
-            })}
-          </div>
+                );
+              })}
+            </div>
+          )}
         </div>
       )}
 
@@ -1875,58 +1418,71 @@ export default function DashboardPage() {
 
             <Link href="/dashboard/radar">
               <Button variant="outline" size="sm" className="border-border text-foreground hover:bg-muted text-xs font-bold h-8 rounded-xl cursor-pointer">
-                <span>عرض كافة المناقصات المرصودة (42)</span>
+                <span>عرض كافة المناقصات المرصودة ({activeRadarList.length})</span>
                 <ArrowLeft className="h-3.5 w-3.5 mr-1" />
               </Button>
             </Link>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {activeRadarList.map((item) => (
-              <div
-                key={item.id}
-                className="p-4 rounded-3xl bg-card border border-border hover:border-indigo-500/40 hover:bg-indigo-50/10 dark:hover:bg-indigo-950/10 transition-all space-y-3 flex flex-col justify-between shadow-2xs hover:shadow-md"
-              >
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between gap-2">
-                    <Badge className="bg-indigo-500/15 text-indigo-600 dark:text-indigo-400 border border-indigo-500/30 text-[10px] font-bold">
-                      {item.status}
-                    </Badge>
-                    <span className="text-[11px] font-bold text-amber-600 dark:text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded-full">
-                      متبقي {item.daysRemaining} يوم
-                    </span>
+          {activeRadarList.length === 0 ? (
+            <div className="py-8 px-4 rounded-2xl bg-muted/20 border border-dashed border-border text-center flex flex-col items-center justify-center space-y-2">
+              <Radar className="h-8 w-8 text-indigo-500" />
+              <p className="text-sm font-bold text-foreground">لا توجد مناقصات مسحوبة حالياً</p>
+              <p className="text-xs text-muted-foreground">افحص رادار المناقصات الحكومية لاستيراد ومتابعة أحدث العمليات.</p>
+              <Link href="/dashboard/radar">
+                <Button size="sm" className="bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold mt-1">
+                  فتح رادار المناقصات
+                </Button>
+              </Link>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {activeRadarList.map((item) => (
+                <div
+                  key={item.id}
+                  className="p-4 rounded-3xl bg-card border border-border hover:border-indigo-500/40 hover:bg-indigo-50/10 dark:hover:bg-indigo-950/10 transition-all space-y-3 flex flex-col justify-between shadow-2xs hover:shadow-md"
+                >
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <Badge className="bg-indigo-500/15 text-indigo-600 dark:text-indigo-400 border border-indigo-500/30 text-[10px] font-bold">
+                        {item.status}
+                      </Badge>
+                      <span className="text-[11px] font-bold text-amber-600 dark:text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded-full">
+                        متبقي {item.daysRemaining} يوم
+                      </span>
+                    </div>
+
+                    <h4 className="text-sm font-bold text-foreground line-clamp-2 leading-relaxed">
+                      {item.title}
+                    </h4>
+
+                    <p className="text-xs text-muted-foreground flex items-center gap-1.5">
+                      <Building2 className="h-3.5 w-3.5 text-indigo-500 shrink-0" />
+                      <span>{item.authority}</span>
+                    </p>
                   </div>
 
-                  <h4 className="text-sm font-bold text-foreground line-clamp-2 leading-relaxed">
-                    {item.title}
-                  </h4>
+                  <div className="pt-2 border-t border-border space-y-2">
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="text-muted-foreground">التأمين الابتدائي المطلوب:</span>
+                      <span className="font-bold text-foreground">{formatEGP(item.insuranceAmount)}</span>
+                    </div>
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="text-muted-foreground">تاريخ جلسة الفتح:</span>
+                      <span className="font-semibold text-foreground">{item.sessionDate}</span>
+                    </div>
 
-                  <p className="text-xs text-muted-foreground flex items-center gap-1.5">
-                    <Building2 className="h-3.5 w-3.5 text-indigo-500 shrink-0" />
-                    <span>{item.authority}</span>
-                  </p>
+                    <Link href={`/dashboard/radar?id=${item.id}`}>
+                      <Button size="sm" className="w-full mt-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs h-8 rounded-xl cursor-pointer">
+                        <span>فحص الكراسة ومطابقة المواصفات</span>
+                        <ArrowLeft className="h-3 w-3 mr-1" />
+                      </Button>
+                    </Link>
+                  </div>
                 </div>
-
-                <div className="pt-2 border-t border-border space-y-2">
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="text-muted-foreground">التأمين الابتدائي المطلوب:</span>
-                    <span className="font-bold text-foreground">{formatEGP(item.insuranceAmount)}</span>
-                  </div>
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="text-muted-foreground">تاريخ جلسة الفتح:</span>
-                    <span className="font-semibold text-foreground">{item.sessionDate}</span>
-                  </div>
-
-                  <Link href={`/dashboard/radar?id=${item.id}`}>
-                    <Button size="sm" className="w-full mt-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs h-8 rounded-xl cursor-pointer">
-                      <span>فحص الكراسة ومطابقة المواصفات</span>
-                      <ArrowLeft className="h-3 w-3 mr-1" />
-                    </Button>
-                  </Link>
-                </div>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
@@ -1956,63 +1512,76 @@ export default function DashboardPage() {
             </Link>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {activeVisitsList.map((v) => {
-              const isReady = v.siteReadiness === "READY";
-              const isConditional = v.siteReadiness === "CONDITIONAL";
+          {activeVisitsList.length === 0 ? (
+            <div className="py-8 px-4 rounded-2xl bg-muted/20 border border-dashed border-border text-center flex flex-col items-center justify-center space-y-2">
+              <HardHat className="h-8 w-8 text-cyan-500" />
+              <p className="text-sm font-bold text-foreground">لا توجد معاينات ميدانية مسجلة حالياً</p>
+              <p className="text-xs text-muted-foreground">يمكنك جدولة زيارة ميدانية جديدة لمطابقة اشتراطات الموقع.</p>
+              <Link href="/dashboard/visits">
+                <Button size="sm" variant="outline" className="rounded-xl font-bold border-border mt-1 cursor-pointer">
+                  جدولة معاينة موقع
+                </Button>
+              </Link>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {activeVisitsList.map((v) => {
+                const isReady = v.siteReadiness === "READY";
+                const isConditional = v.siteReadiness === "CONDITIONAL";
 
-              return (
-                <div
-                  key={v.id}
-                  onClick={() => router.push("/dashboard/visits")}
-                  className="p-4 rounded-3xl bg-card border border-border hover:border-cyan-500/40 hover:bg-cyan-50/10 dark:hover:bg-cyan-950/10 transition-all cursor-pointer space-y-3 group shadow-2xs hover:shadow-md"
-                >
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="flex items-center gap-2.5">
-                      <div className="w-9 h-9 rounded-xl bg-cyan-500/10 text-cyan-700 dark:text-cyan-300 font-mono font-bold text-xs flex items-center justify-center shrink-0">
-                        {v.operationCode}
+                return (
+                  <div
+                    key={v.id}
+                    onClick={() => router.push("/dashboard/visits")}
+                    className="p-4 rounded-3xl bg-card border border-border hover:border-cyan-500/40 hover:bg-cyan-50/10 dark:hover:bg-cyan-950/10 transition-all cursor-pointer space-y-3 group shadow-2xs hover:shadow-md"
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex items-center gap-2.5">
+                        <div className="w-9 h-9 rounded-xl bg-cyan-500/10 text-cyan-700 dark:text-cyan-300 font-mono font-bold text-xs flex items-center justify-center shrink-0">
+                          {v.operationCode}
+                        </div>
+                        <div>
+                          <h4 className="text-sm font-bold text-foreground group-hover:text-cyan-600 transition-colors">
+                            {v.title}
+                          </h4>
+                          <p className="text-xs text-muted-foreground">{v.authority}</p>
+                        </div>
                       </div>
-                      <div>
-                        <h4 className="text-sm font-bold text-foreground group-hover:text-cyan-600 transition-colors">
-                          {v.title}
-                        </h4>
-                        <p className="text-xs text-muted-foreground">{v.authority}</p>
-                      </div>
+
+                      <Badge
+                        className={`text-[10px] font-bold shrink-0 ${
+                          isReady
+                            ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/30"
+                            : isConditional
+                            ? "bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/30"
+                            : "bg-rose-500/15 text-rose-600 dark:text-rose-400 border-rose-500/30"
+                        }`}
+                      >
+                        {isReady
+                          ? "جاهز للتنفيذ 100% 🟢"
+                          : isConditional
+                          ? "جاهز بشروط 🟡"
+                          : "معوقات تعيق البدء 🔴"}
+                      </Badge>
                     </div>
 
-                    <Badge
-                      className={`text-[10px] font-bold shrink-0 ${
-                        isReady
-                          ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/30"
-                          : isConditional
-                          ? "bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/30"
-                          : "bg-rose-500/15 text-rose-600 dark:text-rose-400 border-rose-500/30"
-                      }`}
-                    >
-                      {isReady
-                        ? "جاهز للتنفيذ 100% 🟢"
-                        : isConditional
-                        ? "جاهز بشروط 🟡"
-                        : "معوقات تعيق البدء 🔴"}
-                    </Badge>
-                  </div>
+                    <p className="text-xs text-muted-foreground bg-muted/40 p-2.5 rounded-2xl border border-border/60 leading-relaxed">
+                      <span className="font-bold text-foreground">التقرير الميداني: </span>
+                      {v.findings}
+                    </p>
 
-                  <p className="text-xs text-muted-foreground bg-muted/40 p-2.5 rounded-2xl border border-border/60 leading-relaxed">
-                    <span className="font-bold text-foreground">التقرير الميداني: </span>
-                    {v.findings}
-                  </p>
-
-                  <div className="flex items-center justify-between text-[11px] text-muted-foreground pt-1">
-                    <span className="flex items-center gap-1">
-                      <MapPin className="h-3 w-3 text-cyan-500" />
-                      <span>{v.location}</span>
-                    </span>
-                    <span className="font-semibold text-foreground">{v.employeeName} • {v.visitDate}</span>
+                    <div className="flex items-center justify-between text-[11px] text-muted-foreground pt-1">
+                      <span className="flex items-center gap-1">
+                        <MapPin className="h-3 w-3 text-cyan-500" />
+                        <span>{v.location}</span>
+                      </span>
+                      <span className="font-semibold text-foreground">{v.employeeName} • {v.visitDate}</span>
+                    </div>
                   </div>
-                </div>
-              );
-            })}
-          </div>
+                );
+              })}
+            </div>
+          )}
         </div>
       )}
 
@@ -2042,47 +1611,60 @@ export default function DashboardPage() {
             </Link>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {activeGuaranteesList.map((g) => {
-              const isUrgent = g.daysLeft <= 30;
+          {activeGuaranteesList.length === 0 ? (
+            <div className="py-8 px-4 rounded-2xl bg-muted/20 border border-dashed border-border text-center flex flex-col items-center justify-center space-y-2">
+              <Shield className="h-8 w-8 text-amber-500" />
+              <p className="text-sm font-bold text-foreground">لا توجد خطابات ضمان بنكية مسجلة حالياً</p>
+              <p className="text-xs text-muted-foreground">يتم إصدار وتتبع خطابات الضمان تلقائياً مع بدء التقديم في العمليات.</p>
+              <Link href="/dashboard/payments">
+                <Button size="sm" variant="outline" className="rounded-xl font-bold border-border mt-1 cursor-pointer">
+                  إدارة الضمانات والمدفوعات
+                </Button>
+              </Link>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {activeGuaranteesList.map((g) => {
+                const isUrgent = g.daysLeft <= 30;
 
-              return (
-                <div
-                  key={g.id}
-                  className={`p-4 rounded-3xl bg-card border transition-all space-y-3 shadow-2xs hover:shadow-md ${
-                    isUrgent
-                      ? "border-amber-500/40 bg-amber-500/5"
-                      : "border-border hover:border-blue-500/40"
-                  }`}
-                >
-                  <div className="flex items-center justify-between">
-                    <span className="font-mono font-bold text-xs text-blue-600 dark:text-blue-400">
-                      {g.guaranteeNumber}
-                    </span>
-                    <Badge
-                      className={`text-[10px] font-bold ${
-                        isUrgent ? "badge-amber" : "badge-emerald"
-                      }`}
-                    >
-                      {isUrgent ? `متبقي ${g.daysLeft} يوم ⚠️` : `ساري (${g.daysLeft} يوم)`}
-                    </Badge>
-                  </div>
+                return (
+                  <div
+                    key={g.id}
+                    className={`p-4 rounded-3xl bg-card border transition-all space-y-3 shadow-2xs hover:shadow-md ${
+                      isUrgent
+                        ? "border-amber-500/40 bg-amber-500/5"
+                        : "border-border hover:border-blue-500/40"
+                    }`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="font-mono font-bold text-xs text-blue-600 dark:text-blue-400">
+                        {g.guaranteeNumber}
+                      </span>
+                      <Badge
+                        className={`text-[10px] font-bold ${
+                          isUrgent ? "badge-amber" : "badge-emerald"
+                        }`}
+                      >
+                        {isUrgent ? `متبقي ${g.daysLeft} يوم ⚠️` : `ساري (${g.daysLeft} يوم)`}
+                      </Badge>
+                    </div>
 
-                  <div>
-                    <h4 className="text-sm font-bold text-foreground">{g.operationName}</h4>
-                    <p className="text-xs text-muted-foreground mt-0.5">
-                      {g.bank} • نوع الضمان: {g.type}
-                    </p>
-                  </div>
+                    <div>
+                      <h4 className="text-sm font-bold text-foreground">{g.operationName}</h4>
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        {g.bank} • نوع الضمان: {g.type}
+                      </p>
+                    </div>
 
-                  <div className="pt-2 border-t border-border flex items-center justify-between text-xs">
-                    <span className="text-muted-foreground">قيمة الغطاء:</span>
-                    <span className="font-black text-foreground">{formatCompactEGP(g.amount)}</span>
+                    <div className="pt-2 border-t border-border flex items-center justify-between text-xs">
+                      <span className="text-muted-foreground">قيمة الغطاء:</span>
+                      <span className="font-black text-foreground">{formatCompactEGP(g.amount)}</span>
+                    </div>
                   </div>
-                </div>
-              );
-            })}
-          </div>
+                );
+              })}
+            </div>
+          )}
         </div>
       )}
 
@@ -2105,51 +1687,42 @@ export default function DashboardPage() {
 
           <Link href={`/dashboard/approvals${selectedCompany !== "ALL" ? `?company=${selectedCompany}` : ""}`}>
             <Button variant="outline" size="sm" className="border-border text-foreground hover:bg-muted text-xs font-bold h-8 rounded-xl cursor-pointer">
-              <span>عرض كامل سجل الاعتمادات (24)</span>
+              <span>عرض كامل سجل الاعتمادات ({recentApprovalsLog.length || pendingApprovalsCount})</span>
               <ArrowLeft className="h-3.5 w-3.5 mr-1" />
             </Button>
           </Link>
         </div>
 
         <div className="space-y-3">
-          {[
-            {
-              id: "app-log-1",
-              doc: "تظلم استبعاد فني — عملية توريد كابلات الجهد المتوسط (A15)",
-              company: `شركة ${selectedCompany !== "ALL" ? currentCompany?.name : "جولدن"} (${selectedCompany !== "ALL" ? selectedCompany : "A"})`,
-              hash: "4F9B7E2A8C103D55A6B7E8C9D0123456",
-              approvedAt: "اليوم 09:30 AM",
-              approver: "نائب المدير العام",
-            },
-            {
-              id: "app-log-2",
-              doc: "إصدار خطاب ضمان ابتدائي 2% — عملية شبكات الفايبر (B08)",
-              company: "شركة إكسلنت (B)",
-              hash: "7E102A8C9B4F3D55C0123456A6B7E8C9",
-              approvedAt: "أمس 04:15 PM",
-              approver: "نائب المدير العام",
-            },
-          ].map((item) => (
-            <div
-              key={item.id}
-              className="p-3.5 sm:p-4 rounded-2xl bg-card border border-border flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-2xs"
-            >
-              <div className="space-y-1">
-                <div className="flex items-center gap-2">
-                  <CheckCircle2 className="h-4 w-4 text-emerald-500 shrink-0" />
-                  <p className="text-xs sm:text-sm font-bold text-foreground">{item.doc}</p>
-                  <Badge className="badge-emerald text-[10px]">معتمد رسمياً</Badge>
-                </div>
-                <p className="text-xs text-muted-foreground">
-                  {item.company} • اعتمد بواسطة: {item.approver} • {item.approvedAt}
-                </p>
-              </div>
-
-              <div className="text-left font-mono text-[11px] bg-muted/60 px-3 py-1.5 rounded-xl border border-border text-foreground font-bold shrink-0">
-                الهاش الأمني: <span className="text-blue-600 dark:text-blue-400">{item.hash}</span>
-              </div>
+          {recentApprovalsLog.length === 0 ? (
+            <div className="py-6 px-4 rounded-2xl bg-muted/20 border border-dashed border-border text-center flex flex-col items-center justify-center space-y-1.5">
+              <CheckCircle2 className="h-6 w-6 text-emerald-500" />
+              <p className="text-xs font-bold text-foreground">لا توجد طلبات اعتماد أو طباعة مسجلة حالياً</p>
+              <p className="text-[11px] text-muted-foreground">عند طلب طباعة أي خطاب رسمي أو تظلم يظهر هنا الهاش الأمني بعد الاعتماد.</p>
             </div>
-          ))}
+          ) : (
+            recentApprovalsLog.map((item) => (
+              <div
+                key={item.id}
+                className="p-3.5 sm:p-4 rounded-2xl bg-card border border-border flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-2xs"
+              >
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2">
+                    <CheckCircle2 className="h-4 w-4 text-emerald-500 shrink-0" />
+                    <p className="text-xs sm:text-sm font-bold text-foreground">{item.doc}</p>
+                    <Badge className="badge-emerald text-[10px]">معتمد رسمياً</Badge>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    {item.company} • اعتمد بواسطة: {item.approver} • {item.approvedAt}
+                  </p>
+                </div>
+
+                <div className="text-left font-mono text-[11px] bg-muted/60 px-3 py-1.5 rounded-xl border border-border text-foreground font-bold shrink-0">
+                  الهاش الأمني: <span className="text-blue-600 dark:text-blue-400">{item.hash}</span>
+                </div>
+              </div>
+            ))
+          )}
         </div>
       </div>
     </div>

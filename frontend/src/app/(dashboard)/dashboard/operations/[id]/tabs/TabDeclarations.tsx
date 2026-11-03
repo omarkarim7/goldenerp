@@ -50,11 +50,21 @@ import {
   getStandardDocQrPayload,
   buildOfficialSignaturesTableXml,
   replaceDocxRecipient,
+  replaceDocxSignatures,
+  replaceDocxAdditionalNotes,
+  fetchDocxTemplateArrayBuffer,
+  replaceDocxStandardHeaderFooter,
 } from "./letter-utils";
+import {
+  isExellentCompany,
+  generateExellentDeclarationSpecsDocx,
+  generateExellentDeclarationInsuranceDocx,
+} from "./exellent-letter-engine";
 import JSZip from "jszip";
 import QRCode from "qrcode";
 import { getPdfBlobFromDocx, uploadPdfToFreeCloud, getExpectedCloudPdfUrl } from "./client-pdf";
 import { OnlyOfficeDocViewer } from "@/components/OnlyOfficeDocViewer";
+import { SmartArabicDatePicker } from "@/components/ui/arabic-date-picker";
 
 export type DeclarationType = "specs" | "insurance";
 
@@ -108,6 +118,7 @@ export function TabDeclarations({
   }, [op.companies, selectedCompanyId]);
 
   const currentCompany = currentCompanyLink?.company;
+  const isEx = isExellentCompany(currentCompanyLink || currentCompany || op);
 
   // رقم القيد الصادر الذكي الخاص بكل إقرار على حدة
   const [letterRegNumbers, setLetterRegNumbers] = useState<Record<DeclarationType, string>>(() => {
@@ -156,7 +167,13 @@ export function TabDeclarations({
     return savedDec?.companyAddress || currentCompany?.address || "بجوار مستشفى ليدى كير  -  بدمنهور -  البحيره";
   });
   const [companyEmail, setCompanyEmail] = useState(() => {
-    return savedDec?.companyEmail || currentCompany?.email || "goldengolden8818@gmail.com";
+    if (savedDec?.companyEmail) return savedDec.companyEmail;
+    if (currentCompany?.email) return currentCompany.email;
+    const isEx = isExellentCompany(currentCompanyLink || currentCompany || op);
+    return isEx ? "exellentservice@gmail.com" : "goldengolden8818@gmail.com";
+  });
+  const [companyOtherDetails, setCompanyOtherDetails] = useState(() => {
+    return savedDec?.companyOtherDetails || "";
   });
   const [outgoingDate, setOutgoingDate] = useState(() => {
     return savedDec?.outgoingDate || new Date().toLocaleDateString("en-GB");
@@ -187,6 +204,40 @@ export function TabDeclarations({
   });
   const [technicalOpeningDate, setTechnicalOpeningDate] = useState(() => {
     return getOperationTechnicalOpeningDate(op, savedDec?.technicalOpeningDate);
+  });
+
+  // اسم الشركة المقرة بصدر الإقرار
+  const [declaringCompanyName, setDeclaringCompanyName] = useState(() => {
+    if (savedDec?.declaringCompanyName) return savedDec.declaringCompanyName;
+    return isEx
+      ? "اكسلانت سرفيس للنظافه والصيانه والنقل والخدمات والتوريدات"
+      : (currentCompany?.name || "شركة جولدن سرفيس");
+  });
+
+  // نصوص وصيغ الالتزام وعناوين التمهيد بالإقرارات
+  const [specsCommitment, setSpecsCommitment] = useState(() => {
+    return (
+      savedDec?.specsCommitment ||
+      "بكل ما جاء بكراسة الشروط والمواصفات وتوضح"
+    );
+  });
+  const [insuranceCommitment, setInsuranceCommitment] = useState(() => {
+    return (
+      savedDec?.insuranceCommitment ||
+      "بسداد نسبة التأمينات على المقاولات والعماله الغير منتظمه وحسن التعامل مع العاملين بالشركة وعدم التفرقه بينهم"
+    );
+  });
+  const [specsPreambleTitle, setSpecsPreambleTitle] = useState(() => {
+    return (
+      savedDec?.specsPreambleTitle ||
+      "إقرار الإلتزام بكراسة الشروط والمواصفات"
+    );
+  });
+  const [insurancePreambleTitle, setInsurancePreambleTitle] = useState(() => {
+    return (
+      savedDec?.insurancePreambleTitle ||
+      "إقرار الإلتزام بالتأمينات والعماله الغير منتظمه والمساواه بين العاملين"
+    );
   });
 
   // مزامنة تلقائية للبيانات إذا تغيرت العملية دون وجود تعديل يدوي محفوظ
@@ -232,8 +283,11 @@ export function TabDeclarations({
       if (currentCompanyLink?.displayCode) {
         setCompanyOpCode(currentCompanyLink.displayCode);
       }
+      if (isEx && (!savedDec?.declaringCompanyName || declaringCompanyName.includes("جولدن"))) {
+        setDeclaringCompanyName("اكسلانت سرفيس للنظافه والصيانه والنقل والخدمات والتوريدات");
+      }
     }
-  }, [currentCompany, currentCompanyLink]);
+  }, [currentCompany, currentCompanyLink, isEx]);
 
   // ━━━ 3. التوقيعات والاعتمادات والملاحظات ━━━
   const [specialistTitle, setSpecialistTitle] = useState(() => {
@@ -260,6 +314,12 @@ export function TabDeclarations({
   const [cloudPdfUrlInsurance, setCloudPdfUrlInsurance] = useState<string>(() => cleanCloudUrl(savedDec?.cloudPdfUrlInsurance));
   const [uploadingCloud, setUploadingCloud] = useState(false);
   const [lastGeneratedSnapshot, setLastGeneratedSnapshot] = useState<string | null>(null);
+  const [lastUploadedSnapshotSpecs, setLastUploadedSnapshotSpecs] = useState<string | null>(() => {
+    return savedDec?.lastUploadedSnapshotSpecs || (savedDec?.cloudPdfUrlSpecs ? "uploaded_initial" : null);
+  });
+  const [lastUploadedSnapshotInsurance, setLastUploadedSnapshotInsurance] = useState<string | null>(() => {
+    return savedDec?.lastUploadedSnapshotInsurance || (savedDec?.cloudPdfUrlInsurance ? "uploaded_initial" : null);
+  });
 
   // Modals & Document state
   const [previewModalOpen, setPreviewModalOpen] = useState(false);
@@ -284,6 +344,7 @@ export function TabDeclarations({
       phoneMobile,
       companyAddress,
       companyEmail,
+      companyOtherDetails,
       outgoingDate,
       recipientPrefix,
       recipientTitleAndAuthority,
@@ -293,6 +354,11 @@ export function TabDeclarations({
       operationScope,
       fiscalYear,
       technicalOpeningDate,
+      declaringCompanyName,
+      specsCommitment,
+      insuranceCommitment,
+      specsPreambleTitle,
+      insurancePreambleTitle,
       specialistTitle,
       specialistName,
       financeManagerName,
@@ -303,9 +369,10 @@ export function TabDeclarations({
     });
   }, [
     selectedCompanyId, registrationNumber, companyOpCode, companyCommercialRegister,
-    companyTaxCard, phoneWhatsapp, phoneMobile, companyAddress, companyEmail,
+    companyTaxCard, phoneWhatsapp, phoneMobile, companyAddress, companyEmail, companyOtherDetails,
     outgoingDate, recipientPrefix, recipientTitleAndAuthority, operationRegisteredName,
     operationNumber, tenderMethod, operationScope, fiscalYear, technicalOpeningDate,
+    declaringCompanyName, specsCommitment, insuranceCommitment, specsPreambleTitle, insurancePreambleTitle,
     specialistTitle, specialistName, financeManagerName, boardChairman, additionalNotes,
     cloudPdfUrlSpecs, cloudPdfUrlInsurance,
   ]);
@@ -325,6 +392,7 @@ export function TabDeclarations({
       setPhoneMobile(snap.phoneMobile);
       setCompanyAddress(snap.companyAddress);
       setCompanyEmail(snap.companyEmail);
+      setCompanyOtherDetails(snap.companyOtherDetails || "");
       setOutgoingDate(snap.outgoingDate);
       setRecipientPrefix(snap.recipientPrefix);
       setRecipientTitleAndAuthority(snap.recipientTitleAndAuthority);
@@ -334,6 +402,11 @@ export function TabDeclarations({
       setOperationScope(snap.operationScope);
       setFiscalYear(snap.fiscalYear);
       setTechnicalOpeningDate(snap.technicalOpeningDate);
+      if (snap.declaringCompanyName) setDeclaringCompanyName(snap.declaringCompanyName);
+      if (snap.specsCommitment) setSpecsCommitment(snap.specsCommitment);
+      if (snap.insuranceCommitment) setInsuranceCommitment(snap.insuranceCommitment);
+      if (snap.specsPreambleTitle) setSpecsPreambleTitle(snap.specsPreambleTitle);
+      if (snap.insurancePreambleTitle) setInsurancePreambleTitle(snap.insurancePreambleTitle);
       setSpecialistTitle(snap.specialistTitle);
       setSpecialistName(snap.specialistName);
       setFinanceManagerName(snap.financeManagerName);
@@ -361,6 +434,14 @@ export function TabDeclarations({
       ? cloudPdfUrlSpecs
       : cloudPdfUrlInsurance;
 
+  const activeUploadedSnapshot = activeDeclType === "specs" ? lastUploadedSnapshotSpecs : lastUploadedSnapshotInsurance;
+  const isCloudStale = useMemo(() => {
+    if (!currentCloudUrl) return false;
+    if (!activeUploadedSnapshot) return false;
+    if (activeUploadedSnapshot === "uploaded_initial") return false;
+    return activeUploadedSnapshot !== currentSnapshot;
+  }, [currentCloudUrl, activeUploadedSnapshot, currentSnapshot]);
+
   // إعادة توليد رقم القيد الخاص بالإقرار المختار
   const handleRegenerateRef = async () => {
     const letterKey = activeDeclType === "specs" ? "decl_specs" : "decl_insurance";
@@ -377,18 +458,98 @@ export function TabDeclarations({
 
   // ━━━ محرك استبدال المتغيرات في قوالب الإقرارات الرسمية ━━━
   const generateDeclarationDocxBlob = async (type: DeclarationType = activeDeclType): Promise<Blob> => {
-    const templatePath =
+    // ━━━ المسار المخصص المستقل لشركة إكسلنت (B) ━━━
+    const isB = isExellentCompany(currentCompanyLink || currentCompany || op);
+    if (isB) {
+      let qrBinary: Uint8Array | undefined = undefined;
+      try {
+        const activeCloud = type === "specs" ? cloudPdfUrlSpecs : cloudPdfUrlInsurance;
+        const docTitle = type === "specs" ? "إقرار المواصفات الفنية والشروط" : "إقرار الالتزام بالتأمينات والعمالة والمساواة";
+        const filename = `declaration_${type}_${registrationNumber || op.serialNumber || "doc"}.pdf`;
+        const qrPayload = await getStandardDocQrPayload(
+          activeCloud,
+          registrationNumber,
+          docTitle,
+          currentCompany?.name || "إكسلنت سرفيس",
+          filename
+        );
+        qrBinary = await generateHighResDocQrBuffer(qrPayload);
+      } catch (e) {
+        console.warn("QR generation failed for Exellent declaration:", e);
+      }
+
+      if (type === "specs") {
+        return await generateExellentDeclarationSpecsDocx({
+          recipientPrefix,
+          recipientTitleAndAuthority,
+          preambleTitle: specsPreambleTitle,
+          operationRegisteredName,
+          operationNumber,
+          companyName: declaringCompanyName || "اكسلانت سرفيس للنظافه والصيانه والنقل والخدمات والتوريدات",
+          commitmentDetails: specsCommitment,
+          tenderMethod,
+          operationScope,
+          fiscalYear,
+          technicalOpeningDate,
+          additionalNotes,
+          specialistName,
+          financeManagerName,
+          boardChairman,
+          companyCommercialRegister,
+          companyTaxCard,
+          companyOpCode,
+          outgoingDate,
+          registrationNumber,
+          companyAddress,
+          phoneWhatsapp,
+          phoneMobile,
+          companyEmail: companyEmail || currentCompany?.email,
+          companyOtherDetails: companyOtherDetails || "",
+          qrBinary,
+        });
+      } else {
+        return await generateExellentDeclarationInsuranceDocx({
+          recipientPrefix,
+          recipientTitleAndAuthority,
+          preambleTitle: insurancePreambleTitle,
+          operationRegisteredName,
+          operationNumber,
+          companyName: declaringCompanyName || "اكسلانت سرفيس للنظافه والصيانه والنقل والخدمات والتوريدات",
+          commitmentDetails: insuranceCommitment,
+          tenderMethod,
+          operationScope,
+          fiscalYear,
+          technicalOpeningDate,
+          additionalNotes,
+          specialistName,
+          financeManagerName,
+          boardChairman,
+          companyCommercialRegister,
+          companyTaxCard,
+          companyOpCode,
+          outgoingDate,
+          registrationNumber,
+          companyAddress,
+          phoneWhatsapp,
+          phoneMobile,
+          companyEmail: companyEmail || currentCompany?.email,
+          companyOtherDetails: companyOtherDetails || "",
+          qrBinary,
+        });
+      }
+    }
+
+    // ━━━ المسار المعتمد الأصلي لشركة جولدن (A) ━━━
+    const templateFile =
       type === "specs"
-        ? "/templates/declaration_specs_template.docx"
-        : "/templates/declaration_insurance_template.docx";
+        ? "declaration_specs_template.docx"
+        : "declaration_insurance_template.docx";
 
-    const response = await fetch(templatePath);
-    if (!response.ok) throw new Error(`فشل قراءة قالب الإقرار (${type}) من الخادم`);
-    const templateBuffer = await response.arrayBuffer();
-
+    const templateBuffer = await fetchDocxTemplateArrayBuffer(templateFile, currentCompanyLink || currentCompany || op);
     const zip = await JSZip.loadAsync(templateBuffer);
 
     let qrDrawingXml = "";
+    let qrBinary: Uint8Array | undefined = undefined;
     try {
       let activeCloud =
         type === "specs"
@@ -408,7 +569,7 @@ export function TabDeclarations({
         currentCompany?.name || "المجموعة الذهبية",
         filename
       );
-      const qrBinary = await generateHighResDocQrBuffer(qrPayload);
+      qrBinary = await generateHighResDocQrBuffer(qrPayload);
 
       zip.file("word/media/doc_qr.png", qrBinary);
 
@@ -440,46 +601,48 @@ export function TabDeclarations({
     // لقب وصفة المرسل إليه
     docXml = replaceDocxRecipient(docXml, recipientPrefix, recipientTitleAndAuthority);
 
-    // ━━━ استبدال متغيرات إقرارات الشروط والتأمينات ━━━
-    docXml = docXml.replace(/اسم العملية المسجله[\s\.]*/g, escapeXml(operationRegisteredName) + " ");
-    docXml = docXml.replace(/365/g, escapeXml(operationNumber));
-
-    // طريقة الطرح والتعاقد الرسمية بدقة 100% (معالجة تجزئة runs في قوالب الإقرارات)
-    const tenderPattern = /(<w:t[^>]*>[^<]*وذلك\s*في\s*<\/w:t><\/w:r>)([\s\S]*?)(<w:r\b[^>]*>(?:(?!<\/w:r>)[\s\S])*?<w:t[^>]*>[^<]*وطبيعتها[^<]*<\/w:t>)/;
-    if (tenderPattern.test(docXml)) {
-      docXml = docXml.replace(
-        tenderPattern,
-        `$1<w:r><w:rPr><w:rFonts w:hint="cs"/><w:b/><w:bCs/><w:sz w:val="32"/><w:szCs w:val="32"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t xml:space="preserve"> ${escapeXml(tenderMethod)} </w:t></w:r>$3`
-      );
+    // ━━━ استبدال فقرة الموضوع / التمهيد لقالب جولدن ━━━
+    const goldenPreamble = (type === "specs" ? specsPreambleTitle : insurancePreambleTitle) || (type === "specs" ? "إقرار الالتزام بكراسة الشروط والمواصفات" : "إقرار الالتزام بالتأمينات والعمالة والمساواة");
+    const goldenSubjPattern = /<w:p\b(?:(?!<\/w:p>)[\s\S])*?الموضوع\s*بخصوص[\s\S]*?<\/w:p>/;
+    if (goldenSubjPattern.test(docXml)) {
+      const subjectXml = `<w:p><w:pPr><w:spacing w:after="0" w:line="240" w:lineRule="auto"/><w:jc w:val="both"/><w:rPr><w:b/><w:bCs/><w:sz w:val="32"/><w:szCs w:val="32"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr></w:pPr><w:r><w:rPr><w:rFonts w:hint="cs"/><w:b/><w:bCs/><w:sz w:val="32"/><w:szCs w:val="32"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t xml:space="preserve">الموضوع بخصوص : ${escapeXml(goldenPreamble)}  لعملية  ${escapeXml(operationRegisteredName)}  رقم ${escapeXml(operationNumber)}</w:t></w:r></w:p>`;
+      docXml = docXml.replace(goldenSubjPattern, subjectXml);
     } else {
-      docXml = docXml.replace(/(<w:t[^>]*>)المناقصة ال<\/w:t><\/w:r>[\s\S]*?<w:t>ة<\/w:t>(<\/w:r>)/g, `$1${escapeXml(tenderMethod)}$2`);
-      docXml = docXml.replace(/المناقصة\s+المحدودة/g, escapeXml(tenderMethod));
+      docXml = docXml.replace(/اسم العملية المسجله[\s\.]*/g, escapeXml(operationRegisteredName) + " ");
+      docXml = docXml.replace(/365/g, escapeXml(operationNumber));
     }
 
-    docXml = replaceDocxScope(docXml, operationScope);
-    docXml = replaceDocxFiscalAndDate(docXml, fiscalYear, technicalOpeningDate);
-
-    // التوقيعات والاعتمادات بأسفل الصفحة
-    // التوقيعات بأسفل الصفحة في جدول ثلاثي منضبط (المختص | المدير المالي | يعتمد رئيس مجلس الإدارة)
-    const decSigBlockRegex = /<w:p\b[^>]*>(?:(?!<w:p\b)[\s\S])*?المختص[\s\S]*?رئيس مجلس[\s\S]*?<\/w:p>/;
-    if (decSigBlockRegex.test(docXml)) {
-      const sigTableXml = buildOfficialSignaturesTableXml({
-        specialistTitle: specialistTitle || "المختص :",
-        specialistName: specialistName || " ",
-        financeManagerName: financeManagerName || " ",
-        boardChairman: boardChairman || "رئيس مجلس الإدارة",
-      });
-      docXml = docXml.replace(decSigBlockRegex, sigTableXml);
+    // ━━━ استبدال متن الإقرار الرئيسي لبقاء كافة الجمل والكلمات بدقة 100% ━━━
+    const goldenCompany = declaringCompanyName || currentCompany?.name || "شركة جولدن سرفيس للخدمات العامة والتوريدات";
+    const goldenCommitment = type === "specs"
+      ? (specsCommitment || "بكل ما جاء بكراسة الشروط والمواصفات")
+      : (insuranceCommitment || "بسداد نسبة التأمينات على المقاولات والعماله الغير منتظمه وحسن التعامل مع العاملين بالشركة وعدم التفرقه بينهم");
+    const goldenDeclPattern = /<w:p\b(?:(?!<\/w:p>)[\s\S])*?تقر[\s\S]*?<\/w:p>/;
+    if (goldenDeclPattern.test(docXml)) {
+      const goldenDeclXml =
+        `<w:p><w:pPr><w:spacing w:after="0" w:line="240" w:lineRule="auto"/><w:jc w:val="both"/><w:rPr><w:b/><w:bCs/><w:sz w:val="32"/><w:szCs w:val="32"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr></w:pPr>` +
+        `<w:r><w:rPr><w:rFonts w:hint="cs"/><w:b/><w:bCs/><w:sz w:val="32"/><w:szCs w:val="32"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t xml:space="preserve">  تقر ${escapeXml(goldenCompany)} بأنها ملتزمه ${escapeXml(goldenCommitment)} وذلك في ${escapeXml(tenderMethod)} وطبيعتها  ${escapeXml(operationScope)} طرفكم للعام المالى  ${escapeXml(fiscalYear)}   والمحدد  لها جلسة ${escapeXml(technicalOpeningDate)} لفتح المظروف الفنى .</w:t></w:r></w:p>`;
+      docXml = docXml.replace(goldenDeclPattern, goldenDeclXml);
     } else {
-      docXml = replaceDocxChairman(docXml, boardChairman);
+      if (declaringCompanyName) {
+        docXml = docXml.replace(/شركة\s+جولدن\s+سرفيس/g, escapeXml(declaringCompanyName));
+      }
+      docXml = replaceDocxScope(docXml, operationScope);
+      docXml = replaceDocxFiscalAndDate(docXml, fiscalYear, technicalOpeningDate);
     }
 
-    // خانة الملاحظات
-    if (additionalNotes.trim()) {
-      docXml = docXml.replace(/خان[ةه] خالي[ةه] للملاحظات/g, escapeXml(additionalNotes));
-    } else {
-      docXml = docXml.replace(/خان[ةه] خالي[ةه] للملاحظات/g, "");
-    }
+    // التوقيعات والاعتمادات بأسفل الصفحة لكلا الشركتين
+    docXml = replaceDocxSignatures(docXml, {
+      specialistTitle: specialistTitle || "المختص :",
+      specialistName: specialistName || " ",
+      financeManagerTitle: "المدير العام",
+      financeManagerName: financeManagerName || " ",
+      chairmanTitle: "يعتمد ،،،،،،",
+      chairmanName: boardChairman || "رئيس مجلس الإدارة",
+    });
+
+    // خانة الملاحظات الإضافية (حذف تام عند الفراغ لمنع ظهور نقاط وهمية)
+    docXml = replaceDocxAdditionalNotes(docXml, additionalNotes);
 
     // إزالة علامات التمييز والألوان الحمراء
     docXml = docXml.replace(/<w:highlight\s+[^>]*\/>/g, "");
@@ -487,41 +650,19 @@ export function TabDeclarations({
 
     zip.file("word/document.xml", docXml);
 
-    // 2. ترويسات الصفحة بكافة أجزائها (header1, header2, header3)
-    const headerParts = ["word/header1.xml", "word/header2.xml", "word/header3.xml"];
-    for (const hp of headerParts) {
-      if (zip.file(hp)) {
-        let hdrXml = await zip.file(hp)!.async("text");
-        hdrXml = hdrXml.replace(/110200700036620/g, escapeXml(companyCommercialRegister));
-        hdrXml = hdrXml.replace(/658369652/g, escapeXml(companyTaxCard));
-        hdrXml = hdrXml.replace(/\(\s*كود العملية بالشركه\s*\)/g, `( ${escapeXml(companyOpCode)} )`);
-        hdrXml = hdrXml.replace(/كود العملية بالشركه/g, escapeXml(companyOpCode));
-        hdrXml = hdrXml.replace(/<w:highlight\s+[^>]*\/>/g, "");
-        hdrXml = hdrXml.replace(/<w:color\s+w:val=\"(red|FF0000)\"[^>]*\/>/g, "");
-        zip.file(hp, hdrXml);
-      }
-    }
-
-    // 3. تذييلات الصفحة بكافة أجزائها (footer1, footer2, footer3)
-    const footerParts = ["word/footer1.xml", "word/footer2.xml", "word/footer3.xml"];
-    for (const fp of footerParts) {
-      if (zip.file(fp)) {
-        let ftrXml = await zip.file(fp)!.async("text");
-        ftrXml = ftrXml.replace(/15\/10\/2026/g, escapeXml(outgoingDate));
-        if (ftrXml.includes("رقم القيد")) {
-          ftrXml = ftrXml.replace(/رقم القيد/g, `رقم القيد : ${escapeXml(registrationNumber)}`);
-        }
-        ftrXml = ftrXml.replace(/\(\s*باركود المستند أو العمليه/g, `رقم القيد : ${escapeXml(registrationNumber)}`);
-        ftrXml = ftrXml.replace(/01091708818/g, escapeXml(phoneWhatsapp));
-        ftrXml = ftrXml.replace(/01557018818/g, escapeXml(phoneMobile));
-        ftrXml = ftrXml.replace(/بجوار مستشفى ليدى كير\s*-\s*بدمنهور\s*-\s*البح\s*يره/g, escapeXml(companyAddress));
-        ftrXml = ftrXml.replace(/بجوار مستشفى ليدى كير\s*-\s*بدمنهور\s*-\s*البحيره/g, escapeXml(companyAddress));
-        ftrXml = ftrXml.replace(/goldengolden8818@gmail.com/g, escapeXml(companyEmail));
-        ftrXml = ftrXml.replace(/<w:highlight\s+[^>]*\/>/g, "");
-        ftrXml = ftrXml.replace(/<w:color\s+w:val=\"(red|FF0000)\"[^>]*\/>/g, "");
-        zip.file(fp, ftrXml);
-      }
-    }
+    // 2. ترويسات وتذييلات الصفحة (للشركتين جولدن وإكسلنت وحقن الباركود في الهيدر)
+    await replaceDocxStandardHeaderFooter(zip, {
+      companyCommercialRegister,
+      companyTaxCard,
+      companyOpCode,
+      outgoingDate,
+      registrationNumber,
+      companyAddress,
+      phoneWhatsapp,
+      phoneMobile,
+      companyEmail,
+      qrBinary,
+    });
 
     // تفريغ كافة التحديدات الحمراء في سائر ملفات القالب
     // إزالة كافة علامات التحديد الأحمر والعلامات المائية والصور التالفة
@@ -572,8 +713,10 @@ export function TabDeclarations({
 
         if (type === "specs") {
           setCloudPdfUrlSpecs(res.url);
+          setLastUploadedSnapshotSpecs(currentSnapshot);
         } else {
           setCloudPdfUrlInsurance(res.url);
+          setLastUploadedSnapshotInsurance(currentSnapshot);
         }
 
         // مزامنة المعاينة في الذاكرة فوراً لفتحها بـ 0ms بدون أي إعادة توليد
@@ -622,8 +765,10 @@ export function TabDeclarations({
           if (!existingNotesObj.declarationsDocx) existingNotesObj.declarationsDocx = {};
           if (type === "specs") {
             existingNotesObj.declarationsDocx.cloudPdfUrlSpecs = res.url;
+            existingNotesObj.declarationsDocx.lastUploadedSnapshotSpecs = currentSnapshot;
           } else {
             existingNotesObj.declarationsDocx.cloudPdfUrlInsurance = res.url;
+            existingNotesObj.declarationsDocx.lastUploadedSnapshotInsurance = currentSnapshot;
           }
           await api.patch(`/operations/${op.id}`, { notes: JSON.stringify(existingNotesObj) });
         } catch (e) {
@@ -649,9 +794,9 @@ export function TabDeclarations({
       return;
     }
 
-    // 2.1 إذا كان المستند محفوظاً ومؤرشفاً بالعملية ولم يتم تعديل الحقول -> تحميل فوري ومباشر من الأرشيف
+    // 2.1 إذا كان المستند محفوظاً ومؤرشفاً بالعملية ولم يتم تعديل الحقول -> تحميل فوري ومباشر من الأرشيف (فقط قبل أي توليد أو حفظ حديث)
     const docKey = activeDeclType === "specs" ? "decl-specs" : activeDeclType === "insurance" ? "decl-insurance" : "decl-general";
-    if (!forceRefresh && !isDirty) {
+    if (!forceRefresh && !isDirty && !previewPdfBlob && !lastGeneratedSnapshot) {
       try {
         const cached = await loadArchivedPdfBlob(op, docKey);
         if (cached?.blob) {
@@ -684,6 +829,28 @@ export function TabDeclarations({
       setPreviewPdfUrl(url);
 
       setLastGeneratedSnapshot(currentSnapshot);
+
+      // رفع تلقائي فوري لسحابة Cloudflare R2 حصرياً لضمان توفر الملف دائماً عند مسح الباركود
+      const cloudFilename = `declaration_${activeDeclType}_${registrationNumber || op.serialNumber || "doc"}.pdf`;
+      uploadPdfToFreeCloud(pdfBlob, cloudFilename).then(async (res) => {
+        if (res?.url) {
+          if (activeDeclType === "specs") {
+            setCloudPdfUrlSpecs(res.url);
+            setLastUploadedSnapshotSpecs(currentSnapshot);
+          } else {
+            setCloudPdfUrlInsurance(res.url);
+            setLastUploadedSnapshotInsurance(currentSnapshot);
+          }
+          try {
+            let nObj: any = {};
+            if (op.notes && op.notes.startsWith("{")) nObj = JSON.parse(op.notes);
+            if (!nObj.declarationsLetter) nObj.declarationsLetter = {};
+            nObj.declarationsLetter[`cloudPdfUrl_${activeDeclType}`] = res.url;
+            await api.patch(`/operations/${op.id}`, { notes: JSON.stringify(nObj) });
+          } catch (e) {}
+        }
+      }).catch((e) => console.warn("Background upload failed:", e));
+
       if (forceRefresh) {
         toast.success("تم تحديث المعاينة بنجاح ✓");
       }
@@ -756,6 +923,36 @@ export function TabDeclarations({
         },
       };
       setPrintHistory(updatedHistory);
+
+      // رفع فوري سحابياً في الخلفية لضمان عمل رمز الـ QR فور طباعته ومنع خطأ NoSuchKey نهائياً
+      // رفع فوري سحابياً دائماً بدون شروط
+      uploadPdfToFreeCloud(
+          pdfBlob,
+          `declaration_${activeDeclType}_${registrationNumber || op.serialNumber}.pdf`
+        ).then(async (res) => {
+          if (res?.url) {
+            if (activeDeclType === "specs") {
+              setCloudPdfUrlSpecs(res.url);
+              setLastUploadedSnapshotSpecs(currentSnapshot);
+            } else {
+              setCloudPdfUrlInsurance(res.url);
+              setLastUploadedSnapshotInsurance(currentSnapshot);
+            }
+            try {
+              let nObj: any = {};
+              if (op.notes && op.notes.startsWith("{")) nObj = JSON.parse(op.notes);
+              if (!nObj.declarationsDocx) nObj.declarationsDocx = {};
+              if (activeDeclType === "specs") {
+                nObj.declarationsDocx.cloudPdfUrlSpecs = res.url;
+                nObj.declarationsDocx.lastUploadedSnapshotSpecs = currentSnapshot;
+              } else {
+                nObj.declarationsDocx.cloudPdfUrlInsurance = res.url;
+                nObj.declarationsDocx.lastUploadedSnapshotInsurance = currentSnapshot;
+              }
+              await api.patch(`/operations/${op.id}`, { notes: JSON.stringify(nObj) });
+            } catch (e) {}
+          }
+        }).catch((e) => console.warn("Auto background upload on print:", e));
 
       try {
         let notesObj: any = {};
@@ -951,7 +1148,7 @@ export function TabDeclarations({
         registrationNumber,
       });
 
-      toast.success(`تمت إضافة الإقرار للأرشيف بنجاح (${versionName})! 📦✨`);
+      toast.success(`تم حفظ وأرشفة الإقرار بنجاح في أرشيف العملية (تخزين Hostinger المحلي) (${versionName})! 📦🔒`);
       onRefresh();
     } catch (err: any) {
       toast.error("فشل تحديث حالة الأرشيف للإقرار: " + (err?.message || ""));
@@ -971,6 +1168,12 @@ export function TabDeclarations({
     const snapToSave = currentSnapshot;
     setSavedSnapshot(snapToSave);
     setSavingState(true);
+    setLastGeneratedSnapshot(null);
+    setPreviewPdfBlob(null);
+    if (previewPdfUrl) {
+      URL.revokeObjectURL(previewPdfUrl);
+      setPreviewPdfUrl(null);
+    }
     toast.success("تم حفظ بيانات الإقرارات بنجاح! 💾✨");
 
     try {
@@ -989,6 +1192,8 @@ export function TabDeclarations({
         letterRegNumbers,
         cloudPdfUrlSpecs,
         cloudPdfUrlInsurance,
+        lastUploadedSnapshotSpecs,
+        lastUploadedSnapshotInsurance,
       };
 
       if (!existingNotesObj.letterRegistrationNumbers) {
@@ -1175,16 +1380,16 @@ export function TabDeclarations({
             {/* تاريخ الصادر */}
             <div className="space-y-1.5">
               <Label className="text-xs font-bold text-foreground">التاريخ الصادر (Footer) *</Label>
-              <Input
+              <SmartArabicDatePicker
                 value={outgoingDate}
-                onChange={(e) => setOutgoingDate(e.target.value)}
+                onChange={setOutgoingDate}
                 className="h-9.5 text-xs font-mono rounded-xl"
               />
             </div>
           </div>
 
           {/* العنوان ووسائل الاتصال بالتذييل */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
             <div className="space-y-1.5">
               <Label className="text-xs font-bold text-foreground">هاتف الواتساب (Footer)</Label>
               <Input
@@ -1201,12 +1406,16 @@ export function TabDeclarations({
                 className="h-9.5 text-xs font-mono rounded-xl"
               />
             </div>
-            <div className="space-y-1.5">
-              <Label className="text-xs font-bold text-foreground">البريد الإلكتروني (Footer)</Label>
+                        <div className="space-y-1.5 sm:col-span-2">
+              <Label className="text-xs font-bold text-foreground">البريد الإلكتروني / تفاصيل أخرى بالتذييل (Footer)</Label>
               <Input
                 value={companyEmail}
-                onChange={(e) => setCompanyEmail(e.target.value)}
-                className="h-9.5 text-xs font-mono rounded-xl"
+                onChange={(e) => {
+                  setCompanyEmail(e.target.value);
+                  setCompanyOtherDetails(e.target.value);
+                }}
+                placeholder="exellentservice@gmail.com أو تفاصيل أخرى..."
+                className="h-9.5 text-xs rounded-xl"
               />
             </div>
           </div>
@@ -1293,6 +1502,77 @@ export function TabDeclarations({
             </div>
           </div>
 
+          {/* اسم الشركة المقرة في صدر الإقرار */}
+          <div className="space-y-1.5 p-3 rounded-xl bg-amber-500/10 border border-amber-500/20">
+            <Label className="text-xs font-bold text-foreground flex items-center justify-between">
+              <span>اسم الشركة المقرة في صدر الإقرار (تقر ... بأنها) *</span>
+              <span className="text-[10px] text-muted-foreground font-normal">يظهر مباشرة بعد جملة "بعد التحية"</span>
+            </Label>
+            <Input
+              value={declaringCompanyName}
+              onChange={(e) => setDeclaringCompanyName(e.target.value)}
+              placeholder={isEx ? "اكسلانت سرفيس للنظافه والصيانه والنقل والخدمات والتوريدات" : "شركة جولدن سرفيس للخدمات العامة والتوريدات"}
+              className="h-9.5 text-xs font-bold rounded-xl bg-background"
+            />
+          </div>
+
+          {/* حقول نص وصيغة الالتزام المحددة للإقرار النشط */}
+          {activeDeclType === "specs" ? (
+            <div className="space-y-3 p-3.5 rounded-2xl bg-teal-500/10 border border-teal-500/20">
+              <div className="space-y-1.5">
+                <Label className="text-xs font-bold text-foreground">
+                  عنوان التمهيد في إقرار الكراسة (تمهيد : ...) *
+                </Label>
+                <Input
+                  value={specsPreambleTitle}
+                  onChange={(e) => setSpecsPreambleTitle(e.target.value)}
+                  placeholder="إقرار الإلتزام بكراسة الشروط والمواصفات"
+                  className="h-9.5 text-xs font-bold rounded-xl bg-background"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <Label className="text-xs font-bold text-foreground">
+                  صيغة التزام الشركة بكراسة الشروط (المتن الرئيسي للإقرار) *
+                </Label>
+                <Textarea
+                  rows={2}
+                  value={specsCommitment}
+                  onChange={(e) => setSpecsCommitment(e.target.value)}
+                  placeholder="بكل ما جاء بكراسة الشروط والمواصفات وتوضح"
+                  className="text-xs font-bold rounded-xl bg-background leading-relaxed"
+                />
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-3 p-3.5 rounded-2xl bg-indigo-500/10 border border-indigo-500/20">
+              <div className="space-y-1.5">
+                <Label className="text-xs font-bold text-foreground">
+                  عنوان التمهيد في إقرار التأمينات (تمهيد : ...) *
+                </Label>
+                <Input
+                  value={insurancePreambleTitle}
+                  onChange={(e) => setInsurancePreambleTitle(e.target.value)}
+                  placeholder="إقرار الإلتزام بالتأمينات والعماله الغير منتظمه والمساواه بين العاملين"
+                  className="h-9.5 text-xs font-bold rounded-xl bg-background"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <Label className="text-xs font-bold text-foreground">
+                  صيغة التزام الشركة بالتأمينات والعمالة والمساواة (المتن الرئيسي) *
+                </Label>
+                <Textarea
+                  rows={2}
+                  value={insuranceCommitment}
+                  onChange={(e) => setInsuranceCommitment(e.target.value)}
+                  placeholder="بسداد نسبة التأمينات على المقاولات والعماله الغير منتظمه وحسن التعامل مع العاملين بالشركة وعدم التفرقه بينهم"
+                  className="text-xs font-bold rounded-xl bg-background leading-relaxed"
+                />
+              </div>
+            </div>
+          )}
+
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div className="space-y-1.5">
                   <Label className="text-xs font-bold text-foreground">طبيعة ونطاق التوريد بالعملية *</Label>
@@ -1311,10 +1591,10 @@ export function TabDeclarations({
 
                 <div className="space-y-1.5">
                   <Label className="text-xs font-bold text-foreground">موعد جلسة فتح المظروف الفني *</Label>
-                  <Input
+                  <SmartArabicDatePicker
                     value={technicalOpeningDate}
-                    onChange={(e) => setTechnicalOpeningDate(e.target.value)}
-                    className="h-9.5 text-xs font-mono rounded-xl text-center"
+                    onChange={setTechnicalOpeningDate}
+                    className="h-9.5 text-xs font-mono rounded-xl text-center font-bold"
                   />
                 </div>
               </div>
@@ -1393,7 +1673,7 @@ export function TabDeclarations({
                   <div>
                     <div className="flex items-center gap-2">
                       <h3 className="font-extrabold text-foreground text-base">
-                        معاينة قالب الوورد المعتمد: {activeDeclType === "specs" ? "إقرار كراسة الشروط.docx" : activeDeclType === "insurance" ? "إقرار التأمينات والعمالة.docx" : "خطاب عام رسمي.docx"}
+                        معاينة قالب الوورد المعتمد: {isEx ? (activeDeclType === "specs" ? "اقرارات الالتزام بكراسة الشروط سيستم اكسلانت.docx" : "اقرارات سيستم اكسلانت.docx") : (activeDeclType === "specs" ? "إقرار كراسة الشروط.docx" : activeDeclType === "insurance" ? "إقرار التأمينات والعمالة.docx" : "خطاب عام رسمي.docx")}
                       </h3>
                       <Badge className="bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/30 text-[10px] font-bold">
                         معاينة Word COM الرسمية 100% ✓
@@ -1453,8 +1733,8 @@ export function TabDeclarations({
                     isArchived={isCurrentArchived}
                     addingToArchive={addingToArchive}
                     cloudUploadWarning={
-                      !(activeDeclType === "specs" ? cloudPdfUrlSpecs : cloudPdfUrlInsurance) || currentSnapshot !== lastGeneratedSnapshot
-                        ? "⚠️ تنبيه هام: هذا الإقرار يحتوي على تعديلات جديدة لم يتم رفعها سحابياً — يرجى الضغط على 'إعادة الرفع والتحديث' لكي يتطابق الباركود مع أحدث بيانات!"
+                      isCloudStale
+                        ? "⚠️ تنبيه ذكي: تم تعديل بيانات هذا الإقرار بعد رفعه سحابياً — يرجى الضغط على 'إعادة الرفع والتحديث السحابي 🔄' لتحديث النسخة السحابية ومطابقة الباركود مع أحدث بيانات!"
                         : null
                     }
                     onUploadCloud={() => handleUploadToCloud(activeDeclType, true)}

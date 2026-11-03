@@ -8,7 +8,8 @@ import {
   Globe2, Check, AlertCircle, Info, Sparkles, Search,
   X, Landmark, FileText, Phone, Mail, MapPin, Hash,
   Clock, ShieldCheck, ChevronRight, ChevronLeft, RotateCcw, ArrowRight,
-  Calendar, AlertTriangle, Timer, Hourglass, Trash2
+  Calendar, AlertTriangle, Timer, Hourglass, Trash2,
+  Send, Smartphone, MessageSquare, KeyRound, ExternalLink, ShieldAlert, CheckCheck, Moon
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -215,6 +216,43 @@ const SETTING_DETAILS: Record<
     type: "number",
     group: "security",
   },
+
+  // 8. المساعد التنفيذي وإشعارات تليجرام
+  telegram_bot_token: {
+    label: "رمز التوكن الرسمي للبوت (BotFather Token)",
+    description: "مفتاح الربط البرمجي المشفر لبوت تليجرام المعتمد الصادر من BotFather.",
+    unit: "API Token",
+    type: "string",
+    group: "telegram",
+  },
+  telegram_admin_chat_id: {
+    label: "معرف شات تليجرام المعتمد للسيد المدير العام (Chat ID)",
+    description: "المعرف الرقمي المقترن حصرياً بهاتف المدير العام لاستقبال طلبات الاعتماد وإصدار القرارات.",
+    unit: "Chat ID",
+    type: "string",
+    group: "telegram",
+  },
+  telegram_notifications_enabled: {
+    label: "تفعيل إرسال التنبيهات الفورية عبر تليجرام",
+    description: "المفتاح العام لتشغيل أو إيقاف توجيه الإشعارات التنفيذية الحية إلى هاتف المدير العام.",
+    unit: "تفعيل",
+    type: "boolean",
+    group: "telegram",
+  },
+  telegram_alert_print_approvals: {
+    label: "إرسال طلبات اعتماد الطباعة والتنزيل فوراً للبوت",
+    description: "إرسال رسالة فورية مع زر اعتماد ورفض عند محاولة أي موظف طباعة أو تنزيل مستند.",
+    unit: "تفعيل",
+    type: "boolean",
+    group: "telegram",
+  },
+  telegram_alert_sessions: {
+    label: "إرسال تنبيهات اقتراب مواعيد فتح المظاريف وجلسات اليوم",
+    description: "تنبيه المدير العام استباقياً بجلسات فتح المظاريف الفنية والمالية ومواعيد الاستفسارات.",
+    unit: "تفعيل",
+    type: "boolean",
+    group: "telegram",
+  },
 };
 
 // Preset Scan Times for the Radar Time Picker
@@ -231,6 +269,8 @@ const RADAR_TIME_PRESETS = [
 
 // Presets for Deadline Reminders (hours)
 const DEADLINE_HOUR_PRESETS = [
+  { hours: "168", label: "قبل 168 ساعة (أسبوع / 7 أيام)", desc: "مراجعة كراسة الشروط وإعداد خطابات الضمان مبكراً" },
+  { hours: "120", label: "قبل 120 ساعة (5 أيام)", desc: "متابعة وتجهيز عروض الأسعار والتنسيق مع الموردين" },
   { hours: "72", label: "قبل 72 ساعة (3 أيام)", desc: "تجهيز أولي للعطاء ومراجعة بنود الكراسة" },
   { hours: "48", label: "قبل 48 ساعة (يومين)", desc: "بدء طباعة وتوقيع المظاريف الفنية والمالية" },
   { hours: "24", label: "قبل 24 ساعة (يوم واحد)", desc: "تسليم المظاريف لمقر الجهة الإدارية قبل الغلق" },
@@ -239,11 +279,180 @@ const DEADLINE_HOUR_PRESETS = [
 
 // Presets for Guarantee Reminders (days)
 const GUARANTEE_DAY_PRESETS = [
+  { days: "90", label: "قبل 90 يوماً (3 أشهر)", desc: "فحص دوري مبكر لموقف تنفيذ العملية وصلاحية الضمان" },
   { days: "60", label: "قبل 60 يوماً (شهرين)", desc: "إشعار مبكر لمراجعة موقف المستخلصات والعملية" },
   { days: "30", label: "قبل 30 يوماً (شهر)", desc: "مخاطبة البنك والبدء في إجراءات التمديد أو الاسترداد" },
+  { days: "21", label: "قبل 21 يوماً (3 أسابيع)", desc: "متابعة موقف الاعتمادات المالية وموقف التوريدات" },
   { days: "15", label: "قبل 15 يوماً (أسبوعين)", desc: "متابعة موافقة الجهة الإدارية الرسمية على تجديد الصلاحية" },
   { days: "10", label: "قبل 10 أيام (تحذيري)", desc: "إشعار للإدارة المالية ومدير المشروعات بقرب الانتهاء" },
+  { days: "7", label: "قبل 7 أيام (أسبوع)", desc: "إنذار عاجل لمتابعة استرداد أو تجديد الخطاب" },
   { days: "5", label: "قبل 5 أيام (حرج وطارئ)", desc: "إجراء عاجل وفوري لتفادي مصادرة خطاب الضمان البنكي" },
+];
+
+export interface SensitiveStageAlertDef {
+  id: string;
+  name: string;
+  description: string;
+  stageOrder: string;
+  unit: string;
+  defaultLead: string;
+  options: { label: string; value: string }[];
+}
+
+const SENSITIVE_STAGES_CONFIG: SensitiveStageAlertDef[] = [
+  {
+    id: "session_opening",
+    name: "موعد جلسة فتح المظاريف الفنية والمالية",
+    description: "تنبيه استباقي لتسليم المظاريف لمقر الجهة الإدارية وتجهيز كشوف الحضور قبل موعد الجلسة الرسمي",
+    stageOrder: "مرحلة #2 / #10",
+    unit: "ساعة",
+    defaultLead: "48",
+    options: [
+      { label: "قبل 12 ساعة (طارئ)", value: "12" },
+      { label: "قبل 24 ساعة (يوم)", value: "24" },
+      { label: "قبل 48 ساعة (يومين)", value: "48" },
+      { label: "قبل 72 ساعة (3 أيام)", value: "72" },
+      { label: "قبل 120 ساعة (5 أيام)", value: "120" },
+      { label: "قبل أسبوع (168 ساعة)", value: "168" },
+    ],
+  },
+  {
+    id: "booklet_purchase",
+    name: "آخر موعد لشراء كراسة الشروط والمواصفات",
+    description: "إشعار تفادي غلق باب شراء الكراسة وسداد الرسوم بخزينة الجهة",
+    stageOrder: "مرحلة #2",
+    unit: "ساعة",
+    defaultLead: "72",
+    options: [
+      { label: "قبل 24 ساعة (يوم)", value: "24" },
+      { label: "قبل 48 ساعة (يومين)", value: "48" },
+      { label: "قبل 72 ساعة (3 أيام)", value: "72" },
+      { label: "قبل 5 أيام (120 ساعة)", value: "120" },
+      { label: "قبل أسبوع (168 ساعة)", value: "168" },
+    ],
+  },
+  {
+    id: "inquiries_session",
+    name: "موعد جلسة الاستفسارات والرد على الإيضاحات",
+    description: "تنبيه بميعاد حضور جلسة استفسارات المناقصة وتجهيز الأسئلة الفنية والقانونية",
+    stageOrder: "مرحلة #4",
+    unit: "ساعة",
+    defaultLead: "48",
+    options: [
+      { label: "قبل 24 ساعة", value: "24" },
+      { label: "قبل 48 ساعة", value: "48" },
+      { label: "قبل 3 أيام (72 ساعة)", value: "72" },
+      { label: "قبل أسبوع (168 ساعة)", value: "168" },
+    ],
+  },
+  {
+    id: "auction_practice",
+    name: "موعد جلسة الممارسة أو المزاد العلني والتفاوض",
+    description: "إشعار طارئ لحضور جلسة التخفيضات السعرية والمزاد وتفويض المندوب المعتمد",
+    stageOrder: "مرحلة #7 / #10",
+    unit: "ساعة",
+    defaultLead: "24",
+    options: [
+      { label: "قبل 12 ساعة (طارئ)", value: "12" },
+      { label: "قبل 24 ساعة (يوم)", value: "24" },
+      { label: "قبل 48 ساعة (يومين)", value: "48" },
+      { label: "قبل 3 أيام (72 ساعة)", value: "72" },
+    ],
+  },
+  {
+    id: "award_order",
+    name: "تاريخ صدور قرار الترسية واستلام أمر التوريد",
+    description: "تنبيه لمتابعة إصدار إخطار الترسية ومطابقة أمر التوريد والتعاقد الرسمي",
+    stageOrder: "مرحلة #10 / #12",
+    unit: "ساعة",
+    defaultLead: "24",
+    options: [
+      { label: "قبل 24 ساعة", value: "24" },
+      { label: "قبل 48 ساعة", value: "48" },
+      { label: "قبل 3 أيام (72 ساعة)", value: "72" },
+      { label: "قبل أسبوع (168 ساعة)", value: "168" },
+    ],
+  },
+  {
+    id: "supply_delivery",
+    name: "المهلة التعاقدية لتوريد وتسليم الأصناف",
+    description: "متابعة الموعد النهائي لتوريد البضائع لمخازن الجهة لتفادي غرامات التأخير",
+    stageOrder: "مرحلة #15",
+    unit: "يوم",
+    defaultLead: "5",
+    options: [
+      { label: "قبل يومين", value: "2" },
+      { label: "قبل 3 أيام", value: "3" },
+      { label: "قبل 5 أيام", value: "5" },
+      { label: "قبل أسبوع (7 أيام)", value: "7" },
+      { label: "قبل 10 أيام", value: "10" },
+      { label: "قبل أسبوعين (14 يوماً)", value: "14" },
+      { label: "قبل شهر (30 يوماً)", value: "30" },
+    ],
+  },
+  {
+    id: "inspection_committee",
+    name: "موعد اجتماع لجنة الفحص والاستلام الابتدائي",
+    description: "تنبيه بحضور مندوب الشركة لاختبار الأصناف وتوقيع محضر الفحص الفني والاستلام",
+    stageOrder: "مرحلة #16",
+    unit: "ساعة",
+    defaultLead: "48",
+    options: [
+      { label: "قبل 24 ساعة", value: "24" },
+      { label: "قبل 48 ساعة (يومين)", value: "48" },
+      { label: "قبل 3 أيام (72 ساعة)", value: "72" },
+      { label: "قبل 5 أيام (120 ساعة)", value: "120" },
+      { label: "قبل أسبوع (168 ساعة)", value: "168" },
+    ],
+  },
+  {
+    id: "guarantee_expiry",
+    name: "انتهاء سريان خطابات الضمان والتأمينات البنكية",
+    description: "جدول المتابعة الدورية للضمانات الابتدائية والنهائية للتجديد أو الاسترداد قبل المصادرة",
+    stageOrder: "مرحلة #8 / #13",
+    unit: "يوم",
+    defaultLead: "15",
+    options: [
+      { label: "قبل 5 أيام (حرج)", value: "5" },
+      { label: "قبل 10 أيام (تحذيري)", value: "10" },
+      { label: "قبل 15 يوماً (أسبوعين)", value: "15" },
+      { label: "قبل 21 يوماً (3 أسابيع)", value: "21" },
+      { label: "قبل 30 يوماً (شهر)", value: "30" },
+      { label: "قبل 60 يوماً (شهرين)", value: "60" },
+      { label: "قبل 90 يوماً (3 أشهر)", value: "90" },
+    ],
+  },
+  {
+    id: "warranty_visits",
+    name: "مواعيد الزيارات الدورية وفترة الضمان والصيانة",
+    description: "تنبيه دوري لتنفيذ الزيارات الشهرية المعتمدة للصيانة وخدمة ما بعد البيع",
+    stageOrder: "مرحلة #14 / #22",
+    unit: "يوم",
+    defaultLead: "7",
+    options: [
+      { label: "قبل 3 أيام", value: "3" },
+      { label: "قبل 5 أيام", value: "5" },
+      { label: "قبل أسبوع (7 أيام)", value: "7" },
+      { label: "قبل 10 أيام", value: "10" },
+      { label: "قبل أسبوعين (14 يوماً)", value: "14" },
+      { label: "قبل شهر (30 يوماً)", value: "30" },
+    ],
+  },
+  {
+    id: "invoice_certificate",
+    name: "موعد إعداد ومتابعة صرف المستخلصات والفواتير",
+    description: "إشعار لمتابعة توقيع أمر الدفع الإلكتروني واستلام الشيكات وصرف مستحقات الشركة",
+    stageOrder: "مرحلة #18 / #20",
+    unit: "يوم",
+    defaultLead: "5",
+    options: [
+      { label: "قبل 3 أيام", value: "3" },
+      { label: "قبل 5 أيام", value: "5" },
+      { label: "قبل أسبوع (7 أيام)", value: "7" },
+      { label: "قبل 10 أيام", value: "10" },
+      { label: "قبل أسبوعين (14 يوماً)", value: "14" },
+    ],
+  },
 ];
 
 export default function SettingsPage() {
@@ -266,6 +475,79 @@ export default function SettingsPage() {
   const [dirtySettingKeys, setDirtySettingKeys] = useState<Set<string>>(new Set());
   const [dirtyCompanyIds, setDirtyCompanyIds] = useState<Set<string>>(new Set());
 
+  // قواعد وتفاصيل تنبيهات جميع مراحل العمليات الحساسة
+  const [stageAlertsConfig, setStageAlertsConfig] = useState<
+    Record<string, { enabled: boolean; leadValue: string }>
+  >(() => {
+    const init: Record<string, { enabled: boolean; leadValue: string }> = {};
+    SENSITIVE_STAGES_CONFIG.forEach((s) => {
+      init[s.id] = { enabled: true, leadValue: s.defaultLead };
+    });
+    return init;
+  });
+
+  const handleUpdateStageAlert = (
+    stageId: string,
+    updates: Partial<{ enabled: boolean; leadValue: string }>
+  ) => {
+    setStageAlertsConfig((prev) => {
+      const current = prev[stageId] || { enabled: true, leadValue: "24" };
+      const nextRule = { ...current, ...updates };
+      const nextMap = { ...prev, [stageId]: nextRule };
+      handleSettingChange("stage_alerts_config", JSON.stringify(nextMap));
+      return nextMap;
+    });
+  };
+
+  // Telegram Bot Live Status & Actions
+  const [telegramStatus, setTelegramStatus] = useState<{
+    connected: boolean;
+    adminChatId: string | null;
+    botUsername: string;
+    isPaired: boolean;
+  } | null>(null);
+  const [testingTelegram, setTestingTelegram] = useState(false);
+  const [reconnectingTelegram, setReconnectingTelegram] = useState(false);
+
+  const fetchTelegramStatus = async () => {
+    try {
+      const res = await api.get("/telegram/status");
+      setTelegramStatus(res.data);
+    } catch {}
+  };
+
+  const handleTestTelegramAlert = async () => {
+    setTestingTelegram(true);
+    try {
+      const res = await api.post("/telegram/test-alert", {});
+      if (res.data?.success) {
+        toast.success(res.data.message || "تم إرسال التنبيه التجريبي إلى تليجرام بنجاح 🚀");
+      } else {
+        toast.warning(res.data?.message || "لم يتم استلام التنبيه، تأكد من ربط حساب المدير العام أولاً");
+      }
+      fetchTelegramStatus();
+    } catch (err: any) {
+      toast.error("فشل إرسال التنبيه التجريبي: " + (err.response?.data?.message || err.message));
+    } finally {
+      setTestingTelegram(false);
+    }
+  };
+
+  const handleReconnectTelegram = async () => {
+    setReconnectingTelegram(true);
+    try {
+      const res = await api.post("/telegram/reconnect");
+      if (res.data?.success) {
+        toast.success("تمت إعادة ربط وتنشيط بوت تليجرام بنجاح 🚀");
+        if (res.data.status) setTelegramStatus(res.data.status);
+      }
+    } catch (err: any) {
+      toast.error("فشل إعادة الربط: " + (err.response?.data?.message || err.message));
+    } finally {
+      setReconnectingTelegram(false);
+    }
+  };
+
   // Load All Data on Mount
   useEffect(() => {
     loadAllData();
@@ -287,6 +569,7 @@ export default function SettingsPage() {
       const [settingsRes, companiesRes] = await Promise.all([
         api.get("/settings"),
         api.get("/companies").catch(() => ({ data: [] })),
+        fetchTelegramStatus(),
       ]);
 
       if (Array.isArray(settingsRes.data)) {
@@ -296,6 +579,14 @@ export default function SettingsPage() {
           map[s.key] = s.value;
         });
         setInitialSettingsMap(map);
+
+        const stageAlertsSetting = settingsRes.data.find((s: SystemSetting) => s.key === "stage_alerts_config");
+        if (stageAlertsSetting?.value) {
+          try {
+            const parsed = JSON.parse(stageAlertsSetting.value);
+            setStageAlertsConfig((prev) => ({ ...prev, ...parsed }));
+          } catch {}
+        }
       }
 
       if (Array.isArray(companiesRes.data) && companiesRes.data.length > 0) {
@@ -516,6 +807,7 @@ export default function SettingsPage() {
     { id: "guarantees", label: "التأمينات وخطابات الضمان", icon: Shield, count: 4 },
     { id: "radar", label: "رادار المناقصات والربط الذكي", icon: Globe2, count: 3 },
     { id: "notifications", label: "التنبيهات والمواعيد الحساسة", icon: Bell, count: 3 },
+    { id: "telegram", label: "مساعد تليجرام التنفيذي", icon: Send, count: 7 },
     { id: "legal", label: "المدد القانونية والتظلمات", icon: Scale, count: 2 },
     { id: "security", label: "الأمان وحماية الجلسات", icon: Lock, count: 5 },
     { id: "all", label: "كافة إعدادات المنظومة", icon: Sliders, count: settings.length },
@@ -1043,6 +1335,38 @@ export default function SettingsPage() {
 
           {/* Cards List */}
           <div className="glass-card rounded-3xl p-5 sm:p-7 border border-border space-y-4 shadow-xl">
+            {/* Header with Save Button for the active category */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-border/80">
+              <div className="space-y-0.5">
+                <h3 className="font-black text-sm sm:text-base text-foreground flex items-center gap-2">
+                  <span>
+                    {categories.find((c) => c.id === activeCategoryTab)?.label || "إعدادات المنظومة"}
+                  </span>
+                  <Badge variant="outline" className="font-mono text-[10px] text-muted-foreground border-border">
+                    {filteredSettings.length} قاعدة نشطة
+                  </Badge>
+                </h3>
+                <p className="text-xs text-muted-foreground">
+                  تعديل وتطبيق هذه القواعد يسري لحظياً ومباشرة على كافة العمليات المرتبطة والمستخدمين.
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <Button
+                  onClick={handleSaveAll}
+                  disabled={isSaving || totalUnsavedCount === 0}
+                  className={`font-black text-xs h-9 px-4 rounded-xl cursor-pointer shadow-md flex items-center gap-1.5 transition-all ${
+                    totalUnsavedCount > 0
+                      ? "bg-emerald-600 hover:bg-emerald-700 text-white shadow-emerald-500/20 scale-102"
+                      : "bg-muted text-muted-foreground border border-border opacity-70 cursor-not-allowed"
+                  }`}
+                >
+                  {isSaving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
+                  <span>{totalUnsavedCount > 0 ? `حفظ التعديلات (${totalUnsavedCount}) 💾` : "الإعدادات محفوظة ومفعلة ✓"}</span>
+                </Button>
+              </div>
+            </div>
+
             {filteredSettings.length === 0 ? (
               <div className="text-center py-12 text-muted-foreground space-y-2">
                 <Info className="h-10 w-10 text-muted-foreground/60 mx-auto" />
@@ -1227,7 +1551,7 @@ export default function SettingsPage() {
                         </div>
 
                         {/* Interactive Preset Chips */}
-                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
                           {DEADLINE_HOUR_PRESETS.map((preset) => {
                             const isSelected = setting.value
                               .split(",")
@@ -1266,6 +1590,46 @@ export default function SettingsPage() {
                             );
                           })}
                         </div>
+
+                        {/* Manual Custom Input */}
+                        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2.5 pt-2.5 border-t border-border/60 bg-muted/20 p-2.5 rounded-xl">
+                          <span className="text-xs font-bold text-foreground flex items-center gap-1.5">
+                            <Clock className="h-3.5 w-3.5 text-blue-500" />
+                            <span>إدخال يدوي حر لساعات التنبيه (مثال: 96 أو 120 أو أي مدة مخصصة):</span>
+                          </span>
+                          <div className="flex items-center gap-2 w-full sm:w-auto">
+                            <input
+                              type="number"
+                              id="custom-hours-input"
+                              placeholder="أدخل الساعات..."
+                              className="h-8.5 px-3 text-xs rounded-xl bg-background border border-border text-foreground font-mono font-bold w-32 focus:border-blue-500 outline-none"
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter") {
+                                  e.preventDefault();
+                                  const val = (e.target as HTMLInputElement).value.trim();
+                                  if (val && Number(val) > 0) {
+                                    handleToggleListValue("deadline_reminder_hours", setting.value, val);
+                                    (e.target as HTMLInputElement).value = "";
+                                  }
+                                }
+                              }}
+                            />
+                            <Button
+                              size="sm"
+                              type="button"
+                              onClick={() => {
+                                const input = document.getElementById("custom-hours-input") as HTMLInputElement;
+                                if (input && input.value.trim() && Number(input.value.trim()) > 0) {
+                                  handleToggleListValue("deadline_reminder_hours", setting.value, input.value.trim());
+                                  input.value = "";
+                                }
+                              }}
+                              className="h-8.5 px-3 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs cursor-pointer shadow-xs"
+                            >
+                              إضافة للمراحل +
+                            </Button>
+                          </div>
+                        </div>
                       </div>
                     )}
 
@@ -1285,7 +1649,7 @@ export default function SettingsPage() {
                         </div>
 
                         {/* Interactive Preset Chips */}
-                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2.5">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
                           {GUARANTEE_DAY_PRESETS.map((preset) => {
                             const isSelected = setting.value
                               .split(",")
@@ -1324,6 +1688,46 @@ export default function SettingsPage() {
                             );
                           })}
                         </div>
+
+                        {/* Manual Custom Input */}
+                        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2.5 pt-2.5 border-t border-border/60 bg-muted/20 p-2.5 rounded-xl">
+                          <span className="text-xs font-bold text-foreground flex items-center gap-1.5">
+                            <Hourglass className="h-3.5 w-3.5 text-amber-500" />
+                            <span>إدخال يدوي حر لأيام التنبيه (مثال: 7 أو 21 أو 45 أو أي مدة مخصصة):</span>
+                          </span>
+                          <div className="flex items-center gap-2 w-full sm:w-auto">
+                            <input
+                              type="number"
+                              id="custom-days-input"
+                              placeholder="أدخل الأيام..."
+                              className="h-8.5 px-3 text-xs rounded-xl bg-background border border-border text-foreground font-mono font-bold w-32 focus:border-amber-500 outline-none"
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter") {
+                                  e.preventDefault();
+                                  const val = (e.target as HTMLInputElement).value.trim();
+                                  if (val && Number(val) > 0) {
+                                    handleToggleListValue("guarantee_reminder_days", setting.value, val);
+                                    (e.target as HTMLInputElement).value = "";
+                                  }
+                                }
+                              }}
+                            />
+                            <Button
+                              size="sm"
+                              type="button"
+                              onClick={() => {
+                                const input = document.getElementById("custom-days-input") as HTMLInputElement;
+                                if (input && input.value.trim() && Number(input.value.trim()) > 0) {
+                                  handleToggleListValue("guarantee_reminder_days", setting.value, input.value.trim());
+                                  input.value = "";
+                                }
+                              }}
+                              className="h-8.5 px-3 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs cursor-pointer shadow-xs"
+                            >
+                              إضافة للمراحل +
+                            </Button>
+                          </div>
+                        </div>
                       </div>
                     )}
                   </div>
@@ -1331,6 +1735,132 @@ export default function SettingsPage() {
               })
             )}
           </div>
+
+          {/* ========================================================================= */}
+          {/* GRANULAR STAGE ALERTS & SENSITIVITY CUSTOMIZATION (أدوات تخصيص المراحل)     */}
+          {/* ========================================================================= */}
+          {activeCategoryTab === "notifications" && (
+            <div className="rounded-3xl border-2 border-blue-500/30 bg-card p-5 sm:p-7 space-y-6 shadow-xl animate-fade-in">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-border/80 pb-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-600 text-white flex items-center justify-center shadow-md shrink-0">
+                    <Sliders className="h-6 w-6" />
+                  </div>
+                  <div>
+                    <h3 className="font-black text-base sm:text-lg text-foreground flex items-center gap-2">
+                      <span>تخصيص وتفاصيل تنبيهات مراحل العمليات الحساسة والمواعيد الدقيقة</span>
+                      <Badge className="bg-blue-500/15 text-blue-700 dark:text-blue-300 border-blue-500/30 text-xs font-mono">
+                        10 مراحل تشغيلية
+                      </Badge>
+                    </h3>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      حدد المراحل التي ترغب بتلقي تنبيهات استباقية عنها، واضبط مدة التنبيه الدقيقة لكل مرحلة على حدة مع دعم الإدخال اليدوي الحر.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-bold text-muted-foreground">
+                    التنبيهات المفعلة:{" "}
+                    <strong className="text-blue-600 font-mono">
+                      {Object.values(stageAlertsConfig).filter((v) => v.enabled).length} من {SENSITIVE_STAGES_CONFIG.length}
+                    </strong>
+                  </span>
+                </div>
+              </div>
+
+              {/* Stage Alert Cards Grid */}
+              <div className="space-y-3.5">
+                {SENSITIVE_STAGES_CONFIG.map((stage) => {
+                  const rule = stageAlertsConfig[stage.id] || { enabled: true, leadValue: stage.defaultLead };
+                  const isEnabled = rule.enabled;
+
+                  return (
+                    <div
+                      key={stage.id}
+                      className={`p-4 rounded-2xl border transition-all ${
+                        isEnabled
+                          ? "bg-card border-border hover:border-blue-500/40 shadow-xs"
+                          : "bg-muted/15 border-border/60 opacity-60"
+                      }`}
+                    >
+                      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3.5">
+                        <div className="flex items-start gap-3">
+                          <button
+                            type="button"
+                            onClick={() => handleUpdateStageAlert(stage.id, { enabled: !isEnabled })}
+                            className={`w-6 h-6 rounded-lg flex items-center justify-center text-xs font-bold transition-all shrink-0 mt-0.5 cursor-pointer ${
+                              isEnabled
+                                ? "bg-blue-600 text-white shadow-xs"
+                                : "border-2 border-border text-transparent hover:border-blue-400"
+                            }`}
+                            title={isEnabled ? "انقر لتعطيل التنبيه لهذه المرحلة" : "انقر لتفعيل التنبيه لهذه المرحلة"}
+                          >
+                            ✓
+                          </button>
+                          <div>
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="font-bold text-sm text-foreground">{stage.name}</span>
+                              <Badge variant="outline" className="text-[10px] font-mono border-border text-muted-foreground">
+                                {stage.stageOrder}
+                              </Badge>
+                              {isEnabled ? (
+                                <Badge className="bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-500/30 text-[10px] font-bold">
+                                  تنبيه نشط
+                                </Badge>
+                              ) : (
+                                <Badge className="bg-muted text-muted-foreground text-[10px]">معطل</Badge>
+                              )}
+                            </div>
+                            <p className="text-xs text-muted-foreground mt-0.5 leading-relaxed">
+                              {stage.description}
+                            </p>
+                          </div>
+                        </div>
+
+                        {/* Controls: Preset chips + Manual Input */}
+                        {isEnabled && (
+                          <div className="flex flex-wrap items-center gap-2 self-start lg:self-auto shrink-0">
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              {stage.options.map((opt) => {
+                                const isSelected = rule.leadValue === opt.value;
+                                return (
+                                  <button
+                                    key={opt.value}
+                                    type="button"
+                                    onClick={() => handleUpdateStageAlert(stage.id, { leadValue: opt.value })}
+                                    className={`px-2.5 py-1 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                                      isSelected
+                                        ? "bg-blue-600 text-white shadow-xs"
+                                        : "bg-muted/50 hover:bg-muted text-muted-foreground hover:text-foreground border border-border"
+                                    }`}
+                                  >
+                                    {opt.label}
+                                  </button>
+                                );
+                              })}
+                            </div>
+
+                            {/* Manual lead value input */}
+                            <div className="flex items-center gap-1 bg-muted/30 border border-border rounded-xl px-2 py-0.5">
+                              <span className="text-[11px] text-muted-foreground font-bold">يدوي:</span>
+                              <input
+                                type="number"
+                                value={rule.leadValue}
+                                onChange={(e) => handleUpdateStageAlert(stage.id, { leadValue: e.target.value })}
+                                className="w-14 bg-transparent text-center font-mono font-bold text-xs text-foreground outline-none"
+                              />
+                              <span className="text-[10px] text-muted-foreground">{stage.unit}</span>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
 
           {/* ========================================================================= */}
           {/* RADAR TENDER DATA MANAGEMENT & CLEANUP ACTIONS                            */}
@@ -1398,6 +1928,244 @@ export default function SettingsPage() {
                 <p>
                   كافة المناقصات المرصودة بالرادار هي فرص ومناقصات حكومية عامة محايدة بدون اقتراح أو تعيين مسبق لأي شركة. يتم اختيار وتحديد الشركة المسؤولة يدوياً بمعرفتك حصراً عند الضغط على &quot;سحب كعملية&quot;.
                 </p>
+              </div>
+            </div>
+          )}
+
+          {/* ========================================================================= */}
+          {/* TELEGRAM EXECUTIVE BOT & ALERTS CONTROL HUB                               */}
+          {/* ========================================================================= */}
+          {activeCategoryTab === "telegram" && (
+            <div className="rounded-3xl border-2 border-blue-500/30 bg-card p-5 sm:p-7 space-y-6 shadow-xl animate-fade-in">
+              {/* Telegram Status Header */}
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-border/80 pb-5">
+                <div className="flex items-center gap-3.5">
+                  <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-sky-500 via-blue-600 to-indigo-600 text-white flex items-center justify-center shadow-lg shrink-0">
+                    <Send className="h-6 w-6" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <h3 className="font-black text-base sm:text-lg text-foreground">
+                        المساعد التنفيذي وبوت تليجرام الرسمي
+                      </h3>
+                      <Badge className={
+                        telegramStatus?.connected
+                          ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-500/30 text-xs font-mono"
+                          : "bg-amber-500/15 text-amber-700 dark:text-amber-300 border-amber-500/30 text-xs font-mono"
+                      }>
+                        {telegramStatus?.connected ? "متصل ونشط 🟢" : "جاري التهيئة 🟡"}
+                      </Badge>
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      ربط مباشر ومحكم مع هاتف السيد المدير العام لاعتماد المعاملات والطباعة واستقبال التنبيهات الفورية
+                    </p>
+                  </div>
+                </div>
+
+                {/* Instant Actions: Test Alert & Reconnect */}
+                <div className="flex items-center gap-2 flex-wrap">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={handleReconnectTelegram}
+                    disabled={reconnectingTelegram}
+                    className="h-10 px-3.5 rounded-xl border-border hover:bg-muted font-bold text-xs flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <RefreshCw className={`h-3.5 w-3.5 ${reconnectingTelegram ? "animate-spin text-blue-600" : ""}`} />
+                    <span>إعادة تنشيط البوت</span>
+                  </Button>
+
+                  <Button
+                    type="button"
+                    size="sm"
+                    onClick={handleTestTelegramAlert}
+                    disabled={testingTelegram}
+                    className="h-10 px-4 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-black text-xs shadow-md shadow-blue-500/25 flex items-center gap-2 cursor-pointer active:scale-95 transition-all"
+                  >
+                    {testingTelegram ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+                    <span>اختبار الاتصال بالبوت 🚀</span>
+                  </Button>
+                </div>
+              </div>
+
+              {/* Bot Info Cards */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5">
+                <div className="p-4 rounded-2xl bg-muted/30 border border-border space-y-1">
+                  <span className="text-[11px] font-bold text-muted-foreground block">معرف البوت المعتمد:</span>
+                  <div className="flex items-center gap-2">
+                    <span className="font-mono font-black text-sm text-blue-600 dark:text-blue-400">
+                      @{telegramStatus?.botUsername || "GoldenERP_Bot"}
+                    </span>
+                    <a
+                      href={`https://t.me/${telegramStatus?.botUsername || "GoldenERP_Bot"}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-muted-foreground hover:text-blue-500 text-xs"
+                      title="فتح البوت في تليجرام"
+                    >
+                      <ExternalLink className="h-3.5 w-3.5" />
+                    </a>
+                  </div>
+                </div>
+
+                <div className="p-4 rounded-2xl bg-muted/30 border border-border space-y-1">
+                  <span className="text-[11px] font-bold text-muted-foreground block">شات المدير العام المقترن:</span>
+                  <span className="font-mono font-black text-sm text-foreground">
+                    {telegramStatus?.adminChatId || "في انتظار أول رسالة (/start) من المدير"}
+                  </span>
+                </div>
+
+                <div className="p-4 rounded-2xl bg-muted/30 border border-border space-y-1">
+                  <span className="text-[11px] font-bold text-muted-foreground block">حالة الأمان وتوليد الهاش:</span>
+                  <span className="font-bold text-xs text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
+                    <ShieldCheck className="h-4 w-4" />
+                    <span>توليد هاش SHA-256 معتمد لحظياً</span>
+                  </span>
+                </div>
+              </div>
+
+              {/* Telegram Bot Capabilities Highlights (مطابقة لطلب وصورة المستخدم) */}
+              <div className="rounded-2xl p-4 sm:p-5 bg-gradient-to-br from-blue-500/[0.04] to-indigo-500/[0.07] border border-blue-500/25 space-y-3">
+                <h4 className="text-xs font-black text-foreground flex items-center gap-2">
+                  <Smartphone className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+                  <span>المزايا التنفيذية للبوت وتجربة المستخدم المطورة (UX):</span>
+                </h4>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-xs">
+                  <div className="p-3 rounded-xl bg-card/80 border border-border space-y-1">
+                    <div className="font-bold text-foreground flex items-center gap-1.5">
+                      <Building2 className="h-3.5 w-3.5 text-blue-500" />
+                      <span>اختيار الشركة أولاً 🏢</span>
+                    </div>
+                    <p className="text-[11px] text-muted-foreground leading-relaxed">
+                      تحديد شركة العمل النشطة (جولدن، إكسلنت، العهد، الحديثة، أو الكل) لتخصيص كافة العمليات والتقارير لها.
+                    </p>
+                  </div>
+
+                  <div className="p-3 rounded-xl bg-card/80 border border-border space-y-1">
+                    <div className="font-bold text-foreground flex items-center gap-1.5">
+                      <Smartphone className="h-3.5 w-3.5 text-indigo-500" />
+                      <span>أزرار سفلية دائمة 📱</span>
+                    </div>
+                    <p className="text-[11px] text-muted-foreground leading-relaxed">
+                      لوحة أزرار ثابتة أسفل شاشة الهاتف للتنقل السريع بين طلبات الاعتماد، والعمليات، والضمانات دون كتابة.
+                    </p>
+                  </div>
+
+                  <div className="p-3 rounded-xl bg-card/80 border border-border space-y-1">
+                    <div className="font-bold text-foreground flex items-center gap-1.5">
+                      <FileText className="h-3.5 w-3.5 text-amber-500" />
+                      <span>اعتماد ورفض الطباعة 📑</span>
+                    </div>
+                    <p className="text-[11px] text-muted-foreground leading-relaxed">
+                      إرسال إشعار فوري عند طلب أي موظف طباعة مستند مع زرين للاعتماد الفوري أو الرفض وتوليد الهاش الرقمي.
+                    </p>
+                  </div>
+
+                  <div className="p-3 rounded-xl bg-card/80 border border-border space-y-1">
+                    <div className="font-bold text-foreground flex items-center gap-1.5">
+                      <Shield className="h-3.5 w-3.5 text-emerald-500" />
+                      <span>فحص الضمانات والأداء 📊</span>
+                    </div>
+                    <p className="text-[11px] text-muted-foreground leading-relaxed">
+                      تقرير مالي دقيق بنسب الترسية، وقيم العقود، ومتابعة تواريخ انتهاء خطابات الضمان البنكية استباقياً.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ========================================================================= */}
+          {/* SECURITY & SESSION ENFORCEMENT SHIELD MONITOR                             */}
+          {/* ========================================================================= */}
+          {activeCategoryTab === "security" && (
+            <div className="rounded-3xl border-2 border-emerald-500/30 bg-card p-5 sm:p-7 space-y-5 shadow-xl animate-fade-in">
+              <div className="flex items-center gap-3.5 border-b border-border/80 pb-4">
+                <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-emerald-600 to-teal-600 text-white flex items-center justify-center shadow-lg shrink-0">
+                  <ShieldCheck className="h-6 w-6" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h3 className="font-black text-base sm:text-lg text-foreground">
+                      درع الرقابة والأمان وحماية الجلسات (مفعل ولحظي)
+                    </h3>
+                    <Badge className="bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-500/30 text-xs font-mono">
+                      محصن ونشط 🛡️
+                    </Badge>
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    كافة القواعد أدناه مفعلة في خادم المصادقة وقاعدة البيانات وواجهة المستخدم وفقاً لضوابط الأمان الحكومية
+                  </p>
+                </div>
+              </div>
+
+              {/* 4 Security Rules Live Status */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5 text-xs">
+                {/* 1. Account Lock Rule */}
+                <div className="p-4 rounded-2xl bg-muted/30 border border-border space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="font-black text-foreground flex items-center gap-1.5">
+                      <Lock className="h-4 w-4 text-rose-500" />
+                      <span>قفل الحساب بعد المحاولات الخاطئة</span>
+                    </span>
+                    <Badge className="bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/30 text-[10px]">
+                      مفعل بخادم المصادقة
+                    </Badge>
+                  </div>
+                  <p className="text-muted-foreground leading-relaxed">
+                    يتم قفل الحساب فوراً عند تجاوز المحاولات الخاطئة وحجب تسجيل الدخول، مع توثيق ذلك في السجل الأمني، وإمكانية فك القفل بضغطة زر من صفحة إدارة الموظفين.
+                  </p>
+                </div>
+
+                {/* 2. Inactivity Timeout Rule */}
+                <div className="p-4 rounded-2xl bg-muted/30 border border-border space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="font-black text-foreground flex items-center gap-1.5">
+                      <Clock className="h-4 w-4 text-blue-500" />
+                      <span>إنهاء الجلسة التلقائي عند الخمول</span>
+                    </span>
+                    <Badge className="bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/30 text-[10px]">
+                      مؤقت نشط بالمتصفح
+                    </Badge>
+                  </div>
+                  <p className="text-muted-foreground leading-relaxed">
+                    يتم تتبع نشاط وتفاعل المستخدم باستمرار، ويُسجل خروج الجهاز تلقائياً بعد انقضاء مدة الخمول لحماية سرية البيانات التعاقدية من أي عبث.
+                  </p>
+                </div>
+
+                {/* 3. Night Curfew Rule */}
+                <div className="p-4 rounded-2xl bg-muted/30 border border-border space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="font-black text-foreground flex items-center gap-1.5">
+                      <Moon className="h-4 w-4 text-amber-500" />
+                      <span>ساعات الحظر المسائي (20:00 - 06:00)</span>
+                    </span>
+                    <Badge className="bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/30 text-[10px]">
+                      تدقيق مسائي مشدد
+                    </Badge>
+                  </div>
+                  <p className="text-muted-foreground leading-relaxed">
+                    تخضع العمليات والإجراءات الحساسة المنفذة ليلاً لتدقيق مضاعف ويظهر مؤشر التحذير في الشريط العلوي لتنبيه المستخدم بالرقابة المشددة.
+                  </p>
+                </div>
+
+                {/* 4. Legal Retention Rule */}
+                <div className="p-4 rounded-2xl bg-muted/30 border border-border space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="font-black text-foreground flex items-center gap-1.5">
+                      <Scale className="h-4 w-4 text-indigo-500" />
+                      <span>الاحتفاظ بالسجلات (5 سنوات)</span>
+                    </span>
+                    <Badge className="bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/30 text-[10px]">
+                      مادة (78) قانون 182
+                    </Badge>
+                  </div>
+                  <p className="text-muted-foreground leading-relaxed">
+                    حفظ وأرشفة إلزامية لكافة العمليات المغلقة ومستنداتها الفعلية لمنع الحذف العشوائي وتلبية متطلبات الجهات الرقابية والمحاسبية.
+                  </p>
+                </div>
               </div>
             </div>
           )}

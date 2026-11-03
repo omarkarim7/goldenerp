@@ -190,7 +190,33 @@ export default function OperationDetailPage() {
 function OperationDetailContent({ id }: { id: string }) {
   const router = useRouter();
   const { userRole, selectedCompany, setSelectedCompany } = useCompany();
-  const { isStageLocked, lockStage, unlockStage, isManagerOrDeputy } = useStageLock();
+  const { isStageLocked, lockStage, unlockStage, isManagerOrDeputy, getStageStatus } = useStageLock();
+
+  const handleSelectTab = (targetTabId: string) => {
+    if (targetTabId === activeTab) return;
+
+    // فحص الصلاحيات للموظف: لا يجوز التقدم لمرحلة تالية قبل اعتماد المرحلة الحالية
+    if (!isManagerOrDeputy) {
+      const currentIndex = LIFECYCLE_TABS.findIndex((t) => t.id === activeTab);
+      const targetIndex = LIFECYCLE_TABS.findIndex((t) => t.id === targetTabId);
+
+      if (targetIndex > currentIndex) {
+        const stageStatus = getStageStatus(activeTab);
+        if (stageStatus !== "APPROVED") {
+          const currentDef = LIFECYCLE_TABS[currentIndex];
+          toast.warning(
+            `لا يمكن الانتقال للمرحلة التالية قبل اعتماد الإدارة العليا! مرحلة "${currentDef?.label || activeTab}" يجب حفظها وإرسالها للمراجعة وموافقة المدير أو النائب أولاً.`
+          );
+          return;
+        }
+      }
+    }
+
+    setActiveTab(targetTabId);
+    if (typeof window !== "undefined") {
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    }
+  };
 
   // تحميل فوري مباشر من الذاكرة المؤقتة (SWR Pattern) لتفادي أي انتظار أو بطء
   const [op, setOp] = useState<Operation | null>(() => {
@@ -521,6 +547,35 @@ function OperationDetailContent({ id }: { id: string }) {
   };
 
   const handleDownloadDocument = async (doc: { id?: string; fileName?: string; filePath?: string; title?: string; fileType?: string; type?: string }) => {
+    // ضوابط صلاحيات الموظف: منع التنزيل أو الطباعة المباشرة بدون اعتماد المدير العام أو النائب
+    if (!isManagerOrDeputy) {
+      const docName = doc.fileName || doc.title || "مستند رسمي";
+      const approvedKey = `doc_download_approved_${op?.id}_${doc.id || docName}`;
+      const isLocallyApproved = typeof window !== "undefined" && localStorage.getItem(approvedKey) === "APPROVED";
+
+      if (!isLocallyApproved) {
+        toast.warning(
+          `عذراً، تنزيل المستندات وحفظها مقتصر على الإدارة العليا. جاري إرسال طلب تصريح تنزيل للمدير العام... 🔒`
+        );
+        try {
+          await api.post("/approvals", {
+            type: "PRINT_DOCUMENT",
+            entityType: "document_download",
+            entityId: doc.id || `doc-${Date.now()}`,
+            documentTitle: docName,
+            operationCode: mainCompany?.displayCode || "A15",
+            operationName: op?.name || "عملية مناقصة وتوريد",
+            notes: `قام الموظف بطلب تصريح تنزيل وحفظ ملف المستند (${docName}) إلى جهازه الشخصي.`,
+            status: "PENDING",
+          });
+          toast.success("تم إرسال طلب تصريح التنزيل للمدير العام بنجاح! 📥 بانتظار قرار الإدارة.");
+        } catch {
+          toast.info("تم تسجيل طلب الاعتماد لدى الإدارة العليا.");
+        }
+        return;
+      }
+    }
+
     try {
       toast.info("جاري تحميل الملف إلى جهازك...");
       const title = doc.fileName || doc.title || "مستند_العملية";
@@ -810,15 +865,15 @@ function OperationDetailContent({ id }: { id: string }) {
   const renderTabContent = () => {
     switch (activeTab) {
       case "overview":
-        return <TabOverview op={op} onRefresh={fetchOp} onSelectTab={setActiveTab} onNavigate={setActiveTab} />;
+        return <TabOverview op={op} onRefresh={fetchOp} onSelectTab={handleSelectTab} onNavigate={handleSelectTab} />;
       case "dates":
-        return <TabDates op={op} onRefresh={fetchOp} onNavigate={setActiveTab} />;
+        return <TabDates op={op} onRefresh={fetchOp} onNavigate={handleSelectTab} />;
       case "market_study":
         return (
           <TabMarketStudy
             op={op}
             onRefresh={fetchOp}
-            onNavigate={setActiveTab}
+            onNavigate={handleSelectTab}
             onPreviewDoc={handlePreviewDocument}
             onDownloadDoc={handleDownloadDocument}
           />
@@ -828,7 +883,7 @@ function OperationDetailContent({ id }: { id: string }) {
           <TabGeneralLetter
             op={op}
             onRefresh={fetchOp}
-            onNavigate={setActiveTab}
+            onNavigate={handleSelectTab}
             onPreviewDoc={handlePreviewDocument}
             onDownloadDoc={handleDownloadDocument}
           />
@@ -839,7 +894,7 @@ function OperationDetailContent({ id }: { id: string }) {
           <TabBooklet
             op={op}
             onRefresh={fetchOp}
-            onNavigate={setActiveTab}
+            onNavigate={handleSelectTab}
             onPreviewDoc={handlePreviewDocument}
             onDownloadDoc={handleDownloadDocument}
           />
@@ -849,7 +904,7 @@ function OperationDetailContent({ id }: { id: string }) {
           <TabClarification
             op={op}
             onRefresh={fetchOp}
-            onNavigate={setActiveTab}
+            onNavigate={handleSelectTab}
             onPreviewDoc={handlePreviewDocument}
             onDownloadDoc={handleDownloadDocument}
           />
@@ -859,18 +914,18 @@ function OperationDetailContent({ id }: { id: string }) {
           <TabTechnical
             op={op}
             onRefresh={fetchOp}
-            onNavigate={setActiveTab}
+            onNavigate={handleSelectTab}
             onOpenSmartCover={() => setSmartCoverOpen(true)}
           />
         );
       case "financial":
-        return <TabFinancial op={op} onRefresh={fetchOp} onNavigate={setActiveTab} />;
+        return <TabFinancial op={op} onRefresh={fetchOp} onNavigate={handleSelectTab} />;
       case "declarations":
         return (
           <TabDeclarations
             op={op}
             onRefresh={fetchOp}
-            onNavigate={setActiveTab}
+            onNavigate={handleSelectTab}
             onPreviewDoc={handlePreviewDocument}
             onDownloadDoc={handleDownloadDocument}
           />
@@ -881,9 +936,9 @@ function OperationDetailContent({ id }: { id: string }) {
           <TabTechOpening
             op={op}
             onRefresh={fetchOp}
-            onNavigate={setActiveTab}
-            onGoGrievance={() => setActiveTab("grievance")}
-            onGoFinancial={() => setActiveTab("fin_opening")}
+            onNavigate={handleSelectTab}
+            onGoGrievance={() => handleSelectTab("grievance")}
+            onGoFinancial={() => handleSelectTab("fin_opening")}
           />
         );
       case "fin_opening":
@@ -891,8 +946,8 @@ function OperationDetailContent({ id }: { id: string }) {
           <TabFinOpening
             op={op}
             onRefresh={fetchOp}
-            onNavigate={setActiveTab}
-            onGoAward={() => setActiveTab("award")}
+            onNavigate={handleSelectTab}
+            onGoAward={() => handleSelectTab("award")}
             onPreviewDoc={handlePreviewDocument}
             onDownloadDoc={handleDownloadDocument}
           />
@@ -902,8 +957,8 @@ function OperationDetailContent({ id }: { id: string }) {
           <TabAward
             op={op}
             onRefresh={fetchOp}
-            onNavigate={setActiveTab}
-            onGoGuarantee={() => setActiveTab("guarantee_final")}
+            onNavigate={handleSelectTab}
+            onGoGuarantee={() => handleSelectTab("guarantee_final")}
             onPreviewDoc={handlePreviewDocument}
             onDownloadDoc={handleDownloadDocument}
           />
@@ -913,7 +968,7 @@ function OperationDetailContent({ id }: { id: string }) {
           <TabSupplyOrder
             op={op}
             onRefresh={fetchOp}
-            onNavigate={setActiveTab}
+            onNavigate={handleSelectTab}
           />
         );
       case "warranty_certificate":
@@ -921,7 +976,7 @@ function OperationDetailContent({ id }: { id: string }) {
           <WarrantyCertificateSection
             op={op}
             onRefresh={fetchOp}
-            onNavigate={setActiveTab}
+            onNavigate={handleSelectTab}
           />
         );
       case "guarantee_final":
@@ -929,19 +984,19 @@ function OperationDetailContent({ id }: { id: string }) {
           <TabFinalGuarantee
             op={op}
             onRefresh={fetchOp}
-            onNavigate={setActiveTab}
+            onNavigate={handleSelectTab}
             onPreviewDoc={handlePreviewDocument}
             onDownloadDoc={handleDownloadDocument}
           />
         );
       case "supply":
-        return <TabSupply op={op} onRefresh={fetchOp} onNavigate={setActiveTab} />;
+        return <TabSupply op={op} onRefresh={fetchOp} onNavigate={handleSelectTab} />;
       case "inspection_report":
         return (
           <TabInspectionReport
             op={op}
             onRefresh={fetchOp}
-            onNavigate={setActiveTab}
+            onNavigate={handleSelectTab}
             onPreviewDoc={handlePreviewDocument}
             onDownloadDoc={handleDownloadDocument}
           />
@@ -951,7 +1006,7 @@ function OperationDetailContent({ id }: { id: string }) {
           <TabInvoicing
             op={op}
             onRefresh={fetchOp}
-            onNavigate={setActiveTab}
+            onNavigate={handleSelectTab}
             onPreviewDoc={handlePreviewDocument}
             onDownloadDoc={handleDownloadDocument}
           />
@@ -961,15 +1016,15 @@ function OperationDetailContent({ id }: { id: string }) {
           <TabInsurancesLabor
             op={op}
             onRefresh={fetchOp}
-            onNavigate={setActiveTab}
+            onNavigate={handleSelectTab}
             onPreviewDoc={handlePreviewDocument}
             onDownloadDoc={handleDownloadDocument}
           />
         );
       case "certificates":
-        return <TabCertificates op={op} onRefresh={fetchOp} onNavigate={setActiveTab} />;
+        return <TabCertificates op={op} onRefresh={fetchOp} onNavigate={handleSelectTab} />;
       case "finance":
-        return <TabFinance op={op} onRefresh={fetchOp} onNavigate={setActiveTab} />;
+        return <TabFinance op={op} onRefresh={fetchOp} onNavigate={handleSelectTab} />;
       case "close":
       case "recovery":
       case "archive":
@@ -977,15 +1032,15 @@ function OperationDetailContent({ id }: { id: string }) {
           <TabClose
             op={op}
             onRefresh={fetchOp}
-            onNavigate={setActiveTab}
+            onNavigate={handleSelectTab}
             onPreviewDoc={handlePreviewDocument}
             onDownloadDoc={handleDownloadDocument}
           />
         );
       case "companies":
-        return <TabOverview op={op} onRefresh={fetchOp} onSelectTab={setActiveTab} onNavigate={setActiveTab} />;
+        return <TabOverview op={op} onRefresh={fetchOp} onSelectTab={handleSelectTab} onNavigate={handleSelectTab} />;
       default:
-        return <TabOverview op={op} onRefresh={fetchOp} onSelectTab={setActiveTab} onNavigate={setActiveTab} />;
+        return <TabOverview op={op} onRefresh={fetchOp} onSelectTab={handleSelectTab} onNavigate={handleSelectTab} />;
     }
   };
 
@@ -1160,7 +1215,7 @@ function OperationDetailContent({ id }: { id: string }) {
           {nextTabDef && (
             <div className="shrink-0 self-start lg:self-center pt-1 lg:pt-0">
               <Button
-                onClick={() => setActiveTab(nextTabDef.id)}
+                onClick={() => handleSelectTab(nextTabDef.id)}
                 className="bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs sm:text-sm h-11 px-5 rounded-2xl shadow-md shadow-emerald-500/20 flex items-center gap-2 cursor-pointer active:scale-95 transition-all shrink-0 whitespace-nowrap group"
               >
                 <span>الانتقال للمرحلة التالية ({nextTabDef.shortLabel})</span>
@@ -1178,7 +1233,7 @@ function OperationDetailContent({ id }: { id: string }) {
               <Select
                 value=""
                 onValueChange={(val) => {
-                  if (val) setActiveTab(val);
+                  if (val) handleSelectTab(val);
                 }}
               >
                 <SelectTrigger className="bg-background border-border hover:bg-muted text-foreground rounded-xl text-xs h-9 font-bold w-auto min-w-[155px] cursor-pointer shadow-xs">
@@ -1416,7 +1471,7 @@ function OperationDetailContent({ id }: { id: string }) {
                   <div className="relative">
                     <button
                       type="button"
-                      onClick={() => setActiveTab(tab.id)}
+                      onClick={() => handleSelectTab(tab.id)}
                       className={`w-11 h-11 rounded-2xl flex items-center justify-center text-xs transition-all duration-200 border-2 shadow-sm cursor-pointer ${
                         isActive
                           ? "scale-110 ring-4 ring-blue-500/30 bg-gradient-to-br from-blue-600 to-indigo-700 text-white border-white shadow-lg"
@@ -1467,7 +1522,7 @@ function OperationDetailContent({ id }: { id: string }) {
 
                   <button
                     type="button"
-                    onClick={() => setActiveTab(tab.id)}
+                    onClick={() => handleSelectTab(tab.id)}
                     className={`mt-1.5 text-[11px] font-bold leading-tight line-clamp-2 px-0.5 transition-colors cursor-pointer hover:underline ${
                       isActive
                         ? "text-blue-600 dark:text-blue-400 font-black"
@@ -1620,7 +1675,7 @@ function OperationDetailContent({ id }: { id: string }) {
           <CrossStageConsistencyAlert
             op={op}
             activeTab={activeTab}
-            onNavigate={setActiveTab}
+            onNavigate={handleSelectTab}
           />
 
           {renderTabContent()}

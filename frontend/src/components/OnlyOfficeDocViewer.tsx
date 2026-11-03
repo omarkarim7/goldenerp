@@ -16,6 +16,7 @@ import {
   Archive,
   Check,
   ExternalLink,
+  Send,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
@@ -334,8 +335,8 @@ export const OnlyOfficeDocViewer: React.FC<OnlyOfficeDocViewerProps> = ({
 
         {/* أزرار التحكم والتحميل والطباعة */}
         <div className="flex items-center gap-2 flex-wrap">
-          {/* فتح في تبويب مستقل جديد */}
-          {pdfObjectUrl && (
+          {/* فتح في تبويب مستقل جديد (مقتصر على الإدارة أو المستند المعتمد) */}
+          {pdfObjectUrl && (!isEmployee || isApproved) && (
             <Button
               type="button"
               variant="ghost"
@@ -361,47 +362,72 @@ export const OnlyOfficeDocViewer: React.FC<OnlyOfficeDocViewerProps> = ({
             {isFullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
           </Button>
 
-          {/* Download Word (.docx) */}
-          {(onDownloadDocx || docxBlob) && (
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              onClick={handleDownloadDocxFile}
-              className="bg-blue-950/70 border-blue-500/40 text-blue-200 hover:bg-blue-900/80 hover:text-white text-xs h-8 px-3 rounded-xl cursor-pointer shadow-xs font-bold transition-all active:scale-95"
-              title="تنزيل الملف بصيغة مايكروسوفت وورد الأصلي (.docx)"
-            >
-              <FileDown className="w-3.5 h-3.5 ml-1.5 text-blue-400" />
-              <span>تحميل Word (.docx)</span>
-            </Button>
+          {/* قيود وضوابط الموظف: منع التحميل والطباعة إلا بعد موافقة المدير العام أو النائب */}
+          {isEmployee && !isApproved ? (
+            <div className="flex items-center gap-2">
+              {isApprovalPending ? (
+                <span className="px-3 py-1 text-xs font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40 rounded-xl flex items-center gap-1.5 shadow-xs">
+                  <Clock className="w-3.5 h-3.5 animate-pulse text-amber-400" />
+                  <span>طلب الاعتماد قيد المراجعة ⏳</span>
+                </span>
+              ) : (
+                <Button
+                  type="button"
+                  size="sm"
+                  onClick={checkEmployeePermission}
+                  className="bg-gradient-to-r from-amber-500 via-amber-400 to-amber-500 hover:from-amber-600 hover:to-amber-500 text-slate-950 font-black text-xs h-8 px-3.5 rounded-xl shadow-md cursor-pointer flex items-center gap-1.5 transition-all active:scale-95"
+                  title="إرسال طلب رسمي للمدير العام أو النائب للموافقة على تنزيل أو طباعة هذا الخطاب"
+                >
+                  <Send className="w-3.5 h-3.5 ml-1" />
+                  <span>طلب تصريح تنزيل / طباعة 📤</span>
+                </Button>
+              )}
+            </div>
+          ) : (
+            <>
+              {/* Download Word (.docx) */}
+              {(onDownloadDocx || docxBlob) && (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={handleDownloadDocxFile}
+                  className="bg-blue-950/70 border-blue-500/40 text-blue-200 hover:bg-blue-900/80 hover:text-white text-xs h-8 px-3 rounded-xl cursor-pointer shadow-xs font-bold transition-all active:scale-95"
+                  title="تنزيل الملف بصيغة مايكروسوفت وورد الأصلي (.docx)"
+                >
+                  <FileDown className="w-3.5 h-3.5 ml-1.5 text-blue-400" />
+                  <span>تحميل Word (.docx)</span>
+                </Button>
+              )}
+
+              {/* Download PDF (.pdf) */}
+              <Button
+                type="button"
+                size="sm"
+                onClick={handleDownloadPdfFile}
+                disabled={!pdfObjectUrl && !pdfBlob && !internalPdfBlob}
+                className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs h-8 px-3 rounded-xl shadow cursor-pointer font-bold transition-all active:scale-95 disabled:opacity-50"
+                title="تحميل الملف بصيغة PDF الرسمية المعتمدة"
+              >
+                <Download className="w-3.5 h-3.5 ml-1.5" />
+                <span>تحميل PDF</span>
+              </Button>
+
+              {/* Print PDF */}
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={handleDirectPrint}
+                disabled={!pdfObjectUrl}
+                className="bg-amber-600/20 border-amber-500/40 text-amber-300 hover:bg-amber-600/30 text-xs h-8 px-3 rounded-xl cursor-pointer font-bold transition-all active:scale-95 disabled:opacity-50"
+                title="طباعة المستند الرسمي بأعلى دقة متجهة"
+              >
+                <Printer className="w-3.5 h-3.5 ml-1.5" />
+                <span>طباعة</span>
+              </Button>
+            </>
           )}
-
-          {/* Download PDF (.pdf) */}
-          <Button
-            type="button"
-            size="sm"
-            onClick={handleDownloadPdfFile}
-            disabled={!pdfObjectUrl && !pdfBlob && !internalPdfBlob}
-            className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs h-8 px-3 rounded-xl shadow cursor-pointer font-bold transition-all active:scale-95 disabled:opacity-50"
-            title="تحميل الملف بصيغة PDF الرسمية المعتمدة"
-          >
-            <Download className="w-3.5 h-3.5 ml-1.5" />
-            <span>تحميل PDF</span>
-          </Button>
-
-          {/* Print PDF */}
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            onClick={handleDirectPrint}
-            disabled={!pdfObjectUrl}
-            className="bg-amber-600/20 border-amber-500/40 text-amber-300 hover:bg-amber-600/30 text-xs h-8 px-3 rounded-xl cursor-pointer font-bold transition-all active:scale-95 disabled:opacity-50"
-            title="طباعة المستند الرسمي بأعلى دقة متجهة"
-          >
-            <Printer className="w-3.5 h-3.5 ml-1.5" />
-            <span>طباعة</span>
-          </Button>
 
           {/* إضافة للأرشيف وحزمة التقديم من داخل نافذة المعاينة */}
           {onAddToArchive && (
@@ -502,7 +528,7 @@ export const OnlyOfficeDocViewer: React.FC<OnlyOfficeDocViewerProps> = ({
           <div className="w-full h-full flex flex-col bg-slate-900 overflow-hidden relative">
             <iframe
               key={pdfObjectUrl}
-              src={`${pdfObjectUrl}#toolbar=1&navpanes=0&view=FitH`}
+              src={`${pdfObjectUrl}#toolbar=${isEmployee && !isApproved ? "0" : "1"}&navpanes=0&view=FitH`}
               className="w-full h-full border-0 bg-slate-900"
               title={cleanBaseName}
             />

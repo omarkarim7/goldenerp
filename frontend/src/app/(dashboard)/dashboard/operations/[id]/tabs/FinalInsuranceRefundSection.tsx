@@ -47,6 +47,10 @@ import {
   getLetterSpecificRegistrationNumber,
   regenerateLetterSpecificRegistrationNumber,
   getOperationRecipientTitle,
+  getOperationTechnicalOpeningDate,
+  getOperationTenderMethod,
+  getOperationFiscalYear,
+  formatNumericDate,
   LetterQrCloudCard,
   LetterBottomActionWidget,
   ReprintConfirmModal,
@@ -57,7 +61,18 @@ import {
   generateHighResDocQrBuffer,
   getStandardDocQrPayload,
   buildOfficialSignaturesTableXml,
+  replaceDocxRecipient,
+  replaceDocxSignatures,
+  replaceDocxAdditionalNotes,
+  fetchDocxTemplateArrayBuffer,
+  replaceDocxStandardHeaderFooter,
+  useLetterApproval,
 } from "./letter-utils";
+import {
+  isExellentCompany,
+  generateExellentFinalInsuranceRefundDocx,
+  cleanTafqeetForTemplate,
+} from "./exellent-letter-engine";
 import { getPdfBlobFromDocx, uploadPdfToFreeCloud, getExpectedCloudPdfUrl } from "./client-pdf";
 
 interface FinalInsuranceRefundSectionProps {
@@ -86,7 +101,13 @@ export function FinalInsuranceRefundSection({
 
   // الشركة وبيانات الترويسة
   const [selectedCompanyId, setSelectedCompanyId] = useState(() => {
-    return savedLetter?.selectedCompanyId || op.companies?.[0]?.companyId || op.companies?.[0]?.id || "";
+    return (
+      savedLetter?.selectedCompanyId ||
+      op.companies?.[0]?.companyId ||
+      op.companies?.[0]?.company?.id ||
+      op.companies?.[0]?.id ||
+      ""
+    );
   });
 
   const currentCompanyLink = useMemo(() => {
@@ -101,6 +122,7 @@ export function FinalInsuranceRefundSection({
   }, [op.companies, selectedCompanyId]);
 
   const currentCompany = currentCompanyLink?.company;
+  const isEx = isExellentCompany(currentCompanyLink || currentCompany || op);
 
   const [registrationNumber, setRegistrationNumber] = useState(() => {
     return getLetterSpecificRegistrationNumber(
@@ -151,6 +173,17 @@ export function FinalInsuranceRefundSection({
     return savedLetter?.companyAddress || currentCompany?.address || "بجوار مستشفى ليدى كير  -  بدمنهور -  البحيره";
   });
 
+  const [companyEmail, setCompanyEmail] = useState(() => {
+    if (savedLetter?.companyEmail) return savedLetter.companyEmail;
+    if ((currentCompany as any)?.email) return (currentCompany as any).email;
+    const isEx = isExellentCompany(currentCompany || op);
+    return isEx ? "exellentservice@gmail.com" : "goldengolden8818@gmail.com";
+  });
+
+  const [companyOtherDetails, setCompanyOtherDetails] = useState(() => {
+    return savedLetter?.companyOtherDetails || "";
+  });
+
   const [issueDate, setIssueDate] = useState(() => {
     return savedLetter?.issueDate || new Date().toLocaleDateString("en-GB");
   });
@@ -174,52 +207,115 @@ export function FinalInsuranceRefundSection({
 
   // مبلغ التأمين النهائي المسترد
   const [refundAmount, setRefundAmount] = useState<string>(() => {
-    if (savedLetter?.refundAmount) return String(savedLetter.refundAmount);
-    // محاولة استخراج مبلغ التأمين النهائي من الضمانات
+    if (savedLetter?.refundAmount && savedLetter.refundAmount !== "37547") {
+      return String(savedLetter.refundAmount);
+    }
     const finalGuar = (op.guarantees || []).find((g: any) => g.type === "FINAL");
     if (finalGuar?.amount) return String(finalGuar.amount);
-    return "37547";
+    return savedLetter?.refundAmount ? String(savedLetter.refundAmount) : "";
   });
 
   // طريقة السداد الأصلية للتأمين
   const [paymentMethod, setPaymentMethod] = useState<"DEDUCTION" | "CASH_RECEIPT">(() => {
-    return savedLetter?.paymentMethod || "DEDUCTION";
+    if (savedLetter?.paymentMethod) return savedLetter.paymentMethod;
+    const finalGuar = (op.guarantees || []).find((g: any) => g.type === "FINAL");
+    if (finalGuar?.paymentMethod === "DEDUCTION_FROM_DUES") return "DEDUCTION";
+    if (finalGuar?.paymentMethod === "CASH") return "CASH_RECEIPT";
+    return "CASH_RECEIPT";
   });
 
   // بيانات الخصم من مستحقات
   const [deductionOperationName, setDeductionOperationName] = useState(() => {
-    return savedLetter?.deductionOperationName || "توريد مستلزمات طبية للجامعة";
+    return savedLetter?.deductionOperationName || "";
   });
   const [deductionMonth, setDeductionMonth] = useState(() => {
-    return savedLetter?.deductionMonth || "سبتمبر";
+    return savedLetter?.deductionMonth || "أكتوبر";
   });
   const [deductionYear, setDeductionYear] = useState(() => {
-    return savedLetter?.deductionYear || "2024";
+    return savedLetter?.deductionYear || String(new Date().getFullYear());
   });
 
   // بيانات إيصال السداد النقدي
   const [receiptNumber, setReceiptNumber] = useState(() => {
-    return savedLetter?.receiptNumber || "102548";
+    if (savedLetter?.receiptNumber && savedLetter.receiptNumber !== "102548") {
+      return savedLetter.receiptNumber;
+    }
+    const finalGuar = (op.guarantees || []).find((g: any) => g.type === "FINAL");
+    if (finalGuar?.receiptNumber) return String(finalGuar.receiptNumber);
+    return savedLetter?.receiptNumber || "";
   });
   const [receiptDate, setReceiptDate] = useState(() => {
-    return savedLetter?.receiptDate || "15/ 10 /2024";
+    if (
+      savedLetter?.receiptDate &&
+      !savedLetter.receiptDate.includes("15/ 10 /2024") &&
+      !savedLetter.receiptDate.includes("15/10/2024")
+    ) {
+      return savedLetter.receiptDate;
+    }
+    const finalGuar = (op.guarantees || []).find((g: any) => g.type === "FINAL");
+    if (finalGuar?.startDate) {
+      const d = new Date(finalGuar.startDate);
+      if (!isNaN(d.getTime())) {
+        return `${d.getDate()} / ${d.getMonth() + 1} / ${d.getFullYear()}`;
+      }
+      return String(finalGuar.startDate);
+    }
+    return savedLetter?.receiptDate || "";
   });
 
-  // طريقة الطرح ونطاق العملية والعام المالي وموعد الجلسة
+  // طريقة الطرح ونطاق العملية والعام المالي وموعد الجلسة (مستخلصة بدقة ومطابقة لصفحة التواريخ)
   const [tenderMethod, setTenderMethod] = useState(() => {
-    return savedLetter?.tenderMethod || "بالمناقصة المحدودة";
+    return savedLetter?.tenderMethod || getOperationTenderMethod(op);
   });
 
   const [operationScope, setOperationScope] = useState(() => {
-    return savedLetter?.operationScope || op.name || "توريد كاوتش وبطاريات للسيارات للجامعه";
+    return savedLetter?.operationScope || op.name || op.title || "";
   });
 
   const [fiscalYear, setFiscalYear] = useState(() => {
-    return savedLetter?.fiscalYear || "2024 / 2025";
+    return getOperationFiscalYear(op, savedLetter?.fiscalYear);
   });
 
+  const isDummy2024Date = (d?: string) => {
+    if (!d) return true;
+    const cleaned = d.replace(/\s+/g, "");
+    return (
+      cleaned.includes("14/1/2024") ||
+      cleaned.includes("2024/1/14") ||
+      cleaned.includes("14-1-2024") ||
+      cleaned.includes("2024-01-14")
+    );
+  };
+
   const [technicalOpeningDate, setTechnicalOpeningDate] = useState(() => {
-    return savedLetter?.technicalOpeningDate || "14/ 1 /2024";
+    // الأولوية دائماً للتاريخ الفعلي الحي من صفحة التواريخ (ممنوع أي موعد وهمي 14/ 1 /2024)
+    const liveTech = getOperationTechnicalOpeningDate(op);
+    if (liveTech && !isDummy2024Date(liveTech)) return liveTech;
+    if (savedLetter?.technicalOpeningDate && !isDummy2024Date(savedLetter.technicalOpeningDate)) {
+      return savedLetter.technicalOpeningDate;
+    }
+    return formatNumericDate(new Date());
+  });
+
+  // مزامنة حية لربط الموعد بصفحة التواريخ دائماً ومنع أي تاريخ عشوائي قديم
+  useEffect(() => {
+    const liveTech = getOperationTechnicalOpeningDate(op);
+    if (liveTech && !isDummy2024Date(liveTech) && liveTech !== technicalOpeningDate) {
+      setTechnicalOpeningDate(liveTech);
+    }
+  }, [op]);
+
+  // إدارة صلاحيات واعتماد الطباعة والتنزيل
+  const {
+    currentUserRole,
+    isApproved,
+    isApprovalPending,
+    requestApproval,
+  } = useLetterApproval({
+    registrationNumber,
+    letterTitle: "خطاب استرداد التأمين النهائي الرسمي",
+    op,
+    companyCode: currentCompanyLink?.displayCode,
   });
 
   // بيانات الحساب البنكي لاسترداد المبلغ
@@ -318,6 +414,8 @@ export function FinalInsuranceRefundSection({
       phoneWhatsapp,
       phoneMobile,
       companyAddress,
+      companyEmail,
+      companyOtherDetails,
       issueDate,
       recipientPrefix,
       recipientTitleAndAuthority,
@@ -355,6 +453,8 @@ export function FinalInsuranceRefundSection({
     phoneWhatsapp,
     phoneMobile,
     companyAddress,
+    companyEmail,
+    companyOtherDetails,
     issueDate,
     recipientPrefix,
     recipientTitleAndAuthority,
@@ -389,16 +489,76 @@ export function FinalInsuranceRefundSection({
 
   // ━━━ محرك توليد مستند الوورد الرسمي ━━━
   const generateRefundDocxBlob = async (): Promise<Blob> => {
-    const response = await fetch("/templates/final_insurance_refund_template.docx");
-    if (!response.ok) throw new Error("فشل قراءة قالب استرداد التأمين النهائي من الخادم");
-    const templateBuffer = await response.arrayBuffer();
+    // ━━━ المسار المخصص المستقل لشركة إكسلنت (B) ━━━
+    const isB = isExellentCompany(currentCompanyLink || currentCompany || op);
+    if (isB) {
+      let qrBinary: Uint8Array | undefined = undefined;
+      try {
+        const filename = `final_insurance_refund_${registrationNumber || op.serialNumber || "doc"}.pdf`;
+        const qrPayload = await getStandardDocQrPayload(
+          cloudPdfUrl,
+          registrationNumber,
+          "خطاب استرداد مبلغ التأمين النهائي",
+          currentCompany?.name || "إكسلنت سرفيس",
+          filename
+        );
+        qrBinary = await generateHighResDocQrBuffer(qrPayload);
+      } catch (e) {
+        console.warn("QR generation failed for Exellent refund:", e);
+      }
+
+      return await generateExellentFinalInsuranceRefundDocx({
+        recipientPrefix,
+        recipientTitleAndAuthority,
+        operationRegisteredName,
+        operationNumber,
+        refundAmount,
+        refundTafqeet: tafqeetAmount,
+        paymentMethod,
+        deductionOperationName,
+        deductionMonth,
+        deductionYear,
+        receiptNumber,
+        receiptDate,
+        tenderMethod,
+        operationScope,
+        fiscalYear,
+        technicalOpeningDate,
+        bankName,
+        bankBranch,
+        accountHolderName,
+        bankAccountNumber,
+        accountNationalId,
+        additionalNotes: letterNotes,
+        specialistName,
+        financeManagerName,
+        boardChairman,
+        companyCommercialRegister,
+        companyTaxCard,
+        companyOpCode,
+        outgoingDate: issueDate,
+        registrationNumber,
+        companyAddress,
+        phoneWhatsapp,
+        phoneMobile,
+        companyEmail: companyEmail || (currentCompany as any)?.email,
+        companyOtherDetails: companyOtherDetails || "",
+        attachmentType,
+        attachmentNote,
+        qrBinary,
+      });
+    }
+
+    // ━━━ المسار المعتمد الأصلي لشركة جولدن (A) ━━━
+    const templateBuffer = await fetchDocxTemplateArrayBuffer("final_insurance_refund_template.docx", currentCompany || op);
 
     const zip = await JSZip.loadAsync(templateBuffer);
 
     let qrDrawingXml = "";
+    let qrBinary: Uint8Array | undefined = undefined;
     try {
       const activeCloud = cloudPdfUrl;
-      const filename = `refund_${registrationNumber || op.serialNumber || "doc"}.pdf`;
+      const filename = `final_insurance_refund_${registrationNumber || op.serialNumber || "doc"}.pdf`;
       const qrPayload = await getStandardDocQrPayload(
         activeCloud,
         registrationNumber,
@@ -406,7 +566,7 @@ export function FinalInsuranceRefundSection({
         currentCompany?.name || "المجموعة الذهبية",
         filename
       );
-      const qrBinary = await generateHighResDocQrBuffer(qrPayload);
+      qrBinary = await generateHighResDocQrBuffer(qrPayload);
 
       zip.file("word/media/doc_qr.png", qrBinary);
 
@@ -434,27 +594,31 @@ export function FinalInsuranceRefundSection({
     let docXml = await zip.file("word/document.xml")!.async("text");
     docXml = injectSingleQrIntoDocXml(docXml, qrDrawingXml, escapeXml(registrationNumber));
 
-    // المرسل إليه
-    const p1Idx = docXml.indexOf("السيد");
-    if (p1Idx !== -1) {
-      const pStart = Math.max(docXml.lastIndexOf("<w:p ", p1Idx), docXml.lastIndexOf("<w:p>", p1Idx));
-      const pEnd = docXml.indexOf("</w:p>", p1Idx);
-      if (pStart !== -1 && pEnd !== -1 && pStart < p1Idx && p1Idx < pEnd) {
-        const newP1 = `<w:p><w:pPr><w:tabs><w:tab w:val="left" w:pos="5387"/></w:tabs><w:spacing w:after="0"/><w:ind w:left="-794"/><w:rPr><w:rFonts w:ascii="Arabic Typesetting" w:hAnsi="Arabic Typesetting" w:cs="Arabic Typesetting"/><w:b/><w:bCs/><w:sz w:val="52"/><w:szCs w:val="52"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr></w:pPr><w:r><w:rPr><w:rFonts w:ascii="Arabic Typesetting" w:hAnsi="Arabic Typesetting" w:cs="Arabic Typesetting" w:hint="cs"/><w:b/><w:bCs/><w:sz w:val="56"/><w:szCs w:val="56"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t xml:space="preserve">      السيد ${escapeXml(recipientPrefix)} / ${escapeXml(recipientTitleAndAuthority)}</w:t></w:r></w:p>`;
-        docXml = docXml.substring(0, pStart) + newP1 + docXml.substring(pEnd + 6);
-      }
-    }
+    // المرسل إليه بتوسيط ومنع استبدال غير مقصود
+    docXml = replaceDocxRecipient(docXml, recipientPrefix, recipientTitleAndAuthority);
 
     // الموضوع وبيانات العملية
     docXml = docXml.replace(/اسم العملية المسجله[\s\.]*/g, escapeXml(operationRegisteredName) + " ");
     docXml = docXml.replace(/365/g, escapeXml(operationNumber));
 
-    // المبلغ والتفقيط
-    docXml = docXml.replace(/37547/g, escapeXml(refundAmount));
-    docXml = docXml.replace(
-      /سبعة وثلاثون ألفا وخمسمائة وسبعه وأربعون/g,
-      escapeXml(tafqeetAmount)
-    );
+    // المبلغ والتفقيط المعتمد بدون أي تكرار
+    docXml = docXml.replace(/37547|10000/g, escapeXml(refundAmount));
+
+    const sTafIdx = docXml.indexOf('<w:t xml:space="preserve"> فقط وقدره </w:t>');
+    const eTafToken = 'جنيها لا غير</w:t></w:r><w:r w:rsidR="000D1CD0"><w:rPr><w:rFonts w:hint="cs"/><w:b/><w:bCs/><w:sz w:val="36"/><w:szCs w:val="36"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t>.</w:t></w:r>';
+    const eTafIdx = docXml.indexOf(eTafToken, sTafIdx !== -1 ? sTafIdx : 0);
+
+    if (sTafIdx !== -1 && eTafIdx !== -1) {
+      const before = docXml.substring(0, sTafIdx);
+      const after = docXml.substring(eTafIdx + eTafToken.length);
+      const replacementRun = `<w:r><w:rPr><w:b/><w:bCs/><w:sz w:val="36"/><w:szCs w:val="36"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t xml:space="preserve"> ( ${escapeXml(tafqeetAmount)} ) </w:t></w:r>`;
+      docXml = before + replacementRun + after;
+    } else {
+      docXml = docXml.replace(
+        /سبعة وثلاثون ألفا وخمسمائة وسبعه وأربعون|عشرة ألاف جنيه(?:\s*لا\s*غير)?/g,
+        escapeXml(cleanTafqeetForTemplate(tafqeetAmount))
+      );
+    }
 
     // طريقة السداد الأصلية
     let paymentText = "";
@@ -465,42 +629,34 @@ export function FinalInsuranceRefundSection({
     }
 
     // ━━━ استبدال طريقة السداد ونطاق العملية والعام المالي وموعد الجلسة بكتلة XML واحدة منضبطة ━━━
-    const startToken = "والمسدد </w:t></w:r>";
-    const endToken = "لفتح المظروف الفنى .</w:t></w:r>";
-    const sIdx = docXml.indexOf(startToken);
-    const eIdx = docXml.indexOf(endToken);
+    const fullPaymentBlockRegex = /(<w:t[^>]*>[^<]*والمسدد[^<]*<\/w:t><\/w:r>)([\s\S]*?)(<w:r\b[^>]*>(?:(?!<\/w:r>)[\s\S])*?<w:t[^>]*>[^<]*لفتح\s*المظروف[^<]*<\/w:t>[\s\S]*?<\/w:r>)/;
+    const fullText = ` ( ${paymentText} ) والخاص ${escapeXml(tenderMethod)} لزوم ${escapeXml(operationScope)} طرفكم للعام المالى ${escapeXml(fiscalYear)} والمحدد لها جلسة (${escapeXml(technicalOpeningDate)}) `;
+    const replacementRun = `<w:r><w:rPr><w:rFonts w:ascii="Arabic Typesetting" w:hAnsi="Arabic Typesetting" w:cs="Arabic Typesetting" w:hint="cs"/><w:b/><w:bCs/><w:sz w:val="36"/><w:szCs w:val="36"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t xml:space="preserve">${fullText}</w:t></w:r>`;
 
-    if (sIdx !== -1 && eIdx !== -1) {
-      const before = docXml.substring(0, sIdx + startToken.length);
-      const after = docXml.substring(eIdx + endToken.length);
-      const fullText = ` ( ${paymentText} ) والخاص ${escapeXml(tenderMethod)} لزوم ${escapeXml(operationScope)} طرفكم للعام المالى ${escapeXml(fiscalYear)} والمحدد لها جلسة (${escapeXml(technicalOpeningDate)}) لفتح المظروف الفنى .`;
-      const replacementRun = `<w:r><w:rPr><w:rFonts w:ascii="Arabic Typesetting" w:hAnsi="Arabic Typesetting" w:cs="Arabic Typesetting" w:hint="cs"/><w:b/><w:bCs/><w:sz w:val="36"/><w:szCs w:val="36"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t xml:space="preserve">${fullText}</w:t></w:r>`;
-      docXml = before + replacementRun + after;
+    if (fullPaymentBlockRegex.test(docXml)) {
+      docXml = docXml.replace(fullPaymentBlockRegex, `$1${replacementRun}$3`);
+    } else {
+      const startToken = "والمسدد </w:t></w:r>";
+      const endToken = "لفتح المظروف الفنى .</w:t></w:r>";
+      const sIdx = docXml.indexOf(startToken);
+      const eIdx = docXml.indexOf(endToken);
+
+      if (sIdx !== -1 && eIdx !== -1) {
+        const before = docXml.substring(0, sIdx + startToken.length);
+        const after = docXml.substring(eIdx + endToken.length);
+        docXml = before + replacementRun + after;
+      }
     }
 
     // بيانات الحساب البنكي
-    docXml = docXml.replace(/2670220000004113/g, escapeXml(bankAccountNumber));
-    docXml = docXml.replace(/مصر الاسلامى/g, escapeXml(bankName));
-    docXml = docXml.replace(/دمنهور/g, escapeXml(bankBranch));
+    docXml = docXml.replace(/2670220000004113|111111111111111111/g, escapeXml(bankAccountNumber));
+    docXml = docXml.replace(/مصر الاسلامى|بنك مصر/g, escapeXml(bankName));
+    docXml = docXml.replace(/أحمد زويل|دمنهور/g, escapeXml(bankBranch));
     docXml = docXml.replace(
-      /ســـحر حسن محمد أحمد عبد السلام جولدن سرفيس/g,
+      /ســـحر حسن محمد أحمد عبد السلام جولدن سرفيس|إيهاب عبدربة بصل/g,
       escapeXml(accountHolderName)
     );
-    docXml = docXml.replace(/28912111802623/g, escapeXml(accountNationalId));
-
-    // التوقيعات بأسفل الصفحة في جدول ثلاثي منضبط (المختص | المدير المالي | يعتمد رئيس مجلس الإدارة)
-    const refSigBlockRegex = /<w:p\b[^>]*>(?:(?!<w:p\b)[\s\S])*?المختص[\s\S]*?رئيس مجلس[\s\S]*?<\/w:p>/;
-    if (refSigBlockRegex.test(docXml)) {
-      const sigTableXml = buildOfficialSignaturesTableXml({
-        specialistTitle: "المختص :",
-        specialistName: specialistName || " ",
-        financeManagerName: financeManagerName || " ",
-        boardChairman: boardChairman || "رئيس مجلس الإدارة",
-      });
-      docXml = docXml.replace(refSigBlockRegex, sigTableXml);
-    } else {
-      docXml = docXml.replace(/رئيس مجلس\s*ا?ل?[إا]دارة/g, escapeXml(boardChairman || "رئيس مجلس الإدارة"));
-    }
+    docXml = docXml.replace(/28912111802623|2831210021512/g, escapeXml(accountNationalId));
 
     // ━━━ استبدال فقرة المرفقات (صورة أو أصل من إيصال السداد) بالكامل كفقرة XML منضبطة 100% ━━━
     const defaultAttText = attachmentType === "ORIGINAL" ? "مرفق أصل من إيصال السداد" : "مرفق صورة من إيصال السداد";
@@ -518,47 +674,37 @@ export function FinalInsuranceRefundSection({
       }
     }
 
-    // ━━━ إدراج خانة الملاحظات الإضافية بدقة ووضوح في متن الخطاب ━━━
-    if (letterNotes && letterNotes.trim()) {
-      const cleanNotesText = letterNotes.trim();
-      if (docXml.includes("خانه خاليه للملاحظات")) {
-        docXml = docXml.replace(/خانه خاليه للملاحظات/g, escapeXml(cleanNotesText));
-      } else {
-        const p9Idx = docXml.indexOf("وتفضلو بقبول");
-        if (p9Idx !== -1) {
-          const pStart = Math.max(docXml.lastIndexOf("<w:p ", p9Idx), docXml.lastIndexOf("<w:p>", p9Idx));
-          if (pStart !== -1) {
-            const notesParagraphXml = `<w:p><w:pPr><w:spacing w:before="120" w:after="120" w:line="240" w:lineRule="auto"/><w:ind w:left="-567"/><w:jc w:val="highKashida"/><w:rPr><w:rFonts w:ascii="Arabic Typesetting" w:hAnsi="Arabic Typesetting" w:cs="Arabic Typesetting"/><w:b/><w:bCs/><w:sz w:val="32"/><w:szCs w:val="32"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr></w:pPr><w:r><w:rPr><w:rFonts w:ascii="Arabic Typesetting" w:hAnsi="Arabic Typesetting" w:cs="Arabic Typesetting"/><w:b/><w:bCs/><w:sz w:val="32"/><w:szCs w:val="32"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t xml:space="preserve">ملاحظات : ${escapeXml(cleanNotesText)}</w:t></w:r></w:p>`;
-            docXml = docXml.substring(0, pStart) + notesParagraphXml + docXml.substring(pStart);
-          }
-        }
-      }
-    }
+    // التوقيعات بأسفل الصفحة لكلا الشركتين
+    docXml = replaceDocxSignatures(docXml, {
+      specialistTitle: "المختص :",
+      specialistName: specialistName || " ",
+      financeManagerTitle: "المدير العام",
+      financeManagerName: financeManagerName || " ",
+      chairmanTitle: "يعتمد ،،،،،،",
+      chairmanName: boardChairman || "رئيس مجلس الإدارة",
+    });
+
+    // خانة الملاحظات الإضافية (حذف تام عند الفراغ لمنع ظهور نقاط وهمية)
+    docXml = replaceDocxAdditionalNotes(docXml, letterNotes);
 
     // تنظيف علامات التمييز من نص المستند
     docXml = docXml.replace(/<w:highlight\s+[^>]*\/>/gi, "").replace(/<w:color\s+w:val="(?:red|FF0000)"[^>]*\/>/gi, "");
 
     zip.file("word/document.xml", docXml);
 
-    // 2. تحديث الترويسة والتذييل
-    for (const fileName of Object.keys(zip.files)) {
-      if (fileName.startsWith("word/header") && fileName.endsWith(".xml")) {
-        let hdr = await zip.file(fileName)!.async("text");
-        hdr = hdr.replace(/110200700036620/g, escapeXml(companyCommercialRegister));
-        hdr = hdr.replace(/658369652/g, escapeXml(companyTaxCard));
-        hdr = hdr.replace(/كود العملية بالشركه/g, escapeXml(companyOpCode));
-        zip.file(fileName, hdr);
-      }
-      if (fileName.startsWith("word/footer") && fileName.endsWith(".xml")) {
-        let ftr = await zip.file(fileName)!.async("text");
-        ftr = ftr.replace(/15\/10\/2026/g, escapeXml(issueDate));
-        ftr = ftr.replace(/رقم القيد/g, `رقم القيد: ${escapeXml(registrationNumber)}`);
-        ftr = ftr.replace(/01091708818/g, escapeXml(phoneWhatsapp));
-        ftr = ftr.replace(/01557018818/g, escapeXml(phoneMobile));
-        ftr = ftr.replace(/بجوار مستشفى ليدى كير\s*-\s*بدمنهور\s*-\s*البح\s*يره/g, escapeXml(companyAddress));
-        zip.file(fileName, ftr);
-      }
-    }
+    // 2. تحديث الترويسة والتذييل (للشركتين جولدن وإكسلنت وحقن الباركود في الهيدر)
+    await replaceDocxStandardHeaderFooter(zip, {
+      companyCommercialRegister,
+      companyTaxCard,
+      companyOpCode,
+      outgoingDate: issueDate,
+      registrationNumber,
+      companyAddress,
+      phoneWhatsapp,
+      phoneMobile,
+      companyEmail: (currentCompany as any)?.email,
+      qrBinary,
+    });
 
     // تنظيف كل علامات التحديد الأحمر
     await cleanAllDocxXml(zip);
@@ -611,6 +757,28 @@ export function FinalInsuranceRefundSection({
       setLastGeneratedSnapshot(currentSnapshot);
       if (forceRefresh) {
         toast.success("تم تحديث المعاينة الرسمية بنجاح! 🔄✨");
+      }
+
+      // رفع سحابي صامت في الخلفية لضمان توفر ملف الـ PDF فوراً على Cloudflare R2 عند مسح الـ QR بكاميرا الهاتف
+      if (!cloudPdfUrl || currentSnapshot !== lastGeneratedSnapshot || forceRefresh) {
+        setTimeout(async () => {
+          try {
+            const cloudFilename = `final_insurance_refund_${registrationNumber || op.serialNumber || "doc"}.pdf`;
+            const uploadRes = await uploadPdfToFreeCloud(pdf, cloudFilename);
+            if (uploadRes?.url) {
+              setCloudPdfUrl(uploadRes.url);
+              let notesObj: any = {};
+              if (op.notes && op.notes.startsWith("{")) {
+                try { notesObj = JSON.parse(op.notes); } catch {}
+              }
+              if (!notesObj.finalInsuranceRefundLetter) notesObj.finalInsuranceRefundLetter = {};
+              notesObj.finalInsuranceRefundLetter.cloudPdfUrl = uploadRes.url;
+              await api.patch(`/operations/${op.id}`, { notes: JSON.stringify(notesObj) });
+            }
+          } catch (e) {
+            console.warn("Background cloud upload failed:", e);
+          }
+        }, 500);
       }
     } catch (err: any) {
       console.error(err);
@@ -711,9 +879,62 @@ export function FinalInsuranceRefundSection({
       existingRegs["final_insurance_refund"] = registrationNumber;
       existingNotesObj.letterRegistrationNumbers = existingRegs;
 
+      // تسجيل وتحديث بطاقة استرداد التأمين النهائي مع تفاصيلها
+      const refundCardEntry = {
+        id: `refund-${registrationNumber || op.serialNumber || Date.now()}`,
+        registrationNumber,
+        refundAmount: Number(refundAmount) || 0,
+        paymentMethod,
+        receiptNumber: paymentMethod === "CASH_RECEIPT" ? receiptNumber : undefined,
+        receiptDate: paymentMethod === "CASH_RECEIPT" ? receiptDate : undefined,
+        deductionOperationName: paymentMethod === "DEDUCTION" ? deductionOperationName : undefined,
+        deductionMonth: paymentMethod === "DEDUCTION" ? deductionMonth : undefined,
+        deductionYear: paymentMethod === "DEDUCTION" ? deductionYear : undefined,
+        tenderMethod,
+        operationScope,
+        fiscalYear,
+        technicalOpeningDate,
+        bankAccountNumber,
+        bankName,
+        bankBranch,
+        accountHolderName,
+        status: "APPROVED",
+        isArchived: archiveInfo.isArchived,
+        version: archiveInfo.currentVersion || 1,
+        versionName: archiveInfo.latestEntry?.fileName || `خطاب استرداد التأمين النهائي - ${registrationNumber}.pdf`,
+        docId: archiveInfo.latestEntry?.docId || "",
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+
+      const existingCards = existingNotesObj.finalInsuranceRefundCardsList || [];
+      existingNotesObj.finalInsuranceRefundCardsList = [
+        refundCardEntry,
+        ...existingCards.filter((c: any) => c.registrationNumber !== registrationNumber && c.id !== refundCardEntry.id),
+      ];
+
       await api.patch(`/operations/${op.id}`, {
         notes: JSON.stringify(existingNotesObj),
       });
+
+      // في حال لم يكن التأمين النهائي مسجلاً في جدول الضمانات، يتم تسجيله لربطه بالعملية
+      if (!op.guarantees?.some((g: any) => g.type === "FINAL")) {
+        try {
+          await api.post(`/operations/${op.id}/guarantees`, {
+            type: "FINAL",
+            amount: Number(refundAmount),
+            percentage: 5,
+            paymentMethod: paymentMethod === "DEDUCTION" ? "DEDUCTION_FROM_DUES" : "CASH",
+            receiptNumber: paymentMethod === "CASH_RECEIPT" ? receiptNumber : undefined,
+            startDate: receiptDate || new Date().toISOString().split("T")[0],
+            bankName: bankName || undefined,
+            notes: `تأمين نهائي مسجل لاسترداد المبلغ (${registrationNumber})`,
+          });
+        } catch (guarErr) {
+          console.warn("Could not create final guarantee entry:", guarErr);
+        }
+      }
+
       onRefresh();
     } catch (err: any) {
       toast.error(err?.response?.data?.message || "فشل الحفظ في السيرفر");
@@ -752,6 +973,21 @@ export function FinalInsuranceRefundSection({
           URL.revokeObjectURL(url);
         }, 5000);
       };
+
+      // رفع سحابي صامت عند الطباعة لضمان بقاء النسخة الرقمية نشطة 100% على السحابة عند مسح الـ QR
+      const printCloudFilename = `final_insurance_refund_${registrationNumber || op.serialNumber || "doc"}.pdf`;
+      uploadPdfToFreeCloud(pdf, printCloudFilename).then(async (uploadRes) => {
+        if (uploadRes?.url) {
+          setCloudPdfUrl(uploadRes.url);
+          let notesObj: any = {};
+          if (op.notes && op.notes.startsWith("{")) {
+            try { notesObj = JSON.parse(op.notes); } catch {}
+          }
+          if (!notesObj.finalInsuranceRefundLetter) notesObj.finalInsuranceRefundLetter = {};
+          notesObj.finalInsuranceRefundLetter.cloudPdfUrl = uploadRes.url;
+          await api.patch(`/operations/${op.id}`, { notes: JSON.stringify(notesObj) });
+        }
+      }).catch((e) => console.warn("Print background upload failed:", e));
 
       // تسجيل سجل الطباعة
       const currentUser = getCurrentUserName();
@@ -835,16 +1071,76 @@ export function FinalInsuranceRefundSection({
       const docx = previewDocxBlob || (await generateRefundDocxBlob());
       const pdfBlob = previewPdfBlob || (await getPdfBlobFromDocx(docx, `refund_${registrationNumber}.docx`));
 
-      const { version, versionName } = await saveLetterToArchiveWithVersion({
+      const { version, versionName, docId } = await saveLetterToArchiveWithVersion({
         op,
         docKey: "letter-final-refund",
         title: "خطاب استرداد التأمين النهائي",
         pdfBlob,
         currentSnapshot,
-        docType: "GUARANTEE_RECEIPT",
+        docType: "LETTER",
         companyId: selectedCompanyId,
         registrationNumber,
       });
+
+      // تسجيل وتحديث بطاقة الاسترداد المعتمدة مع توثيق ملف الأرشيف الفعلي
+      let updatedNotesObj: Record<string, any> = {};
+      try {
+        if (op.notes && op.notes.startsWith("{")) {
+          updatedNotesObj = JSON.parse(op.notes);
+        }
+      } catch {}
+
+      const refundCardEntry = {
+        id: `refund-${registrationNumber || op.serialNumber || Date.now()}`,
+        registrationNumber,
+        refundAmount: Number(refundAmount) || 0,
+        paymentMethod,
+        receiptNumber: paymentMethod === "CASH_RECEIPT" ? receiptNumber : undefined,
+        receiptDate: paymentMethod === "CASH_RECEIPT" ? receiptDate : undefined,
+        deductionOperationName: paymentMethod === "DEDUCTION" ? deductionOperationName : undefined,
+        deductionMonth: paymentMethod === "DEDUCTION" ? deductionMonth : undefined,
+        deductionYear: paymentMethod === "DEDUCTION" ? deductionYear : undefined,
+        tenderMethod,
+        operationScope,
+        fiscalYear,
+        technicalOpeningDate,
+        bankAccountNumber,
+        bankName,
+        bankBranch,
+        accountHolderName,
+        status: "APPROVED",
+        isArchived: true,
+        version: version || 1,
+        versionName: versionName || `خطاب استرداد التأمين النهائي - ${registrationNumber}.pdf`,
+        docId: docId || "",
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+
+      const existingCards = updatedNotesObj.finalInsuranceRefundCardsList || [];
+      updatedNotesObj.finalInsuranceRefundCardsList = [
+        refundCardEntry,
+        ...existingCards.filter((c: any) => c.registrationNumber !== registrationNumber && c.id !== refundCardEntry.id),
+      ];
+
+      await api.patch(`/operations/${op.id}`, { notes: JSON.stringify(updatedNotesObj) });
+
+      if (!op.guarantees?.some((g: any) => g.type === "FINAL")) {
+        try {
+          await api.post(`/operations/${op.id}/guarantees`, {
+            type: "FINAL",
+            amount: Number(refundAmount),
+            percentage: 5,
+            paymentMethod: paymentMethod === "DEDUCTION" ? "DEDUCTION_FROM_DUES" : "CASH",
+            receiptNumber: paymentMethod === "CASH_RECEIPT" ? receiptNumber : undefined,
+            startDate: receiptDate || new Date().toISOString().split("T")[0],
+            bankName: bankName || undefined,
+            notes: `تأمين نهائي مسجل لاسترداد المبلغ (${registrationNumber})`,
+          });
+        } catch (guarErr) {
+          console.warn("Could not create final guarantee entry:", guarErr);
+        }
+      }
 
       toast.success(`تمت إضافة المستند للأرشيف بنجاح (${versionName})! 📦✨`);
       onRefresh();
@@ -1031,6 +1327,46 @@ export function FinalInsuranceRefundSection({
               />
             </div>
           </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
+            <div className="space-y-1.5">
+              <Label className="text-xs font-bold text-foreground">واتساب الشركة (Footer)</Label>
+              <Input
+                value={phoneWhatsapp}
+                onChange={(e) => setPhoneWhatsapp(e.target.value)}
+                className="h-9.5 text-xs font-mono rounded-xl"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs font-bold text-foreground">الموبايل (Footer)</Label>
+              <Input
+                value={phoneMobile}
+                onChange={(e) => setPhoneMobile(e.target.value)}
+                className="h-9.5 text-xs font-mono rounded-xl"
+              />
+            </div>
+                        <div className="space-y-1.5 sm:col-span-2">
+              <Label className="text-xs font-bold text-foreground">البريد الإلكتروني / تفاصيل أخرى بالتذييل (Footer)</Label>
+              <Input
+                value={companyEmail}
+                onChange={(e) => {
+                  setCompanyEmail(e.target.value);
+                  setCompanyOtherDetails(e.target.value);
+                }}
+                placeholder="exellentservice@gmail.com أو تفاصيل أخرى..."
+                className="h-9.5 text-xs rounded-xl"
+              />
+            </div>
+          </div>
+
+          <div className="space-y-1.5">
+            <Label className="text-xs font-bold text-foreground">العنوان بالتذييل (Footer)</Label>
+            <Input
+              value={companyAddress}
+              onChange={(e) => setCompanyAddress(e.target.value)}
+              className="h-9.5 text-xs rounded-xl"
+            />
+          </div>
         </div>
       </SectionCard>
 
@@ -1097,12 +1433,43 @@ export function FinalInsuranceRefundSection({
                     ج.م
                   </span>
                 </div>
+                {/* أزرار سريعة ومطابقة ديناميكية لأصل العملية */}
+                <div className="flex items-center gap-1.5 flex-wrap pt-1">
+                  {(() => {
+                    const awardPrice = Number((op.awards || []).find((a: any) => a.isOurCompany)?.winnerPrice || op.awards?.[0]?.winnerPrice || (op as any).estimatedBudget || 0);
+                    const calc5Pct = awardPrice > 0 ? Math.round(awardPrice * 0.05) : 0;
+                    const liveFinalGuar = (op.guarantees || []).find((g: any) => g.type === "FINAL");
+                    const guarAmount = Number(liveFinalGuar?.amount || (op as any).finalInsuranceAmount || 0);
+                    return (
+                      <>
+                        {calc5Pct > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => setRefundAmount(String(calc5Pct))}
+                            className="text-[10px] px-2 py-0.5 rounded-lg border bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 font-bold border-emerald-500/30 cursor-pointer"
+                          >
+                            5% من الترسية ({calc5Pct.toLocaleString("en-US")} ج.م)
+                          </button>
+                        )}
+                        {guarAmount > 0 && guarAmount !== calc5Pct && (
+                          <button
+                            type="button"
+                            onClick={() => setRefundAmount(String(guarAmount))}
+                            className="text-[10px] px-2 py-0.5 rounded-lg border bg-blue-500/10 hover:bg-blue-500/20 text-blue-700 dark:text-blue-300 font-bold border-blue-500/30 cursor-pointer"
+                          >
+                            المسجل بالعملية ({guarAmount.toLocaleString("en-US")} ج.م)
+                          </button>
+                        )}
+                      </>
+                    );
+                  })()}
+                </div>
               </div>
 
               <div className="space-y-1">
                 <Label className="text-xs font-bold text-muted-foreground">التفقيط المعتمد التلقائي (بالحروف)</Label>
                 <div className="p-2.5 rounded-xl bg-background border border-border text-xs font-bold text-foreground leading-relaxed">
-                  فقط وقدره : {tafqeetAmount} جنيهاً لا غير.
+                  {tafqeetAmount}
                 </div>
               </div>
             </div>
@@ -1646,7 +2013,7 @@ export function FinalInsuranceRefundSection({
                   <div>
                     <div className="flex items-center gap-2">
                       <h3 className="font-extrabold text-foreground text-base">
-                        معاينة قالب الوورد المعتمد: خطاب استرداد التأمين النهائي.docx
+                        معاينة قالب الوورد المعتمد: {isEx ? "استرداد لتأمين النهائى سيستم اكسلانت.docx" : "خطاب استرداد التأمين النهائي.docx"}
                       </h3>
                       <Badge className="bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/30 text-[10px] font-bold">
                         معاينة Word COM الرسمية 100% ✓
@@ -1697,6 +2064,10 @@ export function FinalInsuranceRefundSection({
                     documentTitle={`خطاب_استرداد_التأمين_النهائي_${registrationNumber || op.serialNumber}.docx`}
                     docxBlob={previewDocxBlob}
                     pdfBlob={previewPdfBlob}
+                    userRole={currentUserRole}
+                    isApproved={isApproved}
+                    isApprovalPending={isApprovalPending}
+                    onRequestApproval={requestApproval}
                     onDownloadDocx={handleDownloadDocx}
                     onDownloadPdf={handleDownloadPdf}
                     onPrint={handlePrintWordDocument}

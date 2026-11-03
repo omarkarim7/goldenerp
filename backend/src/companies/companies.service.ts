@@ -39,6 +39,7 @@ export class CompaniesService {
               include: {
                 dates: true,
                 guarantees: true,
+                financialOffers: true,
               },
             },
           },
@@ -199,29 +200,19 @@ export class CompaniesService {
           }
         });
 
-        // Fallbacks if list is empty
-        if (urgentAlerts.length === 0) {
-          if (c.code === 'A') {
-            urgentAlerts.push(
-              { id: 'fallback-a1', title: 'عملية A15 — جلسة فتح مالي قريباً بالهيئة', operationCode: 'A15', severity: 'warning', link: '/dashboard/operations', actionLabel: 'تفاصيل الجلسة' },
-              { id: 'fallback-a2', title: 'طلب طباعة تظلم — بانتظار قرار الإدارة العليا', operationCode: 'A15', severity: 'danger', link: '/dashboard/approvals?company=A', actionLabel: 'مراجعة الطلب' },
-            );
-          } else if (c.code === 'B') {
-            urgentAlerts.push(
-              { id: 'fallback-b1', title: 'عملية B04 — سحب كراسة الشروط قبل انتهاء الموعد', operationCode: 'B04', severity: 'warning', link: '/dashboard/operations', actionLabel: 'كراسة الشروط' },
-              { id: 'fallback-b2', title: 'طلب طباعة خطاب ضمان — معلق للاعتماد', operationCode: 'B04', severity: 'info', link: '/dashboard/approvals?company=B', actionLabel: 'سجل الاعتمادات' },
-            );
-          } else if (c.code === 'C') {
-            urgentAlerts.push(
-              { id: 'fallback-c1', title: 'عملية C08 — تقديم إيصال التأمين الابتدائي بالخزينة', operationCode: 'C08', severity: 'warning', link: '/dashboard/guarantees', actionLabel: 'إيصال التأمين' },
-              { id: 'fallback-c2', title: 'طلب طباعة عرض فني — بانتظار الاعتماد', operationCode: 'C08', severity: 'danger', link: '/dashboard/approvals?company=C', actionLabel: 'مراجعة الطلب' },
-            );
-          } else {
-            urgentAlerts.push(
-              { id: 'fallback-d1', title: 'عملية D02 — مطابقة بنود كراسة الشروط والمواصفات', operationCode: 'D02', severity: 'info', link: '/dashboard/operations', actionLabel: 'فحص المواصفات' },
-            );
-          }
-        }
+        const totalRevenueNum = ops.reduce((acc, o) => {
+          const offersTotal = (o.financialOffers || []).reduce(
+            (oAcc: number, fo: any) => oAcc + (Number(fo.grandTotal) || 0),
+            0,
+          );
+          return acc + offersTotal;
+        }, 0);
+        const totalRevenueStr =
+          totalRevenueNum > 0
+            ? totalRevenueNum >= 1000000
+              ? `${(totalRevenueNum / 1000000).toFixed(1)}M ج.م`
+              : `${(totalRevenueNum / 1000).toFixed(0)}K ج.م`
+            : '0 ج.م';
 
         const actionsRequired = urgentAlerts.length;
 
@@ -240,14 +231,14 @@ export class CompaniesService {
             : 'الحديثة للتجارة العامة والتوريدات',
           commercialRegister: c.commercialRegister || '102948',
           taxCard: c.taxCard || '402-182-991',
-          totalOperations: Math.max(totalOperations, c.code === 'A' ? 5 : c.code === 'B' ? 4 : c.code === 'C' ? 4 : 3),
-          activeOperations: Math.max(activeOperations, c.code === 'A' ? 4 : c.code === 'B' ? 3 : c.code === 'C' ? 3 : 2),
-          completedOperations: Math.max(completedOperations, c.code === 'A' ? 2 : c.code === 'B' ? 1 : c.code === 'C' ? 1 : 1),
-          draftOperations: Math.max(draftOperations, c.code === 'A' ? 1 : c.code === 'B' ? 1 : c.code === 'C' ? 1 : 0),
-          pendingGuarantees: Math.max(pendingGuaranteesCount, c.code === 'A' ? 2 : c.code === 'B' ? 2 : c.code === 'C' ? 2 : 1),
+          totalOperations,
+          activeOperations,
+          completedOperations,
+          draftOperations,
+          pendingGuarantees: pendingGuaranteesCount,
           actionsRequired,
           pendingPrintRequests: pendingApprovalsCount,
-          totalRevenue: c.code === 'A' ? '2.4M ج.م' : c.code === 'B' ? '1.8M ج.م' : c.code === 'C' ? '3.1M ج.م' : '950K ج.م',
+          totalRevenue: totalRevenueStr,
           systemStatus: 'منتظم',
           urgentAlerts: urgentAlerts.slice(0, 5),
         };

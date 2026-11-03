@@ -54,6 +54,7 @@ import JSZip from "jszip";
 import QRCode from "qrcode";
 import { getPdfBlobFromDocx, uploadPdfToFreeCloud, getExpectedCloudPdfUrl } from "./client-pdf";
 import { OnlyOfficeDocViewer } from "@/components/OnlyOfficeDocViewer";
+import { SmartArabicDatePicker } from "@/components/ui/arabic-date-picker";
 
 // ━━━ تعريف بيانات البدائل والمواصفات الفنية ━━━
 export interface TechnicalVariant {
@@ -325,59 +326,55 @@ export function TabTechnical({
     if (savedTech?.items && savedTech.items.length > 0) {
       return savedTech.items;
     }
-    // بنود افتراضية توضيحية مطابقة لقالب الوورد تماماً
+
+    let notesObj: any = {};
+    if (op.notes && op.notes.startsWith("{")) {
+      try { notesObj = JSON.parse(op.notes); } catch {}
+    }
+
+    // 1. استيراد من دراسة السوق المعتمدة للعملية
+    const mQuotes = notesObj.marketQuotes || [];
+    if (Array.isArray(mQuotes) && mQuotes.length > 0) {
+      return mQuotes.map((mq: any, idx: number) => {
+        const qty = Number(mq.quantity) || 1;
+        return {
+          id: `item-${idx + 1}`,
+          itemNumber: idx + 1,
+          itemName: mq.itemName || `صنف #${idx + 1}`,
+          unit: mq.unit || "عدد",
+          quantity: String(qty),
+          variants: [
+            {
+              id: `v-${idx + 1}-1`,
+              variantType: "basic" as const,
+              variantLabel: "أساسى",
+              description: mq.specsMatch || mq.notes || "مطابق للمواصفات الفنية المعتمدة",
+              subDescription: "",
+              branch1: "",
+              notes: mq.notes || "شامل الضمان والمطابقة",
+            },
+          ],
+        };
+      });
+    }
+
+    // 2. البند الافتراضي من مسمى العملية الفعلي
     return [
       {
         id: "item-1",
         itemNumber: 1,
-        itemName: "إطار كاوتش مقاس 1200 / 20 سلك",
-        unit: "عدد",
-        quantity: "24",
+        itemName: op.name || "أصناف ومهمات العملية",
+        unit: "دفعة",
+        quantity: "1",
         variants: [
           {
             id: "v-1-1",
-            variantType: "basic",
+            variantType: "basic" as const,
             variantLabel: "أساسى",
-            description: "إطارات ماركة ميشلان فرنسي إنتاج 2026",
-            subDescription: "حمولة 18PR سرعة K",
-            branch1: "نقشة شجري",
-            notes: "شامل البلف والشريط والشنبر",
-          },
-          {
-            id: "v-1-2",
-            variantType: "alternative",
-            variantLabel: "بديل 1",
-            description: "إطارات ماركة بريدجستون ياباني إنتاج 2026",
-            subDescription: "حمولة 18PR سرعة L",
-            branch1: "نقشة خطوط طولية",
-            notes: "بديل رقم 1 مطابق بالكامل للكراسة",
-          },
-          {
-            id: "v-1-3",
-            variantType: "alternative",
-            variantLabel: "بديل 2",
-            description: "إطارات ماركة هانكوك كوري إنتاج 2026",
-            subDescription: "حمولة 16PR سرعة J",
-            branch1: "نقشة طريق سريع",
-            notes: "بديل رقم 2 معتمد ومطابق",
-          },
-        ],
-      },
-      {
-        id: "item-2",
-        itemNumber: 2,
-        itemName: "بطارية جافة 70 أمبير",
-        unit: "عدد",
-        quantity: "10",
-        variants: [
-          {
-            id: "v-2-1",
-            variantType: "basic",
-            variantLabel: "أساسى",
-            description: "بطارية فارتا ألماني 70 أمبير قطب شمالي",
-            subDescription: "جهد 12 فولت تيار بدء 640A",
-            branch1: "صيانة مجانية",
-            notes: "ضمان 18 شهر ضد عيوب الصناعة",
+            description: "مطابق لكراسة الشروط والمواصفات الفنية المعتمدة",
+            subDescription: "",
+            branch1: "",
+            notes: "",
           },
         ],
       },
@@ -1243,7 +1240,7 @@ export function TabTechnical({
         registrationNumber,
       });
 
-      toast.success(`تمت إضافة المستند للأرشيف بنجاح (${versionName})! 📦✨`);
+      toast.success(`تم حفظ وأرشفة المستند بنجاح في أرشيف العملية (تخزين Hostinger المحلي) (${versionName})! 📦🔒`);
       onRefresh();
     } catch (err: any) {
       toast.error("فشل حفظ المستند في الأرشيف: " + (err?.message || ""));
@@ -1406,9 +1403,9 @@ export function TabTechnical({
             {/* التاريخ الصادر */}
             <div className="space-y-1.5">
               <Label className="text-xs font-bold text-foreground">التاريخ الصادر (Footer) *</Label>
-              <Input
+              <SmartArabicDatePicker
                 value={issueDate}
-                onChange={(e) => setIssueDate(e.target.value)}
+                onChange={setIssueDate}
                 className="h-9.5 text-xs font-mono rounded-xl"
               />
             </div>
@@ -1523,10 +1520,9 @@ export function TabTechnical({
                   <span>مزامنة مع التواريخ</span>
                 </button>
               </div>
-              <Input
+              <SmartArabicDatePicker
                 value={technicalOpeningDate}
-                onChange={(e) => setTechnicalOpeningDate(e.target.value)}
-                placeholder="24/10/2026"
+                onChange={setTechnicalOpeningDate}
                 className="h-9.5 text-xs font-mono rounded-xl font-bold"
               />
             </div>

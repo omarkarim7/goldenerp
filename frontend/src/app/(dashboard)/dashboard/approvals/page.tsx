@@ -317,18 +317,41 @@ function getTemplateInfoForApproval(item: ApprovalItem): { templateFile: string;
     return { templateFile: "warranty_certificate_template.docx", type: "warranty" };
   }
   if (title.includes("تظلم") || type === "PRINT_GRIEVANCE") {
-    return { templateFile: "general_letter_template.docx", type: "grievance" };
+    return { templateFile: "grievance_letter_template.docx", type: "grievance" };
   }
   return { templateFile: "general_letter_template.docx", type: "general" };
 }
 
 async function generateOfficialDocxBlob(item: ApprovalItem, companyInfo: any): Promise<Blob> {
   const tplInfo = getTemplateInfoForApproval(item);
-  const res = await fetch(`/templates/${tplInfo.templateFile}`);
-  if (!res.ok) {
-    throw new Error(`تعذر قراءة قالب الخطاب الرسمي (${tplInfo.templateFile})`);
+  let buffer: ArrayBuffer | null = null;
+  const isCompB =
+    item.operationCode?.startsWith("B") ||
+    companyInfo?.code === "B" ||
+    companyInfo?.name?.includes("إكسلنت") ||
+    companyInfo?.name?.includes("إكسلانت") ||
+    companyInfo?.name?.includes("العالمية") ||
+    companyInfo?.name?.includes("اكسلانت");
+
+  if (isCompB) {
+    try {
+      const exRes = await fetch(`/templates/exellent/${tplInfo.templateFile}`);
+      if (exRes.ok) {
+        buffer = await exRes.arrayBuffer();
+      }
+    } catch (error) {
+      console.warn(`تعذر تحميل قالب إكسلنت (${tplInfo.templateFile})`, error);
+    }
+    if (!buffer) {
+      throw new Error(`قالب إكسلنت غير موجود أو غير قابل للقراءة (${tplInfo.templateFile})`);
+    }
+  } else {
+    const res = await fetch(`/templates/${tplInfo.templateFile}`);
+    if (!res.ok) {
+      throw new Error(`تعذر قراءة قالب الخطاب الرسمي (${tplInfo.templateFile})`);
+    }
+    buffer = await res.arrayBuffer();
   }
-  const buffer = await res.arrayBuffer();
   const zip = await JSZip.loadAsync(buffer);
 
   const companyFullName = companyInfo?.fullName || (companyInfo?.name ? `${companyInfo.name} للتوريدات العمومية` : "المجموعة الذهبية للتوريدات والمقاولات (A)");
@@ -496,17 +519,17 @@ function ApprovalsContent() {
     setLoading(true);
     try {
       const res = await api.get("/approvals");
-      if (Array.isArray(res.data) && res.data.length > 0) {
+      if (Array.isArray(res.data)) {
         const mapped = res.data.map((a: any) => ({
           ...a,
-          operationCode: a.operationCode || `${activeCompanyCode}15`,
+          operationCode: a.operationCode || `${activeCompanyCode}01`,
           operationName: a.operationName || "مناقصة وتوريد مسجلة",
           documentTitle: a.documentTitle || getApprovalLabel(a.type),
         }));
         setApprovals(mapped);
         saveApprovalsState(mapped);
       } else {
-        loadInitialMockApprovals();
+        setApprovals([]);
       }
       if (isManualRefresh) {
         toast.success("تم تحديث ومزامنة طلبات الطباعة مع قاعدة البيانات بنجاح!");
@@ -523,21 +546,7 @@ function ApprovalsContent() {
   };
 
   const loadInitialMockApprovals = () => {
-    const saved = localStorage.getItem("goldenerp_approvals_cache_v5");
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          setApprovals(parsed);
-          return;
-        }
-      } catch {
-        // Fallback to fresh seed
-      }
-    }
-
-    setApprovals(INITIAL_APPROVALS);
-    localStorage.setItem("goldenerp_approvals_cache_v5", JSON.stringify(INITIAL_APPROVALS));
+    setApprovals([]);
   };
 
   const saveApprovalsState = (updated: ApprovalItem[]) => {

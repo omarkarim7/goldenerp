@@ -1,3 +1,35 @@
+import fs from 'fs';
+import path from 'path';
+
+// Automatically load .env if present
+const envFiles = [
+  path.resolve(process.cwd(), '.env'),
+  '/home/u179759652/domains/api.ahdahd.eu/hbuilds/config/.env',
+  path.resolve(process.cwd(), '../config/.env'),
+];
+
+for (const envFile of envFiles) {
+  if (fs.existsSync(envFile)) {
+    const content = fs.readFileSync(envFile, 'utf8');
+    for (const line of content.split('\n')) {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith('#')) continue;
+      const idx = trimmed.indexOf('=');
+      if (idx > 0) {
+        const key = trimmed.slice(0, idx).trim();
+        let val = trimmed.slice(idx + 1).trim();
+        if ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'"))) {
+          val = val.slice(1, -1);
+        }
+        if (!process.env[key]) {
+          process.env[key] = val;
+        }
+      }
+    }
+    break;
+  }
+}
+
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module.js';
 import { ValidationPipe, INestApplication } from '@nestjs/common';
@@ -68,10 +100,16 @@ export default async function handler(req: any, res: any) {
   server(req, res);
 }
 
-// Standalone server execution for local development
+// Standalone server execution for Hostinger / local
 if (!process.env.VERCEL) {
-  const app = await bootstrap();
-  const port = Number(process.env.PORT) || Number(process.env.APP_PORT) || 4000;
-  await app.listen(port, '0.0.0.0');
-  console.log(`🚀 GoldenERP Backend running on port ${port}`);
+  bootstrap()
+    .then(async (app) => {
+      const port = Number(process.env.PORT) || Number(process.env.APP_PORT) || 4000;
+      await app.listen(port, '0.0.0.0');
+      console.log(`🚀 GoldenERP Backend running on port ${port}`);
+    })
+    .catch((err) => {
+      console.error('❌ Failed to start server:', err);
+      process.exit(1);
+    });
 }
