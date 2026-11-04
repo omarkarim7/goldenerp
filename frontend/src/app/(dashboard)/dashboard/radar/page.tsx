@@ -11,7 +11,7 @@ import {
   TrendingUp, Activity, CheckCircle, FilePlus2, Timer, Globe2,
   FileSearch, Maximize2, Minimize2, Gavel, Handshake, ArrowRightLeft, Info,
   LayoutGrid, LayoutList, Archive, Trash2, ChevronRight, ChevronsLeft, ChevronsRight,
-  ShieldCheck, Target, Crosshair, Upload, Cloud
+  ShieldCheck, Target, Crosshair, Upload, Cloud, Settings
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -1251,87 +1251,33 @@ export default function RadarPage() {
             </p>
           </div>
 
-          <div className="flex items-center gap-3 shrink-0 flex-wrap">
-            {/* Auto-Scan Daily Toggle */}
-            <div className="flex items-center gap-2.5 bg-muted/60 p-2 px-3 rounded-2xl border border-border">
-              <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${autoScanConfig.enabled ? "bg-emerald-500 animate-pulse" : "bg-slate-400"}`} />
-              <div className="text-right">
-                <span className="text-[11px] font-bold text-foreground block leading-tight">
-                  الفحص اليومي التلقائي
-                </span>
-                <span className="text-[10px] text-muted-foreground font-mono">
-                  {autoScanConfig.enabled ? `مفعل (يومياً ${autoScanConfig.scheduledTime})` : "معطل مؤقتاً"}
-                </span>
-              </div>
-
-              <button
-                type="button"
-                onClick={handleToggleAutoScan}
-                disabled={isUpdatingAutoScan}
-                className={`px-2.5 py-1 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-                  autoScanConfig.enabled
-                    ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/25"
-                    : "bg-muted text-muted-foreground border border-border hover:text-foreground"
-                }`}
-              >
-                {autoScanConfig.enabled ? "مفعل" : "تفعيل"}
-              </button>
-            </div>
-
+          <div className="flex items-center gap-2.5 shrink-0 flex-wrap">
             {/* Clear / Clean Radar Button */}
             <Button
               variant="outline"
               onClick={handleClearAllPending}
-              className="border-rose-500/30 bg-rose-500/10 hover:bg-rose-600 hover:text-white text-rose-400 font-bold px-4 py-3.5 rounded-2xl text-xs sm:text-sm transition-all cursor-pointer shadow-sm active:scale-95 flex items-center gap-1.5"
+              className="border-rose-500/30 bg-rose-500/10 hover:bg-rose-600 hover:text-white text-rose-400 font-bold px-4 py-3 rounded-2xl text-xs sm:text-sm transition-all cursor-pointer shadow-sm active:scale-95 flex items-center gap-1.5"
               title="مسح وحذف كافة المناقصات الملتقطة بالرادار غير المسحوبة"
             >
               <Trash2 className="h-4 w-4" />
-              <span className="hidden sm:inline">مسح الملتقطات</span>
+              <span>مسح الملتقطات</span>
             </Button>
 
-            {/* Direct Import Modal Trigger Button */}
-            <Button
-              variant="outline"
-              onClick={() => setImportModalOpen(true)}
-              className="border-blue-500/30 bg-blue-500/10 hover:bg-blue-600 hover:text-white text-blue-500 dark:text-blue-400 font-bold px-4 py-3.5 rounded-2xl text-xs sm:text-sm transition-all cursor-pointer shadow-sm active:scale-95 flex items-center gap-1.5"
-              title="استيراد وتنزيل مناقصة مباشرة من رابط أو كود صفحة البوابة"
+            {/* Radar & Cloud Settings Shortcut */}
+            <Link
+              href="/dashboard/settings?tab=radar"
+              className="border-purple-500/30 bg-purple-500/10 hover:bg-purple-600 hover:text-white text-purple-400 font-bold px-4 py-3 rounded-2xl text-xs sm:text-sm transition-all cursor-pointer shadow-sm active:scale-95 flex items-center gap-1.5"
+              title="الانتقال إلى إعدادات الرادار والفحص التلقائي والبروكسي والسحابة"
             >
-              <Download className="h-4 w-4" />
-              <span>استيراد مناقصة من البوابة 🌐</span>
-            </Button>
-
-            {/* Free Proxy & Cloud Setup Button */}
-            <Button
-              variant="outline"
-              onClick={() => setProxyModalOpen(true)}
-              className={`px-3.5 py-3.5 rounded-2xl text-xs sm:text-sm font-bold transition-all cursor-pointer shadow-sm active:scale-95 flex items-center gap-1.5 ${
-                proxyConfigured || githubConfigured
-                  ? "border-emerald-500/50 bg-emerald-500/15 text-emerald-400 hover:bg-emerald-500/25"
-                  : "border-purple-500/30 bg-purple-500/10 hover:bg-purple-600 hover:text-white text-purple-400"
-              }`}
-              title="إعداد وتفعيل البروكسي الداخلي أو توكن الفحص السحابي"
-            >
-              <Globe2 className="h-4 w-4" />
-              <span>{proxyConfigured ? "البروكسي نشط 🟢" : githubConfigured ? "السحابة نشطة 🟢" : "ربط البروكسي والسحابة 🌐"}</span>
-            </Button>
-
-            {/* Cloud Auto-Scan 24/7 Shortcut */}
-            <a
-              href="https://github.com/omarkarim7/goldenerp/actions/workflows/radar-auto-scan.yml"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="border-emerald-500/40 bg-emerald-500/15 hover:bg-emerald-600 hover:text-white text-emerald-400 font-bold px-4 py-3.5 rounded-2xl text-xs sm:text-sm transition-all cursor-pointer shadow-sm active:scale-95 flex items-center gap-1.5"
-              title="تشغيل الفحص السحابي الذاتي عبر سحابة GitHub بدون استخدام جهازك نهائياً"
-            >
-              <Cloud className="h-4 w-4" />
-              <span>فحص سحابي 24/7 🚀</span>
-            </a>
+              <Settings className="h-4 w-4" />
+              <span>إعدادات الرادار والسحابة ⚙️</span>
+            </Link>
 
             {/* Single Unified Radar Scan Button */}
             <Button
               onClick={handleScan}
               disabled={isScanning}
-              className="bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-700 hover:from-blue-500 hover:to-indigo-600 text-white font-bold px-6 py-3.5 rounded-2xl shadow-xl shadow-blue-500/25 flex items-center gap-2.5 text-xs sm:text-sm active:scale-95 transition-all cursor-pointer border border-blue-400/30"
+              className="bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-700 hover:from-blue-500 hover:to-indigo-600 text-white font-bold px-6 py-3 rounded-2xl shadow-xl shadow-blue-500/25 flex items-center gap-2 text-xs sm:text-sm active:scale-95 transition-all cursor-pointer border border-blue-400/30"
             >
               <RefreshCw className={`h-4 w-4 ${isScanning ? "animate-spin" : ""}`} />
               <span>{isScanning ? "جاري الفحص المباشر..." : "تشغيل فحص الرادار الآن"}</span>
@@ -2699,16 +2645,14 @@ export default function RadarPage() {
                       <Cloud className="h-4 w-4" />
                       <span>تشغيل الفحص السحابي (GitHub Cloud) 🚀</span>
                     </a>
-                    <Button
-                      onClick={() => {
-                        closeScanOverlay();
-                        setImportModalOpen(true);
-                      }}
-                      className="w-full sm:flex-1 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-bold rounded-xl text-xs py-2.5 cursor-pointer shadow-md active:scale-95 transition-all flex items-center justify-center gap-1.5"
+                    <Link
+                      href="/dashboard/settings?tab=radar"
+                      onClick={closeScanOverlay}
+                      className="w-full sm:flex-1 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold rounded-xl text-xs py-2.5 cursor-pointer shadow-md active:scale-95 transition-all flex items-center justify-center gap-1.5 text-center"
                     >
-                      <Download className="h-3.5 w-3.5" />
-                      <span>استيراد مناقصة برابط مباشر 🌐</span>
-                    </Button>
+                      <Settings className="h-3.5 w-3.5" />
+                      <span>إعدادات الرادار والسحابة ⚙️</span>
+                    </Link>
                     <Button
                       variant="outline"
                       onClick={closeScanOverlay}

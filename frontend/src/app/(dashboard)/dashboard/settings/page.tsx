@@ -9,7 +9,7 @@ import {
   X, Landmark, FileText, Phone, Mail, MapPin, Hash,
   Clock, ShieldCheck, ChevronRight, ChevronLeft, RotateCcw, ArrowRight,
   Calendar, AlertTriangle, Timer, Hourglass, Trash2,
-  Send, Smartphone, MessageSquare, KeyRound, ExternalLink, ShieldAlert, CheckCheck, Moon
+  Send, Smartphone, MessageSquare, KeyRound, ExternalLink, ShieldAlert, CheckCheck, Moon, Cloud, Radar
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -497,6 +497,89 @@ export default function SettingsPage() {
       handleSettingChange("stage_alerts_config", JSON.stringify(nextMap));
       return nextMap;
     });
+  };
+
+  // Radar & Cloud 24/7 Automation State
+  const [radarAutoScan, setRadarAutoScan] = useState<{
+    enabled: boolean;
+    scheduledTime: string;
+    incremental: boolean;
+  }>({ enabled: true, scheduledTime: "09:00", incremental: true });
+  const [radarProxy, setRadarProxy] = useState<{
+    configured: boolean;
+    proxyUrl: string;
+    isCustom: boolean;
+    githubConfigured: boolean;
+    githubTokenMasked: string;
+  }>({ configured: false, proxyUrl: "", isCustom: false, githubConfigured: false, githubTokenMasked: "" });
+  const [radarProxyInput, setRadarProxyInput] = useState("");
+  const [radarGithubTokenInput, setRadarGithubTokenInput] = useState("");
+  const [isSavingRadarProxy, setIsSavingRadarProxy] = useState(false);
+  const [isUpdatingRadarAutoScan, setIsUpdatingRadarAutoScan] = useState(false);
+
+  const fetchRadarConfig = async () => {
+    try {
+      const [autoRes, proxyRes] = await Promise.all([
+        api.get("/radar/auto-scan-config").catch(() => null),
+        api.get("/radar/proxy-config").catch(() => null),
+      ]);
+      if (autoRes?.data) {
+        setRadarAutoScan({
+          enabled: autoRes.data.enabled ?? true,
+          scheduledTime: autoRes.data.scheduledTime || "09:00",
+          incremental: autoRes.data.incremental ?? true,
+        });
+      }
+      if (proxyRes?.data) {
+        setRadarProxy({
+          configured: Boolean(proxyRes.data.configured),
+          proxyUrl: proxyRes.data.proxyUrl || "",
+          isCustom: Boolean(proxyRes.data.isCustom),
+          githubConfigured: Boolean(proxyRes.data.githubConfigured),
+          githubTokenMasked: proxyRes.data.githubTokenMasked || "",
+        });
+      }
+    } catch {}
+  };
+
+  const handleToggleRadarAutoScan = async (newEnabled?: boolean, newTime?: string) => {
+    const nextEnabled = newEnabled !== undefined ? newEnabled : !radarAutoScan.enabled;
+    const nextTime = newTime || radarAutoScan.scheduledTime || "09:00";
+    try {
+      setIsUpdatingRadarAutoScan(true);
+      const res = await api.post("/radar/auto-scan-config", {
+        enabled: nextEnabled,
+        scheduledTime: nextTime,
+      });
+      setRadarAutoScan((prev) => ({ ...prev, enabled: nextEnabled, scheduledTime: nextTime }));
+      toast.success(res.data?.message || (nextEnabled ? "تم تفعيل الفحص اليومي التلقائي بنجاح" : "تم تعطيل الفحص اليومي التلقائي مؤقتاً"));
+    } catch {
+      toast.error("فشل تحديث إعدادات الفحص التلقائي");
+    } finally {
+      setIsUpdatingRadarAutoScan(false);
+    }
+  };
+
+  const handleSaveRadarProxyConfig = async () => {
+    try {
+      setIsSavingRadarProxy(true);
+      const res = await api.post("/radar/proxy-config", {
+        proxyUrl: radarProxyInput,
+        githubToken: radarGithubTokenInput,
+      });
+      if (res.data?.success) {
+        toast.success(res.data?.message || "تم حفظ وتفعيل إعدادات البروكسي والسحابة بنجاح 🟢");
+        await fetchRadarConfig();
+        setRadarProxyInput("");
+        setRadarGithubTokenInput("");
+      } else {
+        toast.error(res.data?.message || "فشل حفظ الإعدادات");
+      }
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || "حدث خطأ أثناء حفظ الإعدادات");
+    } finally {
+      setIsSavingRadarProxy(false);
+    }
   };
 
   // Telegram Bot Live Status & Actions
@@ -1863,71 +1946,287 @@ export default function SettingsPage() {
           )}
 
           {/* ========================================================================= */}
-          {/* RADAR TENDER DATA MANAGEMENT & CLEANUP ACTIONS                            */}
+          {/* RADAR TENDER DATA MANAGEMENT & CLOUD 24/7 AUTOMATION HUB                  */}
           {/* ========================================================================= */}
           {activeCategoryTab === "radar" && (
-            <div className="rounded-2xl border border-rose-500/30 bg-rose-500/[0.04] p-5 sm:p-6 space-y-4 shadow-sm">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-rose-500/15 text-rose-500 flex items-center justify-center font-bold shrink-0 border border-rose-500/25">
-                    <Trash2 className="h-5 w-5" />
+            <div className="space-y-6 animate-fade-in">
+              {/* Top Banner: Quick Link to Radar Screen */}
+              <div className="rounded-3xl border-2 border-blue-500/30 bg-gradient-to-r from-blue-900/20 via-indigo-900/10 to-slate-900/40 p-5 sm:p-6 flex flex-col sm:flex-row items-center justify-between gap-4 shadow-xl">
+                <div className="flex items-center gap-4 text-right">
+                  <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-500 flex items-center justify-center text-white shadow-lg shadow-blue-500/30 shrink-0">
+                    <Globe2 className="h-6 w-6" />
                   </div>
                   <div>
-                    <h3 className="font-bold text-sm text-foreground">
-                      إدارة وحذف المناقصات والعمليات الملتقطة بالرادار
+                    <h3 className="font-black text-base sm:text-lg text-foreground">
+                      مركز التحكم في رادار المناقصات والسحابة 24/7
                     </h3>
                     <p className="text-xs text-muted-foreground mt-0.5">
-                      تطهير الرادار وحذف المناقصات غير المرغوبة أو مسح كافة العمليات التي تم رصدها ولم تسحب بعد
+                      ضبط الفحص التلقائي المجدول، إعداد بروكسي تجاوز الحجب، وتشغيل الرصد السحابي على مدار الساعة
                     </p>
                   </div>
                 </div>
 
-                <div className="flex items-center gap-2 flex-wrap">
-                  {/* Reset Company Assignments */}
-                  <Button
-                    variant="outline"
-                    onClick={async () => {
-                      try {
-                        const res = await api.post("/radar/reset-company-assignments");
-                        toast.success(res.data?.message || "تم إلغاء أي ربط مسبق بالشركات بنجاح");
-                      } catch {
-                        toast.error("فشل تصفير ربط الشركات");
-                      }
-                    }}
-                    className="border-blue-500/40 bg-blue-500/10 hover:bg-blue-600 hover:text-white text-blue-500 text-xs font-bold rounded-xl h-9 px-3.5 cursor-pointer transition-all active:scale-95"
-                  >
-                    <span>تصفير ربط الشركات بالرادار</span>
-                  </Button>
+                <Link
+                  href="/dashboard/radar"
+                  className="bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-700 hover:from-blue-500 hover:to-indigo-600 text-white font-bold px-5 py-3 rounded-2xl shadow-lg shadow-blue-500/25 flex items-center gap-2 text-xs sm:text-sm active:scale-95 transition-all cursor-pointer whitespace-nowrap border border-blue-400/30"
+                >
+                  <Radar className="h-4 w-4" />
+                  <span>الانتقال لشاشة رادار المناقصات 🌐</span>
+                </Link>
+              </div>
 
-                  {/* Clear all pending */}
-                  <Button
-                    variant="destructive"
-                    onClick={async () => {
-                      if (!confirm("تحذير: هل أنت متأكد من مسح وحذف كافة العمليات والمناقصات الملتقطة بالرادار التي لم تُسحب كعمليات بعد؟")) return;
-                      try {
-                        const res = await api.delete("/radar/clear-pending");
-                        toast.success(res.data?.message || "تم مسح كافة المناقصات الملتقطة بالرادار بنجاح");
-                      } catch {
-                        toast.error("فشل مسح مناقصات الرادار");
-                      }
-                    }}
-                    className="bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold rounded-xl h-9 px-3.5 cursor-pointer shadow-md active:scale-95 transition-all flex items-center gap-1.5"
-                  >
-                    <Trash2 className="h-3.5 w-3.5" />
-                    <span>مسح كافة الملتقطات بالرادار</span>
-                  </Button>
+              {/* Grid: 2 Columns for Cloud 24/7 & Webshare Proxy */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+                {/* 1. Cloud 24/7 Hub (GitHub Actions) */}
+                <div className="rounded-3xl border border-emerald-500/30 bg-emerald-500/[0.03] p-5 sm:p-6 space-y-4 shadow-sm flex flex-col justify-between">
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2.5">
+                        <div className="w-9 h-9 rounded-xl bg-emerald-500/15 text-emerald-500 flex items-center justify-center font-bold">
+                          <Cloud className="h-5 w-5" />
+                        </div>
+                        <div>
+                          <h4 className="font-bold text-sm text-foreground">الفحص السحابي المستقل 24/7</h4>
+                          <span className="text-[11px] text-muted-foreground">يعمل ذاتياً بدون فتح جهازك</span>
+                        </div>
+                      </div>
+                      <Badge className="bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/30 font-mono text-[11px]">
+                        {radarProxy.githubConfigured ? "السحابة نشطة ومجدولة 🟢" : "السحابة مبرمجة 🚀"}
+                      </Badge>
+                    </div>
+
+                    <div className="p-3.5 rounded-2xl bg-card border border-border text-xs leading-relaxed space-y-2 text-muted-foreground">
+                      <div className="flex items-center gap-2 font-bold text-foreground">
+                        <Clock className="h-4 w-4 text-emerald-500" />
+                        <span>مواعيد العمل التلقائية:</span>
+                      </div>
+                      <p>
+                        السحابة مبرمجة لتعمل أوتوماتيكياً كل يوم الساعة <strong>09:00 صباحاً بتوقيت القاهرة</strong>، وتقوم بفحص البوابة وحفظ كافة المناقصات الجديدة مباشرة في قاعدة بيانات موقعك ahdahd.eu.
+                      </p>
+                    </div>
+
+                    {/* GitHub Token Input */}
+                    <div className="space-y-1.5 pt-2">
+                      <label className="text-xs font-bold text-foreground block">
+                        رمز التوثيق السحابي (GitHub Token):
+                      </label>
+                      <div className="flex items-center gap-2">
+                        <Input
+                          type="password"
+                          placeholder={radarProxy.githubConfigured ? `محفوظ: ${radarProxy.githubTokenMasked}` : "ghp_xxxxxxxxxxxx"}
+                          value={radarGithubTokenInput}
+                          onChange={(e) => setRadarGithubTokenInput(e.target.value)}
+                          className="bg-card border-border text-xs h-10 font-mono"
+                        />
+                      </div>
+                      <span className="text-[10px] text-muted-foreground block">
+                        يُستخدم لتشغيل الفحص السحابي بنقرة زر واحدة أو تحديث مجدولات GitHub Actions.
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="pt-3 border-t border-border flex items-center gap-2">
+                    <a
+                      href="https://github.com/omarkarim7/goldenerp/actions/workflows/radar-auto-scan.yml"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex-1 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold py-2.5 px-4 rounded-xl text-xs flex items-center justify-center gap-1.5 shadow-md active:scale-95 transition-all text-center"
+                    >
+                      <Cloud className="h-4 w-4" />
+                      <span>تشغيل الفحص السحابي الآن (GitHub) ↗</span>
+                    </a>
+                  </div>
+                </div>
+
+                {/* 2. Webshare Proxy Hub */}
+                <div className="rounded-3xl border border-purple-500/30 bg-purple-500/[0.03] p-5 sm:p-6 space-y-4 shadow-sm flex flex-col justify-between">
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2.5">
+                        <div className="w-9 h-9 rounded-xl bg-purple-500/15 text-purple-500 flex items-center justify-center font-bold">
+                          <Globe2 className="h-5 w-5" />
+                        </div>
+                        <div>
+                          <h4 className="font-bold text-sm text-foreground">بروكسي تجاوز الحجب (Webshare Proxy)</h4>
+                          <span className="text-[11px] text-muted-foreground">لتخطي جدار الحماية وTimeout</span>
+                        </div>
+                      </div>
+                      <Badge className={radarProxy.configured ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/30 font-mono text-[11px]" : "bg-slate-500/15 text-slate-400 font-mono text-[11px]"}>
+                        {radarProxy.configured ? "البروكسي نشط 🟢" : "غير مفعل"}
+                      </Badge>
+                    </div>
+
+                    <div className="p-3.5 rounded-2xl bg-card border border-border text-xs leading-relaxed space-y-2 text-muted-foreground">
+                      <div className="flex items-center gap-2 font-bold text-foreground">
+                        <ShieldCheck className="h-4 w-4 text-purple-500" />
+                        <span>وظيفة البروكسي الداخلي:</span>
+                      </div>
+                      <p>
+                        يقوم بتمرير اتصالات البوابة الحكومية عبر خوادم آمنة (Webshare Rotating Proxy) مما يضمن عدم حجب سيرفر Hostinger وتجاوز رسائل Timeout بنجاح.
+                      </p>
+                    </div>
+
+                    {/* Proxy URL Input */}
+                    <div className="space-y-1.5 pt-2">
+                      <label className="text-xs font-bold text-foreground block">
+                        رابط البروكسي (Proxy URL):
+                      </label>
+                      <Input
+                        type="text"
+                        placeholder={radarProxy.configured ? `البروكسي الفعال: ${radarProxy.proxyUrl}` : "http://username:password@p.webshare.io:80/"}
+                        value={radarProxyInput}
+                        onChange={(e) => setRadarProxyInput(e.target.value)}
+                        className="bg-card border-border text-xs h-10 font-mono"
+                        dir="ltr"
+                      />
+                      <span className="text-[10px] text-muted-foreground block">
+                        يدعم صيغة HTTP أو SOCKS5 مع اسم المستخدم وكلمة المرور.
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="pt-3 border-t border-border flex items-center gap-2">
+                    <Button
+                      onClick={handleSaveRadarProxyConfig}
+                      disabled={isSavingRadarProxy || (!radarProxyInput && !radarGithubTokenInput)}
+                      className="flex-1 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold py-2.5 px-4 rounded-xl text-xs flex items-center justify-center gap-1.5 shadow-md active:scale-95 transition-all cursor-pointer"
+                    >
+                      {isSavingRadarProxy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                      <span>حفظ وتفعيل إعدادات البروكسي والسحابة 💾</span>
+                    </Button>
+                  </div>
                 </div>
               </div>
 
-              {/* Neutral Radar Policy Notice */}
-              <div className="p-3.5 rounded-xl bg-card border border-border text-xs leading-relaxed space-y-1 text-muted-foreground">
-                <div className="flex items-center gap-2 font-bold text-foreground">
-                  <ShieldCheck className="h-4 w-4 text-emerald-500" />
-                  <span>طبيعة عمل الرادار الحكومي العام:</span>
+              {/* 3. Auto-Scan Schedule & Daily Timing Settings */}
+              <div className="rounded-3xl border border-blue-500/30 bg-blue-500/[0.03] p-5 sm:p-6 space-y-4 shadow-sm">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-border/80 pb-4">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-blue-500/15 text-blue-500 flex items-center justify-center font-bold shrink-0">
+                      <Timer className="h-5 w-5" />
+                    </div>
+                    <div>
+                      <h4 className="font-bold text-sm text-foreground">جدولة الفحص اليومي التلقائي (Cron Scheduler)</h4>
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        تحديد أوقات عمل محرك الفحص اليومي وتفعيل الرصد الاستباقي للفرص
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-3">
+                    <Badge variant="outline" className={`font-mono text-xs px-3 py-1 ${radarAutoScan.enabled ? "text-emerald-500 border-emerald-500/30 bg-emerald-500/10" : "text-slate-400 border-border"}`}>
+                      {radarAutoScan.enabled ? `مفعل (يومياً ${radarAutoScan.scheduledTime})` : "معطل مؤقتاً"}
+                    </Badge>
+                    <button
+                      type="button"
+                      onClick={() => handleToggleRadarAutoScan()}
+                      disabled={isUpdatingRadarAutoScan}
+                      className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                        radarAutoScan.enabled
+                          ? "bg-emerald-500/20 text-emerald-500 border border-emerald-500/30 hover:bg-emerald-500/30"
+                          : "bg-muted text-muted-foreground border border-border hover:text-foreground"
+                      }`}
+                    >
+                      {radarAutoScan.enabled ? "تعطيل الفحص مؤقتاً" : "تفعيل الفحص اليومي"}
+                    </button>
+                  </div>
                 </div>
-                <p>
-                  كافة المناقصات المرصودة بالرادار هي فرص ومناقصات حكومية عامة محايدة بدون اقتراح أو تعيين مسبق لأي شركة. يتم اختيار وتحديد الشركة المسؤولة يدوياً بمعرفتك حصراً عند الضغط على &quot;سحب كعملية&quot;.
-                </p>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-1">
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold text-foreground block">
+                      التوقيت اليومي للفحص التلقائي:
+                    </label>
+                    <select
+                      value={radarAutoScan.scheduledTime}
+                      onChange={(e) => handleToggleRadarAutoScan(radarAutoScan.enabled, e.target.value)}
+                      className="w-full bg-card border border-border rounded-xl px-3 h-10 text-xs font-bold text-foreground cursor-pointer focus:outline-none focus:border-blue-500"
+                    >
+                      <option value="08:00">08:00 صباحاً (بداية الدوام الحكومي)</option>
+                      <option value="09:00">09:00 صباحاً (الموعد الرسمي الموصى به)</option>
+                      <option value="10:00">10:00 صباحاً</option>
+                      <option value="12:00">12:00 ظهراً (منتصف اليوم)</option>
+                      <option value="15:00">03:00 عصراً (بعد إغلاق الجلسات)</option>
+                      <option value="18:00">06:00 مساءً</option>
+                    </select>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold text-foreground block">
+                      نظام الفحص التراكمي (Smart Incremental Mode):
+                    </label>
+                    <div className="h-10 flex items-center px-3 rounded-xl bg-card border border-border text-xs text-muted-foreground">
+                      <span className="w-2 h-2 rounded-full bg-emerald-500 mr-2 ml-1" />
+                      <span>مفعل تلقائياً لمنع تكرار المناقصات المسحوبة مسبقاً وتوفير الموارد</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* 4. Radar Data Management & Cleanup */}
+              <div className="rounded-2xl border border-rose-500/30 bg-rose-500/[0.04] p-5 sm:p-6 space-y-4 shadow-sm">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-rose-500/15 text-rose-500 flex items-center justify-center font-bold shrink-0 border border-rose-500/25">
+                      <Trash2 className="h-5 w-5" />
+                    </div>
+                    <div>
+                      <h3 className="font-bold text-sm text-foreground">
+                        إدارة وحذف المناقصات والعمليات الملتقطة بالرادار
+                      </h3>
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        تطهير الرادار وحذف المناقصات غير المرغوبة أو مسح كافة العمليات التي تم رصدها ولم تسحب بعد
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2 flex-wrap">
+                    {/* Reset Company Assignments */}
+                    <Button
+                      variant="outline"
+                      onClick={async () => {
+                        try {
+                          const res = await api.post("/radar/reset-company-assignments");
+                          toast.success(res.data?.message || "تم إلغاء أي ربط مسبق بالشركات بنجاح");
+                        } catch {
+                          toast.error("فشل تصفير ربط الشركات");
+                        }
+                      }}
+                      className="border-blue-500/40 bg-blue-500/10 hover:bg-blue-600 hover:text-white text-blue-500 text-xs font-bold rounded-xl h-9 px-3.5 cursor-pointer transition-all active:scale-95"
+                    >
+                      <span>تصفير ربط الشركات بالرادار</span>
+                    </Button>
+
+                    {/* Clear all pending */}
+                    <Button
+                      variant="destructive"
+                      onClick={async () => {
+                        if (!confirm("تحذير: هل أنت متأكد من مسح وحذف كافة العمليات والمناقصات الملتقطة بالرادار التي لم تُسحب كعمليات بعد؟")) return;
+                        try {
+                          const res = await api.delete("/radar/clear-pending");
+                          toast.success(res.data?.message || "تم مسح كافة المناقصات الملتقطة بالرادار بنجاح");
+                        } catch {
+                          toast.error("فشل مسح مناقصات الرادار");
+                        }
+                      }}
+                      className="bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold rounded-xl h-9 px-3.5 cursor-pointer shadow-md active:scale-95 transition-all flex items-center gap-1.5"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                      <span>مسح كافة الملتقطات بالرادار</span>
+                    </Button>
+                  </div>
+                </div>
+
+                {/* Neutral Radar Policy Notice */}
+                <div className="p-3.5 rounded-xl bg-card border border-border text-xs leading-relaxed space-y-1 text-muted-foreground">
+                  <div className="flex items-center gap-2 font-bold text-foreground">
+                    <ShieldCheck className="h-4 w-4 text-emerald-500" />
+                    <span>طبيعة عمل الرادار الحكومي العام:</span>
+                  </div>
+                  <p>
+                    كافة المناقصات المرصودة بالرادار هي فرص ومناقصات حكومية عامة محايدة بدون اقتراح أو تعيين مسبق لأي شركة. يتم اختيار وتحديد الشركة المسؤولة يدوياً بمعرفتك حصراً عند الضغط على &quot;سحب كعملية&quot;.
+                  </p>
+                </div>
               </div>
             </div>
           )}
