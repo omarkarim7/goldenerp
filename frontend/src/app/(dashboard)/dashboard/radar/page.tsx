@@ -324,19 +324,17 @@ export default function RadarPage() {
       const res = await api.post("/radar/scan", { pagesCount: 10 });
       if (res.data?.success) {
         setScanStep(4);
-        if (res.data?.isCloudRun) {
-          const msg = res.data.message || "تم إطلاق الفحص السحابي عبر GitHub بنجاح! جاري فحص البوابة وجلب العمليات...";
+        if (res.data?.isCloudRun || res.data?.isCloudGuided) {
+          const msg = res.data.message || "🚀 تم تحديث الرادار بنجاح!";
           setScanResult({
             success: true,
             total: 0,
-            totalAll: items.length,
+            totalAll: res.data?.totalScanned || items.length || 10,
             isNew: false,
             message: msg,
           });
           toast.success(msg);
-          setTimeout(async () => {
-            await fetchData();
-          }, 22000);
+          await fetchData();
           return;
         }
 
@@ -2538,18 +2536,30 @@ export default function RadarPage() {
               {scanResult?.success && !scanResult?.isNew && (
                 <div className="p-4 rounded-2xl bg-teal-950/80 border border-teal-400/40 text-teal-100 text-xs space-y-3 shadow-lg">
                   <p className="font-bold text-xs sm:text-sm text-teal-200 leading-relaxed text-right">
-                    الرادار محدث: لا توجد مناقصات جديدة منذ آخر فحص
+                    {scanResult.message || "الرادار محدث: لا توجد مناقصات جديدة منذ آخر فحص"}
                   </p>
                   <p className="text-[11px] text-teal-300/80 text-right leading-relaxed">
-                    تم التأكد من فحص أحدث المناقصات الحكومية المنشورة وتطابقها دون وجود أي فرص جديدة بعد آخر عملية مسجلة لديك. كافة العمليات المسجلة بالرادار ({scanResult.totalAll || totalCount || items.length || 25} مناقصة) جاهزة للمتابعة والسحب.
+                    تم التأكد من فحص أحدث المناقصات الحكومية المنشورة وتطابقها. كافة العمليات المسجلة بالرادار ({scanResult.totalAll || totalCount || items.length || 10} مناقصة رسمية) محدثة وجاهزة للسحب والدراسة.
                   </p>
-                  <Button
-                    onClick={closeScanOverlay}
-                    className="w-full bg-teal-600 hover:bg-teal-500 text-white font-black rounded-xl text-xs py-2.5 cursor-pointer shadow-md active:scale-95 transition-all flex items-center justify-center gap-2"
-                  >
-                    <span>العودة لكافة مناقصات الرادار ({scanResult.totalAll || totalCount || items.length || 25})</span>
-                    <ArrowRight className="h-4 w-4" />
-                  </Button>
+                  <div className="flex flex-col sm:flex-row items-center gap-2 pt-1">
+                    <Button
+                      onClick={closeScanOverlay}
+                      className="w-full sm:flex-1 bg-teal-600 hover:bg-teal-500 text-white font-black rounded-xl text-xs py-2.5 cursor-pointer shadow-md active:scale-95 transition-all flex items-center justify-center gap-2"
+                    >
+                      <span>عرض مناقصات الرادار ({scanResult.totalAll || totalCount || items.length || 10})</span>
+                      <ArrowRight className="h-4 w-4" />
+                    </Button>
+                    <a
+                      href="https://github.com/omarkarim7/goldenerp/actions/workflows/radar-auto-scan.yml"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="w-full sm:w-auto px-4 bg-slate-800 hover:bg-slate-700 text-emerald-300 border border-emerald-500/30 font-bold rounded-xl text-xs py-2.5 cursor-pointer shadow-md active:scale-95 transition-all flex items-center justify-center gap-1.5 text-center"
+                      title="تشغيل فحص سحابي إضافي 24/7 عبر GitHub بدون فتح جهازك"
+                    >
+                      <Cloud className="h-3.5 w-3.5" />
+                      <span>فحص سحابي يدوي 🚀</span>
+                    </a>
+                  </div>
                 </div>
               )}
 
