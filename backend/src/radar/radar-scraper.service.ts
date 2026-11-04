@@ -1,6 +1,8 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service.js';
 
+process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
+
 export interface ScrapedTenderBasic {
   externalId: string;
   refNo?: string;
@@ -122,11 +124,17 @@ export class RadarScraperService {
     this.logger.log(`Logging in to Egyptian Tenders Portal (${this.email})...`);
 
     const loginPageUrl = `${this.baseUrl}/Account/Login?ReturnUrl=%2FHome`;
-    const getRes = await fetch(loginPageUrl, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-      }
-    });
+    let getRes: any;
+    try {
+      getRes = await fetch(loginPageUrl, {
+        signal: AbortSignal.timeout(10000),
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+        }
+      });
+    } catch (err: any) {
+      throw new Error(`تعذر الاتصال ببوابة التعاقدات الحكومية المصرية: ${err.message || 'انتهت مهلة الاتصال'}`);
+    }
 
     const html = await getRes.text();
     const getCookies = getRes.headers.getSetCookie ? getRes.headers.getSetCookie() : [getRes.headers.get('set-cookie')].filter(Boolean);
@@ -150,17 +158,23 @@ export class RadarScraperService {
     body.append('Email', this.email);
     body.append('Password', this.password);
 
-    const postRes = await fetch(loginPageUrl, {
-      method: 'POST',
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Content-Type': 'application/x-www-form-urlencoded',
-        'Cookie': Object.entries(cookieMap).map(([k, v]) => `${k}=${v}`).join('; '),
-        'Referer': loginPageUrl
-      },
-      body: body.toString(),
-      redirect: 'manual'
-    });
+    let postRes: any;
+    try {
+      postRes = await fetch(loginPageUrl, {
+        method: 'POST',
+        signal: AbortSignal.timeout(10000),
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+          'Content-Type': 'application/x-www-form-urlencoded',
+          'Cookie': Object.entries(cookieMap).map(([k, v]) => `${k}=${v}`).join('; '),
+          'Referer': loginPageUrl
+        },
+        body: body.toString(),
+        redirect: 'manual'
+      });
+    } catch (err: any) {
+      throw new Error(`فشل إرسال بيانات الدخول لبوابة التعاقدات الحكومية: ${err.message || 'انتهت مهلة الاتصال'}`);
+    }
 
     const postCookies = postRes.headers.getSetCookie ? postRes.headers.getSetCookie() : [postRes.headers.get('set-cookie')].filter(Boolean);
     for (const c of postCookies) {
@@ -623,8 +637,9 @@ export class RadarScraperService {
     updatedCount: number;
     message: string;
   }> {
-    const maxPages = Math.max(pagesCount || 10, 5);
-    this.logger.log(`Starting Smart Incremental Radar Scan (maxPages: ${maxPages}, forceFullScan: ${forceFullScan})...`);
+    try {
+      const maxPages = Math.max(pagesCount || 10, 5);
+      this.logger.log(`Starting Smart Incremental Radar Scan (maxPages: ${maxPages}, forceFullScan: ${forceFullScan})...`);
 
     // 1. Ensure RadarSource exists
     let source = await this.prisma.radarSource.findFirst({
@@ -826,6 +841,16 @@ export class RadarScraperService {
       updatedCount,
       message: msg,
     };
+    } catch (err: any) {
+      this.logger.error(`Smart Incremental Scan failed: ${err.message}`, err.stack);
+      return {
+        success: false,
+        totalScanned: 0,
+        newCount: 0,
+        updatedCount: 0,
+        message: err.message || 'فشل الاتصال ببوابة التعاقدات الحكومية المصرية. يرجى إعادة المحاولة.',
+      };
+    }
   }
 
   /**

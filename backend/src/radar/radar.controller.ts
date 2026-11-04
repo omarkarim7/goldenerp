@@ -33,8 +33,18 @@ export class RadarController {
 
   // 2. Trigger on-demand live radar crawl/scan
   @Post('scan')
-  scan(@Body('pagesCount') pagesCount?: number) {
-    return this.service.scan(pagesCount ? Number(pagesCount) : 10);
+  async scan(@Body('pagesCount') pagesCount?: number) {
+    try {
+      return await this.service.scan(pagesCount ? Number(pagesCount) : 10);
+    } catch (err: any) {
+      return {
+        success: false,
+        totalScanned: 0,
+        newCount: 0,
+        updatedCount: 0,
+        message: err.message || 'حدث خطأ أثناء فحص البوابة الحكومية',
+      };
+    }
   }
 
   // Auto-scan daily config

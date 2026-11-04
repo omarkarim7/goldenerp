@@ -310,13 +310,14 @@ export default function RadarPage() {
           toast.info(msg);
         }
       } else {
+        const errorMsg = res.data?.message || "تعذر إكمال الفحص التلقائي من البوابة الحكومية. يرجى إعادة المحاولة.";
         setScanResult({
           success: false,
           total: 0,
           isNew: false,
-          message: "تعذر إكمال الفحص التلقائي من البوابة الحكومية. يرجى إعادة المحاولة.",
+          message: errorMsg,
         });
-        toast.error("تعذر إكمال الفحص التلقائي");
+        toast.error(errorMsg);
       }
     } catch (err: any) {
       setScanResult({

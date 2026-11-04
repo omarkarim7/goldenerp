@@ -23,6 +23,15 @@ export class AppController {
     };
   }
 
+  @Get('site-visits')
+  async getSiteVisits() {
+    return this.prisma.visit.findMany({
+      take: 10,
+      orderBy: { visitDate: 'desc' },
+      include: { employee: true },
+    }).catch(() => []);
+  }
+
   @Get('public-doc/:fileName')
   async getPublicDoc(@Param('fileName') fileName: string, @Res() res: Response) {
     const safeName = decodeURIComponent(fileName).replace(/[^a-zA-Z0-9_\-\.]/g, '');

@@ -151,9 +151,20 @@ export class RadarService implements OnModuleInit {
 
   // --- Live Scan (100% Real Portal Scraper with Smart Incremental Crawling — Zero Synthetic Generation) ---
   async scan(pagesCount: number = 10) {
-    // Run automatic cleanup first to keep DB pristine
-    await this.cleanupLegacyMockData().catch(() => {});
-    return this.scraper.scan(pagesCount);
+    try {
+      // Run automatic cleanup first to keep DB pristine
+      await this.cleanupLegacyMockData().catch(() => {});
+      return await this.scraper.scan(pagesCount);
+    } catch (err: any) {
+      this.logger.error(`Radar live scan error: ${err.message}`, err.stack);
+      return {
+        success: false,
+        totalScanned: 0,
+        newCount: 0,
+        updatedCount: 0,
+        message: err.message || 'تعذر إكمال الفحص المباشر للبوابة الحكومية',
+      };
+    }
   }
 
   // --- Auto Daily Scan Scheduled Task (Checks dynamically against configured scheduledTime) ---

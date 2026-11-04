@@ -253,7 +253,7 @@ export default function DashboardPage() {
 
         // 5. Fetch real site visits
         try {
-          const visitRes = await api.get("/site-visits");
+          const visitRes = await api.get("/employees/visits");
           const vData = visitRes.data;
           if (Array.isArray(vData) && vData.length > 0) {
             setDashboardVisits(
