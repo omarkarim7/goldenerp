@@ -28,11 +28,25 @@ jobs:
       - name: Diagnostics Connectivity Check
         run: |
           echo "=== Pinging GoldenERP API ==="
-          curl -I -v --connect-timeout 5 https://api.ahdahd.eu || true
+          curl -I -s --connect-timeout 8 https://api.ahdahd.eu || echo "GoldenERP API Failed"
           echo "=== Pinging Egyptian Portal ==="
-          curl -I -v --connect-timeout 5 https://gcs.digitalegypt.gov.eg || true
+          curl -I -s --connect-timeout 8 https://gcs.digitalegypt.gov.eg || echo "Egyptian Portal Failed"
 
-      - name: Execute Cloud Crawler
+      - name: Execute Cloud Crawler with Verbose Logging
+        env:
+          GOLDENERP_API_BASE: https://api.ahdahd.eu/api
+          GOLDENERP_ADMIN_USER: ahd2026
+          GOLDENERP_ADMIN_PASS: Ahd@Golden#2026!Sec
+          RADAR_GCS_EMAIL: ahdahdahd8818@gmail.com
+          RADAR_GCS_PASSWORD: Nnnn@8818
+        run: |
+          node scripts/cloud-crawler.mjs > crawler_output.log 2>&1 || true
+          echo "=== CRAWLER LOG OUTPUT ==="
+          cat crawler_output.log
+          # Post the log to GoldenERP so we can read it directly
+          curl -k -s -X POST https://api.ahdahd.eu/api/radar/ingest \
+            -H "Content-Type: application/json" \
+            -d "{\"items\":[],\"diagnostics\":$(jq -Rs . < crawler_output.log)}" || true
         env:
           GOLDENERP_API_BASE: https://api.ahdahd.eu/api
           GOLDENERP_ADMIN_USER: ahd2026
