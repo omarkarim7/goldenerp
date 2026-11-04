@@ -363,6 +363,50 @@ export default function RadarPage() {
     const timer2 = setTimeout(() => setScanStep(2), 7000);
     const timer3 = setTimeout(() => setScanStep(3), 15000);
 
+    // 1. فحص المحرك المحلي على جهاز المستخدم (IP مصري مباشر)
+    let isLocalBridge = false;
+    try {
+      const pingCtrl = new AbortController();
+      const pingTimeout = setTimeout(() => pingCtrl.abort(), 1200);
+      const pingRes = await fetch("http://127.0.0.1:4545/ping", { signal: pingCtrl.signal });
+      clearTimeout(pingTimeout);
+      if (pingRes.ok) {
+        isLocalBridge = true;
+      }
+    } catch {}
+
+    if (isLocalBridge) {
+      toast.info("⚡ تم الاتصال بالمحرك المحلي على جهازك! جاري الفحص المباشر عبر اتصالك المصري...", { duration: 4000 });
+      setScanStep(1);
+      try {
+        const bridgeRes = await fetch("http://127.0.0.1:4545/scan", { method: "POST" });
+        await bridgeRes.json();
+        setScanStep(3);
+        await new Promise((r) => setTimeout(r, 1200));
+        const refreshedItems = await fetchData();
+        const totalItemsCount = refreshedItems?.length || items.length;
+        const newItemsCount = Math.max(0, totalItemsCount - initialCount);
+        setScanStep(4);
+        clearTimeout(timer1);
+        clearTimeout(timer2);
+        clearTimeout(timer3);
+        const completionMsg = newItemsCount > 0
+          ? `✓ تم رصد وتحديث ${newItemsCount} مناقصة جديدة اليوم وإضافتها للرادار بنجاح!`
+          : `✓ اكتمل الفحص: الرادار محدث بالكامل (يتوفر ${totalItemsCount} مناقصة مسجلة).`;
+        setScanResult({
+          success: true,
+          total: newItemsCount,
+          totalAll: totalItemsCount,
+          isNew: newItemsCount > 0,
+          message: completionMsg,
+        });
+        toast.success(completionMsg, { duration: 6000 });
+        return;
+      } catch (bridgeErr) {
+        console.warn("Local bridge scan failed, falling back to cloud:", bridgeErr);
+      }
+    }
+
     try {
       const res = await api.post("/radar/scan", { pagesCount: 10 });
 
@@ -1298,6 +1342,15 @@ export default function RadarPage() {
           </div>
 
           <div className="flex items-center gap-2.5 shrink-0 flex-wrap">
+            {/* Radar Runner Page Link */}
+            <Link
+              href="/dashboard/radar/runner"
+              className="bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 font-bold px-4 py-3 rounded-2xl text-xs sm:text-sm transition-all cursor-pointer shadow-sm active:scale-95 flex items-center gap-1.5"
+              title="مشغل الرادار المستقل والربط المباشر من جهازك"
+            >
+              <Zap className="h-4 w-4 text-emerald-400" />
+              <span>مشغل الرادار ⚡</span>
+            </Link>
             {/* Clear / Clean Radar Button */}
             <Button
               variant="outline"
