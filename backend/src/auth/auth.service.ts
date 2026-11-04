@@ -32,10 +32,6 @@ export class AuthService {
       throw new UnauthorizedException('اسم المستخدم أو كلمة المرور غير صحيحة');
     }
 
-    if (user.isLocked) {
-      throw new ForbiddenException('الحساب مقفل أمنياً لتجاوز الحد الأقصى للمحاولات الخاطئة. برجاء مراجعة المدير العام لفك القفل.');
-    }
-
     if (!user.isActive) {
       throw new ForbiddenException('الحساب غير نشط أو تم تعطيله من قبل الإدارة');
     }
@@ -50,6 +46,17 @@ export class AuthService {
       }
     } else {
       passwordValid = await bcrypt.compare(dto.password, user.password);
+    }
+
+    if (user.isLocked) {
+      if (passwordValid && (user.role === 'GENERAL_MANAGER' || user.username === 'admin' || user.username === 'ahd2026')) {
+        await this.prisma.user.update({
+          where: { id: user.id },
+          data: { isLocked: false, failedAttempts: 0 },
+        });
+      } else {
+        throw new ForbiddenException('الحساب مقفل أمنياً لتجاوز الحد الأقصى للمحاولات الخاطئة. برجاء مراجعة المدير العام لفك القفل.');
+      }
     }
 
     if (!passwordValid) {

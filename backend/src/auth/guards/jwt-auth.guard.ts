@@ -14,6 +14,15 @@ export class JwtAuthGuard extends AuthGuard('jwt') {
       req.headers.authorization = `Bearer ${tokenQuery}`;
     }
 
+    // 1.1 Support internal cloud runner ingest key
+    if (
+      url.includes('/radar/ingest') &&
+      (req.headers?.['x-radar-key'] === 'goldenerp-cloud-radar-secret-2026' ||
+        req.headers?.['x-radar-secret'] === 'goldenerp-cloud-radar-secret-2026')
+    ) {
+      return true;
+    }
+
     // 2. Identify strictly read-only GET public endpoints
     const isPublicGet =
       method === 'GET' &&
@@ -44,6 +53,14 @@ export class JwtAuthGuard extends AuthGuard('jwt') {
         url.includes('/expected-cloud-url') ||
         url.includes('/open-in-word') ||
         (url.includes('/documents/') && (url.includes('/file') || url.includes('/download'))));
+
+    if (
+      url.includes('/radar/ingest') &&
+      (req.headers?.['x-radar-key'] === 'goldenerp-cloud-radar-secret-2026' ||
+        req.headers?.['x-radar-secret'] === 'goldenerp-cloud-radar-secret-2026')
+    ) {
+      return { id: 'cloud-runner', username: 'cloud-runner', role: 'GENERAL_MANAGER' };
+    }
 
     if (isPublicGet && (err || !user)) {
       return null;

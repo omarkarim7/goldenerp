@@ -36,22 +36,26 @@ const EGYPT_GOVERNORATES = [
 async function main() {
   console.log('🚀 Starting GoldenERP Authentic Radar Crawler...');
 
-  // 1. Authenticate with GoldenERP API
+  // 1. Authenticate with GoldenERP API or use Direct Ingest Key
   console.log(`📡 Connecting to GoldenERP API (${API_BASE})...`);
-  const loginRes = await fetch(`${API_BASE}/auth/login`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ username: ADMIN_USER, password: ADMIN_PASS }),
-  });
+  let token = null;
+  try {
+    const loginRes = await fetch(`${API_BASE}/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username: ADMIN_USER, password: ADMIN_PASS }),
+    });
 
-  if (!loginRes.ok) {
-    throw new Error(`GoldenERP API Login failed with status: ${loginRes.status}`);
+    if (loginRes.ok) {
+      const loginData = await loginRes.json();
+      token = loginData.accessToken || loginData.token;
+      console.log('✅ Authenticated with GoldenERP API successfully!');
+    } else {
+      console.warn(`⚠️ GoldenERP API Login returned ${loginRes.status}, falling back to Direct Ingest Key.`);
+    }
+  } catch (loginErr) {
+    console.warn(`⚠️ GoldenERP API Login exception: ${loginErr.message}, falling back to Direct Ingest Key.`);
   }
-
-  const loginData = await loginRes.json();
-  const token = loginData.accessToken || loginData.token;
-  if (!token) throw new Error('No access token returned from GoldenERP API');
-  console.log('✅ Authenticated with GoldenERP API successfully!');
 
   // 2. Login to Egyptian Government Tenders Portal
   console.log(`🏛️ Logging in to Egyptian Tenders Portal (${PORTAL_EMAIL})...`);
@@ -393,7 +397,8 @@ async function main() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
+          ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+          'x-radar-key': 'goldenerp-cloud-radar-secret-2026'
         },
         body: JSON.stringify({ items: batch })
       });

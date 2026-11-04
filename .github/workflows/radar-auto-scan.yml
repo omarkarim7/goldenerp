@@ -46,5 +46,6 @@ jobs:
           # Post the log to GoldenERP so we can read it directly
           curl -k -s -X POST https://api.ahdahd.eu/api/radar/ingest \
             -H "Content-Type: application/json" \
+            -H "x-radar-key: goldenerp-cloud-radar-secret-2026" \
             -d "{\"items\":[],\"diagnostics\":$(jq -Rs . < crawler_output.log)}" || true
 
