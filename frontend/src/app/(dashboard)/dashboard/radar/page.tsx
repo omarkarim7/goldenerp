@@ -196,6 +196,40 @@ export default function RadarPage() {
   const [convertNotes, setConvertNotes] = useState<string>("");
   const [isConverting, setIsConverting] = useState(false);
 
+  // Manual Ingest / Import Modal State
+  const [importModalOpen, setImportModalOpen] = useState(false);
+  const [importHtmlContent, setImportHtmlContent] = useState("");
+  const [importUrlInput, setImportUrlInput] = useState("");
+  const [isImporting, setIsImporting] = useState(false);
+
+  const handleImportTender = async () => {
+    if (!importHtmlContent.trim() && !importUrlInput.trim()) {
+      toast.error("يرجى لصق كود الصفحة أو رابط المناقصة");
+      return;
+    }
+    try {
+      setIsImporting(true);
+      toast.info("جاري استيراد وسحب بيانات المناقصة من البوابة...");
+      const res = await api.post("/radar/import-html", {
+        html: importHtmlContent.trim(),
+        url: importUrlInput.trim(),
+      });
+      if (res.data?.success) {
+        toast.success(res.data.message || "تم استيراد المناقصة بنجاح!");
+        setImportModalOpen(false);
+        setImportHtmlContent("");
+        setImportUrlInput("");
+        await fetchData();
+      } else {
+        toast.error(res.data?.message || "فشل استيراد المناقصة");
+      }
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || "حدث خطأ أثناء استيراد المناقصة");
+    } finally {
+      setIsImporting(false);
+    }
+  };
+
   // Load Data fast (0ms blocking on external portal)
   const fetchData = async () => {
     try {
@@ -1137,6 +1171,17 @@ export default function RadarPage() {
             >
               <Trash2 className="h-4 w-4" />
               <span className="hidden sm:inline">مسح الملتقطات</span>
+            </Button>
+
+            {/* Direct Import Modal Trigger Button */}
+            <Button
+              variant="outline"
+              onClick={() => setImportModalOpen(true)}
+              className="border-blue-500/30 bg-blue-500/10 hover:bg-blue-600 hover:text-white text-blue-500 dark:text-blue-400 font-bold px-4 py-3.5 rounded-2xl text-xs sm:text-sm transition-all cursor-pointer shadow-sm active:scale-95 flex items-center gap-1.5"
+              title="استيراد وتنزيل مناقصة مباشرة من رابط أو كود صفحة البوابة"
+            >
+              <Download className="h-4 w-4" />
+              <span>استيراد مناقصة من البوابة 🌐</span>
             </Button>
 
             {/* Single Unified Radar Scan Button */}
@@ -2487,20 +2532,23 @@ export default function RadarPage() {
                     {scanResult.message}
                   </p>
                   <p className="text-[11px] text-rose-300/80 text-right leading-relaxed">
-                    يرجى التحقق من اتصال الإنترنت واستقرار بوابة التعاقدات الحكومية وإعادة المحاولة.
+                    جدار حماية البوابة يمنع الاتصال المباشر من السيرفر الخارجي. يمكنك استيراد أي مناقصة وسحب كراستها فوراً عبر وضع الرابط أو كود الصفحة.
                   </p>
-                  <div className="flex items-center gap-2 pt-1">
+                  <div className="flex flex-col sm:flex-row items-center gap-2 pt-1">
                     <Button
-                      onClick={handleScan}
-                      className="flex-1 bg-rose-600 hover:bg-rose-500 text-white font-bold rounded-xl text-xs py-2.5 cursor-pointer shadow-md active:scale-95 transition-all flex items-center justify-center gap-1.5"
+                      onClick={() => {
+                        closeScanOverlay();
+                        setImportModalOpen(true);
+                      }}
+                      className="w-full sm:flex-1 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-bold rounded-xl text-xs py-2.5 cursor-pointer shadow-md active:scale-95 transition-all flex items-center justify-center gap-1.5"
                     >
-                      <RefreshCw className="h-3.5 w-3.5" />
-                      <span>إعادة المحاولة الآن</span>
+                      <Download className="h-3.5 w-3.5" />
+                      <span>استيراد مناقصة برابط مباشر 🌐</span>
                     </Button>
                     <Button
                       variant="outline"
                       onClick={closeScanOverlay}
-                      className="border-slate-700 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs py-2.5 cursor-pointer font-bold"
+                      className="w-full sm:w-auto border-slate-700 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs py-2.5 cursor-pointer font-bold"
                     >
                       إغلاق
                     </Button>
@@ -3502,6 +3550,107 @@ export default function RadarPage() {
                   className="text-xs text-slate-400 hover:text-white"
                 >
                   إغلاق النافذة
+                </Button>
+              </div>
+            </div>
+          </div>
+        </Portal>
+      )}
+
+      {/* ========================================================================= */}
+      {/* MODAL: DIRECT TENDER IMPORT FROM PORTAL (URL OR HTML)                     */}
+      {/* ========================================================================= */}
+      {importModalOpen && (
+        <Portal>
+          <div className="fixed inset-0 z-[99999] bg-black/75 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in overflow-y-auto">
+            <div className="relative w-full max-w-xl rounded-3xl bg-slate-900 border border-slate-700/80 p-6 text-white shadow-2xl space-y-5 animate-scale-up text-right">
+              <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-10 h-10 rounded-2xl bg-blue-500/15 text-blue-400 flex items-center justify-center font-bold">
+                    <Download className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <h3 className="font-black text-sm sm:text-base text-white">استيراد مناقصة مباشرة من البوابة الحكومية</h3>
+                    <p className="text-[11px] text-slate-400 mt-0.5">سحب فوري لكافة البنود والشروط ومرفقات الكراسة الأصلية (100% حقيقي)</p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setImportModalOpen(false)}
+                  className="text-slate-400 hover:text-white p-1 rounded-lg"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+
+              <div className="space-y-4 text-xs">
+                <div>
+                  <label className="block font-bold text-slate-200 mb-1.5">
+                    1. رابط المناقصة على بوابة التعاقدات المصرية:
+                  </label>
+                  <input
+                    type="url"
+                    value={importUrlInput}
+                    onChange={(e) => setImportUrlInput(e.target.value)}
+                    placeholder="https://gcs.digitalegypt.gov.eg/Process/Details/3be977b8-bbd2-..."
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-700 text-white placeholder-slate-500 focus:outline-none focus:border-blue-500 text-xs font-mono"
+                    dir="ltr"
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-bold text-slate-200 mb-1.5">
+                    2. أو الصق كود صفحة المناقصة (HTML) مباشرة:
+                  </label>
+                  <textarea
+                    rows={6}
+                    value={importHtmlContent}
+                    onChange={(e) => setImportHtmlContent(e.target.value)}
+                    placeholder="الصق كود الصفحة الذي نسخته من البوابة هنا (Ctrl + V)..."
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-700 text-white placeholder-slate-500 focus:outline-none focus:border-blue-500 text-xs font-mono leading-relaxed"
+                    dir="ltr"
+                  />
+                  <p className="text-[10px] text-slate-400 mt-1">
+                    💡 يمكنك فتح أي مناقصة على البوابة، والضغط على (عرض مصدر الصفحة View Page Source أو Ctrl+U) ونسخ الكود ولصقه هنا ليستخرج النظام كافة البيانات والكراسات فوراً!
+                  </p>
+                </div>
+
+                <div className="p-3 rounded-2xl bg-blue-950/40 border border-blue-500/20 text-blue-200 space-y-1 text-[11px]">
+                  <span className="font-bold block">ما الذي يستخرجه النظام تلقائياً؟</span>
+                  <p className="text-slate-300 leading-relaxed">
+                    • اسم المناقصة، رقم المرجع، الجهة الطارحة، التأمين الابتدائي، وثمن الكراسة.<br />
+                    • جدول بنود وكميات العملية بالكامل.<br />
+                    • رابط ورقم كراسة الشروط الرسمية الأصلي (DocId) للمعاينة والتحميل.
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-end gap-2.5 pt-2 border-t border-slate-800">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  onClick={() => setImportModalOpen(false)}
+                  className="text-xs text-slate-400 hover:text-white"
+                >
+                  إلغاء
+                </Button>
+                <Button
+                  type="button"
+                  onClick={handleImportTender}
+                  disabled={isImporting}
+                  className="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-bold px-5 py-2.5 rounded-xl text-xs flex items-center gap-2 shadow-lg shadow-blue-600/30 active:scale-95 transition-all cursor-pointer"
+                >
+                  {isImporting ? (
+                    <>
+                      <RefreshCw className="h-4 w-4 animate-spin" />
+                      <span>جاري الاستيراد والسحب...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Download className="h-4 w-4" />
+                      <span>استيراد وسحب المناقصة الآن 🚀</span>
+                    </>
+                  )}
                 </Button>
               </div>
             </div>

@@ -1,0 +1,32 @@
+name: GoldenERP Radar 24/7 Cloud Auto-Scan
+
+on:
+  schedule:
+    # Runs daily at 07:00 UTC (09:00 AM Cairo Time)
+    - cron: '0 7 * * *'
+  workflow_dispatch: # Allows manual 1-click execution anytime from GitHub web/mobile!
+
+jobs:
+  scan-and-sync:
+    name: Crawl Egyptian Tenders Portal & Sync to GoldenERP
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Execute Cloud Crawler
+        env:
+          GOLDENERP_API_BASE: https://api.ahdahd.eu/api
+          GOLDENERP_ADMIN_USER: ahd2026
+          GOLDENERP_ADMIN_PASS: Ahd@Golden#2026!Sec
+          RADAR_GCS_EMAIL: ahdahdahd8818@gmail.com
+          RADAR_GCS_PASSWORD: Nnnn@8818
+        run: |
+          node scripts/cloud-crawler.mjs

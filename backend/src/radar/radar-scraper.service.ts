@@ -84,8 +84,41 @@ export class RadarScraperService {
   private readonly baseUrl = 'https://gcs.digitalegypt.gov.eg';
   private readonly email = process.env.RADAR_GCS_EMAIL || 'ahdahdahd8818@gmail.com';
   private readonly password = process.env.RADAR_GCS_PASSWORD || 'Nnnn@8818';
+  private currentProxyUrl: string = '';
 
   constructor(private readonly prisma: PrismaService) {}
+
+  /**
+   * Automatically detect and attach an Egyptian Proxy (via env or system settings)
+   */
+  async setupProxyDispatcher(): Promise<void> {
+    let proxyUrl = process.env.RADAR_PROXY_URL || process.env.HTTP_PROXY || process.env.HTTPS_PROXY;
+    if (!proxyUrl) {
+      try {
+        const setting = await this.prisma.systemSetting.findUnique({
+          where: { key: 'radar.proxy_url' },
+        });
+        if (setting?.value) proxyUrl = setting.value.trim();
+      } catch {}
+    }
+
+    if (proxyUrl && proxyUrl !== this.currentProxyUrl) {
+      try {
+        const undici = await import('undici').catch(() => null);
+        if (undici && undici.ProxyAgent && undici.setGlobalDispatcher) {
+          const agent = new (undici.ProxyAgent as any)(proxyUrl);
+          (undici.setGlobalDispatcher as any)(agent);
+          this.currentProxyUrl = proxyUrl;
+          const sanitized = proxyUrl.replace(/:[^:]*@/, ':***@');
+          this.logger.log(`Egyptian Proxy Agent activated successfully: ${sanitized}`);
+        } else {
+          this.logger.warn('undici module not installed on hosting environment, proceeding with direct connection.');
+        }
+      } catch (err: any) {
+        this.logger.error(`Failed to initialize ProxyAgent: ${err.message}`);
+      }
+    }
+  }
 
   /**
    * Invalidate cached session cookies
@@ -120,6 +153,8 @@ export class RadarScraperService {
     if (!force && this.cookies && Date.now() < this.cookiesExpire) {
       return this.cookies;
     }
+
+    await this.setupProxyDispatcher();
 
     this.logger.log(`Logging in to Egyptian Tenders Portal (${this.email})...`);
 
@@ -638,6 +673,7 @@ export class RadarScraperService {
     message: string;
   }> {
     try {
+      await this.setupProxyDispatcher();
       const maxPages = Math.max(pagesCount || 10, 5);
       this.logger.log(`Starting Smart Incremental Radar Scan (maxPages: ${maxPages}, forceFullScan: ${forceFullScan})...`);
 

@@ -47,6 +47,19 @@ export class RadarController {
     }
   }
 
+  // 2.1 Ingest scraped tenders (From Cloud Crawler / GitHub Actions / External Bridges)
+  @Post('ingest')
+  async ingestTenders(@Body() body: { items?: any[]; item?: any }) {
+    const list = body.items || (body.item ? [body.item] : []);
+    return this.service.ingestRealTenders(list);
+  }
+
+  // 2.2 Import tender directly from Portal URL or Raw HTML
+  @Post('import-html')
+  async importTenderFromHtml(@Body() body: { html: string; url?: string }) {
+    return this.service.importTenderFromHtml(body.html, body.url);
+  }
+
   // Auto-scan daily config
   @Get('auto-scan-config')
   getAutoScanConfig() {

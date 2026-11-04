@@ -259,6 +259,161 @@ export class RadarService implements OnModuleInit {
     return this.getAutoScanConfig();
   }
 
+  // --- Ingest real tenders discovered by Cloud Crawler / GitHub Actions / Bridge ---
+  async ingestRealTenders(items: any[]) {
+    if (!Array.isArray(items) || items.length === 0) {
+      return { success: true, newCount: 0, updatedCount: 0, message: 'لا توجد مناقصات للإدراج' };
+    }
+
+    let source = await this.prisma.radarSource.findFirst({
+      where: { url: 'https://gcs.digitalegypt.gov.eg' },
+    });
+    if (!source) {
+      source = await this.prisma.radarSource.create({
+        data: {
+          name: 'منظومة التعاقدات الحكومية — مصر الرقمية',
+          url: 'https://gcs.digitalegypt.gov.eg',
+          isActive: true,
+        },
+      });
+    }
+
+    let newCount = 0;
+    let updatedCount = 0;
+
+    for (const it of items) {
+      if (!it.externalId) continue;
+      const existing = await this.prisma.radarItem.findFirst({
+        where: { externalId: it.externalId },
+      });
+
+      const rawDetails = it.rawDetails || it;
+      const categoryCombined = [it.tenderMethod, it.tenderKind, ...(it.tags || [])].filter(Boolean).join(' • ') || it.category || 'خدمات وتوريدات';
+
+      const dataPayload: any = {
+        title: it.title || 'مناقصة حكومية رسمية',
+        referenceNumber: it.refNo || it.referenceNumber || undefined,
+        authority: it.authority || undefined,
+        tenderType: it.tenderMethod || it.tenderType || 'مناقصة عامة',
+        governorate: it.governorate || undefined,
+        category: categoryCombined,
+        temporaryInsurance: it.temporaryInsurance ? Number(it.temporaryInsurance) : undefined,
+        bookletPrice: it.bookletPrice ? Number(it.bookletPrice) : undefined,
+        publicationDate: it.publicationDate ? new Date(it.publicationDate) : (it.publishDate ? this.scraper.parseArabicDate(it.publishDate) : undefined),
+        deadline: it.deadline ? (it.deadline instanceof Date || !isNaN(Date.parse(it.deadline)) ? new Date(it.deadline) : this.scraper.parseArabicDate(it.deadline)) : undefined,
+        sourceUrl: it.sourceUrl || `https://gcs.digitalegypt.gov.eg/Process/Details/${it.externalId}`,
+        rawData: JSON.stringify(rawDetails),
+      };
+
+      if (!existing) {
+        await this.prisma.radarItem.create({
+          data: {
+            sourceId: source.id,
+            externalId: it.externalId,
+            ...dataPayload,
+          },
+        });
+        newCount++;
+      } else {
+        await this.prisma.radarItem.update({
+          where: { id: existing.id },
+          data: dataPayload,
+        });
+        updatedCount++;
+      }
+    }
+
+    return {
+      success: true,
+      newCount,
+      updatedCount,
+      totalReceived: items.length,
+      message: `تمت مزامنة واستيعاب ${newCount} مناقصة جديدة، وتحديث ${updatedCount} مناقصة بنجاح!`,
+    };
+  }
+
+  // --- Parse and import tender directly from full HTML or URL ---
+  async importTenderFromHtml(html: string, sourceUrl?: string) {
+    if (!html || typeof html !== 'string') {
+      throw new BadRequestException('محتوى الصفحة أو الكود غير صالح');
+    }
+
+    // 1. External ID
+    const idMatch = html.match(/name="etender_Tender\.etender_tenderId"\s+type="hidden"\s+value="([^"]+)"/i) ||
+                    html.match(/\/Process\/Details\/([a-zA-Z0-9\-]+)/i) ||
+                    html.match(/FetchBasicInfoAysnc\?Id=([a-zA-Z0-9\-]+)/i);
+    const externalId = idMatch ? idMatch[1] : (sourceUrl?.match(/\/Process\/Details\/([a-zA-Z0-9\-]+)/i)?.[1] || `import-${Date.now()}`);
+
+    // 2. Title
+    const titleMatch = html.match(/<title>([^<\|]+)/i) || html.match(/<h[1-4][^>]*class="[^"]*title[^"]*"[^>]*>([^<]+)/i);
+    const title = titleMatch ? titleMatch[1].trim() : 'مناقصة حكومية مستوردة من البوابة';
+
+    // 3. Authority
+    const authMatch = html.match(/الجهة الطارحة[:\s]*<\/span>\s*<span[^>]*>([^<]+)/i) ||
+                      html.match(/الجهة الطارحة[:\s]*<\/label>\s*<[^>]+>([^<]+)/i);
+    const authority = authMatch ? authMatch[1].trim() : undefined;
+
+    // 4. Ref No
+    const refMatch = html.match(/رقم العملية[:\s]*<\/span>\s*<span[^>]*>([^<]+)/i) ||
+                     html.match(/رقم العملية[:\s]*<\/label>\s*<[^>]+>([^<]+)/i);
+    const refNo = refMatch ? refMatch[1].trim() : undefined;
+
+    // 5. Attachments
+    const attachments: Array<{ serial: number; name: string; docId: string; downloadUrl: string }> = [];
+    const attRows = [...html.matchAll(/<tr[^>]*>([\s\S]*?)<\/tr>/gi)];
+    let attIdx = 1;
+    for (const r of attRows) {
+      const rowContent = r[1];
+      const formMatch = rowContent.match(/DownloadDoc\?DocId=([a-zA-Z0-9\-]+)/i);
+      if (formMatch) {
+        const docId = formMatch[1];
+        const cols = [...rowContent.matchAll(/<td[^>]*>([\s\S]*?)<\/td>/gi)].map(m => m[1].replace(/<[^>]+>/g, '').trim());
+        attachments.push({
+          serial: attIdx++,
+          name: cols[1] || 'كراسة شروط ومواصفات معتمدة',
+          docId,
+          downloadUrl: `/radar/download-doc?docId=${docId}&tenderId=${externalId}`,
+        });
+      }
+    }
+
+    // 6. Items
+    const items: Array<{ serial: number; name: string; quantity: number }> = [];
+    let itIdx = 1;
+    for (const r of attRows) {
+      const cols = [...r[1].matchAll(/<td[^>]*>([\s\S]*?)<\/td>/gi)].map(m => m[1].replace(/<[^>]+>/g, '').trim());
+      if (cols.length >= 4 && !r[1].includes('DownloadDoc')) {
+        items.push({
+          serial: parseInt(cols[0], 10) || itIdx++,
+          name: cols[1],
+          quantity: parseFloat(cols[3]) || 1,
+        });
+      }
+    }
+
+    const tenderObj = {
+      externalId,
+      refNo,
+      title,
+      authority,
+      sourceUrl: sourceUrl || `https://gcs.digitalegypt.gov.eg/Process/Details/${externalId}`,
+      attachments,
+      items,
+      rawDetails: {
+        attachments,
+        items,
+      },
+    };
+
+    await this.ingestRealTenders([tenderObj]);
+    const created = await this.prisma.radarItem.findFirst({ where: { externalId } });
+    return {
+      success: true,
+      tender: created,
+      message: `تم استيراد المناقصة "${title.substring(0, 45)}" ومرفقاتها الرسمية بنجاح!`,
+    };
+  }
+
   // --- Stats KPI ---
   async getStats() {
     const totalCount = await this.prisma.radarItem.count();

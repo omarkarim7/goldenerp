@@ -28,6 +28,7 @@ export const DEFAULT_SYSTEM_SETTINGS = [
   { key: 'radar.daily_scan_enabled', value: 'true', type: 'boolean', label: 'تفعيل الفحص اليومي التلقائي لرادار المناقصات', group: 'radar' },
   { key: 'radar.daily_scan_time', value: '09:00 ص', type: 'string', label: 'التوقيت اليومي المجدول للفحص التلقائي', group: 'radar' },
   { key: 'radar.incremental_mode', value: 'true', type: 'boolean', label: 'نظام الفحص التراكمي الذكي (تجاهل المناقصات المسحوبة مسبقاً)', group: 'radar' },
+  { key: 'radar.proxy_url', value: '', type: 'string', label: 'عنوان البروكسي المصري للربط بالبوابة (Egyptian Proxy URL: http://user:pass@host:port)', group: 'radar' },
 
   // 6. المدد القانونية والتظلمات الرسمية
   { key: 'grievance_authority_days', value: '7', type: 'number', label: 'مهلة التظلم للسلطة المختصة بالجهة الإدارية (أيام)', group: 'legal' },
