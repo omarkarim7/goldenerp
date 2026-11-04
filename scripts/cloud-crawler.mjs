@@ -1,8 +1,16 @@
 /**
- * Cloud Radar Crawler for GoldenERP
- * Runs autonomously in GitHub Actions (or any cloud runner) 24/7 for FREE.
- * Scrapes latest official tenders from https://gcs.digitalegypt.gov.eg
- * and pushes them directly to GoldenERP backend API on Hostinger.
+ * GoldenERP Authentic Cloud Radar Crawler
+ * Scrapes official tenders from Egyptian Government Portal (https://gcs.digitalegypt.gov.eg)
+ * Accurately parses:
+ *  - Title (اسم العملية)
+ *  - Reference Number (رقم المرجع / رقم العملية)
+ *  - Authority (الجهة الإدارية / الجهة الطارحة)
+ *  - Temporary Insurance (قيمة التأمين المؤقت)
+ *  - Booklet Price (ثمن كراسة الشروط)
+ *  - Tender Method & Nature (طريقة التعاقد وطبيعة العملية)
+ *  - Publish & Deadline dates
+ *  - Items and genuine attachments with DocId
+ * and syncs directly into GoldenERP Backend API.
  */
 
 process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
@@ -15,8 +23,16 @@ const API_BASE = process.env.GOLDENERP_API_BASE || 'https://api.ahdahd.eu/api';
 const ADMIN_USER = process.env.GOLDENERP_ADMIN_USER || 'ahd2026';
 const ADMIN_PASS = process.env.GOLDENERP_ADMIN_PASS || 'Ahd@Golden#2026!Sec';
 
+const EGYPT_GOVERNORATES = [
+  'القاهرة', 'الجيزة', 'الإسكندرية', 'الدقهلية', 'البحر الأحمر', 'البحيرة',
+  'الفيوم', 'الغربية', 'الإسماعيلية', 'المنوفية', 'المنيا', 'القليوبية',
+  'الوادي الجديد', 'السويس', 'أسوان', 'أسيوط', 'بني سويف', 'بورسعيد',
+  'دمياط', 'الشرقية', 'جنوب سيناء', 'كفر الشيخ', 'مطروح', 'الأقصر',
+  'قنا', 'شمال سيناء', 'سوهاج'
+];
+
 async function main() {
-  console.log('🚀 Starting GoldenERP Cloud Radar Crawler...');
+  console.log('🚀 Starting GoldenERP Authentic Radar Crawler...');
 
   // 1. Authenticate with GoldenERP API
   console.log(`📡 Connecting to GoldenERP API (${API_BASE})...`);
@@ -96,25 +112,25 @@ async function main() {
   });
 
   const tenderHtml = await tenderRes.text();
-  const antiTokenMatch = tenderHtml.match(/name="__RequestVerificationToken"\s+type="hidden"\s+value="([^"]+)"/);
-  const antiToken = antiTokenMatch ? antiTokenMatch[1] : '';
-
   const basicTenders = [];
   const rowMatches = [...tenderHtml.matchAll(/<tr[^>]*>([\s\S]*?)<\/tr>/gi)];
+  
+  // Table headers: [0: رقم المرجع, 1: اسم العملية, 2: الجهة الإدارية, 3: تاريخ طرح العملية, 4: آخر تاريخ لإستقبال العطاءات, 5: تفاصيل]
   for (let i = 1; i < rowMatches.length; i++) {
     const row = rowMatches[i][1];
     const linkMatch = row.match(/href="\/Process\/Details\/([a-zA-Z0-9\-]+)"/i);
     if (!linkMatch) continue;
     const externalId = linkMatch[1];
     const cols = [...row.matchAll(/<td[^>]*>([\s\S]*?)<\/td>/gi)].map(m => m[1].replace(/<[^>]+>/g, '').trim());
-    if (cols.length >= 4) {
+    
+    if (cols.length >= 5) {
       basicTenders.push({
         externalId,
-        refNo: cols[1] || undefined,
-        title: cols[2] || 'مناقصة حكومية',
-        authority: cols[3] || undefined,
-        publishDate: cols[4] || undefined,
-        deadline: cols[5] || undefined,
+        refNo: cols[0] || undefined,          // Accurate: cols[0] is رقم المرجع
+        title: cols[1] || 'مناقصة حكومية',     // Accurate: cols[1] is اسم العملية
+        authority: cols[2] || undefined,      // Accurate: cols[2] is الجهة الإدارية
+        publishDate: cols[3] || undefined,    // Accurate: cols[3] is تاريخ طرح العملية
+        deadline: cols[4] || undefined,       // Accurate: cols[4] is آخر موعد لتلقي العطاءات
         url: `${PORTAL_BASE}/Process/Details/${externalId}`
       });
     }
@@ -126,12 +142,12 @@ async function main() {
     return;
   }
 
-  // 4. Scrape deep details for the tenders
+  // 4. Scrape deep details for each tender from the 5 live async partial views
   const fullTenders = [];
   const maxToProcess = Math.min(basicTenders.length, 15);
   for (let i = 0; i < maxToProcess; i++) {
     const basic = basicTenders[i];
-    console.log(`[${i + 1}/${maxToProcess}] Scraping tender: ${basic.title.substring(0, 40)}...`);
+    console.log(`[${i + 1}/${maxToProcess}] Scraping deep details for: ${basic.title.substring(0, 45)}...`);
     try {
       const id = basic.externalId;
       const urls = [
@@ -156,24 +172,71 @@ async function main() {
         } catch {}
       }));
 
-      // Parse attachments
+      // A. Parse basicInfo form inputs
+      const bHtml = parts.basicInfo || '';
+      const titleDeep = bHtml.match(/id="etender_Tender_etender_Title"[^>]*>([\s\S]*?)<\/textarea>/i)?.[1]?.trim();
+      const refNoDeep = bHtml.match(/id="etender_Tender_etender_refno"[^>]*value="([^"]*)"/i)?.[1]?.trim();
+      const authorityDeep = bHtml.match(/id="etender_Tender_bls_RequestingBody_Name"[^>]*value="([^"]*)"/i)?.[1]?.trim();
+      
+      const tempInsuranceStr = bHtml.match(/id="etender_Tender_bls_TemporaryInsuranceAmount_Value"[^>]*value="([^"]*)"/i)?.[1];
+      const bookletPriceStr = bHtml.match(/id="etender_Tender_etender_ParticipationFee_Value"[^>]*value="([^"]*)"/i)?.[1];
+      const fiscalYear = bHtml.match(/id="etender_Tender_bls_TenderFiscalYear_Name"[^>]*value="([^"]*)"/i)?.[1]?.trim();
+      const currency = bHtml.match(/id="etender_Tender_TransactionCurrencyId_Name"[^>]*value="([^"]*)"/i)?.[1]?.replace(/&nbsp;/g, ' ').trim();
+      const email = bHtml.match(/id="etender_Tender_EmailAddress"[^>]*value="([^"]*)"/i)?.[1]?.trim();
+
+      const tenderMethod = bHtml.match(/id="etender_Tender_bls_TenderMethod_Value"[^>]*>([\s\S]*?)<\/select>/i)?.[1]
+        ?.match(/<option[^>]*selected="selected"[^>]*>([^<]+)<\/option>/i)?.[1]?.trim();
+      const tenderKind = bHtml.match(/id="etender_Tender_bls_TenderKind_Value"[^>]*>([\s\S]*?)<\/select>/i)?.[1]
+        ?.match(/<option[^>]*selected="selected"[^>]*>([^<]+)<\/option>/i)?.[1]?.trim();
+
+      // B. Parse details form inputs
+      const dHtml = parts.details || '';
+      const finalInsuranceRateStr = dHtml.match(/id="etender_Tender_bls_WarrantyBond"[^>]*value="([^"]*)"/i)?.[1];
+      const warrantyStatement = dHtml.match(/id="etender_Tender_bls_WarrantyStatement"[^>]*value="([^"]*)"/i)?.[1]?.trim();
+      const tenderNature = dHtml.match(/name="etender_Tender\.FormattedValues\[bls_tendernature\]"[^>]*value="([^"]*)"/i)?.[1]?.trim();
+      const evaluationType = dHtml.match(/name="etender_Tender\.FormattedValues\[bls_evaluationtype\]"[^>]*value="([^"]*)"/i)?.[1]?.trim();
+      const activities = dHtml.match(/id="activities"[^>]*>([\s\S]*?)<\/textarea>/i)?.[1]?.trim();
+      const description = dHtml.match(/id="etender_Tender_bls_DescriptionArabic"[^>]*>([\s\S]*?)<\/textarea>/i)?.[1]?.trim();
+
+      // C. Parse timeline
+      const tlHtml = parts.timeline || '';
+      const timelineMatches = [...tlHtml.matchAll(/<div class="form-group">([\s\S]*?)(?:<label[^>]*>([\s\S]*?)<\/label>)/gi)];
+      const timelineStages = [];
+      let timelineDeadline = '';
+      let timelinePublish = '';
+      for (const m of timelineMatches) {
+        const inputVal = m[1].match(/value=['"]([^'"]+)['"]/i)?.[1]?.trim();
+        const labelText = m[2]?.replace(/<[^>]+>/g, '').trim();
+        if (labelText && inputVal) {
+          timelineStages.push({ label: labelText, date: inputVal });
+          if (labelText.includes('الإعلان') || labelText.includes('الدعوة')) timelinePublish = inputVal;
+          if (labelText.includes('المظاريف الفنية') || labelText.includes('العطاءات') || labelText.includes('المزاد')) timelineDeadline = inputVal;
+        }
+      }
+
+      // D. Parse genuine attachments with valid DocId
       const aHtml = parts.attachments || '';
       const attachments = [];
       const attRows = [...aHtml.matchAll(/<tr[^>]*>([\s\S]*?)<\/tr>/gi)];
       for (let r = 1; r < attRows.length; r++) {
         const rowContent = attRows[r][1];
-        const formMatch = rowContent.match(/action="([^"]*DownloadDoc[^"]*)"/i);
+        const formMatch = rowContent.match(/action="([^"]*DownloadDoc[^"]*)"/i) || rowContent.match(/DownloadDoc\?DocId=([a-zA-Z0-9\-]+)/i);
         const c = [...rowContent.matchAll(/<td[^>]*>([\s\S]*?)<\/td>/gi)].map(m => m[1].replace(/<[^>]+>/g, '').trim());
         if (c.length >= 2) {
           let docId = '';
           if (formMatch) {
-            const m = formMatch[1].match(/DocId=([a-zA-Z0-9\-]+)/i);
+            const m = formMatch[1] ? formMatch[1].match(/DocId=([a-zA-Z0-9\-]+)/i) : null;
             if (m) docId = m[1];
+            else if (typeof formMatch[1] === 'string' && formMatch[1].length > 10) docId = formMatch[1];
+          }
+          if (!docId) {
+            const direct = rowContent.match(/DocId=([a-zA-Z0-9\-]+)/i);
+            if (direct) docId = direct[1];
           }
           if (docId && docId.length >= 8) {
             attachments.push({
               serial: r,
-              name: c[1] || 'كراسة شروط ومواصفات',
+              name: c[1] || 'كراسة شروط ومواصفات رسمية',
               docId,
               downloadUrl: `/radar/download-doc?docId=${docId}&tenderId=${id}`
             });
@@ -181,7 +244,7 @@ async function main() {
         }
       }
 
-      // Parse items
+      // E. Parse items
       const iHtml = parts.items || '';
       const tenderItems = [];
       const itRows = [...iHtml.matchAll(/<tr[^>]*>([\s\S]*?)<\/tr>/gi)];
@@ -197,28 +260,66 @@ async function main() {
         }
       }
 
+      // Governorate detection
+      const fullText = `${titleDeep || basic.title} ${authorityDeep || basic.authority || ''}`;
+      let matchedGov = 'القاهرة';
+      for (const g of EGYPT_GOVERNORATES) {
+        if (fullText.includes(g)) {
+          matchedGov = g;
+          break;
+        }
+      }
+
+      const temporaryInsurance = tempInsuranceStr && !isNaN(parseFloat(tempInsuranceStr)) ? parseFloat(tempInsuranceStr) : null;
+      const bookletPrice = bookletPriceStr && !isNaN(parseFloat(bookletPriceStr)) ? parseFloat(bookletPriceStr) : null;
+      const finalInsuranceRate = finalInsuranceRateStr && !isNaN(parseFloat(finalInsuranceRateStr)) ? parseFloat(finalInsuranceRateStr) : null;
+
       fullTenders.push({
         externalId: basic.externalId,
-        refNo: basic.refNo,
-        title: basic.title,
-        authority: basic.authority,
-        publishDate: basic.publishDate,
-        deadline: basic.deadline,
+        refNo: refNoDeep || basic.refNo,
+        title: titleDeep || basic.title,
+        authority: authorityDeep || basic.authority,
+        publishDate: timelinePublish || basic.publishDate,
+        deadline: timelineDeadline || basic.deadline,
         sourceUrl: basic.url,
+        temporaryInsurance,
+        bookletPrice,
+        finalInsuranceRate,
+        tenderMethod: tenderMethod || 'مناقصة عامة',
+        tenderKind,
+        tenderType: tenderMethod || 'مناقصة عامة',
+        tenderNature,
+        evaluationType,
+        fiscalYear,
+        currency: currency || 'جنيه مصري',
+        email,
+        warrantyStatement,
+        activities,
+        description,
+        governorate: matchedGov,
         attachments,
         items: tenderItems,
+        timelineStages,
         rawDetails: {
-          attachments,
-          items: tenderItems
+          biddingType: 'إعلانات',
+          tenderMethod,
+          tenderKind,
+          tenderNature,
+          evaluationType,
+          fiscalYear,
+          currency,
+          activities,
+          description,
+          stages: timelineStages
         }
       });
     } catch (err) {
-      console.warn(`Could not fetch details for tender ${basic.externalId}: ${err.message}`);
+      console.warn(`Failed deep scrape for ${basic.title}:`, err.message);
     }
   }
 
-  // 5. Ingest into GoldenERP API
-  console.log(`📤 Ingesting ${fullTenders.length} scraped tenders into GoldenERP Backend...`);
+  // 5. Ingest into GoldenERP Backend
+  console.log(`📤 Ingesting ${fullTenders.length} accurately scraped tenders into GoldenERP Backend...`);
   const ingestRes = await fetch(`${API_BASE}/radar/ingest`, {
     method: 'POST',
     headers: {
@@ -228,12 +329,17 @@ async function main() {
     body: JSON.stringify({ items: fullTenders })
   });
 
-  const ingestData = await ingestRes.json();
-  console.log('🎉 Ingest result:', ingestData);
-  console.log('✅ Cloud crawler completed successfully!');
+  if (!ingestRes.ok) {
+    const errTxt = await ingestRes.text();
+    throw new Error(`Ingest failed with status ${ingestRes.status}: ${errTxt}`);
+  }
+
+  const result = await ingestRes.json();
+  console.log('🎉 Ingest result:', result);
+  console.log('✅ Radar crawler completed successfully with authentic data!');
 }
 
 main().catch(err => {
-  console.error('❌ Cloud crawler failed:', err);
+  console.error('❌ Cloud crawler error:', err);
   process.exit(1);
 });

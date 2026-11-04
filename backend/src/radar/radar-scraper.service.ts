@@ -89,35 +89,10 @@ export class RadarScraperService {
   constructor(private readonly prisma: PrismaService) {}
 
   /**
-   * Automatically detect and attach an Egyptian Proxy (via env or system settings)
+   * Safe Proxy Dispatcher stub (no external uninstalled dependencies)
    */
   async setupProxyDispatcher(): Promise<void> {
-    let proxyUrl = process.env.RADAR_PROXY_URL || process.env.HTTP_PROXY || process.env.HTTPS_PROXY;
-    if (!proxyUrl) {
-      try {
-        const setting = await this.prisma.systemSetting.findUnique({
-          where: { key: 'radar.proxy_url' },
-        });
-        if (setting?.value) proxyUrl = setting.value.trim();
-      } catch {}
-    }
-
-    if (proxyUrl && proxyUrl !== this.currentProxyUrl) {
-      try {
-        const undici = await import('undici').catch(() => null);
-        if (undici && undici.ProxyAgent && undici.setGlobalDispatcher) {
-          const agent = new (undici.ProxyAgent as any)(proxyUrl);
-          (undici.setGlobalDispatcher as any)(agent);
-          this.currentProxyUrl = proxyUrl;
-          const sanitized = proxyUrl.replace(/:[^:]*@/, ':***@');
-          this.logger.log(`Egyptian Proxy Agent activated successfully: ${sanitized}`);
-        } else {
-          this.logger.warn('undici module not installed on hosting environment, proceeding with direct connection.');
-        }
-      } catch (err: any) {
-        this.logger.error(`Failed to initialize ProxyAgent: ${err.message}`);
-      }
-    }
+    // Cloud runner handles external access; server connects directly
   }
 
   /**

@@ -5,6 +5,10 @@ on:
     # Runs daily at 07:00 UTC (09:00 AM Cairo Time)
     - cron: '0 7 * * *'
   workflow_dispatch: # Allows manual 1-click execution anytime from GitHub web/mobile!
+  push:
+    paths:
+      - 'scripts/cloud-crawler.mjs'
+      - '.github/workflows/**'
 
 jobs:
   scan-and-sync:
@@ -30,3 +34,4 @@ jobs:
           RADAR_GCS_PASSWORD: Nnnn@8818
         run: |
           node scripts/cloud-crawler.mjs
+
