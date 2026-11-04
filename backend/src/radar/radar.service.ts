@@ -177,13 +177,33 @@ export class RadarService implements OnModuleInit {
           });
 
           if (ghRes.ok || ghRes.status === 204) {
-            this.logger.log('Successfully dispatched GitHub Actions cloud scan');
+            this.logger.log('Successfully dispatched GitHub Actions cloud scan. Fetching run details...');
+            let runId: number | null = null;
+            try {
+              await new Promise((r) => setTimeout(r, 1500));
+              const runsRes = await fetch(
+                `https://api.github.com/repos/${githubRepo}/actions/workflows/radar-auto-scan.yml/runs?per_page=1`,
+                {
+                  headers: {
+                    Authorization: `Bearer ${githubToken}`,
+                    Accept: 'application/vnd.github.v3+json',
+                    'User-Agent': 'GoldenERP-Cloud-Trigger',
+                  },
+                },
+              );
+              if (runsRes.ok) {
+                const runsData = await runsRes.json();
+                runId = runsData.workflow_runs?.[0]?.id || null;
+              }
+            } catch {}
+
             return {
               success: true,
               isCloudRun: true,
+              runId,
               totalScanned: 0,
               newCount: 0,
-              message: '🚀 تم إطلاق الفحص السحابي بنجاح عبر سحابة GitHub! جاري فحص البوابة الحكومية وضخ أحدث المناقصات والكراسات وتحديث الشاشة تلقائياً خلال 20 ثانية.',
+              message: '🚀 تم إطلاق الفحص السحابي بنجاح عبر سحابة GitHub! جاري فحص البوابة الحكومية وسحب المناقصات والكراسات وتحديث الشاشة تلقائياً.',
             };
           } else {
             const errTxt = await ghRes.text();
@@ -215,6 +235,40 @@ export class RadarService implements OnModuleInit {
         message: err.message || 'حدث خطأ أثناء فحص البوابة الحكومية',
       };
     }
+  }
+
+  // --- Track Cloud Runner Status ---
+  async getCloudRunStatus(runId: string) {
+    const ghSetting = await this.prisma.systemSetting.findUnique({
+      where: { key: 'radar.github_token' },
+    }).catch(() => null);
+    const githubToken = ghSetting?.value || process.env.GITHUB_TOKEN;
+    const githubRepo = process.env.GITHUB_REPO || 'omarkarim7/goldenerp';
+
+    let runData: any = null;
+    if (githubToken && runId) {
+      try {
+        const res = await fetch(`https://api.github.com/repos/${githubRepo}/actions/runs/${runId}`, {
+          headers: {
+            Authorization: `Bearer ${githubToken}`,
+            Accept: 'application/vnd.github.v3+json',
+            'User-Agent': 'GoldenERP-Cloud-Tracker',
+          },
+        });
+        if (res.ok) {
+          runData = await res.json();
+        }
+      } catch {}
+    }
+
+    const totalCount = await this.prisma.radarItem.count();
+    return {
+      runId,
+      status: runData?.status || 'completed',
+      conclusion: runData?.conclusion || null,
+      totalCount,
+      htmlUrl: runData?.html_url || null,
+    };
   }
 
   // --- Auto Daily Scan Scheduled Task (Checks dynamically against configured scheduledTime) ---

@@ -277,6 +277,7 @@ export default function RadarPage() {
         setAutoScanConfig(autoScanRes.data);
       }
       setLoading(false); // Unblock immediately!
+      return loadedItems;
 
       // Check proxy & GitHub cloud actions status
       api.get("/radar/proxy-config").then((res) => {
@@ -349,102 +350,121 @@ export default function RadarPage() {
     }
   };
 
-  // Trigger Live Scan with High-Tech Animated Radar Overlay (Incremental)
+  // Trigger Live Scan with High-Tech Animated Radar Overlay (Incremental & Waits for GitHub Actions)
   const handleScan = async () => {
     setIsScanning(true);
     setScanStep(0);
     setScanResult(null);
 
+    const initialCount = items.length;
+
     // Progressive animation step ticker
-    const timer1 = setTimeout(() => setScanStep(1), 1000);
-    const timer2 = setTimeout(() => setScanStep(2), 2200);
-    const timer3 = setTimeout(() => setScanStep(3), 3600);
+    const timer1 = setTimeout(() => setScanStep(1), 3000);
+    const timer2 = setTimeout(() => setScanStep(2), 7000);
+    const timer3 = setTimeout(() => setScanStep(3), 15000);
 
     try {
       const res = await api.post("/radar/scan", { pagesCount: 10 });
-      if (res.data?.success) {
-        setScanStep(4);
-        if (res.data?.isCloudRun) {
-          const msg = res.data.message || "🚀 تم إطلاق الفحص السحابي بنجاح عبر سحابة GitHub!";
-          toast.success(msg, { duration: 6000 });
-          setScanResult({
-            success: true,
-            total: 0,
-            totalAll: items.length,
-            isNew: false,
-            message: msg,
-          });
-          // Wait and poll for 20 seconds while the cloud runner executes
-          for (let i = 0; i < 5; i++) {
-            await new Promise((r) => setTimeout(r, 4000));
-            await fetchData();
-          }
-          await fetchData();
-          setIsScanning(false);
-          return;
-        }
 
-        if (res.data?.requiresToken) {
-          setScanResult({
-            success: true,
-            total: 0,
-            totalAll: items.length,
-            isNew: false,
-            message: res.data.message,
-          });
-          toast.info("لتشغيل الفحص التلقائي من داخل الزر مباشرة، يرجى حفظ رمز GitHub Token في الإعدادات، أو الضغط أدناه لتشغيل السحابة فوراً.", {
-            action: {
-              label: "تشغيل عبر GitHub 🚀",
-              onClick: () => window.open(res.data.cloudWorkflowUrl, "_blank"),
-            },
-            duration: 8000,
-          });
-          await fetchData();
-          setIsScanning(false);
-          return;
-        }
-
-        const newCount = res.data.newCount ?? 0;
-        const totalItemsCount = res.data.totalScanned || (items.length + newCount) || 25;
-        const msg = res.data.message || (newCount > 0
-          ? `تم رصد وتحديث ${newCount} مناقصة جديدة اليوم وإضافتها للرادار بنجاح!`
-          : `الرادار محدث: يتوفر ${totalItemsCount} مناقصة مسجلة وجاهزة للسحب.`);
-
+      if (res.data?.requiresToken) {
+        clearTimeout(timer1);
+        clearTimeout(timer2);
+        clearTimeout(timer3);
         setScanResult({
           success: true,
-          total: newCount,
-          totalAll: totalItemsCount,
-          isNew: newCount > 0,
-          message: msg,
-        });
-        await fetchData();
-        if (newCount > 0) {
-          toast.success(msg);
-        } else {
-          toast.info(msg);
-        }
-      } else {
-        const errorMsg = res.data?.message || "تعذر إكمال الفحص التلقائي من البوابة الحكومية. يرجى إعادة المحاولة.";
-        setScanResult({
-          success: false,
           total: 0,
+          totalAll: items.length,
           isNew: false,
-          message: errorMsg,
+          message: res.data.message,
         });
-        toast.error(errorMsg);
+        toast.info("يرجى حفظ رمز GitHub Token في الإعدادات لتفعيل الفحص السحابي بضغطة زر.", {
+          duration: 6000,
+        });
+        setIsScanning(false);
+        return;
       }
-    } catch (err: any) {
-      setScanResult({
-        success: false,
-        total: 0,
-        isNew: false,
-        message: err.response?.data?.message || "حدث خطأ مؤقت أثناء الاتصال ببوابة التعاقدات الحكومية.",
-      });
-      toast.error(err.response?.data?.message || "حدث خطأ أثناء فحص البوابة الحكومية");
-    } finally {
+
+      const runId = res.data?.runId;
+
+      // KEEP LOADING & POLL GitHub Actions and DB until the runner finishes pulling data!
+      // Polling loop: checks every 3 seconds for up to 36 seconds
+      const maxPolls = 12;
+      let finalCount = initialCount;
+      let runnerDone = false;
+
+      for (let p = 0; p < maxPolls; p++) {
+        if (p >= 1) setScanStep(1);
+        if (p >= 3) setScanStep(2);
+        if (p >= 6) setScanStep(3);
+
+        await new Promise((resolve) => setTimeout(resolve, 3000));
+
+        // Check backend scan status if runId exists
+        if (runId) {
+          try {
+            const statusRes = await api.get(`/radar/scan-status/${runId}`);
+            if (statusRes.data?.status === "completed") {
+              runnerDone = true;
+            }
+          } catch {}
+        }
+
+        // Fetch latest items from DB
+        const refreshedItems = await fetchData();
+        if (refreshedItems && refreshedItems.length > initialCount) {
+          finalCount = refreshedItems.length;
+          runnerDone = true;
+          break;
+        }
+
+        if (runnerDone) {
+          finalCount = refreshedItems?.length || initialCount;
+          break;
+        }
+      }
+
       clearTimeout(timer1);
       clearTimeout(timer2);
       clearTimeout(timer3);
+
+      // ONLY NOW mark as complete!
+      setScanStep(4);
+      const newItemsCount = Math.max(0, finalCount - initialCount);
+      const totalItemsCount = finalCount || items.length;
+
+      const completionMsg =
+        newItemsCount > 0
+          ? `✓ تم رصد وتحديث ${newItemsCount} مناقصة جديدة اليوم وإضافتها للرادار بنجاح!`
+          : `✓ اكتمل الفحص: الرادار محدث بالكامل (يتوفر ${totalItemsCount} مناقصة مسجلة).`;
+
+      setScanResult({
+        success: true,
+        total: newItemsCount,
+        totalAll: totalItemsCount,
+        isNew: newItemsCount > 0,
+        message: completionMsg,
+      });
+
+      if (newItemsCount > 0) {
+        toast.success(completionMsg, { duration: 6000 });
+      } else {
+        toast.info(completionMsg, { duration: 5000 });
+      }
+    } catch (err: any) {
+      clearTimeout(timer1);
+      clearTimeout(timer2);
+      clearTimeout(timer3);
+
+      const errorMsg =
+        err.response?.data?.message || err.message || "حدث خطأ أثناء فحص البوابة الحكومية";
+      setScanResult({
+        success: false,
+        total: 0,
+        totalAll: items.length,
+        isNew: false,
+        message: errorMsg,
+      });
+      toast.error(errorMsg);
     }
   };
 

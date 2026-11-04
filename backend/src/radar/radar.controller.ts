@@ -47,6 +47,12 @@ export class RadarController {
     }
   }
 
+  // 2.0 Check cloud runner status
+  @Get('scan-status/:runId')
+  async getScanStatus(@Param('runId') runId: string) {
+    return this.service.getCloudRunStatus(runId);
+  }
+
   // 2.1 Ingest scraped tenders (From Cloud Crawler / GitHub Actions / External Bridges)
   @Post('ingest')
   async ingestTenders(@Body() body: { items?: any[]; item?: any }) {
