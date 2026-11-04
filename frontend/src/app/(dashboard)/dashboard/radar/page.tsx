@@ -202,25 +202,31 @@ export default function RadarPage() {
   const [importUrlInput, setImportUrlInput] = useState("");
   const [isImporting, setIsImporting] = useState(false);
 
-  // Free Proxy Configuration (Webshare.io) State
+  // Free Proxy & GitHub Cloud Actions Configuration State
   const [proxyModalOpen, setProxyModalOpen] = useState(false);
   const [proxyUrlInput, setProxyUrlInput] = useState("");
   const [proxyConfigured, setProxyConfigured] = useState(false);
+  const [githubTokenInput, setGithubTokenInput] = useState("");
+  const [githubConfigured, setGithubConfigured] = useState(false);
   const [isSavingProxy, setIsSavingProxy] = useState(false);
 
   const handleSaveProxy = async () => {
     try {
       setIsSavingProxy(true);
-      const res = await api.post("/radar/proxy-config", { proxyUrl: proxyUrlInput.trim() });
+      const res = await api.post("/radar/proxy-config", {
+        proxyUrl: proxyUrlInput.trim(),
+        githubToken: githubTokenInput.trim(),
+      });
       if (res.data?.success) {
-        toast.success(res.data.message || "تم حفظ البروكسي بنجاح!");
+        toast.success(res.data.message || "تم حفظ الإعدادات وتفعيل الفحص بنجاح!");
         setProxyConfigured(Boolean(proxyUrlInput.trim()));
+        setGithubConfigured(Boolean(githubTokenInput.trim()));
         setProxyModalOpen(false);
       } else {
-        toast.error(res.data?.message || "فشل حفظ إعدادات البروكسي");
+        toast.error(res.data?.message || "فشل حفظ الإعدادات");
       }
     } catch (err: any) {
-      toast.error(err.response?.data?.message || "حدث خطأ أثناء حفظ البروكسي");
+      toast.error(err.response?.data?.message || "حدث خطأ أثناء حفظ الإعدادات");
     } finally {
       setIsSavingProxy(false);
     }
@@ -264,7 +270,7 @@ export default function RadarPage() {
         api.get("/radar/auto-scan-config").catch(() => ({ data: { enabled: true, scheduledTime: "09:00 ص", lastAutoScan: null } })),
       ]);
 
-      const loadedItems = itemsRes.data?.items || [];
+      const loadedItems = (itemsRes.data?.items || []).map(normalizeRadarItem);
       setItems(loadedItems);
       setStats(statsRes.data);
       if (autoScanRes?.data) {
@@ -272,11 +278,13 @@ export default function RadarPage() {
       }
       setLoading(false); // Unblock immediately!
 
-      // Check proxy status
+      // Check proxy & GitHub cloud actions status
       api.get("/radar/proxy-config").then((res) => {
         if (res.data) {
           setProxyConfigured(Boolean(res.data.configured));
           if (res.data.proxyUrl) setProxyUrlInput(res.data.proxyUrl);
+          setGithubConfigured(Boolean(res.data.githubConfigured));
+          if (res.data.githubTokenMasked) setGithubTokenInput(res.data.githubTokenMasked);
         }
       }).catch(() => {});
 
@@ -821,6 +829,68 @@ export default function RadarPage() {
     }
   };
 
+  // Helper to normalize and auto-correct inverted or missing radar fields
+  const normalizeRadarItem = (t: any): any => {
+    if (!t) return t;
+
+    let ref = (t.referenceNumber || "").trim();
+    let title = (t.title || "").trim();
+    let auth = (t.authority || "").trim();
+    let tempInsurance = t.temporaryInsurance;
+    let bookletPrice = t.bookletPrice;
+    const raw = t.rawDetails || {};
+
+    // Check if referenceNumber is erroneously holding the long tender title
+    const isRefActuallyTitle =
+      ref.length > 30 ||
+      /^(تعلن|عملية|مزايدة|مناقصة|توريد|مشروع|أعمال|إنشاء|شراء|إحلال|تقديم|تأجير|جلسة)/.test(ref);
+
+    const isTitleActuallyAuth =
+      /^(محكمة|و\.ح|وحدة|مديرية|وزارة|هيئة|جهاز|محافظة|مجلس|كلية|جامعة|مستشفى|مركز)/.test(title) &&
+      title.length < 60;
+
+    if (isRefActuallyTitle) {
+      const longTitle = ref;
+      const shortEntity = title;
+      title = longTitle;
+      if (isTitleActuallyAuth || !auth || auth === "بدون جهة") {
+        auth = shortEntity || auth;
+      }
+      const rawRef = raw.refNo || raw.basicInfo?.refNo || raw.referenceNumber;
+      ref = rawRef && rawRef !== longTitle && String(rawRef).length < 30 ? String(rawRef).trim() : "";
+    }
+
+    // Fallback for missing authority
+    if (!auth || auth === "بدون جهة") {
+      auth = raw.authority || raw.basicInfo?.requestingBody || raw.basicInfo?.authority || "";
+    }
+
+    // Fallback for missing temporary insurance
+    if ((tempInsurance === null || tempInsurance === undefined || Number(tempInsurance) === 0) && raw) {
+      const rawVal = raw.temporaryInsurance ?? raw.basicInfo?.temporaryInsurance ?? raw.basicInfo?.tempInsuranceAmount;
+      if (rawVal !== undefined && rawVal !== null && !isNaN(Number(rawVal)) && Number(rawVal) > 0) {
+        tempInsurance = Number(rawVal);
+      }
+    }
+
+    // Fallback for missing booklet price
+    if ((bookletPrice === null || bookletPrice === undefined || Number(bookletPrice) === 0) && raw) {
+      const rawVal = raw.bookletPrice ?? raw.basicInfo?.bookletPrice ?? raw.basicInfo?.participationFee;
+      if (rawVal !== undefined && rawVal !== null && !isNaN(Number(rawVal)) && Number(rawVal) > 0) {
+        bookletPrice = Number(rawVal);
+      }
+    }
+
+    return {
+      ...t,
+      referenceNumber: ref || undefined,
+      title: title || "مناقصة حكومية رسمية",
+      authority: auth || undefined,
+      temporaryInsurance: tempInsurance !== undefined && tempInsurance !== null ? Number(tempInsurance) : null,
+      bookletPrice: bookletPrice !== undefined && bookletPrice !== null ? Number(bookletPrice) : null,
+    };
+  };
+
   // Helper to extract docId from attachment downloadUrl
   const extractDocId = (att: { docId?: string; downloadUrl: string }) => {
     if (att.docId) return att.docId;
@@ -1230,19 +1300,19 @@ export default function RadarPage() {
               <span>استيراد مناقصة من البوابة 🌐</span>
             </Button>
 
-            {/* Free Proxy Setup Button (Webshare.io) */}
+            {/* Free Proxy & Cloud Setup Button */}
             <Button
               variant="outline"
               onClick={() => setProxyModalOpen(true)}
               className={`px-3.5 py-3.5 rounded-2xl text-xs sm:text-sm font-bold transition-all cursor-pointer shadow-sm active:scale-95 flex items-center gap-1.5 ${
-                proxyConfigured
+                proxyConfigured || githubConfigured
                   ? "border-emerald-500/50 bg-emerald-500/15 text-emerald-400 hover:bg-emerald-500/25"
                   : "border-purple-500/30 bg-purple-500/10 hover:bg-purple-600 hover:text-white text-purple-400"
               }`}
-              title="إعداد وتفعيل بروكسي Webshare للفحص المباشر الداخلي"
+              title="إعداد وتفعيل البروكسي الداخلي أو توكن الفحص السحابي"
             >
               <Globe2 className="h-4 w-4" />
-              <span>{proxyConfigured ? "البروكسي نشط 🟢" : "بروكسي داخلي (Webshare) 🌐"}</span>
+              <span>{proxyConfigured ? "البروكسي نشط 🟢" : githubConfigured ? "السحابة نشطة 🟢" : "ربط البروكسي والسحابة 🌐"}</span>
             </Button>
 
             {/* Cloud Auto-Scan 24/7 Shortcut */}
@@ -3783,63 +3853,119 @@ export default function RadarPage() {
                 </button>
               </div>
 
-              {/* Status Pill */}
-              <div className={`p-3 rounded-2xl border text-xs flex items-center justify-between ${
-                proxyConfigured
-                  ? "bg-emerald-950/40 border-emerald-500/30 text-emerald-300"
-                  : "bg-slate-900 border-slate-800 text-slate-400"
-              }`}>
-                <div className="flex items-center gap-2">
-                  <span className={`w-2.5 h-2.5 rounded-full ${proxyConfigured ? "bg-emerald-400 animate-pulse" : "bg-slate-600"}`} />
-                  <span className="font-bold">{proxyConfigured ? "البروكسي مفعل ونشط بالسيرفر" : "لا يوجد بروكسي مفعل حالياً"}</span>
+              {/* Status Pills */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                <div className={`p-3 rounded-2xl border flex items-center justify-between ${
+                  proxyConfigured
+                    ? "bg-emerald-950/40 border-emerald-500/30 text-emerald-300"
+                    : "bg-slate-900 border-slate-800 text-slate-400"
+                }`}>
+                  <div className="flex items-center gap-2">
+                    <span className={`w-2.5 h-2.5 rounded-full ${proxyConfigured ? "bg-emerald-400 animate-pulse" : "bg-slate-600"}`} />
+                    <span className="font-bold">{proxyConfigured ? "البروكسي الداخلي: مفعل 🟢" : "البروكسي: غير مفعل"}</span>
+                  </div>
                 </div>
-                {proxyConfigured && (
-                  <span className="text-[10px] font-mono bg-emerald-900/60 px-2 py-0.5 rounded-full border border-emerald-700/50">
-                    ACTIVE
-                  </span>
-                )}
+
+                <div className={`p-3 rounded-2xl border flex items-center justify-between ${
+                  githubConfigured
+                    ? "bg-blue-950/40 border-blue-500/30 text-blue-300"
+                    : "bg-slate-900 border-slate-800 text-slate-400"
+                }`}>
+                  <div className="flex items-center gap-2">
+                    <span className={`w-2.5 h-2.5 rounded-full ${githubConfigured ? "bg-blue-400 animate-pulse" : "bg-slate-600"}`} />
+                    <span className="font-bold">{githubConfigured ? "سحابة GitHub: مفعلة 🟢" : "سحابة GitHub: غير مفعلة"}</span>
+                  </div>
+                </div>
               </div>
 
-              {/* Guide Card */}
-              <div className="p-3.5 rounded-2xl bg-purple-950/30 border border-purple-500/20 text-purple-200 text-xs space-y-2">
-                <span className="font-bold block text-sm text-purple-100">كيف تحصل على 10 بروكسيات مجانية مدى الحياة؟</span>
-                <p className="text-slate-300 leading-relaxed text-[11px]">
-                  موقع <a href="https://www.webshare.io" target="_blank" rel="noopener noreferrer" className="text-purple-400 underline font-bold">Webshare.io</a> يقدم خطة مجانية دائمة 100% (10 Proxies مجاناً بدون الحاجة لفيزا أو دفع أي مليم).<br />
-                  سجل بحسابك على Webshare وانسخ رابط البروكسي بصيغة:<br />
-                  <code className="text-emerald-300 font-mono text-[10px] dir-ltr block mt-1 bg-slate-900 p-1.5 rounded-lg border border-slate-800">
-                    http://username:password@p.webshare.io:80
-                  </code>
-                </p>
-              </div>
+              {/* Guide Card - Two Cloud Solutions */}
+              <div className="space-y-3">
+                {/* Webshare Option */}
+                <div className="p-3.5 rounded-2xl bg-purple-950/30 border border-purple-500/20 text-purple-200 text-xs space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-sm text-purple-100 flex items-center gap-1.5">
+                      <span>1️⃣ الخيار الأول: بروكسي داخلي مباشر (Webshare.io)</span>
+                    </span>
+                    <a
+                      href="https://proxy.webshare.io/proxy/list"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-purple-400 hover:text-purple-300 underline font-bold text-[11px]"
+                    >
+                      صفحة Proxy List ↗
+                    </a>
+                  </div>
+                  <p className="text-slate-300 leading-relaxed text-[11px]">
+                    ⚠️ <strong className="text-amber-300">ملاحظة هامة:</strong> الخطة المجانية من Webshare تتطلب استخدام الـ IP المباشر من صفحة <strong>Proxy List</strong> وليس سيرفر <code className="text-rose-300">p.webshare.io</code> الذي يعطي خطأ 407.<br />
+                    ادخل على حسابك ثم اضغط على <strong>Proxy List</strong> وانسخ أي بروكسي بصيغة:<br />
+                    <code className="text-emerald-300 font-mono text-[10px] dir-ltr block mt-1 bg-slate-900 p-1.5 rounded-lg border border-slate-800">
+                      http://phgeraeh:33o9h1jp677l@IP_HERE:PORT_HERE
+                    </code>
+                  </p>
+                  <div className="space-y-1 text-right pt-1">
+                    <label className="text-[11px] font-bold text-slate-200 block">
+                      رابط البروكسي المباشر (Proxy URL):
+                    </label>
+                    <Input
+                      type="text"
+                      dir="ltr"
+                      placeholder="http://phgeraeh:33o9h1jp677l@185.xxx.xxx.xxx:8000"
+                      value={proxyUrlInput}
+                      onChange={(e) => setProxyUrlInput(e.target.value)}
+                      className="bg-slate-900 border-slate-700 text-white text-xs font-mono rounded-xl focus:border-purple-500"
+                    />
+                  </div>
+                </div>
 
-              {/* Input Form */}
-              <div className="space-y-2 text-right">
-                <label className="text-xs font-bold text-slate-200 block">
-                  رابط البروكسي (Proxy URL):
-                </label>
-                <Input
-                  type="text"
-                  dir="ltr"
-                  placeholder="http://username:password@p.webshare.io:80"
-                  value={proxyUrlInput}
-                  onChange={(e) => setProxyUrlInput(e.target.value)}
-                  className="bg-slate-900 border-slate-700 text-white text-xs font-mono rounded-xl focus:border-purple-500"
-                />
+                {/* GitHub Actions Cloud Option */}
+                <div className="p-3.5 rounded-2xl bg-blue-950/30 border border-blue-500/20 text-blue-200 text-xs space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-sm text-blue-100 flex items-center gap-1.5">
+                      <span>2️⃣ الخيار الثاني: الفحص السحابي التلقائي (GitHub Actions)</span>
+                    </span>
+                    <a
+                      href="https://github.com/settings/tokens"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-blue-400 hover:text-blue-300 underline font-bold text-[11px]"
+                    >
+                      إنشاء توكن GitHub ↗
+                    </a>
+                  </div>
+                  <p className="text-slate-300 leading-relaxed text-[11px]">
+                    سيرفر سحابي مجاني 2000 دقيقة/شهر يعمل تلقائياً كل يوم الساعة 9:00 صباحاً بتوقيت القاهرة.<br />
+                    لربط زر &quot;تشغيل فحص الرادار الآن&quot; بالسحابة مباشرة، أنشئ Personal Access Token (classic) مع صلاحية <code className="text-blue-300 font-mono">repo</code> والصقه هنا:
+                  </p>
+                  <div className="space-y-1 text-right pt-1">
+                    <label className="text-[11px] font-bold text-slate-200 block">
+                      رمز توكن GitHub (Personal Access Token):
+                    </label>
+                    <Input
+                      type="password"
+                      dir="ltr"
+                      placeholder="ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+                      value={githubTokenInput}
+                      onChange={(e) => setGithubTokenInput(e.target.value)}
+                      className="bg-slate-900 border-slate-700 text-white text-xs font-mono rounded-xl focus:border-blue-500"
+                    />
+                  </div>
+                </div>
               </div>
 
               {/* Actions */}
               <div className="flex items-center justify-between gap-2.5 pt-2 border-t border-slate-800">
-                {proxyConfigured && (
+                {(proxyConfigured || githubConfigured) && (
                   <Button
                     type="button"
                     variant="ghost"
                     onClick={async () => {
                       setProxyUrlInput("");
+                      setGithubTokenInput("");
                       await handleSaveProxy();
                     }}
                     className="text-xs text-rose-400 hover:text-rose-300 hover:bg-rose-950/30 font-bold"
                   >
-                    إلغاء تفعيل البروكسي
+                    تفريغ الإعدادات
                   </Button>
                 )}
                 <div className="flex items-center gap-2 mr-auto">
@@ -3865,7 +3991,7 @@ export default function RadarPage() {
                     ) : (
                       <>
                         <CheckCircle className="h-4 w-4" />
-                        <span>حفظ وتفعيل البروكسي الآن 🚀</span>
+                        <span>حفظ وتفعيل الإعدادات الآن 🚀</span>
                       </>
                     )}
                   </Button>

@@ -78,8 +78,8 @@ export class RadarController {
   }
 
   @Post('proxy-config')
-  saveProxyConfig(@Body() body: { proxyUrl: string }) {
-    return this.service.saveProxyConfig(body.proxyUrl);
+  saveProxyConfig(@Body() body: { proxyUrl?: string; githubToken?: string }) {
+    return this.service.saveProxyConfig(body.proxyUrl, body.githubToken);
   }
 
   // 3. Radar KPIs & Statistics

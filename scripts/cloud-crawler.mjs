@@ -177,11 +177,27 @@ async function main() {
       // A. Parse basicInfo form inputs
       const bHtml = parts.basicInfo || '';
       const titleDeep = bHtml.match(/id="etender_Tender_etender_Title"[^>]*>([\s\S]*?)<\/textarea>/i)?.[1]?.trim();
-      const refNoDeep = bHtml.match(/id="etender_Tender_etender_refno"[^>]*value="([^"]*)"/i)?.[1]?.trim();
-      const authorityDeep = bHtml.match(/id="etender_Tender_bls_RequestingBody_Name"[^>]*value="([^"]*)"/i)?.[1]?.trim();
+      const refNoDeep = (
+        bHtml.match(/<input[^>]*id="etender_Tender_etender_refno"[^>]*value="([^"]*)"/i)?.[1] ||
+        bHtml.match(/<input[^>]*value="([^"]*)"[^>]*id="etender_Tender_etender_refno"/i)?.[1] ||
+        bHtml.match(/id="etender_Tender_etender_refno"[^>]*value="([^"]*)"/i)?.[1]
+      )?.trim();
+      const authorityDeep = (
+        bHtml.match(/<input[^>]*id="etender_Tender_bls_RequestingBody_Name"[^>]*value="([^"]*)"/i)?.[1] ||
+        bHtml.match(/<input[^>]*value="([^"]*)"[^>]*id="etender_Tender_bls_RequestingBody_Name"/i)?.[1] ||
+        bHtml.match(/id="etender_Tender_bls_RequestingBody_Name"[^>]*value="([^"]*)"/i)?.[1]
+      )?.trim();
 
-      const tempInsuranceStr = bHtml.match(/id="etender_Tender_bls_TemporaryInsuranceAmount_Value"[^>]*value="([^"]*)"/i)?.[1];
-      const bookletPriceStr = bHtml.match(/id="etender_Tender_etender_ParticipationFee_Value"[^>]*value="([^"]*)"/i)?.[1];
+      const tempInsuranceStr = (
+        bHtml.match(/<input[^>]*id="etender_Tender_bls_TemporaryInsuranceAmount_Value"[^>]*value="([^"]*)"/i)?.[1] ||
+        bHtml.match(/<input[^>]*value="([^"]*)"[^>]*id="etender_Tender_bls_TemporaryInsuranceAmount_Value"/i)?.[1] ||
+        bHtml.match(/id="etender_Tender_bls_TemporaryInsuranceAmount_Value"[^>]*value="([^"]*)"/i)?.[1]
+      );
+      const bookletPriceStr = (
+        bHtml.match(/<input[^>]*id="etender_Tender_etender_ParticipationFee_Value"[^>]*value="([^"]*)"/i)?.[1] ||
+        bHtml.match(/<input[^>]*value="([^"]*)"[^>]*id="etender_Tender_etender_ParticipationFee_Value"/i)?.[1] ||
+        bHtml.match(/id="etender_Tender_etender_ParticipationFee_Value"[^>]*value="([^"]*)"/i)?.[1]
+      );
       const fiscalYear = bHtml.match(/id="etender_Tender_bls_TenderFiscalYear_Name"[^>]*value="([^"]*)"/i)?.[1]?.trim();
       const currency = bHtml.match(/id="etender_Tender_TransactionCurrencyId_Name"[^>]*value="([^"]*)"/i)?.[1]?.replace(/&nbsp;/g, ' ').trim();
       const email = bHtml.match(/id="etender_Tender_EmailAddress"[^>]*value="([^"]*)"/i)?.[1]?.trim();
@@ -305,11 +321,25 @@ async function main() {
         }
       }
 
+      let finalTitle = titleDeep || basic.title;
+      let finalRef = refNoDeep || basic.refNo;
+      let finalAuthority = authorityDeep || basic.authority;
+
+      // Smart Invert Guard: If reference is holding the long tender title sentence
+      if (finalRef && (finalRef.length > 30 || /^(تعلن|عملية|مزايدة|مناقصة|توريد|مشروع|أعمال|إنشاء|شراء|إحلال)/.test(finalRef))) {
+        const swapTitle = finalRef;
+        if (!finalAuthority && finalTitle) {
+          finalAuthority = finalTitle;
+        }
+        finalTitle = swapTitle;
+        finalRef = basic.refNo && basic.refNo !== swapTitle && basic.refNo.length < 30 ? basic.refNo : undefined;
+      }
+
       fullTenders.push({
         externalId: basic.externalId,
-        refNo: refNoDeep || basic.refNo,
-        title: titleDeep || basic.title,
-        authority: authorityDeep || basic.authority,
+        refNo: finalRef,
+        title: finalTitle,
+        authority: finalAuthority,
         publishDate: timelinePublish || basic.publishDate,
         deadline: timelineDeadline || basic.deadline,
         sourceUrl: basic.url,

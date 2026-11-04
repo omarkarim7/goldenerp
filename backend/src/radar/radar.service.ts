@@ -154,10 +154,27 @@ export class RadarService implements OnModuleInit {
     try {
       // Run automatic cleanup first to keep DB pristine
       await this.cleanupLegacyMockData().catch(() => {});
+      await this.autoRepairRadarItems().catch(() => {});
 
-      // 1. Check if GitHub Cloud Runner dispatch is configured
-      const githubToken = process.env.GITHUB_TOKEN;
+      // 1. Check if a proxy is configured (e.g. Webshare.io Direct Proxy)
+      const hasProxy = await this.scraper.hasProxyConfigured();
+      if (hasProxy) {
+        try {
+          this.logger.log('Proxy configured: Executing direct in-system portal scan...');
+          const result = await this.scraper.scan(pagesCount);
+          return result;
+        } catch (proxyErr: any) {
+          this.logger.warn(`In-system proxy scan failed (${proxyErr.message}), falling back to cloud runner...`);
+        }
+      }
+
+      // 2. Check if GitHub Actions Cloud Runner dispatch is configured
+      const ghSetting = await this.prisma.systemSetting.findUnique({
+        where: { key: 'radar.github_token' },
+      }).catch(() => null);
+      const githubToken = ghSetting?.value || process.env.GITHUB_TOKEN;
       const githubRepo = process.env.GITHUB_REPO || 'omarkarim7/goldenerp';
+
       if (githubToken) {
         try {
           this.logger.log(`Triggering GitHub Actions Cloud Scan on ${githubRepo}...`);
@@ -178,7 +195,7 @@ export class RadarService implements OnModuleInit {
               isCloudRun: true,
               totalScanned: 0,
               newCount: 0,
-              message: '🚀 تم إطلاق الفحص السحابي بنجاح عبر GitHub Actions! جاري فحص البوابة الحكومية وضخ المناقصات تلقائياً خلال ثوانٍ.',
+              message: '🚀 تم إطلاق الفحص السحابي بنجاح عبر GitHub Actions! جاري فحص البوابة الحكومية وضخ المناقصات وحفظ الكراسات الرسمية تلقائياً خلال 20 ثانية.',
             };
           } else {
             const errTxt = await ghRes.text();
@@ -189,24 +206,14 @@ export class RadarService implements OnModuleInit {
         }
       }
 
-      // 2. Check if a proxy is configured (e.g. Webshare.io)
-      // If a proxy is active, we can run direct 100% in-system scraping without external timeouts!
-      const hasProxy = await this.scraper.hasProxyConfigured();
-      if (hasProxy) {
-        this.logger.log('Proxy configured: Executing direct in-system portal scan...');
-        return await this.scraper.scan(pagesCount);
-      }
-
-      // 3. Fallback: Count current authentic items in database and return cloud status
-      // Note: Telecom Egypt firewall blocks direct foreign cloud server connections (Hostinger/Europe).
-      // All automated portal crawling runs seamlessly via GitHub Actions 24/7 or local crawler.
+      // 3. Fallback: Count current authentic items in database and return informative guidance
       const totalInDb = await this.prisma.radarItem.count();
       return {
         success: true,
         isCloudGuided: true,
         totalScanned: totalInDb,
         newCount: 0,
-        message: '🚀 نظام الفحص السحابي 24/7 نشط! كافة المناقصات الحكومية محدثة ومزامنة بنجاح.',
+        message: '🚀 الرادار نشط ومحدث! لتشغيل فحص لحظي مباشر من داخل السيستم، يرجى تفعيل البروكسي الداخلي (Webshare Direct IP) أو توكن GitHub من نافذة الإعدادات.',
       };
     } catch (err: any) {
       this.logger.warn(`Radar live scan handled: ${err.message}`);
@@ -216,7 +223,7 @@ export class RadarService implements OnModuleInit {
         isCloudGuided: true,
         totalScanned: totalInDb,
         newCount: 0,
-        message: '🚀 الرادار محدث وجاهز! الفحص السحابي 24/7 يعمل بنجاح.',
+        message: '🚀 الرادار محدث وجاهز! الفحص السحابي التلقائي 24/7 يعمل بنجاح.',
       };
     }
   }
@@ -393,15 +400,42 @@ export class RadarService implements OnModuleInit {
 
       const categoryCombined = [it.tenderMethod, it.tenderKind, ...(it.tags || [])].filter(Boolean).join(' • ') || it.category || 'خدمات وتوريدات';
 
+      let finalTitle = it.title || 'مناقصة حكومية رسمية';
+      let finalRef = it.refNo || it.referenceNumber || undefined;
+      let finalAuthority = it.authority || undefined;
+      let finalTempInsurance = it.temporaryInsurance ? Number(it.temporaryInsurance) : undefined;
+      let finalBookletPrice = it.bookletPrice ? Number(it.bookletPrice) : undefined;
+
+      // Smart Invert Guard: Detect if refNo holds the long tender title sentence
+      if (finalRef && (finalRef.length > 30 || /^(تعلن|عملية|مزايدة|مناقصة|توريد|مشروع|أعمال|إنشاء|شراء|إحلال|تقديم|تأجير|جلسة)/.test(finalRef))) {
+        const swapTitle = finalRef;
+        if (!finalAuthority && finalTitle) {
+          finalAuthority = finalTitle;
+        }
+        finalTitle = swapTitle;
+        const rawRef = rawDetails?.refNo || rawDetails?.basicInfo?.refNo;
+        finalRef = (rawRef && rawRef !== swapTitle && String(rawRef).length < 30) ? String(rawRef).trim() : undefined;
+      }
+
+      if ((!finalTempInsurance || finalTempInsurance === 0) && rawDetails) {
+        const rawVal = rawDetails.temporaryInsurance ?? rawDetails.basicInfo?.temporaryInsurance;
+        if (rawVal && !isNaN(Number(rawVal))) finalTempInsurance = Number(rawVal);
+      }
+
+      if ((!finalBookletPrice || finalBookletPrice === 0) && rawDetails) {
+        const rawVal = rawDetails.bookletPrice ?? rawDetails.basicInfo?.bookletPrice;
+        if (rawVal && !isNaN(Number(rawVal))) finalBookletPrice = Number(rawVal);
+      }
+
       const dataPayload: any = {
-        title: it.title || 'مناقصة حكومية رسمية',
-        referenceNumber: it.refNo || it.referenceNumber || undefined,
-        authority: it.authority || undefined,
+        title: finalTitle,
+        referenceNumber: finalRef,
+        authority: finalAuthority,
         tenderType: it.tenderMethod || it.tenderType || 'مناقصة عامة',
         governorate: it.governorate || undefined,
         category: categoryCombined,
-        temporaryInsurance: it.temporaryInsurance ? Number(it.temporaryInsurance) : undefined,
-        bookletPrice: it.bookletPrice ? Number(it.bookletPrice) : undefined,
+        temporaryInsurance: finalTempInsurance || undefined,
+        bookletPrice: finalBookletPrice || undefined,
         publicationDate: it.publicationDate ? new Date(it.publicationDate) : (it.publishDate ? this.scraper.parseArabicDate(it.publishDate) : undefined),
         deadline: it.deadline ? (it.deadline instanceof Date || !isNaN(Date.parse(it.deadline)) ? new Date(it.deadline) : this.scraper.parseArabicDate(it.deadline)) : undefined,
         sourceUrl: it.sourceUrl || `https://gcs.digitalegypt.gov.eg/Process/Details/${it.externalId}`,
@@ -545,35 +579,148 @@ export class RadarService implements OnModuleInit {
     };
   }
 
-  // --- Proxy Configuration (e.g. Webshare.io) ---
+  // --- Proxy & Cloud Configuration (Webshare.io & GitHub Actions) ---
   async getProxyConfig() {
-    const setting = await this.prisma.systemSetting.findUnique({
-      where: { key: 'radar.proxy_url' },
-    }).catch(() => null);
+    const [proxySetting, ghSetting] = await Promise.all([
+      this.prisma.systemSetting.findUnique({ where: { key: 'radar.proxy_url' } }).catch(() => null),
+      this.prisma.systemSetting.findUnique({ where: { key: 'radar.github_token' } }).catch(() => null),
+    ]);
     const envProxy = process.env.RADAR_PROXY_URL || process.env.HTTPS_PROXY || '';
-    const activeUrl = setting?.value || envProxy;
+    const activeUrl = proxySetting?.value || envProxy;
+    const activeGh = ghSetting?.value || process.env.GITHUB_TOKEN || '';
     return {
       configured: Boolean(activeUrl),
       proxyUrl: activeUrl ? activeUrl.replace(/:[^:]*@/, ':****@') : '',
-      isCustom: Boolean(setting?.value),
+      isCustom: Boolean(proxySetting?.value),
+      githubConfigured: Boolean(activeGh),
+      githubTokenMasked: activeGh ? activeGh.substring(0, 4) + '****' + activeGh.slice(-4) : '',
     };
   }
 
-  async saveProxyConfig(proxyUrl: string) {
-    const clean = (proxyUrl || '').trim();
-    if (!clean) {
-      await this.prisma.systemSetting.deleteMany({
-        where: { key: 'radar.proxy_url' },
-      });
-      return { success: true, message: 'تم إزالة إعدادات البروكسي بنجاح' };
+  async saveProxyConfig(proxyUrl?: string, githubToken?: string) {
+    if (proxyUrl !== undefined) {
+      const cleanProxy = (proxyUrl || '').trim();
+      if (!cleanProxy) {
+        await this.prisma.systemSetting.deleteMany({
+          where: { key: 'radar.proxy_url' },
+        });
+      } else {
+        await this.prisma.systemSetting.upsert({
+          where: { key: 'radar.proxy_url' },
+          update: { value: cleanProxy },
+          create: { key: 'radar.proxy_url', value: cleanProxy, group: 'radar', label: 'رابط البروكسي لبوابة التعاقدات' },
+        });
+        await this.scraper.setupProxyDispatcher();
+      }
     }
-    await this.prisma.systemSetting.upsert({
-      where: { key: 'radar.proxy_url' },
-      update: { value: clean },
-      create: { key: 'radar.proxy_url', value: clean, group: 'radar', label: 'رابط البروكسي لبوابة التعاقدات' },
-    });
-    await this.scraper.setupProxyDispatcher();
-    return { success: true, message: 'تم حفظ وتفعيل البروكسي بنجاح! يمكنك الآن تشغيل الفحص المباشر من داخل السيستم.' };
+
+    if (githubToken !== undefined) {
+      const cleanGh = (githubToken || '').trim();
+      if (!cleanGh) {
+        await this.prisma.systemSetting.deleteMany({
+          where: { key: 'radar.github_token' },
+        });
+      } else {
+        await this.prisma.systemSetting.upsert({
+          where: { key: 'radar.github_token' },
+          update: { value: cleanGh },
+          create: { key: 'radar.github_token', value: cleanGh, group: 'radar', label: 'توكن GitHub للفحص السحابي' },
+        });
+      }
+    }
+
+    return { success: true, message: 'تم حفظ وتفعيل الإعدادات بنجاح! يمكنك الآن تشغيل الفحص المباشر.' };
+  }
+
+  // Helper to normalize and auto-correct inverted or missing radar fields
+  private normalizeRadarItemData(item: any, raw: any) {
+    let title = (item.title || '').trim();
+    let referenceNumber = (item.referenceNumber || '').trim();
+    let authority = (item.authority || '').trim();
+    let temporaryInsurance = item.temporaryInsurance ? Number(item.temporaryInsurance) : null;
+    let bookletPrice = item.bookletPrice ? Number(item.bookletPrice) : null;
+
+    // Detect if referenceNumber is erroneously holding the long tender title
+    const isRefLongTitle = referenceNumber && (
+      referenceNumber.length > 30 ||
+      /^(تعلن|عملية|مزايدة|مناقصة|توريد|مشروع|أعمال|إنشاء|شراء|إحلال|تقديم|تأجير|جلسة)/.test(referenceNumber)
+    );
+
+    const isTitleActuallyAuth =
+      /^(محكمة|و\.ح|وحدة|مديرية|وزارة|هيئة|جهاز|محافظة|مجلس|كلية|جامعة|مستشفى|مركز)/.test(title) &&
+      title.length < 60;
+
+    if (isRefLongTitle) {
+      const originalRef = referenceNumber;
+      const originalTitle = title;
+      title = originalRef;
+      if (isTitleActuallyAuth || !authority || authority === 'بدون جهة') {
+        authority = originalTitle || authority;
+      }
+      const rawRef = raw?.refNo || raw?.basicInfo?.refNo || raw?.referenceNumber;
+      referenceNumber = (rawRef && rawRef !== originalRef && String(rawRef).length < 30) ? String(rawRef).trim() : '';
+    }
+
+    if (!authority && raw) {
+      authority = raw.authority || raw.basicInfo?.authority || raw.basicInfo?.requestingBody || '';
+    }
+
+    if ((!temporaryInsurance || temporaryInsurance === 0) && raw) {
+      const rawIns = raw.temporaryInsurance ?? raw.basicInfo?.temporaryInsurance ?? raw.basicInfo?.tempInsuranceAmount;
+      if (rawIns !== undefined && rawIns !== null && !isNaN(Number(rawIns)) && Number(rawIns) > 0) {
+        temporaryInsurance = Number(rawIns);
+      }
+    }
+
+    if ((!bookletPrice || bookletPrice === 0) && raw) {
+      const rawPrice = raw.bookletPrice ?? raw.basicInfo?.bookletPrice ?? raw.basicInfo?.participationFee;
+      if (rawPrice !== undefined && rawPrice !== null && !isNaN(Number(rawPrice)) && Number(rawPrice) > 0) {
+        bookletPrice = Number(rawPrice);
+      }
+    }
+
+    return {
+      title: title || 'مناقصة حكومية رسمية',
+      referenceNumber: referenceNumber || undefined,
+      authority: authority || undefined,
+      temporaryInsurance: temporaryInsurance || undefined,
+      bookletPrice: bookletPrice || undefined,
+    };
+  }
+
+  // Permanent self-repair for existing corrupted/swapped database records
+  async autoRepairRadarItems() {
+    try {
+      const items = await this.prisma.radarItem.findMany({
+        where: {
+          OR: [
+            { referenceNumber: { startsWith: 'تعلن' } },
+            { referenceNumber: { startsWith: 'عملية' } },
+            { referenceNumber: { startsWith: 'مزايدة' } },
+            { referenceNumber: { startsWith: 'مناقصة' } },
+            { referenceNumber: { startsWith: 'جلسة' } },
+          ],
+        },
+      });
+
+      for (const item of items) {
+        let raw: any = null;
+        if (item.rawData) {
+          try { raw = JSON.parse(item.rawData); } catch {}
+        }
+        const norm = this.normalizeRadarItemData(item, raw);
+        await this.prisma.radarItem.update({
+          where: { id: item.id },
+          data: {
+            title: norm.title,
+            referenceNumber: norm.referenceNumber,
+            authority: norm.authority,
+            temporaryInsurance: norm.temporaryInsurance,
+            bookletPrice: norm.bookletPrice,
+          },
+        }).catch(() => {});
+      }
+    } catch {}
   }
 
   // --- Radar Items ---
@@ -668,7 +815,7 @@ export class RadarService implements OnModuleInit {
       }
     }
 
-    // Parse rawData into clean object for frontend
+    // Parse rawData into clean object for frontend and normalize fields
     const parsedItems = items.map((item) => {
       let raw: any = null;
       if (item.rawData) {
@@ -683,8 +830,14 @@ export class RadarService implements OnModuleInit {
           !a.name?.includes('جدول الكميات والمقايسة التثمينية')
         );
       }
+      const norm = this.normalizeRadarItemData(item, raw);
       return {
         ...item,
+        title: norm.title,
+        referenceNumber: norm.referenceNumber,
+        authority: norm.authority,
+        temporaryInsurance: norm.temporaryInsurance,
+        bookletPrice: norm.bookletPrice,
         rawDetails: raw,
       };
     });
@@ -720,8 +873,14 @@ export class RadarService implements OnModuleInit {
       );
     }
 
+    const norm = this.normalizeRadarItemData(item, raw);
     return {
       ...item,
+      title: norm.title,
+      referenceNumber: norm.referenceNumber,
+      authority: norm.authority,
+      temporaryInsurance: norm.temporaryInsurance,
+      bookletPrice: norm.bookletPrice,
       rawDetails: raw,
     };
   }
