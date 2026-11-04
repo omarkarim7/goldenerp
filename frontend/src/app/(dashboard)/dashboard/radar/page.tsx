@@ -364,17 +364,43 @@ export default function RadarPage() {
       const res = await api.post("/radar/scan", { pagesCount: 10 });
       if (res.data?.success) {
         setScanStep(4);
-        if (res.data?.isCloudRun || res.data?.isCloudGuided) {
-          const msg = res.data.message || "🚀 تم تحديث الرادار بنجاح!";
+        if (res.data?.isCloudRun) {
+          const msg = res.data.message || "🚀 تم إطلاق الفحص السحابي بنجاح عبر سحابة GitHub!";
+          toast.success(msg, { duration: 6000 });
           setScanResult({
             success: true,
             total: 0,
-            totalAll: res.data?.totalScanned || items.length || 10,
+            totalAll: items.length,
             isNew: false,
             message: msg,
           });
-          toast.success(msg);
+          // Wait and poll for 20 seconds while the cloud runner executes
+          for (let i = 0; i < 5; i++) {
+            await new Promise((r) => setTimeout(r, 4000));
+            await fetchData();
+          }
           await fetchData();
+          setIsScanning(false);
+          return;
+        }
+
+        if (res.data?.requiresToken) {
+          setScanResult({
+            success: true,
+            total: 0,
+            totalAll: items.length,
+            isNew: false,
+            message: res.data.message,
+          });
+          toast.info("لتشغيل الفحص التلقائي من داخل الزر مباشرة، يرجى حفظ رمز GitHub Token في الإعدادات، أو الضغط أدناه لتشغيل السحابة فوراً.", {
+            action: {
+              label: "تشغيل عبر GitHub 🚀",
+              onClick: () => window.open(res.data.cloudWorkflowUrl, "_blank"),
+            },
+            duration: 8000,
+          });
+          await fetchData();
+          setIsScanning(false);
           return;
         }
 
@@ -3766,185 +3792,7 @@ export default function RadarPage() {
         </Portal>
       )}
 
-      {/* ========================================================================= */}
-      {/* MODAL 5: WEBSHARE PROXY CONFIGURATION MODAL                               */}
-      {/* ========================================================================= */}
-      {proxyModalOpen && (
-        <Portal>
-          <div className="fixed inset-0 z-[99999] bg-black/80 backdrop-blur-md flex items-center justify-center p-4 animate-fade-in">
-            <div className="bg-slate-950 border border-slate-800 rounded-3xl p-6 max-w-lg w-full shadow-2xl space-y-4 animate-scale-up text-right">
-              {/* Header */}
-              <div className="flex items-center justify-between pb-3 border-b border-slate-800">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-purple-600 to-indigo-500 flex items-center justify-center text-white shadow-lg shadow-purple-500/30">
-                    <Globe2 className="h-5 w-5" />
-                  </div>
-                  <div>
-                    <h3 className="text-base sm:text-lg font-black text-white">
-                      إعداد البروكسي الداخلي (Webshare.io)
-                    </h3>
-                    <p className="text-xs text-slate-400">
-                      لتشغيل الفحص المباشر وتحميل الكراسات من داخل السيستم بدون حظر
-                    </p>
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setProxyModalOpen(false)}
-                  className="p-1.5 rounded-xl bg-slate-900 border border-slate-800 text-slate-400 hover:text-white transition-colors cursor-pointer"
-                >
-                  <X className="h-5 w-5" />
-                </button>
-              </div>
 
-              {/* Status Pills */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
-                <div className={`p-3 rounded-2xl border flex items-center justify-between ${
-                  proxyConfigured
-                    ? "bg-emerald-950/40 border-emerald-500/30 text-emerald-300"
-                    : "bg-slate-900 border-slate-800 text-slate-400"
-                }`}>
-                  <div className="flex items-center gap-2">
-                    <span className={`w-2.5 h-2.5 rounded-full ${proxyConfigured ? "bg-emerald-400 animate-pulse" : "bg-slate-600"}`} />
-                    <span className="font-bold">{proxyConfigured ? "البروكسي الداخلي: مفعل 🟢" : "البروكسي: غير مفعل"}</span>
-                  </div>
-                </div>
-
-                <div className={`p-3 rounded-2xl border flex items-center justify-between ${
-                  githubConfigured
-                    ? "bg-blue-950/40 border-blue-500/30 text-blue-300"
-                    : "bg-slate-900 border-slate-800 text-slate-400"
-                }`}>
-                  <div className="flex items-center gap-2">
-                    <span className={`w-2.5 h-2.5 rounded-full ${githubConfigured ? "bg-blue-400 animate-pulse" : "bg-slate-600"}`} />
-                    <span className="font-bold">{githubConfigured ? "سحابة GitHub: مفعلة 🟢" : "سحابة GitHub: غير مفعلة"}</span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Guide Card - Two Cloud Solutions */}
-              <div className="space-y-3">
-                {/* Webshare Option */}
-                <div className="p-3.5 rounded-2xl bg-purple-950/30 border border-purple-500/20 text-purple-200 text-xs space-y-2">
-                  <div className="flex items-center justify-between">
-                    <span className="font-bold text-sm text-purple-100 flex items-center gap-1.5">
-                      <span>1️⃣ الخيار الأول: بروكسي داخلي مباشر (Webshare.io)</span>
-                    </span>
-                    <a
-                      href="https://proxy.webshare.io/proxy/list"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-purple-400 hover:text-purple-300 underline font-bold text-[11px]"
-                    >
-                      صفحة Proxy List ↗
-                    </a>
-                  </div>
-                  <p className="text-slate-300 leading-relaxed text-[11px]">
-                    ⚠️ <strong className="text-amber-300">ملاحظة هامة:</strong> الخطة المجانية من Webshare تتطلب استخدام الـ IP المباشر من صفحة <strong>Proxy List</strong> وليس سيرفر <code className="text-rose-300">p.webshare.io</code> الذي يعطي خطأ 407.<br />
-                    ادخل على حسابك ثم اضغط على <strong>Proxy List</strong> وانسخ أي بروكسي بصيغة:<br />
-                    <code className="text-emerald-300 font-mono text-[10px] dir-ltr block mt-1 bg-slate-900 p-1.5 rounded-lg border border-slate-800">
-                      http://phgeraeh:33o9h1jp677l@IP_HERE:PORT_HERE
-                    </code>
-                  </p>
-                  <div className="space-y-1 text-right pt-1">
-                    <label className="text-[11px] font-bold text-slate-200 block">
-                      رابط البروكسي المباشر (Proxy URL):
-                    </label>
-                    <Input
-                      type="text"
-                      dir="ltr"
-                      placeholder="http://phgeraeh:33o9h1jp677l@185.xxx.xxx.xxx:8000"
-                      value={proxyUrlInput}
-                      onChange={(e) => setProxyUrlInput(e.target.value)}
-                      className="bg-slate-900 border-slate-700 text-white text-xs font-mono rounded-xl focus:border-purple-500"
-                    />
-                  </div>
-                </div>
-
-                {/* GitHub Actions Cloud Option */}
-                <div className="p-3.5 rounded-2xl bg-blue-950/30 border border-blue-500/20 text-blue-200 text-xs space-y-2">
-                  <div className="flex items-center justify-between">
-                    <span className="font-bold text-sm text-blue-100 flex items-center gap-1.5">
-                      <span>2️⃣ الخيار الثاني: الفحص السحابي التلقائي (GitHub Actions)</span>
-                    </span>
-                    <a
-                      href="https://github.com/settings/tokens"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-blue-400 hover:text-blue-300 underline font-bold text-[11px]"
-                    >
-                      إنشاء توكن GitHub ↗
-                    </a>
-                  </div>
-                  <p className="text-slate-300 leading-relaxed text-[11px]">
-                    سيرفر سحابي مجاني 2000 دقيقة/شهر يعمل تلقائياً كل يوم الساعة 9:00 صباحاً بتوقيت القاهرة.<br />
-                    لربط زر &quot;تشغيل فحص الرادار الآن&quot; بالسحابة مباشرة، أنشئ Personal Access Token (classic) مع صلاحية <code className="text-blue-300 font-mono">repo</code> والصقه هنا:
-                  </p>
-                  <div className="space-y-1 text-right pt-1">
-                    <label className="text-[11px] font-bold text-slate-200 block">
-                      رمز توكن GitHub (Personal Access Token):
-                    </label>
-                    <Input
-                      type="password"
-                      dir="ltr"
-                      placeholder="ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
-                      value={githubTokenInput}
-                      onChange={(e) => setGithubTokenInput(e.target.value)}
-                      className="bg-slate-900 border-slate-700 text-white text-xs font-mono rounded-xl focus:border-blue-500"
-                    />
-                  </div>
-                </div>
-              </div>
-
-              {/* Actions */}
-              <div className="flex items-center justify-between gap-2.5 pt-2 border-t border-slate-800">
-                {(proxyConfigured || githubConfigured) && (
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    onClick={async () => {
-                      setProxyUrlInput("");
-                      setGithubTokenInput("");
-                      await handleSaveProxy();
-                    }}
-                    className="text-xs text-rose-400 hover:text-rose-300 hover:bg-rose-950/30 font-bold"
-                  >
-                    تفريغ الإعدادات
-                  </Button>
-                )}
-                <div className="flex items-center gap-2 mr-auto">
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    onClick={() => setProxyModalOpen(false)}
-                    className="text-xs text-slate-400 hover:text-white"
-                  >
-                    إلغاء
-                  </Button>
-                  <Button
-                    type="button"
-                    onClick={handleSaveProxy}
-                    disabled={isSavingProxy}
-                    className="bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold px-5 py-2.5 rounded-xl text-xs flex items-center gap-2 shadow-lg shadow-purple-600/30 active:scale-95 transition-all cursor-pointer"
-                  >
-                    {isSavingProxy ? (
-                      <>
-                        <RefreshCw className="h-4 w-4 animate-spin" />
-                        <span>جاري الحفظ والتفعيل...</span>
-                      </>
-                    ) : (
-                      <>
-                        <CheckCircle className="h-4 w-4" />
-                        <span>حفظ وتفعيل الإعدادات الآن 🚀</span>
-                      </>
-                    )}
-                  </Button>
-                </div>
-              </div>
-            </div>
-          </div>
-        </Portal>
-      )}
     </div>
   );
 }

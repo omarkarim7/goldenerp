@@ -156,19 +156,7 @@ export class RadarService implements OnModuleInit {
       await this.cleanupLegacyMockData().catch(() => {});
       await this.autoRepairRadarItems().catch(() => {});
 
-      // 1. Check if a proxy is configured (e.g. Webshare.io Direct Proxy)
-      const hasProxy = await this.scraper.hasProxyConfigured();
-      if (hasProxy) {
-        try {
-          this.logger.log('Proxy configured: Executing direct in-system portal scan...');
-          const result = await this.scraper.scan(pagesCount);
-          return result;
-        } catch (proxyErr: any) {
-          this.logger.warn(`In-system proxy scan failed (${proxyErr.message}), falling back to cloud runner...`);
-        }
-      }
-
-      // 2. Check if GitHub Actions Cloud Runner dispatch is configured
+      // 1. PRIMARY: Trigger GitHub Actions Cloud Runner
       const ghSetting = await this.prisma.systemSetting.findUnique({
         where: { key: 'radar.github_token' },
       }).catch(() => null);
@@ -195,7 +183,7 @@ export class RadarService implements OnModuleInit {
               isCloudRun: true,
               totalScanned: 0,
               newCount: 0,
-              message: '🚀 تم إطلاق الفحص السحابي بنجاح عبر GitHub Actions! جاري فحص البوابة الحكومية وضخ المناقصات وحفظ الكراسات الرسمية تلقائياً خلال 20 ثانية.',
+              message: '🚀 تم إطلاق الفحص السحابي بنجاح عبر سحابة GitHub! جاري فحص البوابة الحكومية وضخ أحدث المناقصات والكراسات وتحديث الشاشة تلقائياً خلال 20 ثانية.',
             };
           } else {
             const errTxt = await ghRes.text();
@@ -206,24 +194,25 @@ export class RadarService implements OnModuleInit {
         }
       }
 
-      // 3. Fallback: Count current authentic items in database and return informative guidance
+      // If no token or dispatch failed, guide user cleanly
       const totalInDb = await this.prisma.radarItem.count();
       return {
         success: true,
         isCloudGuided: true,
+        requiresToken: !githubToken,
+        cloudWorkflowUrl: `https://github.com/${githubRepo}/actions/workflows/radar-auto-scan.yml`,
         totalScanned: totalInDb,
         newCount: 0,
-        message: '🚀 الرادار نشط ومحدث! لتشغيل فحص لحظي مباشر من داخل السيستم، يرجى تفعيل البروكسي الداخلي (Webshare Direct IP) أو توكن GitHub من نافذة الإعدادات.',
+        message: '🚀 لتشغيل الفحص السحابي بضغطة زر مباشرة من داخل السيستم، يرجى حفظ رمز GitHub Token في الإعدادات، أو الضغط على تشغيل السحابة فوراً عبر GitHub.',
       };
     } catch (err: any) {
       this.logger.warn(`Radar live scan handled: ${err.message}`);
       const totalInDb = await this.prisma.radarItem.count().catch(() => 10);
       return {
-        success: true,
-        isCloudGuided: true,
+        success: false,
         totalScanned: totalInDb,
         newCount: 0,
-        message: '🚀 الرادار محدث وجاهز! الفحص السحابي التلقائي 24/7 يعمل بنجاح.',
+        message: err.message || 'حدث خطأ أثناء فحص البوابة الحكومية',
       };
     }
   }
@@ -728,7 +717,18 @@ export class RadarService implements OnModuleInit {
 
   async saveProxyConfig(proxyUrl?: string, githubToken?: string) {
     if (proxyUrl !== undefined) {
-      const cleanProxy = (proxyUrl || '').trim();
+      let cleanProxy = (proxyUrl || '').trim();
+      // Auto-detect format: IP:PORT:USER:PASS or USER:PASS:IP:PORT and convert to standard URL
+      const colonParts = cleanProxy.split(':');
+      if (colonParts.length === 4) {
+        if (/^[\d\.]+$/.test(colonParts[0])) {
+          // IP:PORT:USER:PASS
+          cleanProxy = `http://${colonParts[2]}:${colonParts[3]}@${colonParts[0]}:${colonParts[1]}/`;
+        } else if (/^[\d\.]+$/.test(colonParts[2])) {
+          // USER:PASS:IP:PORT
+          cleanProxy = `http://${colonParts[0]}:${colonParts[1]}@${colonParts[2]}:${colonParts[3]}/`;
+        }
+      }
       if (!cleanProxy) {
         await this.prisma.systemSetting.deleteMany({
           where: { key: 'radar.proxy_url' },

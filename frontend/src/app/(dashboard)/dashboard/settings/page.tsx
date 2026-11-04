@@ -9,7 +9,7 @@ import {
   X, Landmark, FileText, Phone, Mail, MapPin, Hash,
   Clock, ShieldCheck, ChevronRight, ChevronLeft, RotateCcw, ArrowRight,
   Calendar, AlertTriangle, Timer, Hourglass, Trash2,
-  Send, Smartphone, MessageSquare, KeyRound, ExternalLink, ShieldAlert, CheckCheck, Moon, Cloud, Radar
+  Send, Smartphone, MessageSquare, KeyRound, ExternalLink, ShieldAlert, CheckCheck, Moon, Cloud, Radar, Zap
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -1975,125 +1975,111 @@ export default function SettingsPage() {
                 </Link>
               </div>
 
-              {/* Grid: 2 Columns for Cloud 24/7 & Webshare Proxy */}
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-                {/* 1. Cloud 24/7 Hub (GitHub Actions) */}
-                <div className="rounded-3xl border border-emerald-500/30 bg-emerald-500/[0.03] p-5 sm:p-6 space-y-4 shadow-sm flex flex-col justify-between">
-                  <div className="space-y-3">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2.5">
-                        <div className="w-9 h-9 rounded-xl bg-emerald-500/15 text-emerald-500 flex items-center justify-center font-bold">
-                          <Cloud className="h-5 w-5" />
-                        </div>
-                        <div>
-                          <h4 className="font-bold text-sm text-foreground">الفحص السحابي المستقل 24/7</h4>
-                          <span className="text-[11px] text-muted-foreground">يعمل ذاتياً بدون فتح جهازك</span>
-                        </div>
-                      </div>
-                      <Badge className="bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/30 font-mono text-[11px]">
-                        {radarProxy.githubConfigured ? "السحابة نشطة ومجدولة 🟢" : "السحابة مبرمجة 🚀"}
-                      </Badge>
+              {/* Cloud 24/7 Engine Hub (GitHub Actions Full Width) */}
+              <div className="rounded-3xl border-2 border-emerald-500/30 bg-emerald-500/[0.03] p-5 sm:p-7 space-y-6 shadow-xl">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-border/80 pb-4">
+                  <div className="flex items-center gap-3.5">
+                    <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-emerald-600 to-teal-500 flex items-center justify-center text-white shadow-lg shadow-emerald-500/30 shrink-0">
+                      <Cloud className="h-6 w-6" />
                     </div>
-
-                    <div className="p-3.5 rounded-2xl bg-card border border-border text-xs leading-relaxed space-y-2 text-muted-foreground">
-                      <div className="flex items-center gap-2 font-bold text-foreground">
-                        <Clock className="h-4 w-4 text-emerald-500" />
-                        <span>مواعيد العمل التلقائية:</span>
-                      </div>
-                      <p>
-                        السحابة مبرمجة لتعمل أوتوماتيكياً كل يوم الساعة <strong>09:00 صباحاً بتوقيت القاهرة</strong>، وتقوم بفحص البوابة وحفظ كافة المناقصات الجديدة مباشرة في قاعدة بيانات موقعك ahdahd.eu.
+                    <div>
+                      <h4 className="font-black text-base sm:text-lg text-foreground">
+                        محرك الرصد السحابي المستقل 24/7 (GitHub Actions Engine)
+                      </h4>
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        يعمل ذاتياً عبر سحابة مايكروسوفت دون الحاجة لفتح جهازك، ويتصل بالبوابة الحكومية ويسحب المناقصات مباشرة لموقعك
                       </p>
-                    </div>
-
-                    {/* GitHub Token Input */}
-                    <div className="space-y-1.5 pt-2">
-                      <label className="text-xs font-bold text-foreground block">
-                        رمز التوثيق السحابي (GitHub Token):
-                      </label>
-                      <div className="flex items-center gap-2">
-                        <Input
-                          type="password"
-                          placeholder={radarProxy.githubConfigured ? `محفوظ: ${radarProxy.githubTokenMasked}` : "ghp_xxxxxxxxxxxx"}
-                          value={radarGithubTokenInput}
-                          onChange={(e) => setRadarGithubTokenInput(e.target.value)}
-                          className="bg-card border-border text-xs h-10 font-mono"
-                        />
-                      </div>
-                      <span className="text-[10px] text-muted-foreground block">
-                        يُستخدم لتشغيل الفحص السحابي بنقرة زر واحدة أو تحديث مجدولات GitHub Actions.
-                      </span>
                     </div>
                   </div>
 
-                  <div className="pt-3 border-t border-border flex items-center gap-2">
-                    <a
-                      href="https://github.com/omarkarim7/goldenerp/actions/workflows/radar-auto-scan.yml"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="flex-1 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold py-2.5 px-4 rounded-xl text-xs flex items-center justify-center gap-1.5 shadow-md active:scale-95 transition-all text-center"
-                    >
-                      <Cloud className="h-4 w-4" />
-                      <span>تشغيل الفحص السحابي الآن (GitHub) ↗</span>
-                    </a>
+                  <Badge className="bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/30 font-mono text-xs px-3 py-1.5 self-start sm:self-auto">
+                    {radarProxy.githubConfigured ? "السحابة نشطة ومربوطة بالزر 🟢" : "السحابة مبرمجة 🚀"}
+                  </Badge>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {/* Schedule Details */}
+                  <div className="p-4 rounded-2xl bg-card border border-border text-xs leading-relaxed space-y-2 text-muted-foreground">
+                    <div className="flex items-center gap-2 font-bold text-foreground">
+                      <Clock className="h-4 w-4 text-emerald-500" />
+                      <span>جدول الفحص التلقائي اليومي (24/7):</span>
+                    </div>
+                    <p>
+                      السحابة مبرمجة لتعمل أوتوماتيكياً كل يوم في تمام الساعة <strong>09:00 صباحاً بتوقيت القاهرة</strong>. سواء كان جهازك مغلقاً أو كنت غير متواجد؛ السحابة تفحص البوابة وتضخ العمليات والكراسات فوراً في موقعك ahdahd.eu.
+                    </p>
+                  </div>
+
+                  {/* Manual Run Option */}
+                  <div className="p-4 rounded-2xl bg-card border border-border text-xs leading-relaxed space-y-2 text-muted-foreground flex flex-col justify-between">
+                    <div>
+                      <div className="flex items-center gap-2 font-bold text-foreground">
+                        <Zap className="h-4 w-4 text-amber-500" />
+                        <span>تشغيل يدوي فوري في أي لحظة (من هاتفك أو أي متصفح):</span>
+                      </div>
+                      <p className="mt-1">
+                        يمكنك تشغيل الفحص السحابي يدوياً بنقرة واحدة من صفحة أتمتة GitHub Actions، وسيتم فحص البوابة وتحديث الموقع خلال 25 ثانية فقط.
+                      </p>
+                    </div>
+                    <div className="pt-2">
+                      <a
+                        href="https://github.com/omarkarim7/goldenerp/actions/workflows/radar-auto-scan.yml"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center justify-center gap-2 w-full bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold py-2.5 px-4 rounded-xl text-xs shadow-md active:scale-95 transition-all cursor-pointer"
+                      >
+                        <Cloud className="h-4 w-4" />
+                        <span>تشغيل الفحص السحابي الآن عبر GitHub ↗</span>
+                      </a>
+                    </div>
                   </div>
                 </div>
 
-                {/* 2. Webshare Proxy Hub */}
-                <div className="rounded-3xl border border-purple-500/30 bg-purple-500/[0.03] p-5 sm:p-6 space-y-4 shadow-sm flex flex-col justify-between">
-                  <div className="space-y-3">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2.5">
-                        <div className="w-9 h-9 rounded-xl bg-purple-500/15 text-purple-500 flex items-center justify-center font-bold">
-                          <Globe2 className="h-5 w-5" />
-                        </div>
-                        <div>
-                          <h4 className="font-bold text-sm text-foreground">بروكسي تجاوز الحجب (Webshare Proxy)</h4>
-                          <span className="text-[11px] text-muted-foreground">لتخطي جدار الحماية وTimeout</span>
-                        </div>
-                      </div>
-                      <Badge className={radarProxy.configured ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/30 font-mono text-[11px]" : "bg-slate-500/15 text-slate-400 font-mono text-[11px]"}>
-                        {radarProxy.configured ? "البروكسي نشط 🟢" : "غير مفعل"}
-                      </Badge>
-                    </div>
-
-                    <div className="p-3.5 rounded-2xl bg-card border border-border text-xs leading-relaxed space-y-2 text-muted-foreground">
-                      <div className="flex items-center gap-2 font-bold text-foreground">
-                        <ShieldCheck className="h-4 w-4 text-purple-500" />
-                        <span>وظيفة البروكسي الداخلي:</span>
-                      </div>
-                      <p>
-                        يقوم بتمرير اتصالات البوابة الحكومية عبر خوادم آمنة (Webshare Rotating Proxy) مما يضمن عدم حجب سيرفر Hostinger وتجاوز رسائل Timeout بنجاح.
+                {/* Token Configuration Section */}
+                <div className="p-4 rounded-2xl bg-card border border-border space-y-3">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                    <div>
+                      <h5 className="font-bold text-xs sm:text-sm text-foreground flex items-center gap-1.5">
+                        <KeyRound className="h-4 w-4 text-blue-500" />
+                        <span>ربط زر "تشغيل فحص الرادار" بالسحابة (GitHub Token):</span>
+                      </h5>
+                      <p className="text-[11px] text-muted-foreground mt-0.5">
+                        عند حفظ هذا الرمز، سيقوم زر "تشغيل فحص الرادار" في شاشة الرادار بإطلاق السحابة تلقائياً دون مغادرة الموقع.
                       </p>
                     </div>
 
-                    {/* Proxy URL Input */}
-                    <div className="space-y-1.5 pt-2">
-                      <label className="text-xs font-bold text-foreground block">
-                        رابط البروكسي (Proxy URL):
-                      </label>
-                      <Input
-                        type="text"
-                        placeholder={radarProxy.configured ? `البروكسي الفعال: ${radarProxy.proxyUrl}` : "http://username:password@p.webshare.io:80/"}
-                        value={radarProxyInput}
-                        onChange={(e) => setRadarProxyInput(e.target.value)}
-                        className="bg-card border-border text-xs h-10 font-mono"
-                        dir="ltr"
-                      />
-                      <span className="text-[10px] text-muted-foreground block">
-                        يدعم صيغة HTTP أو SOCKS5 مع اسم المستخدم وكلمة المرور.
+                    {radarProxy.githubConfigured && (
+                      <span className="text-xs text-emerald-500 font-mono font-bold bg-emerald-500/10 px-2.5 py-1 rounded-lg border border-emerald-500/20">
+                        الرمز محفوظ ومفعل: {radarProxy.githubTokenMasked}
                       </span>
-                    </div>
+                    )}
                   </div>
 
-                  <div className="pt-3 border-t border-border flex items-center gap-2">
+                  <div className="flex flex-col sm:flex-row items-center gap-2 pt-1">
+                    <Input
+                      type="password"
+                      placeholder={radarProxy.githubConfigured ? "أدخل رمزاً جديداً لتحديث الرمز الحالي..." : "ghp_xxxxxxxxxxxxxxxxxxxx"}
+                      value={radarGithubTokenInput}
+                      onChange={(e) => setRadarGithubTokenInput(e.target.value)}
+                      className="bg-muted/40 border-border text-xs h-10 font-mono flex-1 w-full"
+                    />
                     <Button
                       onClick={handleSaveRadarProxyConfig}
-                      disabled={isSavingRadarProxy || (!radarProxyInput && !radarGithubTokenInput)}
-                      className="flex-1 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold py-2.5 px-4 rounded-xl text-xs flex items-center justify-center gap-1.5 shadow-md active:scale-95 transition-all cursor-pointer"
+                      disabled={isSavingRadarProxy || !radarGithubTokenInput}
+                      className="w-full sm:w-auto bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-bold px-5 h-10 rounded-xl text-xs flex items-center justify-center gap-1.5 shadow-md active:scale-95 transition-all cursor-pointer"
                     >
                       {isSavingRadarProxy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-                      <span>حفظ وتفعيل إعدادات البروكسي والسحابة 💾</span>
+                      <span>حفظ رمز السحابة 💾</span>
                     </Button>
+                  </div>
+
+                  {/* How to get GitHub Token in 3 steps */}
+                  <div className="p-3 rounded-xl bg-muted/40 border border-border text-[11px] text-muted-foreground space-y-1">
+                    <div className="font-bold text-foreground">💡 كيف تحصل على هذا الرمز المجاني من GitHub في دقيقة واحدة؟</div>
+                    <ol className="list-decimal list-inside space-y-0.5 pr-1">
+                      <li>ادخل إلى حسابك في GitHub ثم <strong>Settings</strong> ➡️ <strong>Developer settings</strong> ➡️ <strong>Personal access tokens (classic)</strong>.</li>
+                      <li>اضغط <strong>Generate new token (classic)</strong> وضع علامة صح على خياري <strong>workflow</strong> و <strong>repo</strong>.</li>
+                      <li>انسخ الكود الناتج والصقه في هذه الخانة واضغط "حفظ رمز السحابة".</li>
+                    </ol>
                   </div>
                 </div>
               </div>
