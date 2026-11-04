@@ -47,12 +47,4 @@ jobs:
           curl -k -s -X POST https://api.ahdahd.eu/api/radar/ingest \
             -H "Content-Type: application/json" \
             -d "{\"items\":[],\"diagnostics\":$(jq -Rs . < crawler_output.log)}" || true
-        env:
-          GOLDENERP_API_BASE: https://api.ahdahd.eu/api
-          GOLDENERP_ADMIN_USER: ahd2026
-          GOLDENERP_ADMIN_PASS: Ahd@Golden#2026!Sec
-          RADAR_GCS_EMAIL: ahdahdahd8818@gmail.com
-          RADAR_GCS_PASSWORD: Nnnn@8818
-        run: |
-          node scripts/cloud-crawler.mjs
 
