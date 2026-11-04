@@ -761,7 +761,7 @@ export async function generateUniversalLetterDocxBlob(
     const bankTargetAddress = savedSub?.bankTargetAddress || "البحيرة – دمنهور - خلف مستشفى الصدر";
 
     const recipientRegex = /(<w:t[^>]*>\s*\/\s*<\/w:t><\/w:r>)([\s\S]*?)(<\/w:p>)/;
-    docXml = docXml.replace(recipientRegex, `$1<w:r><w:rPr><w:rFonts w:ascii="Arabic Typesetting" w:hAnsi="Arabic Typesetting" w:cs="Arabic Typesetting" w:hint="cs"/><w:b/><w:bCs/><w:sz w:val="56"/><w:szCs w:val="56"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t xml:space="preserve"> ${escapeXml(bankRecipientTitle)}</w:t></w:r>$3`);
+    docXml = docXml.replace(recipientRegex, `$1<w:r><w:rPr><w:rFonts w:ascii="Arabic Typesetting" w:hAnsi="Arabic Typesetting" w:cs="Arabic Typesetting" w:hint="cs"/><w:b/><w:bCs/><w:sz w:val="28"/><w:szCs w:val="28"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t xml:space="preserve"> ${escapeXml(bankRecipientTitle)}</w:t></w:r>$3`);
 
     const bankAuthRegex = /(<w:t[^>]*>[^<]*الجهه[^<]*<\/w:t><\/w:r>)([\s\S]*?)(<\/w:p>)/;
     docXml = docXml.replace(bankAuthRegex, `$1<w:r><w:rPr><w:rFonts w:hint="cs"/><w:b/><w:bCs/><w:sz w:val="32"/><w:szCs w:val="32"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t xml:space="preserve"> ${escapeXml(bankTargetAuthority)} وعنوانها : ${escapeXml(bankTargetAddress)}</w:t></w:r>$3`);

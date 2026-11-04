@@ -511,14 +511,14 @@ export function TabGeneralLetter({
 
     const subjectPattern = /<w:p\b[^>]*>(?:(?!<\/w:p>)[\s\S])*?(?:تمهيد|الموضوع\s*بخصوص)(?:(?!<\/w:p>)[\s\S])*?<\/w:p>/;
     const subjectPrefix = docXml.includes("الموضوع بخصوص") ? "الموضوع بخصوص :" : "تمهيد :";
-    const subjectXml = `<w:p><w:pPr><w:tabs><w:tab w:val="left" w:pos="5387"/></w:tabs><w:spacing w:after="0"/><w:ind w:left="-567"/><w:jc w:val="both"/><w:rPr><w:rFonts w:ascii="Arabic Typesetting" w:hAnsi="Arabic Typesetting" w:cs="Arabic Typesetting"/><w:b/><w:bCs/><w:sz w:val="56"/><w:szCs w:val="56"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr></w:pPr><w:r><w:rPr><w:rFonts w:ascii="Arabic Typesetting" w:hAnsi="Arabic Typesetting" w:cs="Arabic Typesetting" w:hint="cs"/><w:b/><w:bCs/><w:sz w:val="36"/><w:szCs w:val="36"/><w:u w:val="single"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t xml:space="preserve">${subjectPrefix} ${escapeXml(cleanSubject || "بشأن العمليات الرسمية")}</w:t></w:r></w:p>`;
+    const subjectXml = `<w:p><w:pPr><w:tabs><w:tab w:val="left" w:pos="5387"/></w:tabs><w:spacing w:after="0"/><w:ind w:left="-567"/><w:jc w:val="both"/><w:rPr><w:rFonts w:ascii="Arabic Typesetting" w:hAnsi="Arabic Typesetting" w:cs="Arabic Typesetting"/><w:b/><w:bCs/><w:sz w:val="28"/><w:szCs w:val="28"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr></w:pPr><w:r><w:rPr><w:rFonts w:ascii="Arabic Typesetting" w:hAnsi="Arabic Typesetting" w:cs="Arabic Typesetting" w:hint="cs"/><w:b/><w:bCs/><w:sz w:val="28"/><w:szCs w:val="28"/><w:u w:val="single"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t xml:space="preserve">${subjectPrefix} ${escapeXml(cleanSubject || "بشأن العمليات الرسمية")}</w:t></w:r></w:p>`;
     if (subjectPattern.test(docXml)) {
       docXml = docXml.replace(subjectPattern, subjectXml);
     }
 
     // محاذاة سطر (تحيه طيبه وبعد) في وسط السطر تماماً بدون أي مسافات بادئة أو انحياز جانبي
     const salutationPattern = /<w:p\b[^>]*>(?:(?!<\/w:p>)[\s\S])*?تحي[ةه]\s*طيب[ةه]\s*وبعد(?:(?!<\/w:p>)[\s\S])*?<\/w:p>/;
-    const salutationXml = `<w:p><w:pPr><w:spacing w:before="140" w:after="140" w:line="240" w:lineRule="auto"/><w:jc w:val="center"/><w:rPr><w:rFonts w:ascii="Aldhabi" w:hAnsi="Aldhabi" w:cs="Aldhabi"/><w:b/><w:bCs/><w:sz w:val="48"/><w:szCs w:val="48"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr></w:pPr><w:r><w:rPr><w:rFonts w:ascii="Aldhabi" w:hAnsi="Aldhabi" w:cs="Aldhabi" w:hint="cs"/><w:b/><w:bCs/><w:sz w:val="48"/><w:szCs w:val="48"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t>تحيه طيبه وبعد</w:t></w:r></w:p>`;
+    const salutationXml = `<w:p><w:pPr><w:spacing w:before="140" w:after="140" w:line="240" w:lineRule="auto"/><w:jc w:val="center"/><w:rPr><w:rFonts w:ascii="Aldhabi" w:hAnsi="Aldhabi" w:cs="Aldhabi"/><w:b/><w:bCs/><w:sz w:val="30"/><w:szCs w:val="30"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr></w:pPr><w:r><w:rPr><w:rFonts w:ascii="Aldhabi" w:hAnsi="Aldhabi" w:cs="Aldhabi" w:hint="cs"/><w:b/><w:bCs/><w:sz w:val="30"/><w:szCs w:val="30"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t>تحيه طيبه وبعد</w:t></w:r></w:p>`;
     if (salutationPattern.test(docXml)) {
       docXml = docXml.replace(salutationPattern, salutationXml);
     }
@@ -526,7 +526,7 @@ export function TabGeneralLetter({
     // 3. استبدال متن الخطاب العام بالكامل مع الحفاظ التام على محاذاة الفقرة وتكبير الخط العربي بشكل بارز ومريح للقراءة
     const bodyPattern = /<w:p\b[^>]*>(?:(?!<\/w:p>)[\s\S])*?الرجاء من سيادتكم(?:(?!<\/w:p>)[\s\S])*?<\/w:p>/;
     if (bodyPattern.test(docXml)) {
-      const newBodyXml = `<w:p><w:pPr><w:spacing w:after="120" w:line="320" w:lineRule="auto"/><w:ind w:left="-567" w:hanging="283"/><w:jc w:val="both"/><w:rPr><w:rFonts w:ascii="Arabic Typesetting" w:hAnsi="Arabic Typesetting" w:cs="Arabic Typesetting"/><w:b/><w:bCs/><w:sz w:val="40"/><w:szCs w:val="40"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr></w:pPr><w:r><w:rPr><w:rFonts w:ascii="Arabic Typesetting" w:hAnsi="Arabic Typesetting" w:cs="Arabic Typesetting" w:hint="cs"/><w:b/><w:bCs/><w:sz w:val="40"/><w:szCs w:val="40"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t xml:space="preserve">${escapeXml(generalLetterBody)}</w:t></w:r></w:p>`;
+      const newBodyXml = `<w:p><w:pPr><w:spacing w:after="100" w:line="280" w:lineRule="auto"/><w:ind w:left="-567" w:hanging="283"/><w:jc w:val="both"/><w:rPr><w:rFonts w:ascii="Arabic Typesetting" w:hAnsi="Arabic Typesetting" w:cs="Arabic Typesetting"/><w:b/><w:bCs/><w:sz w:val="28"/><w:szCs w:val="28"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr></w:pPr><w:r><w:rPr><w:rFonts w:ascii="Arabic Typesetting" w:hAnsi="Arabic Typesetting" w:cs="Arabic Typesetting" w:hint="cs"/><w:b/><w:bCs/><w:sz w:val="28"/><w:szCs w:val="28"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t xml:space="preserve">${escapeXml(generalLetterBody)}</w:t></w:r></w:p>`;
       docXml = docXml.replace(bodyPattern, newBodyXml);
     } else {
       docXml = docXml.replace(/الرجاء من سيادتكم[\s\S]*?المكاتبات الرسميه\s*\./g, escapeXml(generalLetterBody));
@@ -534,7 +534,7 @@ export function TabGeneralLetter({
 
     // محاذاة سطر (وتفضلو بقبول وافر الاحترام والتقدير) في وسط السطر بدقة
     const closingPattern = /<w:p\b[^>]*>(?:(?!<\/w:p>)[\s\S])*?وتفضلو\s*بقبول\s*وافر(?:(?!<\/w:p>)[\s\S])*?<\/w:p>/;
-    const closingXml = `<w:p><w:pPr><w:spacing w:before="120" w:after="140" w:line="240" w:lineRule="auto"/><w:jc w:val="center"/><w:rPr><w:rFonts w:ascii="Andalus" w:hAnsi="Andalus" w:cs="Andalus"/><w:b/><w:bCs/><w:sz w:val="36"/><w:szCs w:val="36"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr></w:pPr><w:r><w:rPr><w:rFonts w:ascii="Andalus" w:hAnsi="Andalus" w:cs="Andalus" w:hint="cs"/><w:b/><w:bCs/><w:sz w:val="36"/><w:szCs w:val="36"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t>وتفضلو بقبول وافر الاحترام والتقدير</w:t></w:r></w:p>`;
+    const closingXml = `<w:p><w:pPr><w:spacing w:before="120" w:after="140" w:line="240" w:lineRule="auto"/><w:jc w:val="center"/><w:rPr><w:rFonts w:ascii="Andalus" w:hAnsi="Andalus" w:cs="Andalus"/><w:b/><w:bCs/><w:sz w:val="28"/><w:szCs w:val="28"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr></w:pPr><w:r><w:rPr><w:rFonts w:ascii="Andalus" w:hAnsi="Andalus" w:cs="Andalus" w:hint="cs"/><w:b/><w:bCs/><w:sz w:val="28"/><w:szCs w:val="28"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t>وتفضلو بقبول وافر الاحترام والتقدير</w:t></w:r></w:p>`;
     if (closingPattern.test(docXml)) {
       docXml = docXml.replace(closingPattern, closingXml);
     }

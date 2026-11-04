@@ -245,6 +245,13 @@ export async function cleanAllDocxXml(zip: any): Promise<void> {
       }
 
       // 6. Purge unneeded draft placeholder paragraphs like "خانه خاليه للملاحظات"
+      // 7. Auto-cap oversized fonts to standard 14pt (28) across templates
+      if (/<w:sz\b[^>]*w:val="(?:5[0-9]|4[0-9]|3[6-9])"/i.test(xml)) {
+        xml = xml.replace(/<w:sz\b([^>]*)w:val="(?:5[0-9]|4[0-9]|3[6-9])"([^>]*)\/>/gi, '<w:sz$1w:val="28"$2/>');
+        xml = xml.replace(/<w:szCs\b([^>]*)w:val="(?:5[0-9]|4[0-9]|3[6-9])"([^>]*)\/>/gi, '<w:szCs$1w:val="28"$2/>');
+        changed = true;
+      }
+
       if (xml.includes("خانه خاليه للملاحظات")) {
         xml = xml.replace(/<w:p\b[^>]*>(?:(?!<\/w:p>)[\s\S])*?خانه خاليه للملاحظات(?:(?!<\/w:p>)[\s\S])*?<\/w:p>/gi, "");
         changed = true;
@@ -826,7 +833,7 @@ export function replaceDocxRecipient(
   // مطابقة فقرة المرسل إليه في كافة قوالب الوورد الرسمية (سواء بدأت بالسيد أو السادة أو الساده أو تضمنت دمنهور أو أي جهة)
   const recipientPattern = /<w:p\b[^>]*>(?:(?!<\/w:p>)[\s\S])*?(?:السيد|السادة|الساده)(?:(?!<\/w:p>)[\s\S])*?(?:مشتريات|دمنهو|الأستاذ|المهندس|الدكتور|المستشار|عميد|رئيس|مدير|المحترم|\/)(?:(?!<\/w:p>)[\s\S])*?<\/w:p>/;
 
-  const centeredRecipientXml = `<w:p><w:pPr><w:spacing w:after="0"/><w:jc w:val="center"/><w:rPr><w:rFonts w:ascii="Arabic Typesetting" w:hAnsi="Arabic Typesetting" w:cs="Arabic Typesetting"/><w:b/><w:bCs/><w:sz w:val="50"/><w:szCs w:val="50"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr></w:pPr><w:r><w:rPr><w:rFonts w:ascii="Arabic Typesetting" w:hAnsi="Arabic Typesetting" w:cs="Arabic Typesetting" w:hint="cs"/><w:b/><w:bCs/><w:sz w:val="50"/><w:szCs w:val="50"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t xml:space="preserve">${cleanPrefix} / ${cleanTitle}</w:t></w:r></w:p>`;
+  const centeredRecipientXml = `<w:p><w:pPr><w:spacing w:after="0"/><w:jc w:val="center"/><w:rPr><w:rFonts w:ascii="Arabic Typesetting" w:hAnsi="Arabic Typesetting" w:cs="Arabic Typesetting"/><w:b/><w:bCs/><w:sz w:val="28"/><w:szCs w:val="28"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr></w:pPr><w:r><w:rPr><w:rFonts w:ascii="Arabic Typesetting" w:hAnsi="Arabic Typesetting" w:cs="Arabic Typesetting" w:hint="cs"/><w:b/><w:bCs/><w:sz w:val="28"/><w:szCs w:val="28"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t xml:space="preserve">${cleanPrefix} / ${cleanTitle}</w:t></w:r></w:p>`;
 
   if (recipientPattern.test(docXml)) {
     return docXml.replace(recipientPattern, centeredRecipientXml);
@@ -1145,34 +1152,34 @@ export function buildOfficialSignaturesTableXml({
     <w:tc>
       <w:tcPr><w:tcW w:w="3300" w:type="dxa"/><w:vAlign w:val="top"/></w:tcPr>
       <w:p>
-        <w:pPr><w:spacing w:after="80" w:line="280" w:lineRule="auto"/><w:jc w:val="center"/><w:rPr><w:rFonts w:ascii="Arabic Typesetting" w:hAnsi="Arabic Typesetting" w:cs="Arabic Typesetting"/><w:b/><w:bCs/><w:sz w:val="38"/><w:szCs w:val="38"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr></w:pPr>
-        <w:r><w:rPr><w:rFonts w:ascii="Arabic Typesetting" w:hAnsi="Arabic Typesetting" w:cs="Arabic Typesetting" w:hint="cs"/><w:b/><w:bCs/><w:sz w:val="38"/><w:szCs w:val="38"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t>${safeSpecTitle}</w:t></w:r>
+        <w:pPr><w:spacing w:after="80" w:line="280" w:lineRule="auto"/><w:jc w:val="center"/><w:rPr><w:rFonts w:ascii="Arabic Typesetting" w:hAnsi="Arabic Typesetting" w:cs="Arabic Typesetting"/><w:b/><w:bCs/><w:sz w:val="26"/><w:szCs w:val="26"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr></w:pPr>
+        <w:r><w:rPr><w:rFonts w:ascii="Arabic Typesetting" w:hAnsi="Arabic Typesetting" w:cs="Arabic Typesetting" w:hint="cs"/><w:b/><w:bCs/><w:sz w:val="26"/><w:szCs w:val="26"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t>${safeSpecTitle}</w:t></w:r>
       </w:p>
       <w:p>
-        <w:pPr><w:spacing w:after="0" w:line="280" w:lineRule="auto"/><w:jc w:val="center"/><w:rPr><w:rFonts w:ascii="Arabic Typesetting" w:hAnsi="Arabic Typesetting" w:cs="Arabic Typesetting"/><w:b/><w:bCs/><w:sz w:val="36"/><w:szCs w:val="36"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr></w:pPr>
-        <w:r><w:rPr><w:rFonts w:ascii="Arabic Typesetting" w:hAnsi="Arabic Typesetting" w:cs="Arabic Typesetting" w:hint="cs"/><w:b/><w:bCs/><w:sz w:val="36"/><w:szCs w:val="36"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t>${safeSpecName || " "}</w:t></w:r>
-      </w:p>
-    </w:tc>
-    <w:tc>
-      <w:tcPr><w:tcW w:w="3300" w:type="dxa"/><w:vAlign w:val="top"/></w:tcPr>
-      <w:p>
-        <w:pPr><w:spacing w:after="80" w:line="280" w:lineRule="auto"/><w:jc w:val="center"/><w:rPr><w:rFonts w:ascii="Arabic Typesetting" w:hAnsi="Arabic Typesetting" w:cs="Arabic Typesetting"/><w:b/><w:bCs/><w:sz w:val="38"/><w:szCs w:val="38"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr></w:pPr>
-        <w:r><w:rPr><w:rFonts w:ascii="Arabic Typesetting" w:hAnsi="Arabic Typesetting" w:cs="Arabic Typesetting" w:hint="cs"/><w:b/><w:bCs/><w:sz w:val="38"/><w:szCs w:val="38"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t>المدير المالي</w:t></w:r>
-      </w:p>
-      <w:p>
-        <w:pPr><w:spacing w:after="0" w:line="280" w:lineRule="auto"/><w:jc w:val="center"/><w:rPr><w:rFonts w:ascii="Arabic Typesetting" w:hAnsi="Arabic Typesetting" w:cs="Arabic Typesetting"/><w:b/><w:bCs/><w:sz w:val="36"/><w:szCs w:val="36"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr></w:pPr>
-        <w:r><w:rPr><w:rFonts w:ascii="Arabic Typesetting" w:hAnsi="Arabic Typesetting" w:cs="Arabic Typesetting" w:hint="cs"/><w:b/><w:bCs/><w:sz w:val="36"/><w:szCs w:val="36"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t>${safeFinName || " "}</w:t></w:r>
+        <w:pPr><w:spacing w:after="0" w:line="280" w:lineRule="auto"/><w:jc w:val="center"/><w:rPr><w:rFonts w:ascii="Arabic Typesetting" w:hAnsi="Arabic Typesetting" w:cs="Arabic Typesetting"/><w:b/><w:bCs/><w:sz w:val="24"/><w:szCs w:val="24"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr></w:pPr>
+        <w:r><w:rPr><w:rFonts w:ascii="Arabic Typesetting" w:hAnsi="Arabic Typesetting" w:cs="Arabic Typesetting" w:hint="cs"/><w:b/><w:bCs/><w:sz w:val="24"/><w:szCs w:val="24"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t>${safeSpecName || " "}</w:t></w:r>
       </w:p>
     </w:tc>
     <w:tc>
       <w:tcPr><w:tcW w:w="3300" w:type="dxa"/><w:vAlign w:val="top"/></w:tcPr>
       <w:p>
-        <w:pPr><w:spacing w:after="80" w:line="280" w:lineRule="auto"/><w:jc w:val="center"/><w:rPr><w:rFonts w:ascii="Arabic Typesetting" w:hAnsi="Arabic Typesetting" w:cs="Arabic Typesetting"/><w:b/><w:bCs/><w:sz w:val="42"/><w:szCs w:val="42"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr></w:pPr>
-        <w:r><w:rPr><w:rFonts w:ascii="Arabic Typesetting" w:hAnsi="Arabic Typesetting" w:cs="Arabic Typesetting" w:hint="cs"/><w:b/><w:bCs/><w:sz w:val="42"/><w:szCs w:val="42"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t>يعتمد ،،،،،،</w:t></w:r>
+        <w:pPr><w:spacing w:after="80" w:line="280" w:lineRule="auto"/><w:jc w:val="center"/><w:rPr><w:rFonts w:ascii="Arabic Typesetting" w:hAnsi="Arabic Typesetting" w:cs="Arabic Typesetting"/><w:b/><w:bCs/><w:sz w:val="26"/><w:szCs w:val="26"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr></w:pPr>
+        <w:r><w:rPr><w:rFonts w:ascii="Arabic Typesetting" w:hAnsi="Arabic Typesetting" w:cs="Arabic Typesetting" w:hint="cs"/><w:b/><w:bCs/><w:sz w:val="26"/><w:szCs w:val="26"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t>المدير المالي</w:t></w:r>
       </w:p>
       <w:p>
-        <w:pPr><w:spacing w:after="0" w:line="280" w:lineRule="auto"/><w:jc w:val="center"/><w:rPr><w:rFonts w:ascii="Arabic Typesetting" w:hAnsi="Arabic Typesetting" w:cs="Arabic Typesetting"/><w:b/><w:bCs/><w:sz w:val="38"/><w:szCs w:val="38"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr></w:pPr>
-        <w:r><w:rPr><w:rFonts w:ascii="Arabic Typesetting" w:hAnsi="Arabic Typesetting" w:cs="Arabic Typesetting" w:hint="cs"/><w:b/><w:bCs/><w:sz w:val="38"/><w:szCs w:val="38"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t>${safeChairman}</w:t></w:r>
+        <w:pPr><w:spacing w:after="0" w:line="280" w:lineRule="auto"/><w:jc w:val="center"/><w:rPr><w:rFonts w:ascii="Arabic Typesetting" w:hAnsi="Arabic Typesetting" w:cs="Arabic Typesetting"/><w:b/><w:bCs/><w:sz w:val="24"/><w:szCs w:val="24"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr></w:pPr>
+        <w:r><w:rPr><w:rFonts w:ascii="Arabic Typesetting" w:hAnsi="Arabic Typesetting" w:cs="Arabic Typesetting" w:hint="cs"/><w:b/><w:bCs/><w:sz w:val="24"/><w:szCs w:val="24"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t>${safeFinName || " "}</w:t></w:r>
+      </w:p>
+    </w:tc>
+    <w:tc>
+      <w:tcPr><w:tcW w:w="3300" w:type="dxa"/><w:vAlign w:val="top"/></w:tcPr>
+      <w:p>
+        <w:pPr><w:spacing w:after="80" w:line="280" w:lineRule="auto"/><w:jc w:val="center"/><w:rPr><w:rFonts w:ascii="Arabic Typesetting" w:hAnsi="Arabic Typesetting" w:cs="Arabic Typesetting"/><w:b/><w:bCs/><w:sz w:val="28"/><w:szCs w:val="28"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr></w:pPr>
+        <w:r><w:rPr><w:rFonts w:ascii="Arabic Typesetting" w:hAnsi="Arabic Typesetting" w:cs="Arabic Typesetting" w:hint="cs"/><w:b/><w:bCs/><w:sz w:val="28"/><w:szCs w:val="28"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t>يعتمد ،،،،،،</w:t></w:r>
+      </w:p>
+      <w:p>
+        <w:pPr><w:spacing w:after="0" w:line="280" w:lineRule="auto"/><w:jc w:val="center"/><w:rPr><w:rFonts w:ascii="Arabic Typesetting" w:hAnsi="Arabic Typesetting" w:cs="Arabic Typesetting"/><w:b/><w:bCs/><w:sz w:val="26"/><w:szCs w:val="26"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr></w:pPr>
+        <w:r><w:rPr><w:rFonts w:ascii="Arabic Typesetting" w:hAnsi="Arabic Typesetting" w:cs="Arabic Typesetting" w:hint="cs"/><w:b/><w:bCs/><w:sz w:val="26"/><w:szCs w:val="26"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t>${safeChairman}</w:t></w:r>
       </w:p>
     </w:tc>
   </w:tr>
@@ -1278,13 +1285,13 @@ export function injectSingleQrIntoDocXml(
   if (titleMatch) {
     const pContent = titleMatch[0].replace(/<[^>]+>/g, "").replace(/\s+/g, " ");
     if (pContent.includes("عرض") && pContent.includes("فنى")) {
-      const newP = `<w:p><w:pPr><w:spacing w:after="0"/><w:jc w:val="center"/><w:rPr><w:rFonts w:ascii="PT Bold Heading" w:cs="PT Bold Heading"/><w:b/><w:bCs/><w:sz w:val="44"/><w:szCs w:val="46"/><w:u w:val="single"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr></w:pPr>${qrToInject}<w:r><w:rPr><w:rFonts w:ascii="PT Bold Heading" w:cs="PT Bold Heading" w:hint="cs"/><w:b/><w:bCs/><w:sz w:val="44"/><w:szCs w:val="46"/><w:u w:val="single"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t>عرض فنى</w:t></w:r></w:p>`;
+      const newP = `<w:p><w:pPr><w:spacing w:after="0"/><w:jc w:val="center"/><w:rPr><w:rFonts w:ascii="PT Bold Heading" w:cs="PT Bold Heading"/><w:b/><w:bCs/><w:sz w:val="32"/><w:szCs w:val="32"/><w:u w:val="single"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr></w:pPr>${qrToInject}<w:r><w:rPr><w:rFonts w:ascii="PT Bold Heading" w:cs="PT Bold Heading" w:hint="cs"/><w:b/><w:bCs/><w:sz w:val="32"/><w:szCs w:val="32"/><w:u w:val="single"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t>عرض فنى</w:t></w:r></w:p>`;
       docXml = docXml.replace(titlePRegex, newP);
       docXml = docXml.replace(/Ad26111000001/g, registrationNumber);
       return docXml;
     }
     if (pContent.includes("عرض") && pContent.includes("مال")) {
-      const newP = `<w:p><w:pPr><w:spacing w:after="0"/><w:jc w:val="center"/><w:rPr><w:rFonts w:ascii="PT Bold Heading" w:cs="PT Bold Heading"/><w:b/><w:bCs/><w:sz w:val="44"/><w:szCs w:val="46"/><w:u w:val="single"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr></w:pPr>${qrToInject}<w:r><w:rPr><w:rFonts w:ascii="PT Bold Heading" w:cs="PT Bold Heading" w:hint="cs"/><w:b/><w:bCs/><w:sz w:val="44"/><w:szCs w:val="46"/><w:u w:val="single"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t>عرض مالى</w:t></w:r></w:p>`;
+      const newP = `<w:p><w:pPr><w:spacing w:after="0"/><w:jc w:val="center"/><w:rPr><w:rFonts w:ascii="PT Bold Heading" w:cs="PT Bold Heading"/><w:b/><w:bCs/><w:sz w:val="32"/><w:szCs w:val="32"/><w:u w:val="single"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr></w:pPr>${qrToInject}<w:r><w:rPr><w:rFonts w:ascii="PT Bold Heading" w:cs="PT Bold Heading" w:hint="cs"/><w:b/><w:bCs/><w:sz w:val="32"/><w:szCs w:val="32"/><w:u w:val="single"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t>عرض مالى</w:t></w:r></w:p>`;
       docXml = docXml.replace(titlePRegex, newP);
       docXml = docXml.replace(/Ad26111000001/g, registrationNumber);
       return docXml;

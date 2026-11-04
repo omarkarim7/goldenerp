@@ -605,13 +605,13 @@ export function FinalInsuranceRefundSection({
     docXml = docXml.replace(/37547|10000/g, escapeXml(refundAmount));
 
     const sTafIdx = docXml.indexOf('<w:t xml:space="preserve"> فقط وقدره </w:t>');
-    const eTafToken = 'جنيها لا غير</w:t></w:r><w:r w:rsidR="000D1CD0"><w:rPr><w:rFonts w:hint="cs"/><w:b/><w:bCs/><w:sz w:val="36"/><w:szCs w:val="36"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t>.</w:t></w:r>';
+    const eTafToken = 'جنيها لا غير</w:t></w:r><w:r w:rsidR="000D1CD0"><w:rPr><w:rFonts w:hint="cs"/><w:b/><w:bCs/><w:sz w:val="28"/><w:szCs w:val="28"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t>.</w:t></w:r>';
     const eTafIdx = docXml.indexOf(eTafToken, sTafIdx !== -1 ? sTafIdx : 0);
 
     if (sTafIdx !== -1 && eTafIdx !== -1) {
       const before = docXml.substring(0, sTafIdx);
       const after = docXml.substring(eTafIdx + eTafToken.length);
-      const replacementRun = `<w:r><w:rPr><w:b/><w:bCs/><w:sz w:val="36"/><w:szCs w:val="36"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t xml:space="preserve"> ( ${escapeXml(tafqeetAmount)} ) </w:t></w:r>`;
+      const replacementRun = `<w:r><w:rPr><w:b/><w:bCs/><w:sz w:val="28"/><w:szCs w:val="28"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t xml:space="preserve"> ( ${escapeXml(tafqeetAmount)} ) </w:t></w:r>`;
       docXml = before + replacementRun + after;
     } else {
       docXml = docXml.replace(
@@ -631,7 +631,7 @@ export function FinalInsuranceRefundSection({
     // ━━━ استبدال طريقة السداد ونطاق العملية والعام المالي وموعد الجلسة بكتلة XML واحدة منضبطة ━━━
     const fullPaymentBlockRegex = /(<w:t[^>]*>[^<]*والمسدد[^<]*<\/w:t><\/w:r>)([\s\S]*?)(<w:r\b[^>]*>(?:(?!<\/w:r>)[\s\S])*?<w:t[^>]*>[^<]*لفتح\s*المظروف[^<]*<\/w:t>[\s\S]*?<\/w:r>)/;
     const fullText = ` ( ${paymentText} ) والخاص ${escapeXml(tenderMethod)} لزوم ${escapeXml(operationScope)} طرفكم للعام المالى ${escapeXml(fiscalYear)} والمحدد لها جلسة (${escapeXml(technicalOpeningDate)}) `;
-    const replacementRun = `<w:r><w:rPr><w:rFonts w:ascii="Arabic Typesetting" w:hAnsi="Arabic Typesetting" w:cs="Arabic Typesetting" w:hint="cs"/><w:b/><w:bCs/><w:sz w:val="36"/><w:szCs w:val="36"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t xml:space="preserve">${fullText}</w:t></w:r>`;
+    const replacementRun = `<w:r><w:rPr><w:rFonts w:ascii="Arabic Typesetting" w:hAnsi="Arabic Typesetting" w:cs="Arabic Typesetting" w:hint="cs"/><w:b/><w:bCs/><w:sz w:val="28"/><w:szCs w:val="28"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t xml:space="preserve">${fullText}</w:t></w:r>`;
 
     if (fullPaymentBlockRegex.test(docXml)) {
       docXml = docXml.replace(fullPaymentBlockRegex, `$1${replacementRun}$3`);

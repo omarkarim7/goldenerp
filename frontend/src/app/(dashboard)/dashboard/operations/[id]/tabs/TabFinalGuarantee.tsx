@@ -787,7 +787,7 @@ export function TabFinalGuarantee({
     // 1. استبدال السيد / الموجه إليه بدقة 100%
     if (type === "BANK_GUARANTEE") {
       const recipientRegex = /(<w:t[^>]*>\s*\/\s*<\/w:t><\/w:r>)([\s\S]*?)(<\/w:p>)/;
-      docXml = docXml.replace(recipientRegex, `$1<w:r><w:rPr><w:rFonts w:ascii="Arabic Typesetting" w:hAnsi="Arabic Typesetting" w:cs="Arabic Typesetting" w:hint="cs"/><w:b/><w:bCs/><w:sz w:val="56"/><w:szCs w:val="56"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t xml:space="preserve"> ${escapeXml(bankRecipientTitle)}</w:t></w:r>$3`);
+      docXml = docXml.replace(recipientRegex, `$1<w:r><w:rPr><w:rFonts w:ascii="Arabic Typesetting" w:hAnsi="Arabic Typesetting" w:cs="Arabic Typesetting" w:hint="cs"/><w:b/><w:bCs/><w:sz w:val="28"/><w:szCs w:val="28"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t xml:space="preserve"> ${escapeXml(bankRecipientTitle)}</w:t></w:r>$3`);
 
       // الجهة المستفيدة من خطاب الضمان وعنوانها
       const bankAuthRegex = /(<w:t[^>]*>[^<]*الجهه[^<]*<\/w:t><\/w:r>)([\s\S]*?)(<\/w:p>)/;
@@ -807,12 +807,12 @@ export function TabFinalGuarantee({
       docXml = docXml.replace(/28912111802623/g, escapeXml(accountNationalId));
     } else {
       const recipientRegex = /(<w:t[^>]*>\s*\/\s*<\/w:t><\/w:r>)([\s\S]*?)(<\/w:p>)/;
-      docXml = docXml.replace(recipientRegex, `$1<w:r><w:rPr><w:rFonts w:ascii="Arabic Typesetting" w:hAnsi="Arabic Typesetting" w:cs="Arabic Typesetting" w:hint="cs"/><w:b/><w:bCs/><w:sz w:val="56"/><w:szCs w:val="56"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t xml:space="preserve"> ${escapeXml(recipientTitleAndAuthority)}</w:t></w:r>$3`);
+      docXml = docXml.replace(recipientRegex, `$1<w:r><w:rPr><w:rFonts w:ascii="Arabic Typesetting" w:hAnsi="Arabic Typesetting" w:cs="Arabic Typesetting" w:hint="cs"/><w:b/><w:bCs/><w:sz w:val="28"/><w:szCs w:val="28"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t xml:space="preserve"> ${escapeXml(recipientTitleAndAuthority)}</w:t></w:r>$3`);
     }
 
     // لقب المخاطب (السيد الأستاذ / المهندس / الدكتور)
     const prefixRegex = /(<w:t[^>]*>السيد<\/w:t><\/w:r>)([\s\S]*?)(<w:r\b[^>]*>(?:(?!<\/w:r>)[\s\S])*?<w:t[^>]*>\s*\/\s*<\/w:t>[\s\S]*?<\/w:r>)/;
-    docXml = docXml.replace(prefixRegex, `$1<w:r><w:rPr><w:rFonts w:ascii="Arabic Typesetting" w:hAnsi="Arabic Typesetting" w:cs="Arabic Typesetting" w:hint="cs"/><w:b/><w:bCs/><w:sz w:val="56"/><w:szCs w:val="56"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t xml:space="preserve"> ${escapeXml(recipientPrefix)} </w:t></w:r>$3`);
+    docXml = docXml.replace(prefixRegex, `$1<w:r><w:rPr><w:rFonts w:ascii="Arabic Typesetting" w:hAnsi="Arabic Typesetting" w:cs="Arabic Typesetting" w:hint="cs"/><w:b/><w:bCs/><w:sz w:val="28"/><w:szCs w:val="28"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t xml:space="preserve"> ${escapeXml(recipientPrefix)} </w:t></w:r>$3`);
 
     // 2. أسلوب الطرح الرسمي (بالمناقصة العامة / المحدودة / الممارسة)
     const tenderRegex = /(<w:t[^>]*>[^<]*والخاص[^<]*<\/w:t><\/w:r>)([\s\S]*?)(<w:r\b[^>]*>(?:(?!<\/w:r>)[\s\S])*?<w:t[^>]*>[^<]*لزوم[^<]*<\/w:t>[\s\S]*?<\/w:r>)/;
