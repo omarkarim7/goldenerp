@@ -25,6 +25,13 @@ jobs:
         with:
           node-version: 20
 
+      - name: Diagnostics Connectivity Check
+        run: |
+          echo "=== Pinging GoldenERP API ==="
+          curl -I -v --connect-timeout 5 https://api.ahdahd.eu || true
+          echo "=== Pinging Egyptian Portal ==="
+          curl -I -v --connect-timeout 5 https://gcs.digitalegypt.gov.eg || true
+
       - name: Execute Cloud Crawler
         env:
           GOLDENERP_API_BASE: https://api.ahdahd.eu/api
