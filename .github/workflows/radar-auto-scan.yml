@@ -29,8 +29,12 @@ jobs:
         run: |
           echo "=== Pinging GoldenERP API ==="
           curl -I -s --connect-timeout 8 https://api.ahdahd.eu || echo "GoldenERP API Failed"
-          echo "=== Pinging Egyptian Portal ==="
-          curl -I -s --connect-timeout 8 https://gcs.digitalegypt.gov.eg || echo "Egyptian Portal Failed"
+          echo "=== Pinging Egyptian Portal (gcs.digitalegypt.gov.eg) ==="
+          curl -I -s --connect-timeout 8 -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64)" https://gcs.digitalegypt.gov.eg || echo "gcs.digitalegypt.gov.eg Failed"
+          echo "=== Pinging Egyptian Portal (etenders.gov.eg) ==="
+          curl -I -s --connect-timeout 8 -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64)" https://etenders.gov.eg || echo "etenders.gov.eg Failed"
+          echo "=== Pinging Egyptian Portal (www.etenders.gov.eg) ==="
+          curl -I -s --connect-timeout 8 -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64)" https://www.etenders.gov.eg || echo "www.etenders.gov.eg Failed"
 
       - name: Execute Cloud Crawler with Verbose Logging
         env:
