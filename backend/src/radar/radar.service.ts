@@ -149,11 +149,47 @@ export class RadarService implements OnModuleInit {
     }
   }
 
-  // --- Live Scan (100% Real Portal Scraper with Smart Incremental Crawling — Zero Synthetic Generation) ---
+  // --- Live Scan (100% Real Portal Scraper with Cloud Runner Dispatch & Smart Incremental Crawling) ---
   async scan(pagesCount: number = 10) {
     try {
       // Run automatic cleanup first to keep DB pristine
       await this.cleanupLegacyMockData().catch(() => {});
+
+      // 1. Check if GitHub Cloud Runner dispatch is configured
+      const githubToken = process.env.GITHUB_TOKEN;
+      const githubRepo = process.env.GITHUB_REPO || 'omarkarim7/goldenerp';
+      if (githubToken) {
+        try {
+          this.logger.log(`Triggering GitHub Actions Cloud Scan on ${githubRepo}...`);
+          const ghRes = await fetch(`https://api.github.com/repos/${githubRepo}/actions/workflows/radar-auto-scan.yml/dispatches`, {
+            method: 'POST',
+            headers: {
+              Authorization: `Bearer ${githubToken}`,
+              Accept: 'application/vnd.github.v3+json',
+              'User-Agent': 'GoldenERP-Cloud-Trigger',
+            },
+            body: JSON.stringify({ ref: 'main' }),
+          });
+
+          if (ghRes.ok || ghRes.status === 204) {
+            this.logger.log('Successfully dispatched GitHub Actions cloud scan');
+            return {
+              success: true,
+              isCloudRun: true,
+              totalScanned: 0,
+              newCount: 0,
+              message: '🚀 تم إطلاق الفحص السحابي بنجاح عبر GitHub Actions! جاري فحص البوابة الحكومية وضخ المناقصات تلقائياً خلال ثوانٍ.',
+            };
+          } else {
+            const errTxt = await ghRes.text();
+            this.logger.warn(`GitHub Actions dispatch responded with ${ghRes.status}: ${errTxt}`);
+          }
+        } catch (ghErr: any) {
+          this.logger.warn(`GitHub dispatch failed: ${ghErr.message}`);
+        }
+      }
+
+      // 2. Direct Scraper
       return await this.scraper.scan(pagesCount);
     } catch (err: any) {
       this.logger.error(`Radar live scan error: ${err.message}`, err.stack);

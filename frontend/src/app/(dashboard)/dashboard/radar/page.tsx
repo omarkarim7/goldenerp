@@ -11,7 +11,7 @@ import {
   TrendingUp, Activity, CheckCircle, FilePlus2, Timer, Globe2,
   FileSearch, Maximize2, Minimize2, Gavel, Handshake, ArrowRightLeft, Info,
   LayoutGrid, LayoutList, Archive, Trash2, ChevronRight, ChevronsLeft, ChevronsRight,
-  ShieldCheck, Target, Crosshair, Upload
+  ShieldCheck, Target, Crosshair, Upload, Cloud
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -324,6 +324,22 @@ export default function RadarPage() {
       const res = await api.post("/radar/scan", { pagesCount: 10 });
       if (res.data?.success) {
         setScanStep(4);
+        if (res.data?.isCloudRun) {
+          const msg = res.data.message || "تم إطلاق الفحص السحابي عبر GitHub بنجاح! جاري فحص البوابة وجلب العمليات...";
+          setScanResult({
+            success: true,
+            total: 0,
+            totalAll: items.length,
+            isNew: false,
+            message: msg,
+          });
+          toast.success(msg);
+          setTimeout(async () => {
+            await fetchData();
+          }, 22000);
+          return;
+        }
+
         const newCount = res.data.newCount ?? 0;
         const totalItemsCount = res.data.totalScanned || (items.length + newCount) || 25;
         const msg = res.data.message || (newCount > 0
@@ -1183,6 +1199,18 @@ export default function RadarPage() {
               <Download className="h-4 w-4" />
               <span>استيراد مناقصة من البوابة 🌐</span>
             </Button>
+
+            {/* Cloud Auto-Scan 24/7 Shortcut */}
+            <a
+              href="https://github.com/omarkarim7/goldenerp/actions/workflows/radar-auto-scan.yml"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="border-emerald-500/40 bg-emerald-500/15 hover:bg-emerald-600 hover:text-white text-emerald-400 font-bold px-4 py-3.5 rounded-2xl text-xs sm:text-sm transition-all cursor-pointer shadow-sm active:scale-95 flex items-center gap-1.5"
+              title="تشغيل الفحص السحابي الذاتي عبر سحابة GitHub بدون استخدام جهازك نهائياً"
+            >
+              <Cloud className="h-4 w-4" />
+              <span>فحص سحابي 24/7 🚀</span>
+            </a>
 
             {/* Single Unified Radar Scan Button */}
             <Button
@@ -2535,6 +2563,15 @@ export default function RadarPage() {
                     جدار حماية البوابة يمنع الاتصال المباشر من السيرفر الخارجي. يمكنك استيراد أي مناقصة وسحب كراستها فوراً عبر وضع الرابط أو كود الصفحة.
                   </p>
                   <div className="flex flex-col sm:flex-row items-center gap-2 pt-1">
+                    <a
+                      href="https://github.com/omarkarim7/goldenerp/actions/workflows/radar-auto-scan.yml"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="w-full sm:flex-1 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold rounded-xl text-xs py-2.5 cursor-pointer shadow-md active:scale-95 transition-all flex items-center justify-center gap-1.5 text-center"
+                    >
+                      <Cloud className="h-4 w-4" />
+                      <span>تشغيل الفحص السحابي (GitHub Cloud) 🚀</span>
+                    </a>
                     <Button
                       onClick={() => {
                         closeScanOverlay();

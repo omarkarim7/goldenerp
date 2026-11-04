@@ -114,7 +114,7 @@ async function main() {
   const tenderHtml = await tenderRes.text();
   const basicTenders = [];
   const rowMatches = [...tenderHtml.matchAll(/<tr[^>]*>([\s\S]*?)<\/tr>/gi)];
-  
+
   // Table headers: [0: رقم المرجع, 1: اسم العملية, 2: الجهة الإدارية, 3: تاريخ طرح العملية, 4: آخر تاريخ لإستقبال العطاءات, 5: تفاصيل]
   for (let i = 1; i < rowMatches.length; i++) {
     const row = rowMatches[i][1];
@@ -122,7 +122,7 @@ async function main() {
     if (!linkMatch) continue;
     const externalId = linkMatch[1];
     const cols = [...row.matchAll(/<td[^>]*>([\s\S]*?)<\/td>/gi)].map(m => m[1].replace(/<[^>]+>/g, '').trim());
-    
+
     if (cols.length >= 5) {
       basicTenders.push({
         externalId,
@@ -169,7 +169,7 @@ async function main() {
             }
           });
           if (res.ok) parts[u.key] = await res.text();
-        } catch {}
+        } catch { }
       }));
 
       // A. Parse basicInfo form inputs
@@ -177,7 +177,7 @@ async function main() {
       const titleDeep = bHtml.match(/id="etender_Tender_etender_Title"[^>]*>([\s\S]*?)<\/textarea>/i)?.[1]?.trim();
       const refNoDeep = bHtml.match(/id="etender_Tender_etender_refno"[^>]*value="([^"]*)"/i)?.[1]?.trim();
       const authorityDeep = bHtml.match(/id="etender_Tender_bls_RequestingBody_Name"[^>]*value="([^"]*)"/i)?.[1]?.trim();
-      
+
       const tempInsuranceStr = bHtml.match(/id="etender_Tender_bls_TemporaryInsuranceAmount_Value"[^>]*value="([^"]*)"/i)?.[1];
       const bookletPriceStr = bHtml.match(/id="etender_Tender_etender_ParticipationFee_Value"[^>]*value="([^"]*)"/i)?.[1];
       const fiscalYear = bHtml.match(/id="etender_Tender_bls_TenderFiscalYear_Name"[^>]*value="([^"]*)"/i)?.[1]?.trim();
