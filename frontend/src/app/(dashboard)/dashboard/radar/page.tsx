@@ -202,6 +202,30 @@ export default function RadarPage() {
   const [importUrlInput, setImportUrlInput] = useState("");
   const [isImporting, setIsImporting] = useState(false);
 
+  // Free Proxy Configuration (Webshare.io) State
+  const [proxyModalOpen, setProxyModalOpen] = useState(false);
+  const [proxyUrlInput, setProxyUrlInput] = useState("");
+  const [proxyConfigured, setProxyConfigured] = useState(false);
+  const [isSavingProxy, setIsSavingProxy] = useState(false);
+
+  const handleSaveProxy = async () => {
+    try {
+      setIsSavingProxy(true);
+      const res = await api.post("/radar/proxy-config", { proxyUrl: proxyUrlInput.trim() });
+      if (res.data?.success) {
+        toast.success(res.data.message || "تم حفظ البروكسي بنجاح!");
+        setProxyConfigured(Boolean(proxyUrlInput.trim()));
+        setProxyModalOpen(false);
+      } else {
+        toast.error(res.data?.message || "فشل حفظ إعدادات البروكسي");
+      }
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || "حدث خطأ أثناء حفظ البروكسي");
+    } finally {
+      setIsSavingProxy(false);
+    }
+  };
+
   const handleImportTender = async () => {
     if (!importHtmlContent.trim() && !importUrlInput.trim()) {
       toast.error("يرجى لصق كود الصفحة أو رابط المناقصة");
@@ -247,6 +271,14 @@ export default function RadarPage() {
         setAutoScanConfig(autoScanRes.data);
       }
       setLoading(false); // Unblock immediately!
+
+      // Check proxy status
+      api.get("/radar/proxy-config").then((res) => {
+        if (res.data) {
+          setProxyConfigured(Boolean(res.data.configured));
+          if (res.data.proxyUrl) setProxyUrlInput(res.data.proxyUrl);
+        }
+      }).catch(() => {});
 
       // Check external portal connection asynchronously in background without freezing UI
       api.get("/radar/status")
@@ -1196,6 +1228,21 @@ export default function RadarPage() {
             >
               <Download className="h-4 w-4" />
               <span>استيراد مناقصة من البوابة 🌐</span>
+            </Button>
+
+            {/* Free Proxy Setup Button (Webshare.io) */}
+            <Button
+              variant="outline"
+              onClick={() => setProxyModalOpen(true)}
+              className={`px-3.5 py-3.5 rounded-2xl text-xs sm:text-sm font-bold transition-all cursor-pointer shadow-sm active:scale-95 flex items-center gap-1.5 ${
+                proxyConfigured
+                  ? "border-emerald-500/50 bg-emerald-500/15 text-emerald-400 hover:bg-emerald-500/25"
+                  : "border-purple-500/30 bg-purple-500/10 hover:bg-purple-600 hover:text-white text-purple-400"
+              }`}
+              title="إعداد وتفعيل بروكسي Webshare للفحص المباشر الداخلي"
+            >
+              <Globe2 className="h-4 w-4" />
+              <span>{proxyConfigured ? "البروكسي نشط 🟢" : "بروكسي داخلي (Webshare) 🌐"}</span>
             </Button>
 
             {/* Cloud Auto-Scan 24/7 Shortcut */}
@@ -3699,6 +3746,130 @@ export default function RadarPage() {
                     </>
                   )}
                 </Button>
+              </div>
+            </div>
+          </div>
+        </Portal>
+      )}
+
+      {/* ========================================================================= */}
+      {/* MODAL 5: WEBSHARE PROXY CONFIGURATION MODAL                               */}
+      {/* ========================================================================= */}
+      {proxyModalOpen && (
+        <Portal>
+          <div className="fixed inset-0 z-[99999] bg-black/80 backdrop-blur-md flex items-center justify-center p-4 animate-fade-in">
+            <div className="bg-slate-950 border border-slate-800 rounded-3xl p-6 max-w-lg w-full shadow-2xl space-y-4 animate-scale-up text-right">
+              {/* Header */}
+              <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-purple-600 to-indigo-500 flex items-center justify-center text-white shadow-lg shadow-purple-500/30">
+                    <Globe2 className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-base sm:text-lg font-black text-white">
+                      إعداد البروكسي الداخلي (Webshare.io)
+                    </h3>
+                    <p className="text-xs text-slate-400">
+                      لتشغيل الفحص المباشر وتحميل الكراسات من داخل السيستم بدون حظر
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setProxyModalOpen(false)}
+                  className="p-1.5 rounded-xl bg-slate-900 border border-slate-800 text-slate-400 hover:text-white transition-colors cursor-pointer"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+
+              {/* Status Pill */}
+              <div className={`p-3 rounded-2xl border text-xs flex items-center justify-between ${
+                proxyConfigured
+                  ? "bg-emerald-950/40 border-emerald-500/30 text-emerald-300"
+                  : "bg-slate-900 border-slate-800 text-slate-400"
+              }`}>
+                <div className="flex items-center gap-2">
+                  <span className={`w-2.5 h-2.5 rounded-full ${proxyConfigured ? "bg-emerald-400 animate-pulse" : "bg-slate-600"}`} />
+                  <span className="font-bold">{proxyConfigured ? "البروكسي مفعل ونشط بالسيرفر" : "لا يوجد بروكسي مفعل حالياً"}</span>
+                </div>
+                {proxyConfigured && (
+                  <span className="text-[10px] font-mono bg-emerald-900/60 px-2 py-0.5 rounded-full border border-emerald-700/50">
+                    ACTIVE
+                  </span>
+                )}
+              </div>
+
+              {/* Guide Card */}
+              <div className="p-3.5 rounded-2xl bg-purple-950/30 border border-purple-500/20 text-purple-200 text-xs space-y-2">
+                <span className="font-bold block text-sm text-purple-100">كيف تحصل على 10 بروكسيات مجانية مدى الحياة؟</span>
+                <p className="text-slate-300 leading-relaxed text-[11px]">
+                  موقع <a href="https://www.webshare.io" target="_blank" rel="noopener noreferrer" className="text-purple-400 underline font-bold">Webshare.io</a> يقدم خطة مجانية دائمة 100% (10 Proxies مجاناً بدون الحاجة لفيزا أو دفع أي مليم).<br />
+                  سجل بحسابك على Webshare وانسخ رابط البروكسي بصيغة:<br />
+                  <code className="text-emerald-300 font-mono text-[10px] dir-ltr block mt-1 bg-slate-900 p-1.5 rounded-lg border border-slate-800">
+                    http://username:password@p.webshare.io:80
+                  </code>
+                </p>
+              </div>
+
+              {/* Input Form */}
+              <div className="space-y-2 text-right">
+                <label className="text-xs font-bold text-slate-200 block">
+                  رابط البروكسي (Proxy URL):
+                </label>
+                <Input
+                  type="text"
+                  dir="ltr"
+                  placeholder="http://username:password@p.webshare.io:80"
+                  value={proxyUrlInput}
+                  onChange={(e) => setProxyUrlInput(e.target.value)}
+                  className="bg-slate-900 border-slate-700 text-white text-xs font-mono rounded-xl focus:border-purple-500"
+                />
+              </div>
+
+              {/* Actions */}
+              <div className="flex items-center justify-between gap-2.5 pt-2 border-t border-slate-800">
+                {proxyConfigured && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    onClick={async () => {
+                      setProxyUrlInput("");
+                      await handleSaveProxy();
+                    }}
+                    className="text-xs text-rose-400 hover:text-rose-300 hover:bg-rose-950/30 font-bold"
+                  >
+                    إلغاء تفعيل البروكسي
+                  </Button>
+                )}
+                <div className="flex items-center gap-2 mr-auto">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    onClick={() => setProxyModalOpen(false)}
+                    className="text-xs text-slate-400 hover:text-white"
+                  >
+                    إلغاء
+                  </Button>
+                  <Button
+                    type="button"
+                    onClick={handleSaveProxy}
+                    disabled={isSavingProxy}
+                    className="bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold px-5 py-2.5 rounded-xl text-xs flex items-center gap-2 shadow-lg shadow-purple-600/30 active:scale-95 transition-all cursor-pointer"
+                  >
+                    {isSavingProxy ? (
+                      <>
+                        <RefreshCw className="h-4 w-4 animate-spin" />
+                        <span>جاري الحفظ والتفعيل...</span>
+                      </>
+                    ) : (
+                      <>
+                        <CheckCircle className="h-4 w-4" />
+                        <span>حفظ وتفعيل البروكسي الآن 🚀</span>
+                      </>
+                    )}
+                  </Button>
+                </div>
               </div>
             </div>
           </div>

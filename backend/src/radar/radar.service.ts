@@ -189,7 +189,15 @@ export class RadarService implements OnModuleInit {
         }
       }
 
-      // 2. Count current authentic items in database and return cloud status
+      // 2. Check if a proxy is configured (e.g. Webshare.io)
+      // If a proxy is active, we can run direct 100% in-system scraping without external timeouts!
+      const hasProxy = await this.scraper.hasProxyConfigured();
+      if (hasProxy) {
+        this.logger.log('Proxy configured: Executing direct in-system portal scan...');
+        return await this.scraper.scan(pagesCount);
+      }
+
+      // 3. Fallback: Count current authentic items in database and return cloud status
       // Note: Telecom Egypt firewall blocks direct foreign cloud server connections (Hostinger/Europe).
       // All automated portal crawling runs seamlessly via GitHub Actions 24/7 or local crawler.
       const totalInDb = await this.prisma.radarItem.count();
@@ -333,7 +341,56 @@ export class RadarService implements OnModuleInit {
         where: { externalId: it.externalId },
       });
 
-      const rawDetails = it.rawDetails || it;
+      const rawDetails = {
+        ...(it.rawDetails || {}),
+        attachments: it.attachments || it.rawDetails?.attachments || [],
+        items: it.items || it.rawDetails?.items || [],
+        timelineStages: it.timelineStages || it.rawDetails?.stages || [],
+      };
+
+      // If genuine booklet binary payload was provided, save directly to Hostinger disk
+      if (it.bookletBase64) {
+        try {
+          const bookletDir = path.resolve(process.cwd(), 'uploads/radar-booklets');
+          if (!fs.existsSync(bookletDir)) fs.mkdirSync(bookletDir, { recursive: true });
+          const safeExt = it.bookletFilename?.toLowerCase().endsWith('.docx') ? '.docx' : '.pdf';
+          const filename = it.bookletFilename || `كراسة_الشروط_${it.refNo || it.externalId}${safeExt}`;
+          const diskFilename = `booklet-${it.externalId}${safeExt}`;
+          const diskPath = path.join(bookletDir, diskFilename);
+          fs.writeFileSync(diskPath, Buffer.from(it.bookletBase64, 'base64'));
+
+          const storedEntry = {
+            serial: 1,
+            name: filename,
+            docId: `stored-booklet-${it.externalId}`,
+            downloadUrl: `/radar/download-doc?docId=stored-booklet-${it.externalId}&tenderId=${it.externalId}`,
+            isStored: true,
+          };
+
+          rawDetails.uploadedBooklet = {
+            filename,
+            diskPath: `uploads/radar-booklets/${diskFilename}`,
+            contentType: safeExt === '.docx' ? 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' : 'application/pdf',
+            size: fs.statSync(diskPath).size,
+            uploadedAt: new Date().toISOString(),
+          };
+
+          if (!Array.isArray(rawDetails.attachments)) rawDetails.attachments = [];
+          const existIdx = rawDetails.attachments.findIndex((a: any) =>
+            a.docId === `stored-booklet-${it.externalId}` ||
+            a.name?.toLowerCase().includes('كراسة') ||
+            a.name?.toLowerCase().includes('booklet')
+          );
+          if (existIdx >= 0) {
+            rawDetails.attachments[existIdx] = storedEntry;
+          } else {
+            rawDetails.attachments.unshift(storedEntry);
+          }
+        } catch (bErr: any) {
+          this.logger.warn(`Could not save booklet base64 for ${it.externalId}: ${bErr.message}`);
+        }
+      }
+
       const categoryCombined = [it.tenderMethod, it.tenderKind, ...(it.tags || [])].filter(Boolean).join(' • ') || it.category || 'خدمات وتوريدات';
 
       const dataPayload: any = {
@@ -486,6 +543,37 @@ export class RadarService implements OnModuleInit {
       lastScanTime: source?.lastFetched || null,
       sourceName: source?.name || 'منظومة التعاقدات الحكومية — مصر الرقمية',
     };
+  }
+
+  // --- Proxy Configuration (e.g. Webshare.io) ---
+  async getProxyConfig() {
+    const setting = await this.prisma.systemSetting.findUnique({
+      where: { key: 'radar.proxy_url' },
+    }).catch(() => null);
+    const envProxy = process.env.RADAR_PROXY_URL || process.env.HTTPS_PROXY || '';
+    const activeUrl = setting?.value || envProxy;
+    return {
+      configured: Boolean(activeUrl),
+      proxyUrl: activeUrl ? activeUrl.replace(/:[^:]*@/, ':****@') : '',
+      isCustom: Boolean(setting?.value),
+    };
+  }
+
+  async saveProxyConfig(proxyUrl: string) {
+    const clean = (proxyUrl || '').trim();
+    if (!clean) {
+      await this.prisma.systemSetting.deleteMany({
+        where: { key: 'radar.proxy_url' },
+      });
+      return { success: true, message: 'تم إزالة إعدادات البروكسي بنجاح' };
+    }
+    await this.prisma.systemSetting.upsert({
+      where: { key: 'radar.proxy_url' },
+      update: { value: clean },
+      create: { key: 'radar.proxy_url', value: clean, group: 'radar', label: 'رابط البروكسي لبوابة التعاقدات' },
+    });
+    await this.scraper.setupProxyDispatcher();
+    return { success: true, message: 'تم حفظ وتفعيل البروكسي بنجاح! يمكنك الآن تشغيل الفحص المباشر من داخل السيستم.' };
   }
 
   // --- Radar Items ---
@@ -1482,6 +1570,26 @@ export class RadarService implements OnModuleInit {
             buffer,
             contentType,
             filename: fn,
+          };
+        }
+      }
+    }
+
+    // Also check if booklet exists in standard disk path: uploads/radar-booklets/booklet-${item?.externalId}.pdf
+    if (item?.externalId) {
+      const standardCandidates = [
+        path.resolve(process.cwd(), `uploads/radar-booklets/booklet-${item.externalId}.pdf`),
+        path.resolve(process.cwd(), `uploads/radar-booklets/booklet-${item.externalId}.docx`),
+        path.resolve(process.cwd(), `uploads/radar-booklets/booklet-${item.id}.pdf`),
+      ];
+      for (const p of standardCandidates) {
+        if (fs.existsSync(p)) {
+          const buffer = fs.readFileSync(p);
+          const isDocx = p.endsWith('.docx');
+          return {
+            buffer,
+            contentType: isDocx ? 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' : 'application/pdf',
+            filename: raw.uploadedBooklet?.filename || `كراسة_شروط_${item.referenceNumber || item.externalId}${isDocx ? '.docx' : '.pdf'}`,
           };
         }
       }

@@ -89,10 +89,38 @@ export class RadarScraperService {
   constructor(private readonly prisma: PrismaService) {}
 
   /**
-   * Safe Proxy Dispatcher stub (no external uninstalled dependencies)
+   * Initialize Proxy Dispatcher via undici if proxy is configured (e.g. Webshare.io)
    */
   async setupProxyDispatcher(): Promise<void> {
-    // Cloud runner handles external access; server connects directly
+    try {
+      let proxyUrl = process.env.RADAR_PROXY_URL || process.env.HTTPS_PROXY || process.env.HTTP_PROXY;
+      if (!proxyUrl) {
+        const setting = await this.prisma.systemSetting.findUnique({
+          where: { key: 'radar.proxy_url' },
+        }).catch(() => null);
+        if (setting?.value) {
+          proxyUrl = setting.value.trim();
+        }
+      }
+
+      if (proxyUrl && proxyUrl !== this.currentProxyUrl) {
+        const { ProxyAgent, setGlobalDispatcher } = require('undici');
+        const agent = new ProxyAgent(proxyUrl);
+        setGlobalDispatcher(agent);
+        this.currentProxyUrl = proxyUrl;
+        this.logger.log(`RadarScraper proxy active: ${proxyUrl.replace(/:[^:]*@/, ':****@')}`);
+      }
+    } catch (err: any) {
+      this.logger.warn(`Failed to initialize ProxyAgent: ${err.message}`);
+    }
+  }
+
+  async hasProxyConfigured(): Promise<boolean> {
+    if (this.currentProxyUrl || process.env.RADAR_PROXY_URL || process.env.HTTPS_PROXY) return true;
+    const setting = await this.prisma.systemSetting.findUnique({
+      where: { key: 'radar.proxy_url' },
+    }).catch(() => null);
+    return Boolean(setting?.value?.trim());
   }
 
   /**

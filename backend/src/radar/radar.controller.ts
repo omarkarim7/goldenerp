@@ -71,6 +71,17 @@ export class RadarController {
     return this.service.updateAutoScanConfig(body.enabled, body.scheduledTime);
   }
 
+  // 2.3 Proxy Configuration (e.g. Webshare.io)
+  @Get('proxy-config')
+  getProxyConfig() {
+    return this.service.getProxyConfig();
+  }
+
+  @Post('proxy-config')
+  saveProxyConfig(@Body() body: { proxyUrl: string }) {
+    return this.service.saveProxyConfig(body.proxyUrl);
+  }
+
   // 3. Radar KPIs & Statistics
   @Get('stats')
   getStats() {

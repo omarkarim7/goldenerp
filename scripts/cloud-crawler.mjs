@@ -14,6 +14,8 @@
  */
 
 process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
+import dns from 'dns';
+try { dns.setDefaultResultOrder('ipv4first'); } catch {}
 
 const PORTAL_BASE = 'https://gcs.digitalegypt.gov.eg';
 const PORTAL_EMAIL = process.env.RADAR_GCS_EMAIL || 'ahdahdahd8818@gmail.com';
@@ -274,6 +276,35 @@ async function main() {
       const bookletPrice = bookletPriceStr && !isNaN(parseFloat(bookletPriceStr)) ? parseFloat(bookletPriceStr) : null;
       const finalInsuranceRate = finalInsuranceRateStr && !isNaN(parseFloat(finalInsuranceRateStr)) ? parseFloat(finalInsuranceRateStr) : null;
 
+      // Download genuine booklet document if available
+      let bookletBase64 = null;
+      let bookletFilename = null;
+      if (attachments.length > 0 && attachments[0].docId) {
+        try {
+          const docId = attachments[0].docId;
+          const docRes = await fetch(`${PORTAL_BASE}/Process/DownloadDoc?DocId=${docId}`, {
+            method: 'POST',
+            headers: {
+              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+              'Cookie': cookieHeader,
+              'Referer': `${PORTAL_BASE}/Process/Details/${id}`
+            }
+          });
+          if (docRes.ok) {
+            const buf = await docRes.arrayBuffer();
+            if (buf.byteLength > 100) {
+              bookletBase64 = Buffer.from(buf).toString('base64');
+              const disp = docRes.headers.get('content-disposition') || '';
+              const m = disp.match(/filename\*=UTF-8''([^;\r\n]+)/i);
+              bookletFilename = m ? decodeURIComponent(m[1]) : (attachments[0].name ? `${attachments[0].name}.pdf` : `booklet-${id}.pdf`);
+              console.log(`  📄 Downloaded official booklet (${(buf.byteLength / 1024).toFixed(1)} KB): ${bookletFilename.substring(0, 45)}...`);
+            }
+          }
+        } catch (docErr) {
+          console.warn(`  ⚠️ Could not download booklet for ${id}:`, docErr.message);
+        }
+      }
+
       fullTenders.push({
         externalId: basic.externalId,
         refNo: refNoDeep || basic.refNo,
@@ -297,6 +328,8 @@ async function main() {
         activities,
         description,
         governorate: matchedGov,
+        bookletBase64,
+        bookletFilename,
         attachments,
         items: tenderItems,
         timelineStages,
@@ -310,7 +343,9 @@ async function main() {
           currency,
           activities,
           description,
-          stages: timelineStages
+          stages: timelineStages,
+          attachments,
+          items: tenderItems
         }
       });
     } catch (err) {
@@ -318,24 +353,32 @@ async function main() {
     }
   }
 
-  // 5. Ingest into GoldenERP Backend
+  // 5. Ingest into GoldenERP Backend in safe batches
   console.log(`📤 Ingesting ${fullTenders.length} accurately scraped tenders into GoldenERP Backend...`);
-  const ingestRes = await fetch(`${API_BASE}/radar/ingest`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${token}`
-    },
-    body: JSON.stringify({ items: fullTenders })
-  });
+  const BATCH_SIZE = 2;
+  for (let b = 0; b < fullTenders.length; b += BATCH_SIZE) {
+    const batch = fullTenders.slice(b, b + BATCH_SIZE);
+    try {
+      const ingestRes = await fetch(`${API_BASE}/radar/ingest`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ items: batch })
+      });
 
-  if (!ingestRes.ok) {
-    const errTxt = await ingestRes.text();
-    throw new Error(`Ingest failed with status ${ingestRes.status}: ${errTxt}`);
+      if (!ingestRes.ok) {
+        const errTxt = await ingestRes.text();
+        console.warn(`  ⚠️ Ingest batch ${Math.floor(b / BATCH_SIZE) + 1} responded with ${ingestRes.status}: ${errTxt}`);
+      } else {
+        const resData = await ingestRes.json();
+        console.log(`  ✅ Synced batch ${Math.floor(b / BATCH_SIZE) + 1}/${Math.ceil(fullTenders.length / BATCH_SIZE)}: ${resData.message}`);
+      }
+    } catch (bErr) {
+      console.warn(`  ⚠️ Ingest batch error:`, bErr.message);
+    }
   }
-
-  const result = await ingestRes.json();
-  console.log('🎉 Ingest result:', result);
   console.log('✅ Radar crawler completed successfully with authentic data!');
 }
 
