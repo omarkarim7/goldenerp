@@ -798,7 +798,7 @@ export function GrievanceLetterSection({
       }
     }
 
-    // 5. الطلب الختامي (استبدال النقط بعد عبارة: الرجاء من سيادتكم التكرم ...)
+    // 5. الطلب الختامي (استبدال النقط بعد عبارة: الرجاء من سيادتكم التكرم ...) داخل نفس الفقرة الأصلية لحفظ تنسيق وحجم خط القالب
     const cleanGrievanceReq = (grievanceRequest || "")
       .replace(/^(لذا\s*)?(الرجاء|رجاء)\s*من\s*سيادتكم\s*التكرم\s*/i, "")
       .trim() ||
@@ -806,22 +806,8 @@ export function GrievanceLetterSection({
         ? "بإعادة فحص العطاء الفني وإلغاء قرار الاستبعاد واستكمال إجراءات فتح المظروف المالي للشركة وفقاً لأحكام القانون 182 لسنة 2018."
         : "بإعادة التدقيق المحاسبي والمفاضلة المالية وترسية العملية على شركتنا باعتبار عرضنا الأفضل شروطاً والأمثل سعراً.");
 
-    const reqDotsRegex = /(<w:t xml:space="preserve">لرجاء من سيادتكم التكرم <\/w:t>[\s\S]*?)<w:t xml:space="preserve">\s*\.{10,}<\/w:t>/;
-    if (reqDotsRegex.test(docXml)) {
-      docXml = docXml.replace(reqDotsRegex, `$1<w:t xml:space="preserve"> ${escapeXml(cleanGrievanceReq)}</w:t>`);
-    } else {
-      const reqPattern = /<w:p\b[^>]*>(?:(?!<\/w:p>)[\s\S])*?(?:الرجاء|لرجاء)\s*من\s*سيادتكم\s*التكرم(?:(?!<\/w:p>)[\s\S])*?<\/w:p>/;
-      if (reqPattern.test(docXml)) {
-        const targetReqXml = `<w:p><w:pPr><w:spacing w:before="120" w:after="120" w:line="320" w:lineRule="auto"/><w:ind w:left="-567" w:hanging="283"/><w:jc w:val="both"/><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial" w:hint="cs"/><w:b/><w:bCs/><w:sz w:val="28"/><w:szCs w:val="28"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr></w:pPr><w:r><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial" w:hint="cs"/><w:b/><w:bCs/><w:sz w:val="28"/><w:szCs w:val="28"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t xml:space="preserve">الرجاء من سيادتكم التكرم ${escapeXml(cleanGrievanceReq)}</w:t></w:r></w:p>`;
-        docXml = docXml.replace(reqPattern, targetReqXml);
-      }
-    }
-
-    // 6. عبارة الاحترام والتقدير والتوقيعات الرسمية في جدول ثلاثي منضبط (مطابق لباقي خطابات النظام)
-    const p40Regex = /<w:p\b[^>]*>(?:(?!<\/w:p>)[\s\S])*?وتفضلو بقبول وافر الامتنان والتقدير[\s\S]*?<\/w:p>/;
-    if (p40Regex.test(docXml)) {
-      const cleanedP40 = `<w:p><w:pPr><w:spacing w:before="120" w:after="160" w:line="280" w:lineRule="auto"/><w:jc w:val="center"/><w:rPr><w:rFonts w:ascii="Andalus" w:hAnsi="Andalus" w:cs="Andalus"/><w:b/><w:bCs/><w:sz w:val="34"/><w:szCs w:val="34"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr></w:pPr><w:r><w:rPr><w:rFonts w:ascii="Andalus" w:hAnsi="Andalus" w:cs="Andalus"/><w:b/><w:bCs/><w:sz w:val="34"/><w:szCs w:val="34"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t xml:space="preserve">وتفضلو بقبول وافر الامتنان والتقدير  ،،،،،</w:t></w:r></w:p>`;
-      docXml = docXml.replace(p40Regex, cleanedP40);
+    if (/\.{10,}/.test(docXml)) {
+      docXml = docXml.replace(/\.{10,}/g, ` ${escapeXml(cleanGrievanceReq)}`);
     }
 
     const grievanceSigBlockRegex = /<w:p\b[^>]*>(?:(?!<\/w:p>)[\s\S])*?(?:المختص|المهندس|المدير المالى)[\s\S]*?يعتمد[\s\S]*?<\/w:p>\s*<w:p\b[^>]*>(?:(?!<\/w:p>)[\s\S])*?رئيس مجلس[\s\S]*?<\/w:p>/;

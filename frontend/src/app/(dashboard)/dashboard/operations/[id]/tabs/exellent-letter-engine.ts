@@ -438,6 +438,13 @@ export function applyExellentRecipient(
   const cleanPrefix = rawPrefix.replace(/^(?:الساده|السادة)\s*/, "").trim() || "الأستاذ";
   const t = escapeXml((titleAndAuthority || "مدير الادارة العامة للمشتريات والمخازن").trim());
 
+  if (docXml.includes("مدير الادارة العامة للمشتريات والمخازن بجامعة دمنهور")) {
+    docXml = docXml.replace(/مدير الادارة العامة للمشتريات والمخازن بجامعة دمنهور/g, t);
+    docXml = docXml.replace(/(<w:t[^>]*>)الأستاذ(<\/w:t>)/g, `$1${escapeXml(cleanPrefix)}$2`);
+    return docXml;
+  }
+
+  // استبدال نصوص المرسل إليه داخل وسوم w:t حصراً لحفظ تنسيقات وخصائص القالب الأصلية كاملة
   let replaced = false;
   docXml = docXml.replace(/<w:p\b[\s\S]*?<\/w:p>/g, (pXml) => {
     if (replaced) return pXml;
@@ -449,17 +456,12 @@ export function applyExellentRecipient(
       !text.includes("المصرف")
     ) {
       replaced = true;
-      const pPrMatch = pXml.match(/<w:pPr>[\s\S]*?<\/w:pPr>/);
-      const pPr = pPrMatch ? pPrMatch[0] : '<w:pPr><w:jc w:val="center"/></w:pPr>';
-      const rPr = '<w:rPr><w:rFonts w:asciiTheme="minorBidi" w:hAnsiTheme="minorBidi" w:cstheme="minorBidi"/><w:b/><w:bCs/><w:sz w:val="28"/><w:szCs w:val="28"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr>';
-      return `<w:p>${pPr}<w:r>${rPr}<w:t xml:space="preserve">الساده  </w:t></w:r><w:r>${rPr}<w:t>${escapeXml(cleanPrefix)}</w:t></w:r><w:r>${rPr}<w:t xml:space="preserve"> / </w:t></w:r><w:r>${rPr}<w:t>${t}</w:t></w:r></w:p>`;
+      let newP = pXml.replace(/مدير الادارة العامة للمشتريات والمخازن[^<]*/g, t);
+      newP = newP.replace(/(<w:t[^>]*>)الأستاذ(<\/w:t>)/g, `$1${escapeXml(cleanPrefix)}$2`);
+      return newP;
     }
     return pXml;
   });
-
-  if (!replaced) {
-    docXml = docXml.replace(/مدير الادارة العامة للمشتريات والمخازن بجامعة دمنهور/g, t);
-  }
 
   return docXml;
 }
@@ -1375,18 +1377,16 @@ export async function generateExellentGeneralLetterDocx(params: {
     docXml = docXml.replace(/تمهيد\s*:\s*بخصوص\s*:\s*\.{3,}/g, `تمهيد : بخصوص : ${safeSubj}`);
   }
 
-  // استبدال متن الخطاب الكامل
+  // استبدال متن الخطاب الكامل داخل نفس الفقرة الأصلية دون تدمير التنسيق أو حجم الخط
   if (params.letterBody && params.letterBody.trim()) {
     const safeBody = escapeXml(params.letterBody.trim());
-    const bodyParagraph = `<w:r><w:rPr><w:rFonts w:ascii="Arabic Typesetting" w:hAnsi="Arabic Typesetting" w:cs="Arabic Typesetting" w:hint="cs"/><w:b/><w:bCs/><w:sz w:val="32"/><w:szCs w:val="32"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t xml:space="preserve">${safeBody}</w:t></w:r>`;
-
-    // استبدال الفقرة التجريبية من "الرجاء من سيادتكم" حتى "والمكاتبات الرسميه ."
-    const dummyRegex = /<w:p\b[^>]*>(?:(?!<\/w:p>)[\s\S])*?الرجاء من سيادتكم[\s\S]*?والمكاتبات الرسميه(?:(?!<\/w:p>)[\s\S])*?<\/w:p>/;
-    if (dummyRegex.test(docXml)) {
-      const pOpen = `<w:p><w:pPr><w:spacing w:line="360" w:lineRule="auto"/><w:jc w:val="both"/><w:rPr><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr></w:pPr>${bodyParagraph}</w:p>`;
-      docXml = docXml.replace(dummyRegex, pOpen);
+    if (/الرجاء من سيادتكم[\s\S]*?والمكاتبات الرسميه\s*\./.test(docXml)) {
+      docXml = docXml.replace(/الرجاء من سيادتكم[\s\S]*?والمكاتبات الرسميه\s*\./g, safeBody);
+    } else if (/الرجاء من سيادتكم[\s\S]*?والمكاتبات الرسميه/.test(docXml)) {
+      docXml = docXml.replace(/الرجاء من سيادتكم[\s\S]*?والمكاتبات الرسميه/g, safeBody);
     }
   }
+
 
   docXml = applyExellentSignatures(docXml, params);
   docXml = purgeExellentRedMarks(docXml);
@@ -2337,16 +2337,12 @@ export async function generateExellentWarrantyCertificateDocx(params: {
   }
   const durationCombined = `${escapeXml(duration)} ${escapeXml(coverage)}`.trim();
 
-  const warrantyDurationPXml =
-    `<w:p w14:paraId="6EC61F2C" w14:textId="60BF4A65" w:rsidR="00C113B2" w:rsidRDefault="00C113B2" w:rsidP="00E75FA0">` +
-    `<w:pPr><w:pStyle w:val="ListParagraph"/><w:numPr><w:ilvl w:val="0"/><w:numId w:val="4"/></w:numPr>` +
-    `<w:spacing w:after="0" w:line="240" w:lineRule="auto"/><w:ind w:left="679" w:hanging="270"/><w:jc w:val="mediumKashida"/>` +
-    `<w:rPr><w:b/><w:bCs/><w:sz w:val="28"/><w:szCs w:val="28"/><w:u w:val="single"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr></w:pPr>` +
-    `<w:r w:rsidRPr="00D36FD3"><w:rPr><w:b/><w:bCs/><w:sz w:val="28"/><w:szCs w:val="28"/><w:u w:val="single"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t>مدة الضمان</w:t></w:r>` +
-    `<w:r w:rsidRPr="00D36FD3"><w:rPr><w:rFonts w:hint="cs"/><w:b/><w:bCs/><w:sz w:val="28"/><w:szCs w:val="28"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t>:</w:t></w:r>` +
-    `<w:r w:rsidRPr="00D36FD3"><w:rPr><w:b/><w:bCs/><w:sz w:val="28"/><w:szCs w:val="28"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t xml:space="preserve"> ${durationCombined}</w:t></w:r></w:p>`;
-
-  docXml = docXml.replace(/<w:p\b(?:(?!<\/w:p>)[\s\S])*?مدة\s*الضمان[\s\S]*?<\/w:p>/, warrantyDurationPXml);
+    // استبدال نص مدة وتغطية الضمان داخل نفس الفقرة الأصلية لحفظ تنسيق وحجم خط القالب
+    if (/سنة ضد عيوب الصناعه في مداس الكاوتش\s*فقط/.test(docXml)) {
+      docXml = docXml.replace(/سنة ضد عيوب الصناعه في مداس الكاوتش\s*فقط/g, durationCombined);
+    } else {
+      docXml = docXml.replace(/(<w:t[^>]*>مدة الضمان<\/w:t>[\s\S]*?<w:t[^>]*>:\s*<\/w:t>\s*<w:t[^>]*>)[^<]*(<\/w:t>)/, `$1 ${durationCombined}$2`);
+    }
 
   // 2. معالجة الحالات التي لا يسري فيها الضمان (الحذف التام للفقرة عند مسحها بالواجهة)
   const c1 = (params.case1 || "").trim();

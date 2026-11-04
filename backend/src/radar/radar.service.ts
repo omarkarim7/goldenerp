@@ -227,7 +227,7 @@ export class RadarService implements OnModuleInit {
       };
     } catch (err: any) {
       this.logger.warn(`Radar live scan handled: ${err.message}`);
-      const totalInDb = await this.prisma.radarItem.count().catch(() => 10);
+      const totalInDb = await this.prisma.radarItem.count().catch(() => 0);
       return {
         success: false,
         totalScanned: totalInDb,

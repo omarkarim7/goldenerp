@@ -1309,16 +1309,6 @@ export default function RadarPage() {
               <span>مسح الملتقطات</span>
             </Button>
 
-            {/* Radar & Cloud Settings Shortcut */}
-            <Link
-              href="/dashboard/settings?tab=radar"
-              className="border-purple-500/30 bg-purple-500/10 hover:bg-purple-600 hover:text-white text-purple-400 font-bold px-4 py-3 rounded-2xl text-xs sm:text-sm transition-all cursor-pointer shadow-sm active:scale-95 flex items-center gap-1.5"
-              title="الانتقال إلى إعدادات الرادار والفحص التلقائي والبروكسي والسحابة"
-            >
-              <Settings className="h-4 w-4" />
-              <span>إعدادات الرادار والسحابة ⚙️</span>
-            </Link>
-
             {/* Single Unified Radar Scan Button */}
             <Button
               onClick={handleScan}

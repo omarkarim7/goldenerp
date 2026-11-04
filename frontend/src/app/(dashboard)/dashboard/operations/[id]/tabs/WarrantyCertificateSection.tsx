@@ -746,16 +746,12 @@ export function WarrantyCertificateSection({
     }
     const durationCombined = `${escapeXml(safeDuration)} ${escapeXml(safeCoverage)}`.trim();
 
-    const warrantyDurationPXml =
-      `<w:p w14:paraId="6EC61F2C" w14:textId="60BF4A65" w:rsidR="00C113B2" w:rsidRDefault="00C113B2" w:rsidP="00E75FA0">` +
-      `<w:pPr><w:pStyle w:val="ListParagraph"/><w:numPr><w:ilvl w:val="0"/><w:numId w:val="4"/></w:numPr>` +
-      `<w:spacing w:after="0" w:line="240" w:lineRule="auto"/><w:ind w:left="679" w:hanging="270"/><w:jc w:val="mediumKashida"/>` +
-      `<w:rPr><w:b/><w:bCs/><w:sz w:val="28"/><w:szCs w:val="28"/><w:u w:val="single"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr></w:pPr>` +
-      `<w:r w:rsidRPr="00D36FD3"><w:rPr><w:b/><w:bCs/><w:sz w:val="28"/><w:szCs w:val="28"/><w:u w:val="single"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t>مدة الضمان</w:t></w:r>` +
-      `<w:r w:rsidRPr="00D36FD3"><w:rPr><w:rFonts w:hint="cs"/><w:b/><w:bCs/><w:sz w:val="28"/><w:szCs w:val="28"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t>:</w:t></w:r>` +
-      `<w:r w:rsidRPr="00D36FD3"><w:rPr><w:b/><w:bCs/><w:sz w:val="28"/><w:szCs w:val="28"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t xml:space="preserve"> ${durationCombined}</w:t></w:r></w:p>`;
-
-    docXml = docXml.replace(/<w:p\b(?:(?!<\/w:p>)[\s\S])*?مدة\s*الضمان[\s\S]*?<\/w:p>/, warrantyDurationPXml);
+    // استبدال نص مدة وتغطية الضمان داخل نفس الفقرة الأصلية لحفظ تنسيق وحجم خط القالب
+    if (/سنة ضد عيوب الصناعه في مداس الكاوتش\s*فقط/.test(docXml)) {
+      docXml = docXml.replace(/سنة ضد عيوب الصناعه في مداس الكاوتش\s*فقط/g, durationCombined);
+    } else {
+      docXml = docXml.replace(/(<w:t[^>]*>مدة الضمان<\/w:t>[\s\S]*?<w:t[^>]*>:\s*<\/w:t>\s*<w:t[^>]*>)[^<]*(<\/w:t>)/, `$1 ${durationCombined}$2`);
+    }
     // 6. استثناءات الضمان (الحذف التام عند تفريغ الخانة)
     const gc1 = (case1 || "").trim();
     const gc2 = (case2 || "").trim();

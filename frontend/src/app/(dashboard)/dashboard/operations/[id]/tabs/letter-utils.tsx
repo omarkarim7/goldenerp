@@ -245,12 +245,7 @@ export async function cleanAllDocxXml(zip: any): Promise<void> {
       }
 
       // 6. Purge unneeded draft placeholder paragraphs like "خانه خاليه للملاحظات"
-      // 7. Auto-cap oversized fonts to standard 14pt (28) across templates
-      if (/<w:sz\b[^>]*w:val="(?:5[0-9]|4[0-9]|3[6-9])"/i.test(xml)) {
-        xml = xml.replace(/<w:sz\b([^>]*)w:val="(?:5[0-9]|4[0-9]|3[6-9])"([^>]*)\/>/gi, '<w:sz$1w:val="28"$2/>');
-        xml = xml.replace(/<w:szCs\b([^>]*)w:val="(?:5[0-9]|4[0-9]|3[6-9])"([^>]*)\/>/gi, '<w:szCs$1w:val="28"$2/>');
-        changed = true;
-      }
+
 
       if (xml.includes("خانه خاليه للملاحظات")) {
         xml = xml.replace(/<w:p\b[^>]*>(?:(?!<\/w:p>)[\s\S])*?خانه خاليه للملاحظات(?:(?!<\/w:p>)[\s\S])*?<\/w:p>/gi, "");
@@ -831,17 +826,24 @@ export function replaceDocxRecipient(
   const cleanPrefix = escapeXml(prefixNormalized);
 
   // مطابقة فقرة المرسل إليه في كافة قوالب الوورد الرسمية (سواء بدأت بالسيد أو السادة أو الساده أو تضمنت دمنهور أو أي جهة)
-  const recipientPattern = /<w:p\b[^>]*>(?:(?!<\/w:p>)[\s\S])*?(?:السيد|السادة|الساده)(?:(?!<\/w:p>)[\s\S])*?(?:مشتريات|دمنهو|الأستاذ|المهندس|الدكتور|المستشار|عميد|رئيس|مدير|المحترم|\/)(?:(?!<\/w:p>)[\s\S])*?<\/w:p>/;
-
-  const centeredRecipientXml = `<w:p><w:pPr><w:spacing w:after="0"/><w:jc w:val="center"/><w:rPr><w:rFonts w:ascii="Arabic Typesetting" w:hAnsi="Arabic Typesetting" w:cs="Arabic Typesetting"/><w:b/><w:bCs/><w:sz w:val="28"/><w:szCs w:val="28"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr></w:pPr><w:r><w:rPr><w:rFonts w:ascii="Arabic Typesetting" w:hAnsi="Arabic Typesetting" w:cs="Arabic Typesetting" w:hint="cs"/><w:b/><w:bCs/><w:sz w:val="28"/><w:szCs w:val="28"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t xml:space="preserve">${cleanPrefix} / ${cleanTitle}</w:t></w:r></w:p>`;
-
-  if (recipientPattern.test(docXml)) {
-    return docXml.replace(recipientPattern, centeredRecipientXml);
+  // استبدال نص المرسل إليه داخل الفقرة الأصلية لحفظ كافة خصائص وتنسيقات القالب
+  let matched = false;
+  if (/السيد الأستاذ\s*\/\s*مدير الادارة العامة للمشتريات والمخازن/i.test(docXml)) {
+    docXml = docXml.replace(/(<w:t[^>]*>)\s*السيد الأستاذ\s*\/\s*مدير الادارة العامة للمشتريات والمخازن[^<]*(<\/w:t>)/g, `$1${cleanPrefix} / ${cleanTitle}$2`);
+    matched = true;
   }
-
-  // استبدال احتياطي بالنصوص في حال لم تتطابق الفقرة بالكامل
-  docXml = docXml.replace(/(?:السيد|السادة|الساده)\s+الأستاذ/g, cleanPrefix);
-  docXml = docXml.replace(/مدير الادارة العامة للمشتريات والمخازن بجامعة دمنهور/g, cleanTitle);
+  if (!matched && /مدير الادارة العامة للمشتريات والمخازن بجامعة دمنهور/i.test(docXml)) {
+    docXml = docXml.replace(/مدير الادارة العامة للمشتريات والمخازن بجامعة دمنهور/g, cleanTitle);
+    matched = true;
+  }
+  if (!matched && /مدير عام الادارة العامة للشئون القانونية/i.test(docXml)) {
+    docXml = docXml.replace(/مدير عام الادارة العامة للشئون القانونية/g, cleanTitle);
+    matched = true;
+  }
+  if (!matched) {
+    docXml = docXml.replace(/(?:السيد|السادة|الساده)\s+الأستاذ/g, cleanPrefix);
+    docXml = docXml.replace(/مدير الادارة العامة للمشتريات والمخازن/g, cleanTitle);
+  }
   return docXml;
 }
 

@@ -503,40 +503,29 @@ export function TabGeneralLetter({
     // 1. لقب وصفة المرسل إليه والجهة بتوسيط وتنسيق متوازن
     docXml = replaceDocxRecipient(docXml, recipientPrefix, recipientTitleAndAuthority);
 
-    // 2. الموضوع (استبدال الفقرة بالكامل بدقة مع التسطير والخط الأصلي ومنع تكرار كلمة تمهيد أو بخصوص)
+    // 2. الموضوع: استبدال نص النقاط أو النص التجريبي فقط دون لمس تنسيق وخصائص الفقرة الأصلية
     const cleanSubject = (generalSubject || "")
       .replace(/^(?:تمهيد\s*:?\s*)?(?:بخصوص\s*:?\s*)?/i, "")
-      .replace(/^[:\-\s]+/, "")
+      .replace(/^[\:-\s]+/, "")
       .trim();
 
-    const subjectPattern = /<w:p\b[^>]*>(?:(?!<\/w:p>)[\s\S])*?(?:تمهيد|الموضوع\s*بخصوص)(?:(?!<\/w:p>)[\s\S])*?<\/w:p>/;
-    const subjectPrefix = docXml.includes("الموضوع بخصوص") ? "الموضوع بخصوص :" : "تمهيد :";
-    const subjectXml = `<w:p><w:pPr><w:tabs><w:tab w:val="left" w:pos="5387"/></w:tabs><w:spacing w:after="0"/><w:ind w:left="-567"/><w:jc w:val="both"/><w:rPr><w:rFonts w:ascii="Arabic Typesetting" w:hAnsi="Arabic Typesetting" w:cs="Arabic Typesetting"/><w:b/><w:bCs/><w:sz w:val="28"/><w:szCs w:val="28"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr></w:pPr><w:r><w:rPr><w:rFonts w:ascii="Arabic Typesetting" w:hAnsi="Arabic Typesetting" w:cs="Arabic Typesetting" w:hint="cs"/><w:b/><w:bCs/><w:sz w:val="28"/><w:szCs w:val="28"/><w:u w:val="single"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t xml:space="preserve">${subjectPrefix} ${escapeXml(cleanSubject || "بشأن العمليات الرسمية")}</w:t></w:r></w:p>`;
-    if (subjectPattern.test(docXml)) {
-      docXml = docXml.replace(subjectPattern, subjectXml);
-    }
-
-    // محاذاة سطر (تحيه طيبه وبعد) في وسط السطر تماماً بدون أي مسافات بادئة أو انحياز جانبي
-    const salutationPattern = /<w:p\b[^>]*>(?:(?!<\/w:p>)[\s\S])*?تحي[ةه]\s*طيب[ةه]\s*وبعد(?:(?!<\/w:p>)[\s\S])*?<\/w:p>/;
-    const salutationXml = `<w:p><w:pPr><w:spacing w:before="140" w:after="140" w:line="240" w:lineRule="auto"/><w:jc w:val="center"/><w:rPr><w:rFonts w:ascii="Aldhabi" w:hAnsi="Aldhabi" w:cs="Aldhabi"/><w:b/><w:bCs/><w:sz w:val="30"/><w:szCs w:val="30"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr></w:pPr><w:r><w:rPr><w:rFonts w:ascii="Aldhabi" w:hAnsi="Aldhabi" w:cs="Aldhabi" w:hint="cs"/><w:b/><w:bCs/><w:sz w:val="30"/><w:szCs w:val="30"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t>تحيه طيبه وبعد</w:t></w:r></w:p>`;
-    if (salutationPattern.test(docXml)) {
-      docXml = docXml.replace(salutationPattern, salutationXml);
-    }
-
-    // 3. استبدال متن الخطاب العام بالكامل مع الحفاظ التام على محاذاة الفقرة وتكبير الخط العربي بشكل بارز ومريح للقراءة
-    const bodyPattern = /<w:p\b[^>]*>(?:(?!<\/w:p>)[\s\S])*?الرجاء من سيادتكم(?:(?!<\/w:p>)[\s\S])*?<\/w:p>/;
-    if (bodyPattern.test(docXml)) {
-      const newBodyXml = `<w:p><w:pPr><w:spacing w:after="100" w:line="280" w:lineRule="auto"/><w:ind w:left="-567" w:hanging="283"/><w:jc w:val="both"/><w:rPr><w:rFonts w:ascii="Arabic Typesetting" w:hAnsi="Arabic Typesetting" w:cs="Arabic Typesetting"/><w:b/><w:bCs/><w:sz w:val="28"/><w:szCs w:val="28"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr></w:pPr><w:r><w:rPr><w:rFonts w:ascii="Arabic Typesetting" w:hAnsi="Arabic Typesetting" w:cs="Arabic Typesetting" w:hint="cs"/><w:b/><w:bCs/><w:sz w:val="28"/><w:szCs w:val="28"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t xml:space="preserve">${escapeXml(generalLetterBody)}</w:t></w:r></w:p>`;
-      docXml = docXml.replace(bodyPattern, newBodyXml);
+    const safeSubj = escapeXml(cleanSubject || "بشأن العمليات الرسمية");
+    if (/الموضوع بخصوص\s*:\s*\.{3,}/.test(docXml)) {
+      docXml = docXml.replace(/الموضوع بخصوص\s*:\s*\.{3,}/g, `الموضوع بخصوص : ${safeSubj}`);
+    } else if (/تمهيد\s*:\s*بخصوص\s*:\s*\.{3,}/.test(docXml)) {
+      docXml = docXml.replace(/تمهيد\s*:\s*بخصوص\s*:\s*\.{3,}/g, `تمهيد : بخصوص : ${safeSubj}`);
     } else {
-      docXml = docXml.replace(/الرجاء من سيادتكم[\s\S]*?المكاتبات الرسميه\s*\./g, escapeXml(generalLetterBody));
+      docXml = docXml.replace(/(<w:t[^>]*>\s*(?:الموضوع بخصوص|تمهيد)\s*:\s*)[\s\S]*?(<\/w:t>)/g, `$1${safeSubj}$2`);
     }
 
-    // محاذاة سطر (وتفضلو بقبول وافر الاحترام والتقدير) في وسط السطر بدقة
-    const closingPattern = /<w:p\b[^>]*>(?:(?!<\/w:p>)[\s\S])*?وتفضلو\s*بقبول\s*وافر(?:(?!<\/w:p>)[\s\S])*?<\/w:p>/;
-    const closingXml = `<w:p><w:pPr><w:spacing w:before="120" w:after="140" w:line="240" w:lineRule="auto"/><w:jc w:val="center"/><w:rPr><w:rFonts w:ascii="Andalus" w:hAnsi="Andalus" w:cs="Andalus"/><w:b/><w:bCs/><w:sz w:val="28"/><w:szCs w:val="28"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr></w:pPr><w:r><w:rPr><w:rFonts w:ascii="Andalus" w:hAnsi="Andalus" w:cs="Andalus" w:hint="cs"/><w:b/><w:bCs/><w:sz w:val="28"/><w:szCs w:val="28"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t>وتفضلو بقبول وافر الاحترام والتقدير</w:t></w:r></w:p>`;
-    if (closingPattern.test(docXml)) {
-      docXml = docXml.replace(closingPattern, closingXml);
+    // 3. متن الخطاب: استبدال النص التجريبي فقط دون تدمير الفقرة أو خصائص الخط الأصلية
+    if (generalLetterBody && generalLetterBody.trim()) {
+      const safeBody = escapeXml(generalLetterBody.trim());
+      if (/الرجاء من سيادتكم[\s\S]*?المكاتبات الرسميه\s*\./.test(docXml)) {
+        docXml = docXml.replace(/الرجاء من سيادتكم[\s\S]*?المكاتبات الرسميه\s*\./g, safeBody);
+      } else if (/الرجاء من سيادتكم[\s\S]*?والمكاتبات الرسميه/.test(docXml)) {
+        docXml = docXml.replace(/الرجاء من سيادتكم[\s\S]*?والمكاتبات الرسميه/g, safeBody);
+      }
     }
 
     // 4. جدول التوقيعات والاعتمادات الرسمية الثلاثي المتوازن لكلا الشركتين
