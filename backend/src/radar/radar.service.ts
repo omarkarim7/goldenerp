@@ -476,32 +476,129 @@ export class RadarService implements OnModuleInit {
     }
 
     // 1. External ID
-    const idMatch = html.match(/name="etender_Tender\.etender_tenderId"\s+type="hidden"\s+value="([^"]+)"/i) ||
-                    html.match(/\/Process\/Details\/([a-zA-Z0-9\-]+)/i) ||
-                    html.match(/FetchBasicInfoAysnc\?Id=([a-zA-Z0-9\-]+)/i);
+    const idMatch =
+      html.match(/name="etender_Tender\.etender_tenderId"\s+type="hidden"\s+value="([^"]+)"/i) ||
+      html.match(/id="etender_Tender_etender_tenderId"[^>]*value="([^"]+)"/i) ||
+      html.match(/data-url="[^"]*[?&]Id=([a-zA-Z0-9\-]+)"/i) ||
+      html.match(/\/Process\/Details\/([a-zA-Z0-9\-]+)/i) ||
+      html.match(/FetchBasicInfoAysnc\?Id=([a-zA-Z0-9\-]+)/i);
     const externalId = idMatch ? idMatch[1] : (sourceUrl?.match(/\/Process\/Details\/([a-zA-Z0-9\-]+)/i)?.[1] || `import-${Date.now()}`);
 
     // 2. Title
-    const titleMatch = html.match(/<title>([^<\|]+)/i) || html.match(/<h[1-4][^>]*class="[^"]*title[^"]*"[^>]*>([^<]+)/i);
-    const title = titleMatch ? titleMatch[1].trim() : 'مناقصة حكومية مستوردة من البوابة';
+    const titleMatch =
+      html.match(/id="etender_Tender_etender_Title"[^>]*>([\s\S]*?)<\/textarea>/i) ||
+      html.match(/name="etender_Tender\.etender_Title"[^>]*>([\s\S]*?)<\/textarea>/i) ||
+      html.match(/<title>([^<\|]+)/i) ||
+      html.match(/<h[1-4][^>]*class="[^"]*title[^"]*"[^>]*>([^<]+)/i);
+    let title = titleMatch ? titleMatch[1].trim() : 'مناقصة حكومية مستوردة من البوابة';
 
-    // 3. Authority
-    const authMatch = html.match(/الجهة الطارحة[:\s]*<\/span>\s*<span[^>]*>([^<]+)/i) ||
-                      html.match(/الجهة الطارحة[:\s]*<\/label>\s*<[^>]+>([^<]+)/i);
-    const authority = authMatch ? authMatch[1].trim() : undefined;
+    const titleEnMatch =
+      html.match(/id="etender_Tender_bls_TitleForigenLanguage"[^>]*>([\s\S]*?)<\/textarea>/i) ||
+      html.match(/name="etender_Tender\.bls_TitleForigenLanguage"[^>]*>([\s\S]*?)<\/textarea>/i);
+    const titleEn = titleEnMatch ? titleEnMatch[1].trim() : '';
 
-    // 4. Ref No
-    const refMatch = html.match(/رقم العملية[:\s]*<\/span>\s*<span[^>]*>([^<]+)/i) ||
-                     html.match(/رقم العملية[:\s]*<\/label>\s*<[^>]+>([^<]+)/i);
-    const refNo = refMatch ? refMatch[1].trim() : undefined;
+    // 3. Reference Number (رقم العملية)
+    const refMatch =
+      html.match(/<input[^>]*id="etender_Tender_etender_refno"[^>]*value="([^"]*)"/i) ||
+      html.match(/<input[^>]*value="([^"]*)"[^>]*id="etender_Tender_etender_refno"/i) ||
+      html.match(/id="etender_Tender_etender_refno"[^>]*value="([^"]*)"/i) ||
+      html.match(/رقم العملية[:\s]*<\/span>\s*<span[^>]*>([^<]+)/i) ||
+      html.match(/رقم العملية[:\s]*<\/label>\s*<[^>]+>([^<]+)/i);
+    let refNo = refMatch ? refMatch[1].trim() : undefined;
 
-    // 5. Attachments
+    // 4. Authority (الجهة الإدارية / الطالبة)
+    const authMatch =
+      html.match(/<input[^>]*id="etender_Tender_bls_RequestingBody_Name"[^>]*value="([^"]*)"/i) ||
+      html.match(/<input[^>]*value="([^"]*)"[^>]*id="etender_Tender_bls_RequestingBody_Name"/i) ||
+      html.match(/id="etender_Tender_bls_RequestingBody_Name"[^>]*value="([^"]*)"/i) ||
+      html.match(/الجهة الطارحة[:\s]*<\/span>\s*<span[^>]*>([^<]+)/i) ||
+      html.match(/الجهة الإدارية[:\s]*<\/label>\s*<[^>]+>([^<]+)/i);
+    let authority = authMatch ? authMatch[1].trim() : undefined;
+
+    // 5. Temporary Insurance (التأمين المؤقت)
+    const tempInsMatch =
+      html.match(/<input[^>]*id="etender_Tender_bls_TemporaryInsuranceAmount_Value"[^>]*value="([^"]*)"/i) ||
+      html.match(/<input[^>]*value="([^"]*)"[^>]*id="etender_Tender_bls_TemporaryInsuranceAmount_Value"/i) ||
+      html.match(/id="etender_Tender_bls_TemporaryInsuranceAmount_Value"[^>]*value="([^"]*)"/i) ||
+      html.match(/التأمين المؤقت[:\s]*<\/span>\s*<span[^>]*>([^<]+)/i);
+    const temporaryInsurance = tempInsMatch && !isNaN(parseFloat(tempInsMatch[1])) ? parseFloat(tempInsMatch[1]) : undefined;
+
+    // 6. Booklet Price (ثمن كراسة الشروط)
+    const feeMatch =
+      html.match(/<input[^>]*id="etender_Tender_etender_ParticipationFee_Value"[^>]*value="([^"]*)"/i) ||
+      html.match(/<input[^>]*value="([^"]*)"[^>]*id="etender_Tender_etender_ParticipationFee_Value"/i) ||
+      html.match(/id="etender_Tender_etender_ParticipationFee_Value"[^>]*value="([^"]*)"/i) ||
+      html.match(/ثمن كراسة الشروط[:\s]*<\/span>\s*<span[^>]*>([^<]+)/i);
+    const bookletPrice = feeMatch && !isNaN(parseFloat(feeMatch[1])) ? parseFloat(feeMatch[1]) : undefined;
+
+    // 7. Tender Method & Kind (طريقة التعاقد وطبيعة العملية)
+    const tenderMethod =
+      html.match(/id="etender_Tender_bls_TenderMethod_Value"[^>]*>([\s\S]*?)<\/select>/i)?.[1]
+        ?.match(/<option[^>]*selected="selected"[^>]*>([^<]+)<\/option>/i)?.[1]?.trim() ||
+      'مناقصة عامة';
+
+    const tenderKind =
+      html.match(/id="etender_Tender_bls_TenderKind_Value"[^>]*>([\s\S]*?)<\/select>/i)?.[1]
+        ?.match(/<option[^>]*selected="selected"[^>]*>([^<]+)<\/option>/i)?.[1]?.trim();
+
+    // 8. Warranty Bond & Details (نسبة التأمين النهائي والتفاصيل)
+    const warrantyMatch =
+      html.match(/<input[^>]*id="etender_Tender_bls_WarrantyBond"[^>]*value="([^"]*)"/i) ||
+      html.match(/id="etender_Tender_bls_WarrantyBond"[^>]*value="([^"]*)"/i);
+    const finalInsuranceRate = warrantyMatch && !isNaN(parseFloat(warrantyMatch[1])) ? parseFloat(warrantyMatch[1]) : undefined;
+
+    const fiscalYear = html.match(/id="etender_Tender_bls_TenderFiscalYear_Name"[^>]*value="([^"]*)"/i)?.[1]?.trim();
+    const currency = html.match(/id="etender_Tender_TransactionCurrencyId_Name"[^>]*value="([^"]*)"/i)?.[1]?.replace(/&nbsp;/g, ' ').trim() || 'جنيه مصري';
+    const email = html.match(/id="etender_Tender_EmailAddress"[^>]*value="([^"]*)"/i)?.[1]?.trim();
+    const activities = html.match(/id="activities"[^>]*>([\s\S]*?)<\/textarea>/i)?.[1]?.trim();
+    const description = html.match(/id="etender_Tender_bls_DescriptionArabic"[^>]*>([\s\S]*?)<\/textarea>/i)?.[1]?.trim();
+    const conditions = html.match(/id="etender_Tender_bls_ConditionsArabic"[^>]*>([\s\S]*?)<\/textarea>/i)?.[1]?.trim();
+    const summary = html.match(/id="etender_Tender_bls_SummaryArabic"[^>]*>([\s\S]*?)<\/textarea>/i)?.[1]?.trim();
+    const deliveryStatement = html.match(/id="etender_Tender_bls_DeliveryStatement"[^>]*value="([^"]*)"/i)?.[1]?.trim();
+    const publishingDays = html.match(/id="etender_Tender_bls_PublishingForDays"[^>]*value="([^"]*)"/i)?.[1]?.trim();
+    const evaluationType = html.match(/id="etender_Tender_FormattedValues_bls_evaluationtype_"[^>]*value="([^"]*)"/i)?.[1]?.trim();
+    const tenderNature = html.match(/id="etender_Tender_FormattedValues_bls_tendernature_"[^>]*value="([^"]*)"/i)?.[1]?.trim();
+
+    // 9. Timeline (البرنامج الزمني)
+    const timelineMatches = [...html.matchAll(/<div class="form-group">([\s\S]*?)(?:<label[^>]*>([\s\S]*?)<\/label>)/gi)];
+    const timelineStages: Array<{ label: string; date: string }> = [];
+    let timelineDeadline = '';
+    let timelinePublish = '';
+    for (const m of timelineMatches) {
+      const inputVal = m[1].match(/value=['"]([^'"]+)['"]/i)?.[1]?.trim();
+      const labelText = m[2]?.replace(/<[^>]+>/g, '').trim();
+      if (labelText && inputVal) {
+        timelineStages.push({ label: labelText, date: inputVal });
+        if (labelText.includes('الإعلان') || labelText.includes('الدعوة')) timelinePublish = inputVal;
+        if (labelText.includes('المظاريف الفنية') || labelText.includes('العطاءات') || labelText.includes('المزاد')) timelineDeadline = inputVal;
+      }
+    }
+
+    // 10. Items (البنود)
+    const items: Array<{ serial: number; name: string; type?: string; quantity: number }> = [];
+    const itemsContainer = html.match(/<div class="[^"]*TenderItems_container[^"]*"[\s\S]*?<\/table>/i)?.[0] || html;
+    const itRows = [...itemsContainer.matchAll(/<tr[^>]*>([\s\S]*?)<\/tr>/gi)];
+    let itIdx = 1;
+    for (const r of itRows) {
+      const cols = [...r[1].matchAll(/<td[^>]*>([\s\S]*?)<\/td>/gi)].map(m => m[1].replace(/<[^>]+>/g, '').trim());
+      if (cols.length >= 4 && !r[1].includes('DownloadDoc')) {
+        items.push({
+          serial: parseInt(cols[0], 10) || itIdx++,
+          name: cols[1],
+          type: cols[3] || cols[2],
+          quantity: parseFloat(cols[4]) || parseFloat(cols[3]) || 1,
+        });
+      }
+    }
+
+    // 11. Attachments (المرفقات وكراسة الشروط الرسمية)
     const attachments: Array<{ serial: number; name: string; docId: string; downloadUrl: string }> = [];
-    const attRows = [...html.matchAll(/<tr[^>]*>([\s\S]*?)<\/tr>/gi)];
+    const attContainer = html.match(/<div class="[^"]*TenderAttachments_container[^"]*"[\s\S]*?<\/table>/i)?.[0] || html;
+    const attRows = [...attContainer.matchAll(/<tr[^>]*>([\s\S]*?)<\/tr>/gi)];
     let attIdx = 1;
     for (const r of attRows) {
       const rowContent = r[1];
-      const formMatch = rowContent.match(/DownloadDoc\?DocId=([a-zA-Z0-9\-]+)/i);
+      const formMatch = rowContent.match(/DownloadDoc\?DocId=([a-zA-Z0-9\-]+)/i) || rowContent.match(/DocId=([a-zA-Z0-9\-]+)/i);
       if (formMatch) {
         const docId = formMatch[1];
         const cols = [...rowContent.matchAll(/<td[^>]*>([\s\S]*?)<\/td>/gi)].map(m => m[1].replace(/<[^>]+>/g, '').trim());
@@ -514,18 +611,29 @@ export class RadarService implements OnModuleInit {
       }
     }
 
-    // 6. Items
-    const items: Array<{ serial: number; name: string; quantity: number }> = [];
-    let itIdx = 1;
-    for (const r of attRows) {
-      const cols = [...r[1].matchAll(/<td[^>]*>([\s\S]*?)<\/td>/gi)].map(m => m[1].replace(/<[^>]+>/g, '').trim());
-      if (cols.length >= 4 && !r[1].includes('DownloadDoc')) {
-        items.push({
-          serial: parseInt(cols[0], 10) || itIdx++,
-          name: cols[1],
-          quantity: parseFloat(cols[3]) || 1,
-        });
+    // 12. Governorate Detection
+    const EGYPT_GOVS = [
+      'القاهرة', 'الجيزة', 'الإسكندرية', 'الدقهلية', 'البحر الأحمر', 'البحيرة',
+      'الفيوم', 'الغربية', 'الإسماعيلية', 'المنوفية', 'المنيا', 'القليوبية',
+      'الوادي الجديد', 'السويس', 'أسوان', 'أسيوط', 'بني سويف', 'بورسعيد',
+      'دمياط', 'الشرقية', 'جنوب سيناء', 'كفر الشيخ', 'مطروح', 'الأقصر',
+      'قنا', 'شمال سيناء', 'سوهاج'
+    ];
+    const fullText = `${title} ${authority || ''} ${description || ''}`;
+    let governorate = 'القاهرة';
+    for (const g of EGYPT_GOVS) {
+      if (fullText.includes(g) || (g === 'بورسعيد' && fullText.includes('بور سعيد'))) {
+        governorate = g;
+        break;
       }
+    }
+
+    // Swap Guard if refNo was title
+    if (refNo && (refNo.length > 30 || /^(تعلن|عملية|مزايدة|مناقصة|توريد)/.test(refNo))) {
+      const swap = refNo;
+      if (!authority && title) authority = title;
+      title = swap;
+      refNo = undefined;
     }
 
     const tenderObj = {
@@ -534,20 +642,41 @@ export class RadarService implements OnModuleInit {
       title,
       authority,
       sourceUrl: sourceUrl || `https://gcs.digitalegypt.gov.eg/Process/Details/${externalId}`,
+      temporaryInsurance,
+      bookletPrice,
+      tenderMethod,
+      tenderKind,
+      finalInsuranceRate,
+      governorate,
+      publishDate: timelinePublish || undefined,
+      deadline: timelineDeadline || undefined,
       attachments,
       items,
       rawDetails: {
+        titleEn,
+        fiscalYear,
+        currency,
+        email,
+        activities,
+        description,
+        conditions,
+        summary,
+        deliveryStatement,
+        publishingDays,
+        evaluationType,
+        tenderNature,
+        timelineStages,
         attachments,
         items,
       },
     };
 
-    await this.ingestRealTenders([tenderObj]);
+    const res = await this.ingestRealTenders([tenderObj]);
     const created = await this.prisma.radarItem.findFirst({ where: { externalId } });
     return {
       success: true,
-      tender: created,
-      message: `تم استيراد المناقصة "${title.substring(0, 45)}" ومرفقاتها الرسمية بنجاح!`,
+      tender: created || tenderObj,
+      message: `تم استيراد المناقصة "${title.substring(0, 45)}..." ومرفقاتها الرسمية بنجاح!`,
     };
   }
 
