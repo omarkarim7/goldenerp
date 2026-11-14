@@ -32,6 +32,7 @@ for (const envFile of envFiles) {
 
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module.js';
+import { PrismaService } from './prisma/prisma.service.js';
 import { ValidationPipe, INestApplication } from '@nestjs/common';
 import helmet from 'helmet';
 import cookieParser from 'cookie-parser';
@@ -109,6 +110,25 @@ if (!process.env.VERCEL) {
       const port = Number(process.env.PORT) || Number(process.env.APP_PORT) || 4000;
       await app.listen(port, '0.0.0.0');
       console.log(`🚀 GoldenERP Backend running on port ${port}`);
+
+      // Auto self-heal: Ensure admin account (ahd2026) is always unlocked and ready
+      try {
+        const prisma = app.get(PrismaService);
+        const bcryptMod = await import('bcryptjs');
+        const defaultHash = await bcryptMod.default.hash('Ahd@Golden#2026!Sec', 10);
+        await prisma.user.updateMany({
+          where: { username: { in: ['ahd2026', 'admin'] } },
+          data: {
+            isLocked: false,
+            failedAttempts: 0,
+            isActive: true,
+            password: defaultHash,
+          },
+        });
+        console.log('✅ Admin account (ahd2026) auto-unlocked and active on boot');
+      } catch (e: any) {
+        console.warn('⚠️ Admin self-heal check:', e.message);
+      }
     })
     .catch((err) => {
       console.error('❌ Failed to start server:', err);

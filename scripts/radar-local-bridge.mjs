@@ -136,3 +136,4 @@ server.listen(PORT, HOST, () => {
   console.log('  📡 Ready to receive scan triggers from ahdahd.eu dashboard!');
   console.log('================================================================');
 });
+
