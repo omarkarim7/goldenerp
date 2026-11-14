@@ -4,10 +4,10 @@
  * Accurately parses:
  *  - Basic Info: Title, English Title, Reference Number, Authority, Method, Kind, Temporary Insurance,
  *                Booklet Price, Bidding Type, Fiscal Year, Currency, Classification, Inquiries & Insurance Splitting.
- *  - Details: Warranty Bond (نسبة التأمين النهائي), Warranty Statement, Evaluation Type, Tender Nature,
+ *  - Details: Warranty Bond, Warranty Statement, Evaluation Type, Tender Nature,
  *             Downpayment, Publishing Days, Delivery Duration, Alternative Offers, Activities, Conditions & Summary.
- *  - Tender Parts (الأجزاء) & Items (البنود مع الكمية والنوع واسم الجزء).
- *  - Comprehensive Timeline (تاريخ الإعلان، المظاريف الفنية، البت الفني، المظاريف المالية، البت المالي، الترسية).
+ *  - Tender Parts & Items.
+ *  - Comprehensive Timeline.
  *  - Official Attachments & Downloads genuine booklets (PDF / DOCX).
  * And syncs everything directly into GoldenERP.
  */
@@ -34,11 +34,11 @@ const EGYPT_GOVERNORATES = [
 
 async function main() {
   console.log('================================================================');
-  console.log('   GoldenERP - زاحف ورادار التعاقدات الحكومية المصرية المتطور');
+  console.log('   GoldenERP - Egyptian Government Tenders Radar V2.0');
   console.log('================================================================\n');
 
   // 1. Authenticate with GoldenERP API or use Direct Ingest Key
-  console.log(`📡 الاتصال بنظام GoldenERP (${API_BASE})...`);
+  console.log(`[1/4] Connecting to GoldenERP API (${API_BASE})...`);
   let token = null;
   try {
     const loginRes = await fetch(`${API_BASE}/auth/login`, {
@@ -50,16 +50,16 @@ async function main() {
     if (loginRes.ok) {
       const loginData = await loginRes.json();
       token = loginData.accessToken || loginData.token;
-      console.log('✅ تم تسجيل الدخول إلى نظام GoldenERP بنجاح!');
+      console.log('  ✓ Authenticated with GoldenERP API successfully!');
     } else {
-      console.warn(`⚠️ تعذر تسجيل الدخول بالرمز، سيتم استخدام مفتاح الرادار السحابي المباشر.`);
+      console.log('  ! Using direct Cloud Ingest Security Key.');
     }
   } catch (loginErr) {
-    console.warn(`⚠️ ملاحظة في مصادقة النظام: ${loginErr.message}`);
+    console.log(`  ! API Notice: ${loginErr.message}`);
   }
 
   // 2. Login to Egyptian Government Tenders Portal
-  console.log(`🏛️ جاري الدخول إلى بوابة التعاقدات الحكومية بحساب المنظومة (${PORTAL_EMAIL})...`);
+  console.log(`\n[2/4] Logging in to Egyptian Government Portal (${PORTAL_EMAIL})...`);
   const loginPageUrl = `${PORTAL_BASE}/Account/Login?ReturnUrl=%2FHome`;
   const getRes = await fetch(loginPageUrl, {
     signal: AbortSignal.timeout(15000),
@@ -107,10 +107,10 @@ async function main() {
   }
 
   const cookieHeader = Object.entries(cookieMap).map(([k, v]) => `${k}=${v}`).join('; ');
-  console.log('✅ تم تسجيل الدخول إلى بوابة التعاقدات المصرية بنجاح!\n');
+  console.log('  ✓ Logged in to Egyptian Tenders Portal successfully!\n');
 
   // 3. Fetch latest tenders from Tender page
-  console.log('🔍 جاري فحص وسحب أحدث العمليات المطروحة...');
+  console.log('[3/4] Scanning latest public tenders...');
   const tenderRes = await fetch(`${PORTAL_BASE}/Tender`, {
     headers: {
       'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
@@ -122,7 +122,6 @@ async function main() {
   const basicTenders = [];
   const rowMatches = [...tenderHtml.matchAll(/<tr[^>]*>([\s\S]*?)<\/tr>/gi)];
 
-  // Table headers: [0: رقم المرجع, 1: اسم العملية, 2: الجهة الإدارية, 3: تاريخ طرح العملية, 4: آخر تاريخ لإستقبال العطاءات, 5: تفاصيل]
   for (let i = 1; i < rowMatches.length; i++) {
     const row = rowMatches[i][1];
     const linkMatch = row.match(/href="\/Process\/Details\/([a-zA-Z0-9\-]+)"/i);
@@ -134,7 +133,7 @@ async function main() {
       basicTenders.push({
         externalId,
         refNo: cols[0] || undefined,
-        title: cols[1] || 'مناقصة حكومية',
+        title: cols[1] || 'Public Tender',
         authority: cols[2] || undefined,
         publishDate: cols[3] || undefined,
         deadline: cols[4] || undefined,
@@ -143,9 +142,9 @@ async function main() {
     }
   }
 
-  console.log(`📊 تم اكتشاف ${basicTenders.length} عملية رسمية في الصفحة الأولى.\n`);
+  console.log(`  ✓ Found ${basicTenders.length} active official tenders on page 1.\n`);
   if (basicTenders.length === 0) {
-    console.log('لا توجد عمليات جديدة حالياً. تم الانتهاء.');
+    console.log('No new tenders found. Completed.');
     return;
   }
 
@@ -154,7 +153,8 @@ async function main() {
   const maxToProcess = Math.min(basicTenders.length, 10);
   for (let i = 0; i < maxToProcess; i++) {
     const basic = basicTenders[i];
-    console.log(`[${i + 1}/${maxToProcess}] سحب التفاصيل الشاملة لـ: ${basic.title.substring(0, 50)}...`);
+    const refDisplay = basic.refNo ? `#${basic.refNo}` : `[${basic.externalId.substring(0, 8)}]`;
+    console.log(`--> [${i + 1}/${maxToProcess}] Scraping Tender ${refDisplay}...`);
     try {
       const id = basic.externalId;
       const urls = [
@@ -234,7 +234,7 @@ async function main() {
       const conditionsArabic = dHtml.match(/id="etender_Tender_bls_ConditionsArabic"[^>]*>([\s\S]*?)<\/textarea>/i)?.[1]?.trim();
       const summaryArabic = dHtml.match(/id="etender_Tender_bls_SummaryArabic"[^>]*>([\s\S]*?)<\/textarea>/i)?.[1]?.trim();
 
-      // C. Parse Tender Parts (الأجزاء)
+      // C. Parse Tender Parts
       const pHtml = parts.tenderParts || '';
       const tenderParts = [];
       const partRows = [...pHtml.matchAll(/<tr[^>]*>([\s\S]*?)<\/tr>/gi)];
@@ -248,7 +248,7 @@ async function main() {
         }
       }
 
-      // D. Parse Tender Items (البنود مع اسم الجزء والنوع والكمية)
+      // D. Parse Tender Items
       const iHtml = parts.items || '';
       const tenderItems = [];
       const itRows = [...iHtml.matchAll(/<tr[^>]*>([\s\S]*?)<\/tr>/gi)];
@@ -273,7 +273,7 @@ async function main() {
         }
       }
 
-      // E. Parse Timeline Stages (البرنامج الزمني الدقيق)
+      // E. Parse Timeline Stages
       const tlHtml = parts.timeline || '';
       const timelineMatches = [...tlHtml.matchAll(/<div class="form-group">([\s\S]*?)(?:<label[^>]*>([\s\S]*?)<\/label>)/gi)];
       const timelineStages = [];
@@ -314,7 +314,7 @@ async function main() {
           }
           attachments.push({
             serial: parseInt(c[0], 10) || r,
-            name: c[1] || 'كراسة الشروط الرسمية',
+            name: c[1] || 'Official Booklet',
             docId: docId || undefined,
             downloadUrl: docId ? `/radar/download-doc?docId=${docId}&tenderId=${id}` : `${PORTAL_BASE}/Process/DownloadDoc?DocId=${docId}`
           });
@@ -356,11 +356,12 @@ async function main() {
               const disp = docRes.headers.get('content-disposition') || '';
               const m = disp.match(/filename\*=UTF-8''([^;\r\n]+)/i);
               bookletFilename = m ? decodeURIComponent(m[1]) : (attachments[0].name ? `${attachments[0].name}.pdf` : `booklet-${id}.pdf`);
-              console.log(`  📄 تم تحميل كراسة الشروط الأصلية (${(buf.byteLength / 1024).toFixed(1)} KB): ${bookletFilename.substring(0, 45)}...`);
+              const safeExt = bookletFilename?.toLowerCase().endsWith('.docx') ? 'Word (.docx)' : 'PDF (.pdf)';
+              console.log(`    📄 Official booklet downloaded (${(buf.byteLength / 1024).toFixed(1)} KB) [${safeExt}]`);
             }
           }
         } catch (docErr) {
-          console.warn(`  ⚠️ تعذر تحميل الكراسة لـ ${id}:`, docErr.message);
+          console.log(`    ! Booklet download skipped: ${docErr.message}`);
         }
       }
 
@@ -451,12 +452,12 @@ async function main() {
         }
       });
     } catch (err) {
-      console.warn(`فشل سحب تفاصيل ${basic.title}:`, err.message);
+      console.log(`  ! Notice on tender: ${err.message}`);
     }
   }
 
   // 5. Ingest into GoldenERP Backend in safe batches
-  console.log(`\n📤 جاري ترحيل ${fullTenders.length} عملية ببياناتها وكراساتها إلى سيرفر GoldenERP...`);
+  console.log(`\n[4/4] Syncing ${fullTenders.length} tenders with documents to GoldenERP Server...`);
   const BATCH_SIZE = 2;
   for (let b = 0; b < fullTenders.length; b += BATCH_SIZE) {
     const batch = fullTenders.slice(b, b + BATCH_SIZE);
@@ -472,24 +473,22 @@ async function main() {
       });
 
       if (!ingestRes.ok) {
-        const errTxt = await ingestRes.text();
-        console.warn(`  ⚠️ استجابة الحزمة ${Math.floor(b / BATCH_SIZE) + 1}: ${ingestRes.status}`);
+        console.log(`  ! Batch ${Math.floor(b / BATCH_SIZE) + 1} response: ${ingestRes.status}`);
       } else {
-        const resData = await ingestRes.json();
-        console.log(`  ✅ تم حفظ الحزمة ${Math.floor(b / BATCH_SIZE) + 1}/${Math.ceil(fullTenders.length / BATCH_SIZE)}: ${resData.message}`);
+        console.log(`  ✓ Batch ${Math.floor(b / BATCH_SIZE) + 1}/${Math.ceil(fullTenders.length / BATCH_SIZE)}: Synced successfully!`);
       }
     } catch (bErr) {
-      console.warn(`  ⚠️ خطأ في ترحيل الحزمة:`, bErr.message);
+      console.log(`  ! Batch sync error: ${bErr.message}`);
     }
   }
 
   console.log('\n================================================================');
-  console.log('  🎉 تم تحديث رادار المناقصات الحكومية المصرية بنجاح تام!');
-  console.log('  يمكنك الآن فتح الموقع ahdahd.eu ومشاهدة كافة العمليات وكراساتها.');
+  console.log('  🎉 SUCCESS: GoldenERP Radar has been updated successfully!');
+  console.log('  Open your dashboard at: https://ahdahd.eu/dashboard/radar');
   console.log('================================================================\n');
 }
 
 main().catch(err => {
-  console.error('❌ خطأ في الزاحف:', err);
+  console.error('Fatal crawler error:', err);
   process.exit(1);
 });
