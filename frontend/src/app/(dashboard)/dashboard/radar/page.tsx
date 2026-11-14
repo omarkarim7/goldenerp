@@ -181,14 +181,34 @@ export default function RadarPage() {
   const [activeDetailsItem, setActiveDetailsItem] = useState<RadarItem | null>(null);
   const [detailsTab, setDetailsTab] = useState<"basic" | "items" | "timeline" | "attachments">("basic");
 
-  // Real Attachments (Strictly excluding any fake placeholder entries)
+  // Real Attachments (Strictly excluding any fake placeholder entries and duplicates)
   const realAttachments = useMemo(() => {
-    return (activeDetailsItem?.rawDetails?.attachments || []).filter(
+    const rawList = (activeDetailsItem?.rawDetails?.attachments || []).filter(
       (att: any) =>
         att &&
         !att.name?.includes("كراسة الشروط والمواصفات الفنية المعتمدة") &&
         !att.name?.includes("جدول الكميات والمقايسة التثمينية")
     );
+
+    // If we have an authentic downloaded booklet file, remove duplicate raw entries named after the title
+    const hasStored = rawList.some((a: any) => a.isStored || a.docId?.startsWith("stored-booklet"));
+    const filtered = rawList.filter((a: any) => {
+      if (hasStored && !a.isStored && !a.docId?.startsWith("stored-booklet")) {
+        if (activeDetailsItem?.title && a.name?.trim() === activeDetailsItem.title.trim()) {
+          return false;
+        }
+      }
+      return true;
+    });
+
+    // Final de-duplicate by name
+    const seen = new Set<string>();
+    return filtered.filter((a: any) => {
+      const key = a.name?.trim();
+      if (!key || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
   }, [activeDetailsItem]);
 
   const [convertModalItem, setConvertModalItem] = useState<RadarItem | null>(null);
@@ -1342,34 +1362,33 @@ export default function RadarPage() {
           </div>
 
           <div className="flex items-center gap-2.5 shrink-0 flex-wrap">
-            {/* Radar Runner Page Link */}
-            <Link
-              href="/dashboard/radar/runner"
-              className="bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 font-bold px-4 py-3 rounded-2xl text-xs sm:text-sm transition-all cursor-pointer shadow-sm active:scale-95 flex items-center gap-1.5"
-              title="مشغل الرادار المستقل والربط المباشر من جهازك"
+            {/* Desktop Tool Guidance Indicator */}
+            <div className="flex items-center gap-2 px-4 py-2.5 rounded-2xl bg-gradient-to-r from-blue-500/10 via-indigo-500/10 to-blue-600/10 border border-blue-500/30 text-blue-600 dark:text-blue-400 font-bold text-xs sm:text-sm shadow-xs">
+              <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse shrink-0" />
+              <span>يتم فحص وتحديث الرادار بنقرة واحدة عبر أداة سطح المكتب 💻</span>
+            </div>
+
+            {/* Refresh Live Items Button */}
+            <Button
+              variant="outline"
+              onClick={fetchData}
+              disabled={loading}
+              className="border-border bg-card hover:bg-muted font-bold px-4 py-2.5 rounded-2xl text-xs sm:text-sm cursor-pointer shadow-xs flex items-center gap-2"
+              title="تحديث واستعراض العمليات الحالية"
             >
-              <Zap className="h-4 w-4 text-emerald-400" />
-              <span>مشغل الرادار ⚡</span>
-            </Link>
+              <RefreshCw className={`h-4 w-4 text-blue-500 ${loading ? "animate-spin" : ""}`} />
+              <span>تحديث الشاشة</span>
+            </Button>
+
             {/* Clear / Clean Radar Button */}
             <Button
               variant="outline"
               onClick={handleClearAllPending}
-              className="border-rose-500/30 bg-rose-500/10 hover:bg-rose-600 hover:text-white text-rose-400 font-bold px-4 py-3 rounded-2xl text-xs sm:text-sm transition-all cursor-pointer shadow-sm active:scale-95 flex items-center gap-1.5"
+              className="border-rose-500/30 bg-rose-500/10 hover:bg-rose-600 hover:text-white text-rose-400 font-bold px-4 py-2.5 rounded-2xl text-xs sm:text-sm transition-all cursor-pointer shadow-sm active:scale-95 flex items-center gap-1.5"
               title="مسح وحذف كافة المناقصات الملتقطة بالرادار غير المسحوبة"
             >
               <Trash2 className="h-4 w-4" />
               <span>مسح الملتقطات</span>
-            </Button>
-
-            {/* Single Unified Radar Scan Button */}
-            <Button
-              onClick={handleScan}
-              disabled={isScanning}
-              className="bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-700 hover:from-blue-500 hover:to-indigo-600 text-white font-bold px-6 py-3 rounded-2xl shadow-xl shadow-blue-500/25 flex items-center gap-2 text-xs sm:text-sm active:scale-95 transition-all cursor-pointer border border-blue-400/30"
-            >
-              <RefreshCw className={`h-4 w-4 ${isScanning ? "animate-spin" : ""}`} />
-              <span>{isScanning ? "جاري الفحص المباشر..." : "تشغيل فحص الرادار الآن"}</span>
             </Button>
           </div>
         </div>
@@ -1665,13 +1684,15 @@ export default function RadarPage() {
           <Radar className="h-14 w-14 text-blue-500/50 mx-auto animate-pulse" />
           <h3 className="text-lg font-bold text-foreground">رادار المناقصات الحكومية جاهز للفحص</h3>
           <p className="text-xs text-muted-foreground max-w-md mx-auto leading-relaxed">
-            قاعدة بيانات الرادار جاهزة حالياً. اضغط على زر &quot;تشغيل فحص الرادار الآن&quot; أعلاه للاتصال المباشر ببوابة التعاقدات الحكومية وسحب أحدث المناقصات المطروحة اليوم.
+            قاعدة بيانات الرادار جاهزة حالياً. يرجى تشغيل أداة سطح المكتب (تحديث رادار المناقصات) لسحب أحدث العمليات المطروحة اليوم وتحديث القائمة.
           </p>
           <Button
-            onClick={handleScan}
-            className="bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl px-6 py-3 cursor-pointer shadow-md"
+            onClick={fetchData}
+            disabled={loading}
+            className="bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl px-6 py-3 cursor-pointer shadow-md flex items-center gap-2 mx-auto"
           >
-            تشغيل فحص الرادار الآن
+            <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
+            <span>تحديث عرض القائمة</span>
           </Button>
         </div>
       ) : viewMode === "table" ? (
@@ -3169,49 +3190,6 @@ export default function RadarPage() {
                           </div>
                         );
                       })}
-
-                      {/* Direct Booklet Upload & Storage in Hostinger Storage */}
-                      <div className="p-4 rounded-2xl bg-gradient-to-r from-blue-500/10 via-indigo-500/5 to-muted/40 border border-blue-500/25 flex flex-col sm:flex-row items-center justify-between gap-3 shadow-xs mt-3">
-                        <div className="flex items-center gap-3">
-                          <div className="w-10 h-10 rounded-xl bg-blue-600/20 text-blue-600 dark:text-blue-400 flex items-center justify-center font-bold shrink-0">
-                            <Upload className="h-5 w-5" />
-                          </div>
-                          <div>
-                            <span className="font-bold text-foreground text-xs sm:text-sm block">
-                              إرفاق وتخزين كراسة الشروط والمرفقات (PDF / Word / Excel)
-                            </span>
-                            <span className="text-[11px] text-muted-foreground block mt-0.5">
-                              يمكنك رفع ملف الكراسة الأصلي المحمل من بوابة التعاقدات ليتم حفظه في وحدة التخزين (Hostinger) ومعاينته مباشرة
-                            </span>
-                          </div>
-                        </div>
-                        <label className="cursor-pointer shrink-0">
-                          <input
-                            type="file"
-                            accept=".pdf,.docx,.doc,.xlsx,.xls,.zip,.rar"
-                            className="hidden"
-                            onChange={handleUploadBookletForActiveItem}
-                            disabled={isUploadingBooklet}
-                          />
-                          <div
-                            className={`flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs h-9 px-4 rounded-xl shadow-xs cursor-pointer active:scale-95 transition-all ${
-                              isUploadingBooklet ? "opacity-60 pointer-events-none" : ""
-                            }`}
-                          >
-                            {isUploadingBooklet ? (
-                              <>
-                                <RefreshCw className="h-3.5 w-3.5 animate-spin ml-1.5" />
-                                <span>جاري التخزين...</span>
-                              </>
-                            ) : (
-                              <>
-                                <Upload className="h-3.5 w-3.5 ml-1.5" />
-                                <span>إرفاق ملف الكراسة 📁</span>
-                              </>
-                            )}
-                          </div>
-                        </label>
-                      </div>
                     </div>
                   )}
                 </div>

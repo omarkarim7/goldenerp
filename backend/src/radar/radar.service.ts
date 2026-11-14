@@ -429,13 +429,28 @@ export class RadarService implements OnModuleInit {
           const existIdx = rawDetails.attachments.findIndex((a: any) =>
             a.docId === `stored-booklet-${it.externalId}` ||
             a.name?.toLowerCase().includes('كراسة') ||
-            a.name?.toLowerCase().includes('booklet')
+            a.name?.toLowerCase().includes('booklet') ||
+            (it.title && a.name?.trim() === it.title.trim())
           );
           if (existIdx >= 0) {
             rawDetails.attachments[existIdx] = storedEntry;
+          } else if (rawDetails.attachments.length <= 1) {
+            rawDetails.attachments = [storedEntry];
           } else {
             rawDetails.attachments.unshift(storedEntry);
           }
+
+          // De-duplicate attachments and clean duplicates
+          const seenAtts = new Set();
+          rawDetails.attachments = rawDetails.attachments.filter((a: any) => {
+            if (!a || !a.name) return false;
+            if (a.name.includes("كراسة الشروط والمواصفات الفنية المعتمدة") || a.name.includes("جدول الكميات والمقايسة التثمينية")) return false;
+            if (!a.isStored && it.title && a.name.trim() === it.title.trim()) return false;
+            const k = a.name.trim();
+            if (seenAtts.has(k)) return false;
+            seenAtts.add(k);
+            return true;
+          });
         } catch (bErr: any) {
           this.logger.warn(`Could not save booklet base64 for ${it.externalId}: ${bErr.message}`);
         }
