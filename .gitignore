@@ -68,3 +68,8 @@ frontend-dist.tar.gz
 frontend-next.tar.gz
 public-dist.tar.gz
 scratch_portal_user_dump.html
+
+GoldenERP_Radar.exe
+GoldenERP_Radar_Setup/
+GoldenERP_Radar_Standalone.zip
+sea-prep.blob
