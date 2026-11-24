@@ -596,11 +596,7 @@ export function WarrantyCertificateSection({
       let qrBinary: Uint8Array | null = null;
       try {
         const filename = `warranty_certificate_${registrationNumber || op.serialNumber || "doc"}.pdf`;
-        const targetPayload =
-          cloudPdfUrl && cloudPdfUrl.startsWith("http") && cloudPdfUrl.length <= 160
-            ? cloudPdfUrl
-            : filename;
-        qrBinary = await generateExellentCrispQrBuffer(targetPayload, registrationNumber);
+        qrBinary = await generateExellentCrispQrBuffer(filename, registrationNumber);
       } catch (e) {
         console.warn("QR generation failed for Exellent warranty:", e);
       }
@@ -863,12 +859,33 @@ export function WarrantyCertificateSection({
 
       const pdf = await getPdfBlobFromDocx(
         docx,
-        `warranty_certificate_${registrationNumber || op.serialNumber}.docx`
+        `warranty_certificate_${registrationNumber || op.serialNumber}.docx`,
+        forceRefresh
       );
       setPreviewPdfBlob(pdf);
       if (previewPdfUrl) URL.revokeObjectURL(previewPdfUrl);
       const url = URL.createObjectURL(pdf);
       setPreviewPdfUrl(url);
+
+      // رفع سحابي متزامن لشركة إكسلنت ليطابق مسح الباركود المعاينة 100%
+      if (isExellentCompany(currentCompanyLink || currentCompany || op)) {
+        try {
+          const cloudFilename = `warranty_certificate_${registrationNumber || op.serialNumber || "doc"}.pdf`;
+          const res = await uploadPdfToFreeCloud(pdf, cloudFilename);
+          if (res?.url) {
+            setCloudPdfUrl(res.url);
+            let existingNotesObj: Record<string, any> = {};
+            if (op.notes && op.notes.startsWith("{")) existingNotesObj = JSON.parse(op.notes);
+            existingNotesObj.warrantyCertificate = {
+              ...(existingNotesObj.warrantyCertificate || {}),
+              cloudPdfUrl: res.url,
+            };
+            api.patch(`/operations/${op.id}`, { notes: JSON.stringify(existingNotesObj) }).catch(() => {});
+          }
+        } catch (e) {
+          console.warn("Exellent cloud sync error on warranty preview:", e);
+        }
+      }
 
       setLastGeneratedSnapshot(currentSnapshot);
       if (forceRefresh) {

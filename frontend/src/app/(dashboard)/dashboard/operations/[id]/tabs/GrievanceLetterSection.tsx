@@ -640,8 +640,7 @@ export function GrievanceLetterSection({
       let qrBinary: Uint8Array | null = null;
       try {
         const filename = `${letterKey}_${registrationNumber || op.serialNumber || "doc"}.pdf`;
-        const targetPayload = cloudPdfUrl && cloudPdfUrl.startsWith("http") && cloudPdfUrl.length <= 160 ? cloudPdfUrl : filename;
-        qrBinary = await generateExellentCrispQrBuffer(targetPayload, registrationNumber);
+        qrBinary = await generateExellentCrispQrBuffer(filename, registrationNumber);
       } catch (e) {
         console.warn("QR generation failed for Exellent grievance:", e);
       }
@@ -957,9 +956,10 @@ export function GrievanceLetterSection({
         toast.success("تم تحديث المعاينة الرسمية بنجاح! 🔄✨");
       }
 
-      // رفع سحابي تلقائي فوري في الخلفية لضمان عمل رمز الـ QR بدقة فورية
+      // رفع سحابي متزامن لشركة إكسلنت ليطابق مسح الباركود المعاينة 100%
       const cloudFilename = `${letterKey}_${registrationNumber || op.serialNumber || "doc"}.pdf`;
-      uploadPdfToFreeCloud(pdf, cloudFilename)
+      const isEx = isExellentCompany(currentCompanyLink || (selectedCompanyId ? { id: selectedCompanyId } : op));
+      const syncPromise = uploadPdfToFreeCloud(pdf, cloudFilename)
         .then((res) => {
           if (res?.url) {
             setCloudPdfUrl(res.url);
@@ -973,6 +973,10 @@ export function GrievanceLetterSection({
           }
         })
         .catch((e) => console.warn("Background cloud upload failed:", e));
+
+      if (isEx) {
+        await syncPromise;
+      }
     } catch (err: any) {
       console.error(err);
       toast.error("فشل تجهيز مستند المعاينة: " + (err?.message || ""));

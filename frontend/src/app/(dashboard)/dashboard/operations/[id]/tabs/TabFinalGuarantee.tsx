@@ -547,13 +547,8 @@ export function TabFinalGuarantee({
     if (isB) {
       let qrBinary: Uint8Array | undefined = undefined;
       try {
-        const activeCloud = cloudUrls[type];
         const filename = `final_guarantee_${type}_${registrationNumber || op.serialNumber || "doc"}.pdf`;
-        const targetPayload =
-          activeCloud && activeCloud.startsWith("http") && activeCloud.length <= 160
-            ? activeCloud
-            : filename;
-        qrBinary = await generateExellentCrispQrBuffer(targetPayload, registrationNumber);
+        qrBinary = await generateExellentCrispQrBuffer(filename, registrationNumber);
       } catch (e) {
         console.warn("QR generation failed for Exellent final guarantee:", e);
       }
@@ -934,16 +929,18 @@ export function TabFinalGuarantee({
 
       const pdf = await getPdfBlobFromDocx(
         docx,
-        `final_guarantee_${type}_${registrationNumber || op.serialNumber}.docx`
+        `final_guarantee_${type}_${registrationNumber || op.serialNumber}.docx`,
+        forceRefresh
       );
       setPreviewPdfBlob(pdf);
       const url = URL.createObjectURL(pdf);
       setPreviewPdfUrl(url);
       setLastGeneratedSnapshot(currentSnapshot);
 
-      // رفع تلقائي فوري لسحابة Cloudflare R2 حصرياً لضمان توفر الملف دائماً عند مسح الباركود
+      // رفع تلقائي فوري لسحابة Cloudflare R2 (مع انتظار الرفع لشركة إكسلنت ليطابق الباركود المعاينة 100%)
       const cloudFilename = `final_guarantee_${type}_${registrationNumber || op.serialNumber || "doc"}.pdf`;
-      uploadPdfToFreeCloud(pdf, cloudFilename)
+      const isEx = isExellentCompany(currentCompanyLink || currentCompany || op);
+      const syncPromise = uploadPdfToFreeCloud(pdf, cloudFilename)
         .then((res) => {
           if (res?.url) {
             setCloudUrls((prev) => ({ ...prev, [type]: res.url }));
@@ -960,6 +957,10 @@ export function TabFinalGuarantee({
           }
         })
         .catch((e) => console.warn("Background Cloudflare R2 upload on preview:", e));
+
+      if (isEx) {
+        await syncPromise;
+      }
 
       if (forceRefresh) {
         toast.success("تم تحديث المعاينة الرسمية بنجاح! 🔄✨");

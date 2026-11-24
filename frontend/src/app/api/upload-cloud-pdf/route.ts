@@ -142,7 +142,11 @@ export async function GET(req: NextRequest) {
     }
 
     if (searchParams.get("open") === "1" || searchParams.get("redirect") === "1") {
-      return NextResponse.redirect(directUrl, 307);
+      const redirectRes = NextResponse.redirect(directUrl, 307);
+      redirectRes.headers.set("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
+      redirectRes.headers.set("Pragma", "no-cache");
+      redirectRes.headers.set("Expires", "0");
+      return redirectRes;
     }
 
     return NextResponse.json({

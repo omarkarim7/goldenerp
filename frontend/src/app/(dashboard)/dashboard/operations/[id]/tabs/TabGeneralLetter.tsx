@@ -414,11 +414,7 @@ export function TabGeneralLetter({
       let qrBinary: Uint8Array | null = null;
       try {
         const filename = `general_letter_${registrationNumber || op.serialNumber || "doc"}.pdf`;
-        const targetPayload =
-          cloudPdfUrl && cloudPdfUrl.startsWith("http") && cloudPdfUrl.length <= 160
-            ? cloudPdfUrl
-            : filename;
-        qrBinary = await generateExellentCrispQrBuffer(targetPayload, registrationNumber);
+        qrBinary = await generateExellentCrispQrBuffer(filename, registrationNumber);
       } catch (e) {
         console.warn("QR generation failed for Exellent general letter:", e);
       }
@@ -611,37 +607,58 @@ export function TabGeneralLetter({
     try {
       const docx = await generateGeneralLetterDocxBlob();
       setPreviewDocxBlob(docx);
-      const pdf = await getPdfBlobFromDocx(docx, `general_letter_${registrationNumber}.docx`);
+      const pdf = await getPdfBlobFromDocx(docx, `general_letter_${registrationNumber}.docx`, forceRefresh);
       setPreviewPdfBlob(pdf);
       const url = URL.createObjectURL(pdf);
       setPreviewPdfUrl(url);
       setLastGeneratedSnapshot(currentSnapshot);
 
-      if (isCloudOutOfSync) {
-        toast.warning("تنبيه: توجد تعديلات جديدة لم يتم رفعها سحابياً — يرجى الضغط على زر 'إعادة الرفع والتحديث' لكي يُفتح أحدث ملف عند مسح رمز الباركود بالكاميرا.", {
-          duration: 5000,
-        });
-      }
-
-      // رفع سحابي صامت في الخلفية لضمان توفر ملف الـ PDF فوراً على Cloudflare R2 عند مسح الـ QR بكاميرا الهاتف
-      if (!cloudPdfUrl || isCloudOutOfSync || forceRefresh) {
-        setTimeout(async () => {
-          try {
-            const filename = `general_letter_${registrationNumber || op.serialNumber || "doc"}.pdf`;
-            const uploadRes = await uploadPdfToFreeCloud(pdf, filename);
-            if (uploadRes?.url) {
-              setCloudPdfUrl(uploadRes.url);
-              setLastUploadedSnapshot(currentSnapshot);
-              let notesObj: any = {};
-              if (op.notes && op.notes.startsWith("{")) {
-                try { notesObj = JSON.parse(op.notes); } catch {}
-              }
-              if (!notesObj.generalLetterDocx) notesObj.generalLetterDocx = {};
-              notesObj.generalLetterDocx.cloudPdfUrl = uploadRes.url;
-              await api.patch(`/operations/${op.id}`, { notes: JSON.stringify(notesObj) });
+      const isEx = isExellentCompany(currentCompanyLink || currentCompany || op);
+      if (isEx) {
+        try {
+          const filename = `general_letter_${registrationNumber || op.serialNumber || "doc"}.pdf`;
+          const uploadRes = await uploadPdfToFreeCloud(pdf, filename);
+          if (uploadRes?.url) {
+            setCloudPdfUrl(uploadRes.url);
+            setLastUploadedSnapshot(currentSnapshot);
+            let notesObj: any = {};
+            if (op.notes && op.notes.startsWith("{")) {
+              try { notesObj = JSON.parse(op.notes); } catch {}
             }
-          } catch {}
-        }, 500);
+            if (!notesObj.generalLetterDocx) notesObj.generalLetterDocx = {};
+            notesObj.generalLetterDocx.cloudPdfUrl = uploadRes.url;
+            api.patch(`/operations/${op.id}`, { notes: JSON.stringify(notesObj) }).catch(() => {});
+          }
+        } catch (e) {
+          console.warn("Exellent cloud sync error on preview:", e);
+        }
+      } else {
+        if (isCloudOutOfSync) {
+          toast.warning("تنبيه: توجد تعديلات جديدة لم يتم رفعها سحابياً — يرجى الضغط على زر 'إعادة الرفع والتحديث' لكي يُفتح أحدث ملف عند مسح رمز الباركود بالكاميرا.", {
+            duration: 5000,
+          });
+        }
+
+        // رفع سحابي صامت في الخلفية لضمان توفر ملف الـ PDF فوراً على Cloudflare R2 عند مسح الـ QR بكاميرا الهاتف
+        if (!cloudPdfUrl || isCloudOutOfSync || forceRefresh) {
+          setTimeout(async () => {
+            try {
+              const filename = `general_letter_${registrationNumber || op.serialNumber || "doc"}.pdf`;
+              const uploadRes = await uploadPdfToFreeCloud(pdf, filename);
+              if (uploadRes?.url) {
+                setCloudPdfUrl(uploadRes.url);
+                setLastUploadedSnapshot(currentSnapshot);
+                let notesObj: any = {};
+                if (op.notes && op.notes.startsWith("{")) {
+                  try { notesObj = JSON.parse(op.notes); } catch {}
+                }
+                if (!notesObj.generalLetterDocx) notesObj.generalLetterDocx = {};
+                notesObj.generalLetterDocx.cloudPdfUrl = uploadRes.url;
+                await api.patch(`/operations/${op.id}`, { notes: JSON.stringify(notesObj) });
+              }
+            } catch {}
+          }, 500);
+        }
       }
     } catch (err: any) {
       toast.error(err?.message || "فشل توليد المعاينة");

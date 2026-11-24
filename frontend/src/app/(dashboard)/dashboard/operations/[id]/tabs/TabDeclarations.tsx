@@ -464,13 +464,8 @@ export function TabDeclarations({
     if (isB) {
       let qrBinary: Uint8Array | undefined = undefined;
       try {
-        const activeCloud = type === "specs" ? cloudPdfUrlSpecs : cloudPdfUrlInsurance;
         const filename = `declaration_${type}_${registrationNumber || op.serialNumber || "doc"}.pdf`;
-        const targetPayload =
-          activeCloud && activeCloud.startsWith("http") && activeCloud.length <= 160
-            ? activeCloud
-            : filename;
-        qrBinary = await generateExellentCrispQrBuffer(targetPayload, registrationNumber);
+        qrBinary = await generateExellentCrispQrBuffer(filename, registrationNumber);
       } catch (e) {
         console.warn("QR generation failed for Exellent declaration:", e);
       }
@@ -820,16 +815,17 @@ export function TabDeclarations({
       const docx = await generateDeclarationDocxBlob(activeDeclType);
       setPreviewDocxBlob(docx);
 
-      const pdfBlob = await getPdfBlobFromDocx(docx, `declaration_${activeDeclType}_${registrationNumber}.docx`);
+      const pdfBlob = await getPdfBlobFromDocx(docx, `declaration_${activeDeclType}_${registrationNumber}.docx`, forceRefresh);
       setPreviewPdfBlob(pdfBlob);
       const url = URL.createObjectURL(pdfBlob);
       setPreviewPdfUrl(url);
 
       setLastGeneratedSnapshot(currentSnapshot);
 
-      // رفع تلقائي فوري لسحابة Cloudflare R2 حصرياً لضمان توفر الملف دائماً عند مسح الباركود
+      // رفع تلقائي فوري لسحابة Cloudflare R2 (مع انتظار الرفع لشركة إكسلنت ليطابق الباركود المعاينة 100%)
       const cloudFilename = `declaration_${activeDeclType}_${registrationNumber || op.serialNumber || "doc"}.pdf`;
-      uploadPdfToFreeCloud(pdfBlob, cloudFilename).then(async (res) => {
+      const isEx = isExellentCompany(currentCompanyLink || currentCompany || op);
+      const syncPromise = uploadPdfToFreeCloud(pdfBlob, cloudFilename).then(async (res) => {
         if (res?.url) {
           if (activeDeclType === "specs") {
             setCloudPdfUrlSpecs(res.url);
@@ -847,6 +843,10 @@ export function TabDeclarations({
           } catch (e) {}
         }
       }).catch((e) => console.warn("Background upload failed:", e));
+
+      if (isEx) {
+        await syncPromise;
+      }
 
       if (forceRefresh) {
         toast.success("تم تحديث المعاينة بنجاح ✓");

@@ -743,13 +743,8 @@ export function TabBooklet({
     if (isB) {
       let qrBinary: Uint8Array | undefined = undefined;
       try {
-        const activeCloud = cloudUrls[type];
         const filename = `booklet_letter_${type}_${registrationNumber || op.serialNumber || "doc"}.pdf`;
-        const targetPayload =
-          activeCloud && activeCloud.startsWith("http") && activeCloud.length <= 160
-            ? activeCloud
-            : filename;
-        qrBinary = await generateExellentCrispQrBuffer(targetPayload, registrationNumber);
+        qrBinary = await generateExellentCrispQrBuffer(filename, registrationNumber);
       } catch (e) {
         console.warn("QR generation failed for Exellent in TabBooklet:", e);
       }
@@ -1321,11 +1316,15 @@ export function TabBooklet({
       toast.info("جاري تحويل مستند الوورد الأصلي إلى PDF بأعلى دقة رسمية...");
       const pdfBlob = await generateBookletPdfBlob(type);
       const cloudFilename = `booklet_letter_${type}_${registrationNumber || op.serialNumber || "doc"}.pdf`;
-      uploadPdfToFreeCloud(pdfBlob, cloudFilename).then(cloudRes => {
+      const isEx = isExellentCompany(currentCompanyLink || currentCompany || op);
+      const syncDl = uploadPdfToFreeCloud(pdfBlob, cloudFilename).then(cloudRes => {
         if (cloudRes?.url) {
           setCloudUrls(prev => ({ ...prev, [type]: cloudRes.url }));
         }
       }).catch(e => console.warn("Background upload on download:", e));
+      if (isEx) {
+        await syncDl;
+      }
       const url = URL.createObjectURL(pdfBlob);
       const a = document.createElement("a");
       a.href = url;
@@ -1390,13 +1389,18 @@ export function TabBooklet({
       const docx = await generateBookletDocxBlob(activeLetterType);
       setPreviewDocxBlob(docx);
 
-      const pdf = await getPdfBlobFromDocx(docx, `booklet_letter_${activeLetterType}_${registrationNumber}.docx`);
+      const pdf = await getPdfBlobFromDocx(
+        docx,
+        `booklet_letter_${activeLetterType}_${registrationNumber}.docx`,
+        forceRefresh
+      );
       setPreviewPdfBlob(pdf);
       setLastGeneratedSnapshot(currentSnapshot);
 
-      // رفع تلقائي فوري لسحابة Cloudflare R2 حصرياً لضمان توفر الملف دائماً عند مسح الباركود
+      // رفع تلقائي لسحابة Cloudflare R2: لشركة إكسلنت ننتظر اكتمال الرفع قبل إظهار المعاينة ليطابق المسح بالكاميرا المعاينة 100%
       const cloudFilename = `booklet_letter_${activeLetterType}_${registrationNumber || op.serialNumber || "doc"}.pdf`;
-      uploadPdfToFreeCloud(pdf, cloudFilename)
+      const isEx = isExellentCompany(currentCompanyLink || currentCompany || op);
+      const syncPromise = uploadPdfToFreeCloud(pdf, cloudFilename)
         .then((cloudRes) => {
           if (cloudRes?.url) {
             setCloudUrls((prev) => ({ ...prev, [activeLetterType]: cloudRes.url }));
@@ -1411,6 +1415,10 @@ export function TabBooklet({
           }
         })
         .catch((e) => console.warn("Background Cloudflare R2 upload:", e));
+
+      if (isEx) {
+        await syncPromise;
+      }
 
       if (forceRefresh) {
         toast.success("تم تحديث المعاينة بنجاح ✓");
@@ -1436,7 +1444,8 @@ export function TabBooklet({
       // إعادة استخدام ملف الـ PDF المعروض للمعاينة فوراً بدون إعادة تحويل
       const pdfBlob = previewPdfBlob || (await generateBookletPdfBlob(activeLetterType));
       const cloudFilename = `booklet_letter_${activeLetterType}_${registrationNumber || op.serialNumber || "doc"}.pdf`;
-      uploadPdfToFreeCloud(pdfBlob, cloudFilename).then(cloudRes => {
+      const isEx = isExellentCompany(currentCompanyLink || currentCompany || op);
+      const syncPrint = uploadPdfToFreeCloud(pdfBlob, cloudFilename).then(cloudRes => {
         if (cloudRes?.url) {
           setCloudUrls(prev => ({ ...prev, [activeLetterType]: cloudRes.url }));
           try {
@@ -1449,6 +1458,9 @@ export function TabBooklet({
           } catch {}
         }
       }).catch(e => console.warn("Background upload on print:", e));
+      if (isEx) {
+        await syncPrint;
+      }
       const pdfUrl = URL.createObjectURL(pdfBlob);
 
       const iframe = document.createElement("iframe");

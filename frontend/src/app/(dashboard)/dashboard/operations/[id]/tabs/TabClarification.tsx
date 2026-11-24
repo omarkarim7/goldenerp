@@ -551,13 +551,8 @@ export function TabClarification({
     if (isB) {
       let qrBinary: Uint8Array | undefined = undefined;
       try {
-        const activeCloud = cloudPdfUrl;
         const filename = `clarification_${registrationNumber || op.serialNumber || "doc"}.pdf`;
-        const targetPayload =
-          activeCloud && activeCloud.startsWith("http") && activeCloud.length <= 160
-            ? activeCloud
-            : filename;
-        qrBinary = await generateExellentCrispQrBuffer(targetPayload, registrationNumber);
+        qrBinary = await generateExellentCrispQrBuffer(filename, registrationNumber);
       } catch (e) {
         console.warn("QR generation failed for Exellent clarification:", e);
       }
@@ -969,16 +964,17 @@ export function TabClarification({
       const docx = await generateClarificationDocxBlob();
       setPreviewDocxBlob(docx);
 
-      const pdf = await getPdfBlobFromDocx(docx, `clarification_${registrationNumber}.docx`);
+      const pdf = await getPdfBlobFromDocx(docx, `clarification_${registrationNumber}.docx`, forceRefresh);
       setPreviewPdfBlob(pdf);
       const url = URL.createObjectURL(pdf);
       setPreviewPdfUrl(url);
 
       setLastGeneratedSnapshot(currentSnapshot);
 
-      // رفع تلقائي فوري لسحابة Cloudflare R2 حصرياً لضمان توفر الملف دائماً عند مسح الباركود
+      // رفع تلقائي فوري لسحابة Cloudflare R2 (مع انتظار الرفع لشركة إكسلنت ليطابق الباركود المعاينة 100%)
       const cloudFilename = `clarification_${registrationNumber || op.serialNumber || "doc"}.pdf`;
-      uploadPdfToFreeCloud(pdf, cloudFilename)
+      const isEx = isExellentCompany(currentCompanyLink || currentCompany || op);
+      const syncPromise = uploadPdfToFreeCloud(pdf, cloudFilename)
         .then((res) => {
           if (res?.url) {
             setCloudPdfUrl(res.url);
@@ -992,6 +988,10 @@ export function TabClarification({
           }
         })
         .catch((e) => console.warn("Background Cloudflare R2 upload:", e));
+
+      if (isEx) {
+        await syncPromise;
+      }
 
       if (forceRefresh) {
         toast.success("تم تحديث المعاينة الرسمية بنجاح! 🔄✨");

@@ -496,11 +496,7 @@ export function FinalInsuranceRefundSection({
       let qrBinary: Uint8Array | undefined = undefined;
       try {
         const filename = `final_insurance_refund_${registrationNumber || op.serialNumber || "doc"}.pdf`;
-        const targetPayload =
-          cloudPdfUrl && cloudPdfUrl.startsWith("http") && cloudPdfUrl.length <= 160
-            ? cloudPdfUrl
-            : filename;
-        qrBinary = await generateExellentCrispQrBuffer(targetPayload, registrationNumber);
+        qrBinary = await generateExellentCrispQrBuffer(filename, registrationNumber);
       } catch (e) {
         console.warn("QR generation failed for Exellent refund:", e);
       }
@@ -757,8 +753,26 @@ export function FinalInsuranceRefundSection({
         toast.success("تم تحديث المعاينة الرسمية بنجاح! 🔄✨");
       }
 
-      // رفع سحابي صامت في الخلفية لضمان توفر ملف الـ PDF فوراً على Cloudflare R2 عند مسح الـ QR بكاميرا الهاتف
-      if (!cloudPdfUrl || currentSnapshot !== lastGeneratedSnapshot || forceRefresh) {
+      // رفع سحابي متزامن لشركة إكسلنت ليطابق مسح الباركود المعاينة 100%
+      const isEx = isExellentCompany(currentCompanyLink || currentCompany || op);
+      if (isEx) {
+        try {
+          const cloudFilename = `final_insurance_refund_${registrationNumber || op.serialNumber || "doc"}.pdf`;
+          const uploadRes = await uploadPdfToFreeCloud(pdf, cloudFilename);
+          if (uploadRes?.url) {
+            setCloudPdfUrl(uploadRes.url);
+            let notesObj: any = {};
+            if (op.notes && op.notes.startsWith("{")) {
+              try { notesObj = JSON.parse(op.notes); } catch {}
+            }
+            if (!notesObj.finalInsuranceRefundLetter) notesObj.finalInsuranceRefundLetter = {};
+            notesObj.finalInsuranceRefundLetter.cloudPdfUrl = uploadRes.url;
+            api.patch(`/operations/${op.id}`, { notes: JSON.stringify(notesObj) }).catch(() => {});
+          }
+        } catch (e) {
+          console.warn("Exellent cloud sync error on preview:", e);
+        }
+      } else if (!cloudPdfUrl || currentSnapshot !== lastGeneratedSnapshot || forceRefresh) {
         setTimeout(async () => {
           try {
             const cloudFilename = `final_insurance_refund_${registrationNumber || op.serialNumber || "doc"}.pdf`;
