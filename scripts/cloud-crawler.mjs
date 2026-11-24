@@ -14,7 +14,21 @@
 
 process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
 import dns from 'dns';
+import readline from 'readline';
 try { dns.setDefaultResultOrder('ipv4first'); } catch {}
+
+function waitForExitKey() {
+  if (!process.stdin.isTTY || process.env.RADAR_NO_PAUSE === '1') {
+    return Promise.resolve();
+  }
+  return new Promise((resolve) => {
+    const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+    rl.question('\nPress ENTER to close this window...', () => {
+      rl.close();
+      resolve();
+    });
+  });
+}
 
 const PORTAL_BASE = 'https://gcs.digitalegypt.gov.eg';
 const PORTAL_EMAIL = process.env.RADAR_GCS_EMAIL || 'ahdahdahd8818@gmail.com';
@@ -504,6 +518,9 @@ async function main() {
   // 5. Ingest into GoldenERP Backend in safe batches
   console.log(`\n[4/4] Syncing ${fullTenders.length} tenders with documents to GoldenERP Server...`);
   const BATCH_SIZE = 2;
+  let totalNewCount = 0;
+  let totalUpdatedCount = 0;
+
   for (let b = 0; b < fullTenders.length; b += BATCH_SIZE) {
     const batch = fullTenders.slice(b, b + BATCH_SIZE);
     try {
@@ -520,7 +537,12 @@ async function main() {
       if (!ingestRes.ok) {
         console.log(`  ! Batch ${Math.floor(b / BATCH_SIZE) + 1} response: ${ingestRes.status}`);
       } else {
-        console.log(`  ✓ Batch ${Math.floor(b / BATCH_SIZE) + 1}/${Math.ceil(fullTenders.length / BATCH_SIZE)}: Synced successfully!`);
+        const resJson = await ingestRes.json().catch(() => ({}));
+        const bNew = Number(resJson.newCount || 0);
+        const bUpd = Number(resJson.updatedCount || 0);
+        totalNewCount += bNew;
+        totalUpdatedCount += bUpd;
+        console.log(`  ✓ Batch ${Math.floor(b / BATCH_SIZE) + 1}/${Math.ceil(fullTenders.length / BATCH_SIZE)}: Synced (New: ${bNew}, Updated: ${bUpd})`);
       }
     } catch (bErr) {
       console.log(`  ! Batch sync error: ${bErr.message}`);
@@ -528,12 +550,18 @@ async function main() {
   }
 
   console.log('\n================================================================');
-  console.log('  🎉 SUCCESS: GoldenERP Radar has been updated successfully!');
+  console.log('  SUCCESS: GoldenERP Radar has been updated!');
+  console.log(`  Processed: ${fullTenders.length} | New Added: ${totalNewCount} | Updated: ${totalUpdatedCount}`);
   console.log('  Open your dashboard at: https://ahdahd.eu/dashboard/radar');
   console.log('================================================================\n');
 }
 
-main().catch(err => {
-  console.error('Fatal crawler error:', err);
-  process.exit(1);
-});
+main()
+  .then(async () => {
+    await waitForExitKey();
+  })
+  .catch(async (err) => {
+    console.error('\n[ERROR] Radar sync failed:', err?.message || err);
+    await waitForExitKey();
+    process.exit(1);
+  });
