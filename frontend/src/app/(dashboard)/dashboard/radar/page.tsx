@@ -370,6 +370,25 @@ export default function RadarPage() {
     }
   };
 
+  // Update Daily Scheduled Scan Time
+  const handleUpdateScheduledTime = async (newTime: string) => {
+    try {
+      setIsUpdatingAutoScan(true);
+      const res = await api.post("/radar/auto-scan-config", {
+        enabled: autoScanConfig.enabled,
+        scheduledTime: newTime,
+      });
+      if (res.data) {
+        setAutoScanConfig(res.data);
+      }
+      toast.success(`تم تحديث موعد السحب التلقائي اليومي إلى (${newTime}) بنجاح`);
+    } catch {
+      toast.error("فشل حفظ توقيت السحب التلقائي");
+    } finally {
+      setIsUpdatingAutoScan(false);
+    }
+  };
+
   // Trigger Live Scan with High-Tech Animated Radar Overlay (Incremental & Waits for GitHub Actions)
   const handleScan = async () => {
     setIsScanning(true);
@@ -455,6 +474,7 @@ export default function RadarPage() {
       const maxPolls = 12;
       let finalCount = initialCount;
       let runnerDone = false;
+      let runnerFailed = false;
 
       for (let p = 0; p < maxPolls; p++) {
         if (p >= 1) setScanStep(1);
@@ -469,6 +489,9 @@ export default function RadarPage() {
             const statusRes = await api.get(`/radar/scan-status/${runId}`);
             if (statusRes.data?.status === "completed") {
               runnerDone = true;
+              if (statusRes.data?.conclusion === "failure") {
+                runnerFailed = true;
+              }
             }
           } catch {}
         }
@@ -490,6 +513,20 @@ export default function RadarPage() {
       clearTimeout(timer1);
       clearTimeout(timer2);
       clearTimeout(timer3);
+
+      if (runnerFailed && finalCount <= initialCount) {
+        setScanStep(4);
+        const errMsg = "⚠️ تعذر اتصال السحابة ببوابة التعاقدات الحكومية بسبب جدار الحماية الجغرافي (Geoblock). يرجى تشغيل أداة سطح المكتب (GoldenERP Radar) للسحب المباشر باتصالك المصري الموثوق.";
+        setScanResult({
+          success: false,
+          total: 0,
+          totalAll: items.length,
+          isNew: false,
+          message: errMsg,
+        });
+        toast.error(errMsg, { duration: 8000 });
+        return;
+      }
 
       // ONLY NOW mark as complete!
       setScanStep(4);
@@ -1362,11 +1399,16 @@ export default function RadarPage() {
           </div>
 
           <div className="flex items-center gap-2.5 shrink-0 flex-wrap">
-            {/* Desktop Tool Guidance Indicator */}
-            <div className="flex items-center gap-2 px-4 py-2.5 rounded-2xl bg-gradient-to-r from-blue-500/10 via-indigo-500/10 to-blue-600/10 border border-blue-500/30 text-blue-600 dark:text-blue-400 font-bold text-xs sm:text-sm shadow-xs">
-              <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse shrink-0" />
-              <span>يتم فحص وتحديث الرادار بنقرة واحدة عبر أداة سطح المكتب 💻</span>
-            </div>
+            {/* Sync Now Button (سحب ومزامنة الآن بضغطة زر) */}
+            <Button
+              onClick={handleScan}
+              disabled={isScanning}
+              className="bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-700 hover:from-blue-500 hover:to-indigo-500 text-white font-black px-5 py-2.5 rounded-2xl text-xs sm:text-sm cursor-pointer shadow-lg shadow-blue-500/25 active:scale-95 transition-all flex items-center gap-2"
+              title="تشغيل فحص وسحب فوري الآن من بوابة التعاقدات الحكومية"
+            >
+              <Zap className={`h-4 w-4 text-amber-300 ${isScanning ? "animate-spin" : ""}`} />
+              <span>سحب ومزامنة الآن ⚡</span>
+            </Button>
 
             {/* Refresh Live Items Button */}
             <Button
@@ -1393,21 +1435,71 @@ export default function RadarPage() {
           </div>
         </div>
 
-        {/* Confidential Live Connection Status Strip (Zero English / Zero Emails) */}
-        <div className="mt-6 pt-4 border-t border-border flex flex-wrap items-center justify-between gap-3 text-xs text-muted-foreground">
-          <div className="flex items-center gap-2.5 flex-wrap">
-            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-            <span className="font-bold text-foreground">الرادار متصل ومؤمن بالبوابة الحكومية الرسمية</span>
-            <span className="text-muted-foreground">•</span>
-            <span>نظام الفحص التراكمي الذكي نشط وجاهز للرصد اليومي</span>
+        {/* Daily Auto-Scan Scheduler & Cloud Control Bar */}
+        <div className="mt-6 pt-5 border-t border-border flex flex-wrap items-center justify-between gap-4 text-xs">
+          {/* Status & Toggle */}
+          <div className="flex items-center gap-3 flex-wrap">
+            <div className="flex items-center gap-2 font-bold text-foreground">
+              <span className={`w-2.5 h-2.5 rounded-full ${autoScanConfig.enabled ? "bg-emerald-500 animate-ping" : "bg-slate-500"}`} />
+              <span className="flex items-center gap-1.5 text-xs sm:text-sm font-black">
+                <Clock className="h-4 w-4 text-blue-400" />
+                <span>السحب الأوتوماتيكي اليومي:</span>
+              </span>
+              <Badge className={autoScanConfig.enabled ? "bg-emerald-500/20 text-emerald-400 border-emerald-500/40 font-bold text-xs" : "bg-slate-700 text-slate-300 font-bold text-xs"}>
+                {autoScanConfig.enabled ? "مفعل 24/7 سحابياً 🟢" : "متوقف مؤقتاً ⏸️"}
+              </Badge>
+            </div>
+
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={isUpdatingAutoScan}
+              onClick={handleToggleAutoScan}
+              className={`h-7 px-3 text-xs font-bold rounded-xl border transition-all cursor-pointer ${
+                autoScanConfig.enabled
+                  ? "border-amber-500/40 bg-amber-500/10 hover:bg-amber-500/20 text-amber-300"
+                  : "border-emerald-500/40 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-300"
+              }`}
+            >
+              {autoScanConfig.enabled ? "إيقاف مؤقت" : "تفعيل الفحص اليومي"}
+            </Button>
           </div>
 
-          {stats?.lastScanTime && (
-            <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground font-mono">
-              <Clock className="h-3.5 w-3.5 text-blue-500" />
-              <span>آخر فحص: {new Date(stats.lastScanTime).toLocaleTimeString("ar-EG")}</span>
+          {/* Schedule Time Selector & Last Scan info */}
+          <div className="flex items-center gap-3 flex-wrap">
+            <div className="flex items-center gap-2">
+              <span className="text-muted-foreground font-semibold flex items-center gap-1">
+                <Calendar className="h-3.5 w-3.5 text-blue-400" />
+                <span>موعد السحب كل يوم:</span>
+              </span>
+              <select
+                value={autoScanConfig.scheduledTime || "09:00 ص"}
+                disabled={isUpdatingAutoScan}
+                onChange={(e) => handleUpdateScheduledTime(e.target.value)}
+                className="bg-slate-900/90 hover:bg-slate-800 border border-blue-500/40 text-blue-300 font-bold font-mono rounded-xl px-3 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer transition-all shadow-inner"
+              >
+                <option value="07:00 ص">07:00 ص (باكراً)</option>
+                <option value="08:00 ص">08:00 ص</option>
+                <option value="09:00 ص">09:00 ص (موعد نشر البوابة الافتراضي ⭐)</option>
+                <option value="10:00 ص">10:00 ص</option>
+                <option value="11:00 ص">11:00 ص</option>
+                <option value="12:00 م">12:00 م (ظهراً)</option>
+                <option value="01:00 م">01:00 م</option>
+                <option value="02:00 م">02:00 م</option>
+                <option value="03:00 م">03:00 م</option>
+                <option value="04:00 م">04:00 م (عصراً)</option>
+                <option value="06:00 م">06:00 م</option>
+                <option value="08:00 م">08:00 م (مساءً)</option>
+              </select>
             </div>
-          )}
+
+            {autoScanConfig.lastAutoScan && (
+              <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground font-mono bg-muted/50 px-2.5 py-1 rounded-lg border border-border">
+                <ShieldCheck className="h-3.5 w-3.5 text-emerald-400" />
+                <span>آخر فحص تلقائي: {autoScanConfig.lastAutoScan}</span>
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
@@ -1684,16 +1776,27 @@ export default function RadarPage() {
           <Radar className="h-14 w-14 text-blue-500/50 mx-auto animate-pulse" />
           <h3 className="text-lg font-bold text-foreground">رادار المناقصات الحكومية جاهز للفحص</h3>
           <p className="text-xs text-muted-foreground max-w-md mx-auto leading-relaxed">
-            قاعدة بيانات الرادار جاهزة حالياً. يرجى تشغيل أداة سطح المكتب (تحديث رادار المناقصات) لسحب أحدث العمليات المطروحة اليوم وتحديث القائمة.
+            قاعدة بيانات الرادار جاهزة حالياً. يمكنك الضغط على "سحب ومزامنة الآن" لفحص البوابة الحكومية وسحب أحدث العمليات المطروحة اليوم سحابياً في ثوانٍ.
           </p>
-          <Button
-            onClick={fetchData}
-            disabled={loading}
-            className="bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl px-6 py-3 cursor-pointer shadow-md flex items-center gap-2 mx-auto"
-          >
-            <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
-            <span>تحديث عرض القائمة</span>
-          </Button>
+          <div className="flex items-center justify-center gap-3 flex-wrap">
+            <Button
+              onClick={handleScan}
+              disabled={isScanning}
+              className="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white text-xs font-bold rounded-xl px-6 py-3 cursor-pointer shadow-md flex items-center gap-2"
+            >
+              <Zap className="h-4 w-4 text-amber-300" />
+              <span>سحب ومزامنة الآن ⚡</span>
+            </Button>
+            <Button
+              onClick={fetchData}
+              disabled={loading}
+              variant="outline"
+              className="border-border text-foreground hover:bg-muted text-xs font-bold rounded-xl px-5 py-3 cursor-pointer flex items-center gap-2"
+            >
+              <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
+              <span>تحديث عرض القائمة</span>
+            </Button>
+          </div>
         </div>
       ) : viewMode === "table" ? (
         /* ========================================================================= */

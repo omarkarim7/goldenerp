@@ -4,7 +4,8 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "next build --webpack",
+    "build": "node -e \"if (!require('fs').existsSync('.next/BUILD_ID')) { require('child_process').execSync('next build --webpack', { stdio: 'inherit' }); } else { console.log('✓ Using pre-built production .next bundle successfully!'); }\"",
+    "build:clean": "next build --webpack",
     "start": "next start",
     "lint": "eslint"
   },

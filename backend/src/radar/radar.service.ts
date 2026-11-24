@@ -163,6 +163,15 @@ export class RadarService implements OnModuleInit {
       const githubToken = ghSetting?.value || process.env.GITHUB_TOKEN;
       const githubRepo = process.env.GITHUB_REPO || 'omarkarim7/goldenerp';
 
+      // Persist token in DB if not saved yet
+      if (!ghSetting && githubToken) {
+        await this.prisma.systemSetting.upsert({
+          where: { key: 'radar.github_token' },
+          update: { value: githubToken },
+          create: { key: 'radar.github_token', value: githubToken, group: 'radar' },
+        }).catch(() => {});
+      }
+
       if (githubToken) {
         try {
           this.logger.log(`Triggering GitHub Actions Cloud Scan on ${githubRepo}...`);

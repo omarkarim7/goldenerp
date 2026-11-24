@@ -107,39 +107,84 @@ async function main() {
   }
 
   const cookieHeader = Object.entries(cookieMap).map(([k, v]) => `${k}=${v}`).join('; ');
-  console.log('  ✓ Logged in to Egyptian Tenders Portal successfully!\n');
+  
+  // Verify authenticated session
+  const hasAuthCookie = Object.keys(cookieMap).some(k => k.includes('ApplicationCookie') || k.includes('Vendor'));
+  if (postRes.status !== 302 && !hasAuthCookie) {
+    throw new Error('فشل تسجيل الدخول لبوابة التعاقدات الحكومية المصرية. يرجى التحقق من بيانات الدخول.');
+  }
+  console.log('  ✓ Authenticated as registered vendor (مجتمع الأعمال) successfully!\n');
 
-  // 3. Fetch latest tenders from Tender page
-  console.log('[3/4] Scanning latest public tenders...');
-  const tenderRes = await fetch(`${PORTAL_BASE}/Tender`, {
-    headers: {
-      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-      'Cookie': cookieHeader
-    }
-  });
-
-  const tenderHtml = await tenderRes.text();
+  // 3. Fetch latest tenders from Authenticated Vendor Dashboard & Tender Catalogue
+  console.log('[3/4] Scanning latest vendor & public tenders...');
   const basicTenders = [];
-  const rowMatches = [...tenderHtml.matchAll(/<tr[^>]*>([\s\S]*?)<\/tr>/gi)];
+  const visitedIds = new Set();
 
-  for (let i = 1; i < rowMatches.length; i++) {
-    const row = rowMatches[i][1];
-    const linkMatch = row.match(/href="\/Process\/Details\/([a-zA-Z0-9\-]+)"/i);
-    if (!linkMatch) continue;
-    const externalId = linkMatch[1];
-    const cols = [...row.matchAll(/<td[^>]*>([\s\S]*?)<\/td>/gi)].map(m => m[1].replace(/<[^>]+>/g, '').trim());
-
-    if (cols.length >= 5) {
-      basicTenders.push({
-        externalId,
-        refNo: cols[0] || undefined,
-        title: cols[1] || 'Public Tender',
-        authority: cols[2] || undefined,
-        publishDate: cols[3] || undefined,
-        deadline: cols[4] || undefined,
-        url: `${PORTAL_BASE}/Process/Details/${externalId}`
-      });
+  // A. Scan Authenticated Vendor Home Dashboard (/Home)
+  try {
+    const homeRes = await fetch(`${PORTAL_BASE}/Home`, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Cookie': cookieHeader
+      }
+    });
+    if (homeRes.ok) {
+      const homeHtml = await homeRes.text();
+      const matches = [...homeHtml.matchAll(/href="\/Process\/Details\/([a-zA-Z0-9\-]+)"/gi)];
+      for (const m of matches) {
+        const id = m[1];
+        if (!visitedIds.has(id)) {
+          visitedIds.add(id);
+          basicTenders.push({
+            externalId: id,
+            title: 'عملية منظومة التعاقدات الحكومية',
+            url: `${PORTAL_BASE}/Process/Details/${id}`
+          });
+        }
+      }
     }
+  } catch (err) {
+    console.log(`  ! Home scan notice: ${err.message}`);
+  }
+
+  // B. Scan Public Tenders List (/Tender)
+  try {
+    const tenderRes = await fetch(`${PORTAL_BASE}/Tender`, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Cookie': cookieHeader
+      }
+    });
+
+    if (tenderRes.ok) {
+      const tenderHtml = await tenderRes.text();
+      const rowMatches = [...tenderHtml.matchAll(/<tr[^>]*>([\s\S]*?)<\/tr>/gi)];
+
+      for (let i = 1; i < rowMatches.length; i++) {
+        const row = rowMatches[i][1];
+        const linkMatch = row.match(/href="\/Process\/Details\/([a-zA-Z0-9\-]+)"/i);
+        if (!linkMatch) continue;
+        const externalId = linkMatch[1];
+        if (visitedIds.has(externalId)) continue;
+        visitedIds.add(externalId);
+
+        const cols = [...row.matchAll(/<td[^>]*>([\s\S]*?)<\/td>/gi)].map(m => m[1].replace(/<[^>]+>/g, '').trim());
+
+        if (cols.length >= 5) {
+          basicTenders.push({
+            externalId,
+            refNo: cols[0] || undefined,
+            title: cols[1] || 'Public Tender',
+            authority: cols[2] || undefined,
+            publishDate: cols[3] || undefined,
+            deadline: cols[4] || undefined,
+            url: `${PORTAL_BASE}/Process/Details/${externalId}`
+          });
+        }
+      }
+    }
+  } catch (err) {
+    console.log(`  ! Tender list scan notice: ${err.message}`);
   }
 
   console.log(`  ✓ Found ${basicTenders.length} active official tenders on page 1.\n`);

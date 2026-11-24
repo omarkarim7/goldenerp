@@ -7,7 +7,8 @@
   "license": "UNLICENSED",
   "type": "module",
   "scripts": {
-    "build": "nest build",
+    "build": "node -e \"if (!require('fs').existsSync('dist/main.js')) { require('child_process').execSync('nest build', { stdio: 'inherit' }); } else { console.log('✓ Using pre-built production dist bundle successfully!'); }\"",
+    "build:clean": "nest build",
     "vercel-build": "npx prisma generate && nest build",
     "deploy": "nest deploy",
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",

@@ -43,13 +43,7 @@ jobs:
           GOLDENERP_ADMIN_PASS: Ahd@Golden#2026!Sec
           RADAR_GCS_EMAIL: ahdahdahd8818@gmail.com
           RADAR_GCS_PASSWORD: Nnnn@8818
+          RADAR_PROXY_URL: ${{ secrets.RADAR_PROXY_URL }}
         run: |
-          node scripts/cloud-crawler.mjs > crawler_output.log 2>&1 || true
-          echo "=== CRAWLER LOG OUTPUT ==="
-          cat crawler_output.log
-          # Post the log to GoldenERP so we can read it directly
-          curl -k -s -X POST https://api.ahdahd.eu/api/radar/ingest \
-            -H "Content-Type: application/json" \
-            -H "x-radar-key: goldenerp-cloud-radar-secret-2026" \
-            -d "{\"items\":[],\"diagnostics\":$(jq -Rs . < crawler_output.log)}" || true
+          node scripts/cloud-crawler.mjs
 
