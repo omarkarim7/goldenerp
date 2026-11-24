@@ -57,6 +57,7 @@ import {
 } from "./letter-utils";
 import {
   isExellentCompany,
+  generateExellentCrispQrBuffer,
   generateExellentDeclarationSpecsDocx,
   generateExellentDeclarationInsuranceDocx,
 } from "./exellent-letter-engine";
@@ -464,16 +465,12 @@ export function TabDeclarations({
       let qrBinary: Uint8Array | undefined = undefined;
       try {
         const activeCloud = type === "specs" ? cloudPdfUrlSpecs : cloudPdfUrlInsurance;
-        const docTitle = type === "specs" ? "إقرار المواصفات الفنية والشروط" : "إقرار الالتزام بالتأمينات والعمالة والمساواة";
         const filename = `declaration_${type}_${registrationNumber || op.serialNumber || "doc"}.pdf`;
-        const qrPayload = await getStandardDocQrPayload(
-          activeCloud,
-          registrationNumber,
-          docTitle,
-          currentCompany?.name || "إكسلنت سرفيس",
-          filename
-        );
-        qrBinary = await generateHighResDocQrBuffer(qrPayload);
+        const targetPayload =
+          activeCloud && activeCloud.startsWith("http") && activeCloud.length <= 160
+            ? activeCloud
+            : filename;
+        qrBinary = await generateExellentCrispQrBuffer(targetPayload, registrationNumber);
       } catch (e) {
         console.warn("QR generation failed for Exellent declaration:", e);
       }

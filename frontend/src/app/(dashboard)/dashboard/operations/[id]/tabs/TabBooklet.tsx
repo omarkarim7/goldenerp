@@ -49,6 +49,7 @@ import {
   generateExellentBookletAndInsuranceDocx,
   generateExellentBankGuaranteeDocx,
   generateExellentInsuranceDeductionOtherDocx,
+  generateExellentCrispQrBuffer,
 } from "./exellent-letter-engine";
 import JSZip from "jszip";
 import QRCode from "qrcode";
@@ -743,16 +744,12 @@ export function TabBooklet({
       let qrBinary: Uint8Array | undefined = undefined;
       try {
         const activeCloud = cloudUrls[type];
-        const tplDef = BOOKLET_LETTER_TEMPLATES.find((t) => t.id === type) || BOOKLET_LETTER_TEMPLATES[0];
         const filename = `booklet_letter_${type}_${registrationNumber || op.serialNumber || "doc"}.pdf`;
-        const qrPayload = await getStandardDocQrPayload(
-          activeCloud,
-          registrationNumber,
-          tplDef?.title || op.name || "خطاب شراء الكراسة والتأمين",
-          currentCompany?.name || "إكسلنت سرفيس",
-          filename
-        );
-        qrBinary = await generateHighResDocQrBuffer(qrPayload);
+        const targetPayload =
+          activeCloud && activeCloud.startsWith("http") && activeCloud.length <= 160
+            ? activeCloud
+            : filename;
+        qrBinary = await generateExellentCrispQrBuffer(targetPayload, registrationNumber);
       } catch (e) {
         console.warn("QR generation failed for Exellent in TabBooklet:", e);
       }

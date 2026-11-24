@@ -22,6 +22,7 @@ import {
 } from "./letter-utils";
 import {
   isExellentCompany,
+  generateExellentCrispQrBuffer,
   generateExellentBookletWithdrawalDocx,
   generateExellentInsurancePaymentDocx,
   generateExellentBookletAndInsuranceDocx,
@@ -329,8 +330,7 @@ export async function generateUniversalLetterDocxBlob(
     let qrBinary: Uint8Array | null = null;
     try {
       const filename = `${meta.subType}_${regNum}.pdf`;
-      const qrPayload = await getStandardDocQrPayload("", regNum, meta.title, comp.name || "إكسلنت سرفيس", filename);
-      qrBinary = await generateHighResDocQrBuffer(qrPayload);
+      qrBinary = await generateExellentCrispQrBuffer(filename, regNum);
     } catch {}
 
     const commonParams = {

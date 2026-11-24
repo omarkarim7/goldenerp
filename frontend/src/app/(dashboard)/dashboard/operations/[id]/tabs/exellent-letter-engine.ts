@@ -1,6 +1,7 @@
 "use client";
 
 import JSZip from "jszip";
+import QRCode from "qrcode";
 import {
   escapeXml,
   buildQrAnchorXml,
@@ -114,17 +115,61 @@ export function purgeExellentRedMarks(xml: string): string {
     .replace(/<w:color\b[^>]*w:val="(?:red|FF0000|ff0000)"[^>]*\/>/gi, "");
 }
 /**
- * تنظيف التفقيط من أي عبارات مكررة مثل "فقط وقدره" و "لا غير" لتناسب مكانها في القالب
+ * تنظيف التفقيط من أي عبارات مكررة مثل "فقط وقدره" و "جنيه مصري" و "لا غير" بشكل متكرر حتى يخلو من التكرار نهائياً
  */
 export function cleanTafqeetForTemplate(rawTafqeet?: string): string {
   if (!rawTafqeet) return "";
-  return rawTafqeet
-    .replace(/^(?:فقط\s*:?\s*)?(?:وقدره\s*:?\s*)?/gi, "")
-    .replace(/\s*:\s*:\s*/g, ": ")
-    .replace(/^:\s*/, "")
-    .replace(/\s*(?:جنيه\s*مصري|جنيهاً?\s*مصرياً?|جنيهاً?|جنيه)?\s*لا\s*غير\s*$/gi, "")
-    .replace(/\s*(?:جنيه\s*مصري|جنيهاً?\s*مصرياً?|جنيهاً?|جنيه)\s*$/gi, "")
-    .trim();
+  let s = rawTafqeet.replace(/\s+/g, " ").trim();
+  let prev = "";
+  while (s !== prev) {
+    prev = s;
+    s = s
+      .replace(/^(?:فقط\s*:?\s*|وقدره\s*:?\s*)+/gi, "")
+      .replace(/\s*(?:لا\s*غير|فقط|جنيه(?:اً|ا)?\s*مصري(?:اً|ا)?|جنيهاً\s*مصرياً|جنيه\s*مصري|جنيهاً|جنيها|جنيه|ج\.?م\.?)\s*$/gi, "")
+      .replace(/^:\s*/, "")
+      .replace(/:\s*$/, "")
+      .trim();
+  }
+  return s;
+}
+
+/**
+ * توليد رابط مختصر مباشر لرمز QR لشركة إكسلنت (يعيد التوجيه الفوري لملف PDF المعتمد على Cloudflare R2)
+ * تقصير الرابط إلى ~75 حرف يضاعف حجم مربعات الـ QR 4x ويجعل الكاميرا تلتقطه فوراً
+ */
+export function buildExellentShortQrUrl(fileName?: string | null, registrationNumber?: string | null): string {
+  const origin =
+    typeof window !== "undefined" && window.location?.origin?.startsWith("https://")
+      ? window.location.origin
+      : "https://ahdahd.eu";
+  const cleanFile = (fileName || (registrationNumber ? `doc_${registrationNumber}.pdf` : `official_doc_${Date.now()}.pdf`)).trim();
+  return `${origin}/api/upload-cloud-pdf?open=1&fileName=${encodeURIComponent(cleanFile)}`;
+}
+
+/**
+ * توليد صورة باركود QR عالية الجودة والوضوح لإكسلنت مع هامش أبيض عريض (Quiet Zone = 4) يسهل التقاطه بأي كاميرا
+ */
+export async function generateExellentCrispQrBuffer(payloadOrFileName: string, registrationNumber?: string): Promise<Uint8Array> {
+  const trimmed = (payloadOrFileName || "").trim();
+  // إذا كان الرابط طويل جداً (رابط S3 موقع > 160 حرف) ويوجد اسم ملف أو رقم قيد، نستخدم الرابط المختصر السريع لوضوح الـ QR
+  const targetUrl =
+    trimmed.startsWith("http") && trimmed.length <= 160
+      ? trimmed
+      : trimmed && !trimmed.startsWith("http")
+      ? buildExellentShortQrUrl(trimmed, registrationNumber)
+      : trimmed || buildExellentShortQrUrl(undefined, registrationNumber);
+
+  const qrDataUrl = await QRCode.toDataURL(targetUrl, {
+    width: 1200,
+    margin: 4,
+    errorCorrectionLevel: targetUrl.length > 150 ? "L" : "M",
+    color: {
+      dark: "#000000",
+      light: "#ffffff",
+    },
+  });
+  const qrBase64 = qrDataUrl.split(",")[1];
+  return Uint8Array.from(atob(qrBase64), (c) => c.charCodeAt(0));
 }
 
 /**
@@ -138,6 +183,9 @@ export function purgeTafqeetDuplicates(xml: string): string {
     .replace(/فقط\s*وقدره\s*:\s*:\s*/g, "فقط وقدره : ")
     .replace(/فقط\s*:\s*:\s*/g, "فقط : ")
     .replace(/\s*:\s*:\s*/g, ": ")
+    .replace(/(?:جنيهاً?\s*مصرياً?\s*){2,}/g, "جنيهاً مصرياً ")
+    .replace(/(?:جنيه\s*مصري\s+جنيهاً?\s*مصرياً?)/g, "جنيهاً مصرياً")
+    .replace(/(?:جنيهاً?\s*مصرياً?\s*)فقط\s*(?:جنيه(?:اً)?\s*)?لا\s*غير/g, "جنيهاً مصرياً لا غير")
     .replace(/(?:لا\s*غير\s*)+/g, "لا غير")
     .replace(/لا\s*غير\s+(?:جنيهاً?\s*)?لا\s*غير/g, "جنيهاً لا غير")
     .replace(/جنيها\s*لا\s*غير\s+جنيها\s*لا\s*غير/g, "جنيهاً لا غير")
@@ -175,6 +223,7 @@ export async function applyExellentHeaderFooter(
     companyEmail?: string;
     companyOtherDetails?: string;
     qrBinary?: Uint8Array | null;
+    qrTargetFileName?: string;
   }
 ): Promise<void> {
   const cr = escapeXml((params.companyCommercialRegister || "04042").trim());
@@ -188,11 +237,18 @@ export async function applyExellentHeaderFooter(
   const otherDetails = escapeXml((params.companyOtherDetails || "").trim());
   const phone = escapeXml((params.phoneWhatsapp || "01091708818").trim());
 
-  // 1. تضمين صورة الباركود في الترويسة إذا توفرت
-  if (params.qrBinary) {
+  let effectiveQrBinary = params.qrBinary || null;
+  if (params.qrTargetFileName) {
     try {
-      zip.file("word/media/header_qr.png", params.qrBinary);
-      zip.file("word/media/doc_qr.png", params.qrBinary);
+      effectiveQrBinary = await generateExellentCrispQrBuffer(params.qrTargetFileName, params.registrationNumber);
+    } catch {}
+  }
+
+  // 1. تضمين صورة الباركود في الترويسة إذا توفرت
+  if (effectiveQrBinary) {
+    try {
+      zip.file("word/media/header_qr.png", effectiveQrBinary);
+      zip.file("word/media/doc_qr.png", effectiveQrBinary);
 
       const relsEntries = Object.keys(zip.files).filter((k) =>
         k.startsWith("word/_rels/header") && k.endsWith(".xml.rels")
@@ -245,10 +301,16 @@ export async function applyExellentHeaderFooter(
     let hXml = await zip.file(hFile)?.async("text");
     if (!hXml) continue;
 
-    // استبدال تاج {barcode} أو نص "الباركود" برسم الباركود الفعلي أو إفراغه
+    // فحص مسبق قبل الاستبدال لمنع تكرار رقم القيد أو حقول الهيدر نهائياً
+    const hasCleanHeaderTags =
+      hXml.includes("{registration_number}") ||
+      hXml.includes("{company_cr}") ||
+      hXml.includes("{barcode}");
+
+    // استبدال تاج {barcode} أو نص "الباركود" برسم الباركود الفعلي بحجم أكبر وأوضح للمسح (1280000 EMU)
     const barcodeRegex = /<w:r\b[^>]*>(?:(?!<\/w:r>)[\s\S])*?(?:\{barcode\}|الباركود)[\s\S]*?<\/w:r>/g;
-    if (params.qrBinary) {
-      const qrInline = buildQrInlineXml(1020000).replace(/rIdQR/g, "rIdHeaderQr");
+    if (effectiveQrBinary) {
+      const qrInline = buildQrInlineXml(1280000).replace(/rIdQR/g, "rIdHeaderQr");
       if (barcodeRegex.test(hXml)) {
         hXml = hXml.replace(barcodeRegex, qrInline);
       } else if (hXml.includes("{barcode}") || hXml.includes("الباركود")) {
@@ -259,20 +321,22 @@ export async function applyExellentHeaderFooter(
     }
     hXml = hXml.replace(/\{barcode\}|الباركود/g, "");
 
-    // استبدال تاجات الترويسة النظيفة + دعم الترويسات القديمة احتياطياً
-    hXml = applyExellentTags(hXml, {
-      company_name_en: "Exellent Service",
-      company_cr: (params.companyCommercialRegister || "04042").trim(),
-      company_tax: (params.companyTaxCard || "7755731744").trim(),
-      company_process_code: (params.companyOpCode || "BZ-01").trim(),
-      registration_number: (params.registrationNumber || "").trim(),
-      issue_date: (params.outgoingDate || formatNumericDate(new Date())).trim(),
-    });
-    hXml = hXml.replace(/04042/g, cr);
-    hXml = hXml.replace(/7755731744/g, tax);
-    hXml = hXml.replace(/\(\s*كود العملية بالشركه\s*\)/g, `( ${opCode} )`);
-    hXml = hXml.replace(/15\/10\/2026/g, outDate);
-    hXml = hXml.replace(/رقم القيد:(?!\s*\{)/g, `رقم القيد: ${regNum}`);
+    if (hasCleanHeaderTags) {
+      hXml = applyExellentTags(hXml, {
+        company_name_en: "Exellent Service",
+        company_cr: (params.companyCommercialRegister || "04042").trim(),
+        company_tax: (params.companyTaxCard || "7755731744").trim(),
+        company_process_code: (params.companyOpCode || "BZ-01").trim(),
+        registration_number: (params.registrationNumber || "").trim(),
+        issue_date: (params.outgoingDate || formatNumericDate(new Date())).trim(),
+      });
+    } else {
+      hXml = hXml.replace(/04042/g, cr);
+      hXml = hXml.replace(/7755731744/g, tax);
+      hXml = hXml.replace(/\(\s*كود العملية بالشركه\s*\)/g, `( ${opCode} )`);
+      hXml = hXml.replace(/15\/10\/2026/g, outDate);
+      hXml = hXml.replace(/رقم القيد:/g, `رقم القيد: ${regNum}`);
+    }
 
     hXml = purgeExellentRedMarks(hXml);
     zip.file(hFile, hXml);
@@ -729,15 +793,16 @@ export async function generateExellentInsurancePaymentDocx(params: {
   const cleanPayTafqeet = cleanTafqeetForTemplate(params.insuranceTafqeet);
   docXml = applyExellentTags(docXml, {
     insurance_amount_digits: params.insuranceAmount || "10000",
-    insurance_amount_words: cleanPayTafqeet ? `${cleanPayTafqeet} جنيه` : (params.insuranceTafqeet || "عشرة ألاف جنيه"),
+    insurance_amount_words: cleanPayTafqeet ? `${cleanPayTafqeet} جنيهاً مصرياً` : "عشرة ألاف جنيهاً مصرياً",
   });
   if (params.insuranceAmount) {
     docXml = docXml.replace(/10000/g, escapeXml(params.insuranceAmount));
   }
-  if (params.insuranceTafqeet) {
-    docXml = docXml.replace(/عشرة\s+[أاآ]لاف\s+جنيه/g, escapeXml(params.insuranceTafqeet));
+  if (cleanPayTafqeet) {
+    docXml = docXml.replace(/عشرة\s+[أاآ]لاف\s+جنيه/g, `${escapeXml(cleanPayTafqeet)} جنيهاً مصرياً`);
   }
 
+  docXml = purgeTafqeetDuplicates(docXml);
   docXml = applyExellentSignatures(docXml, params);
   docXml = purgeExellentRedMarks(docXml);
   docXml = cleanDocxRepetitions(docXml);
@@ -805,15 +870,16 @@ export async function generateExellentBookletAndInsuranceDocx(params: {
   const cleanBiTafqeet = cleanTafqeetForTemplate(params.insuranceTafqeet);
   docXml = applyExellentTags(docXml, {
     insurance_amount_digits: params.insuranceAmount || "10000",
-    insurance_amount_words: cleanBiTafqeet ? `${cleanBiTafqeet} جنيه` : (params.insuranceTafqeet || "عشرة ألاف جنيه"),
+    insurance_amount_words: cleanBiTafqeet ? `${cleanBiTafqeet} جنيهاً مصرياً` : "عشرة ألاف جنيهاً مصرياً",
   });
   if (params.insuranceAmount) {
     docXml = docXml.replace(/10000/g, escapeXml(params.insuranceAmount));
   }
-  if (params.insuranceTafqeet) {
-    docXml = docXml.replace(/عشرة\s+[أاآ]لاف\s+جنيه/g, escapeXml(params.insuranceTafqeet));
+  if (cleanBiTafqeet) {
+    docXml = docXml.replace(/عشرة\s+[أاآ]لاف\s+جنيه/g, `${escapeXml(cleanBiTafqeet)} جنيهاً مصرياً`);
   }
 
+  docXml = purgeTafqeetDuplicates(docXml);
   docXml = applyExellentSignatures(docXml, params);
   docXml = purgeExellentRedMarks(docXml);
   docXml = cleanDocxRepetitions(docXml);
@@ -1045,7 +1111,7 @@ export async function generateExellentInsuranceDeductionOtherDocx(params: {
   const cleanDedTafqeet = cleanTafqeetForTemplate(params.insuranceTafqeet);
   docXml = applyExellentTags(docXml, {
     insurance_amount_digits: params.insuranceAmount || "10000",
-    insurance_amount_words: cleanDedTafqeet ? `${cleanDedTafqeet} جنيه` : (params.insuranceTafqeet || "عشرة ألاف جنيه"),
+    insurance_amount_words: cleanDedTafqeet ? `${cleanDedTafqeet} جنيهاً مصرياً` : "عشرة ألاف جنيهاً مصرياً",
     deduction_operation_name: (params.deductionOperationName || "").trim(),
     deduction_month: (params.deductionMonth || "").trim(),
     deduction_year: (params.deductionYear || "").trim(),
@@ -1057,8 +1123,8 @@ export async function generateExellentInsuranceDeductionOtherDocx(params: {
   if (params.insuranceAmount) {
     docXml = docXml.replace(/10000/g, escapeXml(params.insuranceAmount));
   }
-  if (params.insuranceTafqeet) {
-    docXml = docXml.replace(/عشرة\s+[أاآ]لاف\s+جنيه/g, escapeXml(params.insuranceTafqeet));
+  if (cleanDedTafqeet) {
+    docXml = docXml.replace(/عشرة\s+[أاآ]لاف\s+جنيه/g, `${escapeXml(cleanDedTafqeet)} جنيهاً مصرياً`);
   }
 
   const safeDedOp = (params.deductionOperationName || "").trim();
@@ -1078,6 +1144,7 @@ export async function generateExellentInsuranceDeductionOtherDocx(params: {
     docXml = docXml.replace(/لديكم/g, `لدى ${escapeXml(params.deductionEntityName.trim())}`);
   }
 
+  docXml = purgeTafqeetDuplicates(docXml);
   docXml = applyExellentSignatures(docXml, params);
   docXml = purgeExellentRedMarks(docXml);
   docXml = cleanDocxRepetitions(docXml);
@@ -1827,17 +1894,17 @@ export async function generateExellentFinalInsuranceCashDocx(params: {
 
   docXml = applyExellentTags(docXml, {
     insurance_amount_digits: params.insuranceAmount || "10000",
-    insurance_amount_words: cleanInsTafqeet ? `${cleanInsTafqeet} جنيه` : "عشرة ألاف جنيه",
+    insurance_amount_words: cleanInsTafqeet ? `${cleanInsTafqeet} جنيهاً مصرياً` : "عشرة ألاف جنيهاً مصرياً",
     guarantee_percentage: params.guaranteePercentage || "5 %",
     operation_total_digits: (params.operationTotalAmount || "").trim(),
-    operation_total_words: cleanTotTafq ? `${cleanTotTafq} جنيه مصري لا غير` : "",
+    operation_total_words: cleanTotTafq ? `${cleanTotTafq} جنيهاً مصرياً لا غير` : "",
   });
 
   if (params.insuranceAmount) {
     docXml = docXml.replace(/10000/g, escapeXml(params.insuranceAmount));
   }
   if (cleanInsTafqeet) {
-    docXml = docXml.replace(/عشرة\s+[أاآ]لاف\s+جنيه/g, escapeXml(cleanInsTafqeet) + " جنيه");
+    docXml = docXml.replace(/عشرة\s+[أاآ]لاف\s+جنيه/g, `${escapeXml(cleanInsTafqeet)} جنيهاً مصرياً`);
   }
 
   docXml = docXml.replace(/5\s*%/g, escapeXml(params.guaranteePercentage || "5 %"));
@@ -1932,18 +1999,18 @@ export async function generateExellentFinalInsuranceDeductionDocx(params: {
   const cleanTotTafq = cleanTafqeetForTemplate(params.operationTotalTafqeet);
   docXml = applyExellentTags(docXml, {
     insurance_amount_digits: params.insuranceAmount || "10000",
-    insurance_amount_words: cleanInsTafqeet ? `${cleanInsTafqeet} جنيه` : "عشرة ألاف جنيه",
+    insurance_amount_words: cleanInsTafqeet ? `${cleanInsTafqeet} جنيهاً مصرياً` : "عشرة ألاف جنيهاً مصرياً",
     deduction_operation_name: (params.deductionOperationName || "").trim(),
     deduction_month: (params.deductionMonth || "").trim(),
     deduction_year: (params.deductionYear || "").trim(),
     guarantee_percentage: params.guaranteePercentage || "5 %",
     operation_total_digits: (params.operationTotalAmount || "").trim(),
-    operation_total_words: cleanTotTafq ? `${cleanTotTafq} جنيه مصري لا غير` : "",
+    operation_total_words: cleanTotTafq ? `${cleanTotTafq} جنيهاً مصرياً لا غير` : "",
   });
 
   docXml = docXml.replace(/10000/g, escapeXml(params.insuranceAmount || "10000"));
   if (cleanInsTafqeet) {
-    docXml = docXml.replace(/عشرة\s+[أاآ]لاف\s+جنيه/g, escapeXml(cleanInsTafqeet) + " جنيه");
+    docXml = docXml.replace(/عشرة\s+[أاآ]لاف\s+جنيه/g, `${escapeXml(cleanInsTafqeet)} جنيهاً مصرياً`);
   }
 
   // تفاصيل الخصم من مستحقات العملية (دعم القوالب القديمة)
@@ -2068,19 +2135,19 @@ export async function generateExellentFinalInsuranceDeductionAndInitialDocx(para
   const cleanTotTafq = cleanTafqeetForTemplate(params.operationTotalTafqeet);
   docXml = applyExellentTags(docXml, {
     insurance_amount_digits: params.cashAmount || "1000",
-    insurance_amount_words: cleanCashTafq ? `${cleanCashTafq} جنيه` : (params.cashTafqeet || "عشرة ألاف جنيه"),
+    insurance_amount_words: cleanCashTafq ? `${cleanCashTafq} جنيهاً مصرياً` : "عشرة ألاف جنيهاً مصرياً",
     initial_amount_digits: params.initialTransferredAmount || "11111",
-    initial_amount_words: cleanInitTafq ? `${cleanInitTafq} جنيه` : (params.initialTransferredTafqeet || "خمسة الاف جنيه"),
+    initial_amount_words: cleanInitTafq ? `${cleanInitTafq} جنيهاً مصرياً` : "خمسة الاف جنيهاً مصرياً",
     guarantee_percentage: params.guaranteePercentage || "5 %",
     operation_total_digits: (params.operationTotalAmount || "").trim(),
-    operation_total_words: cleanTotTafq ? `${cleanTotTafq} جنيه مصري لا غير` : "",
+    operation_total_words: cleanTotTafq ? `${cleanTotTafq} جنيهاً مصرياً لا غير` : "",
   });
 
   docXml = docXml.replace(/1000/g, escapeXml(params.cashAmount || "1000"));
-  docXml = docXml.replace(/عشرة\s+[أاآ]لاف\s+جنيه/g, escapeXml(params.cashTafqeet || "عشرة ألاف جنيه"));
+  docXml = docXml.replace(/عشرة\s+[أاآ]لاف\s+جنيه/g, cleanCashTafq ? `${escapeXml(cleanCashTafq)} جنيهاً مصرياً` : "عشرة ألاف جنيهاً مصرياً");
 
   docXml = docXml.replace(/11111/g, escapeXml(params.initialTransferredAmount || "11111"));
-  docXml = docXml.replace(/خمسة الاف جنيه/g, escapeXml(params.initialTransferredTafqeet || "خمسة الاف جنيه"));
+  docXml = docXml.replace(/خمسة الاف جنيه/g, cleanInitTafq ? `${escapeXml(cleanInitTafq)} جنيهاً مصرياً` : "خمسة الاف جنيهاً مصرياً");
 
   docXml = docXml.replace(/أحمد محمد أحمد\s*/g, escapeXml(params.delegateName || "................") + " ");
   docXml = docXml.replace(/مندوب التعاقدات المفوض/g, escapeXml(params.delegateTitle || "مندوب التعاقدات المفوض"));
@@ -2212,7 +2279,7 @@ export async function generateExellentFinalInsuranceRefundDocx(params: {
 
   docXml = applyExellentTags(docXml, {
     refund_amount_digits: params.refundAmount || "10000",
-    refund_amount_words: cleanRefundWords ? `${cleanRefundWords} جنيه مصري` : "عشرة آلاف جنيه",
+    refund_amount_words: cleanRefundWords ? `${cleanRefundWords} جنيهاً مصرياً` : "عشرة آلاف جنيهاً مصرياً",
     payment_source_details: `والمسدد ( ${paymentText} )`,
     bank_name: params.bankName || "بنك مصر",
     bank_branch: params.bankBranch || "أحمد زويل",
@@ -2233,8 +2300,10 @@ export async function generateExellentFinalInsuranceRefundDocx(params: {
     const afterTaf = docXml.substring(eTafIdx + eTafqeetToken.length);
     docXml = beforeTaf + `<w:t xml:space="preserve"> ( ${escapeXml(tafqeetClean)} ) </w:t></w:r>` + afterTaf;
   } else {
-    docXml = docXml.replace(/عشرة\s+[أاآ]لاف\s+جنيه(?:\s*لا\s*غير)?/g, escapeXml(cleanRefundWords));
+    docXml = docXml.replace(/عشرة\s+[أاآ]لاف\s+جنيه(?:\s*لا\s*غير)?/g, cleanRefundWords ? `${escapeXml(cleanRefundWords)} جنيهاً مصرياً` : "عشرة آلاف جنيهاً مصرياً");
   }
+
+  docXml = purgeTafqeetDuplicates(docXml);
 
   const sPayToken = '<w:t>والمسدد';
   const ePayToken = 'والخاصة';

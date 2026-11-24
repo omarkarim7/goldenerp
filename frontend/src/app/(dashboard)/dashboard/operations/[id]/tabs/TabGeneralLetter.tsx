@@ -50,6 +50,7 @@ import {
 } from "./letter-utils";
 import {
   isExellentCompany,
+  generateExellentCrispQrBuffer,
   generateExellentGeneralLetterDocx,
 } from "./exellent-letter-engine";
 import JSZip from "jszip";
@@ -413,15 +414,11 @@ export function TabGeneralLetter({
       let qrBinary: Uint8Array | null = null;
       try {
         const filename = `general_letter_${registrationNumber || op.serialNumber || "doc"}.pdf`;
-        const docTitle = generalSubject || "الخطاب الرسمي الموجه لجهة الإسناد";
-        const qrPayload = await getStandardDocQrPayload(
-          cloudPdfUrl,
-          registrationNumber,
-          docTitle,
-          currentCompany?.name || "إكسلنت سرفيس",
-          filename
-        );
-        qrBinary = await generateHighResDocQrBuffer(qrPayload);
+        const targetPayload =
+          cloudPdfUrl && cloudPdfUrl.startsWith("http") && cloudPdfUrl.length <= 160
+            ? cloudPdfUrl
+            : filename;
+        qrBinary = await generateExellentCrispQrBuffer(targetPayload, registrationNumber);
       } catch (e) {
         console.warn("QR generation failed for Exellent general letter:", e);
       }

@@ -70,6 +70,7 @@ import {
 } from "./letter-utils";
 import {
   isExellentCompany,
+  generateExellentCrispQrBuffer,
   generateExellentFinalInsuranceRefundDocx,
   cleanTafqeetForTemplate,
 } from "./exellent-letter-engine";
@@ -495,14 +496,11 @@ export function FinalInsuranceRefundSection({
       let qrBinary: Uint8Array | undefined = undefined;
       try {
         const filename = `final_insurance_refund_${registrationNumber || op.serialNumber || "doc"}.pdf`;
-        const qrPayload = await getStandardDocQrPayload(
-          cloudPdfUrl,
-          registrationNumber,
-          "خطاب استرداد مبلغ التأمين النهائي",
-          currentCompany?.name || "إكسلنت سرفيس",
-          filename
-        );
-        qrBinary = await generateHighResDocQrBuffer(qrPayload);
+        const targetPayload =
+          cloudPdfUrl && cloudPdfUrl.startsWith("http") && cloudPdfUrl.length <= 160
+            ? cloudPdfUrl
+            : filename;
+        qrBinary = await generateExellentCrispQrBuffer(targetPayload, registrationNumber);
       } catch (e) {
         console.warn("QR generation failed for Exellent refund:", e);
       }

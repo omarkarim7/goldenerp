@@ -63,6 +63,7 @@ import {
 } from "./letter-utils";
 import {
   isExellentCompany,
+  generateExellentCrispQrBuffer,
   generateExellentGrievanceDocx,
 } from "./exellent-letter-engine";
 import JSZip from "jszip";
@@ -638,16 +639,9 @@ export function GrievanceLetterSection({
     if (isB) {
       let qrBinary: Uint8Array | null = null;
       try {
-        const docTitle = isTech ? "خطاب تظلم فني رسمي" : "خطاب تظلم مالي رسمي";
         const filename = `${letterKey}_${registrationNumber || op.serialNumber || "doc"}.pdf`;
-        const qrPayload = await getStandardDocQrPayload(
-          cloudPdfUrl,
-          registrationNumber,
-          docTitle,
-          currentCompany?.name || "إكسلنت سرفيس",
-          filename
-        );
-        qrBinary = await generateHighResDocQrBuffer(qrPayload);
+        const targetPayload = cloudPdfUrl && cloudPdfUrl.startsWith("http") && cloudPdfUrl.length <= 160 ? cloudPdfUrl : filename;
+        qrBinary = await generateExellentCrispQrBuffer(targetPayload, registrationNumber);
       } catch (e) {
         console.warn("QR generation failed for Exellent grievance:", e);
       }

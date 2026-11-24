@@ -58,6 +58,7 @@ import {
 import {
   isExellentCompany,
   cleanTafqeetForTemplate,
+  generateExellentCrispQrBuffer,
   generateExellentBankGuaranteeDocx,
   generateExellentFinalInsuranceCashDocx,
   generateExellentFinalInsuranceDeductionDocx,
@@ -548,20 +549,11 @@ export function TabFinalGuarantee({
       try {
         const activeCloud = cloudUrls[type];
         const filename = `final_guarantee_${type}_${registrationNumber || op.serialNumber || "doc"}.pdf`;
-        const qrPayload = await getStandardDocQrPayload(
-          activeCloud,
-          registrationNumber,
-          type === "BANK_GUARANTEE"
-            ? "خطاب إصدار خطاب ضمان بنكي نهائي"
-            : type === "DEDUCTION"
-            ? "خطاب خصم التأمين النهائي من المستحقات"
-            : type === "DEDUCTION_AND_INITIAL" || type === "INITIAL_TRANSFER"
-            ? "خطاب خصم النهائي من المستحقات والتأمين الابتدائي"
-            : "خطاب سداد التأمين النهائي نقداً بالخزينة",
-          currentCompany?.name || "إكسلنت سرفيس",
-          filename
-        );
-        qrBinary = await generateHighResDocQrBuffer(qrPayload);
+        const targetPayload =
+          activeCloud && activeCloud.startsWith("http") && activeCloud.length <= 160
+            ? activeCloud
+            : filename;
+        qrBinary = await generateExellentCrispQrBuffer(targetPayload, registrationNumber);
       } catch (e) {
         console.warn("QR generation failed for Exellent final guarantee:", e);
       }

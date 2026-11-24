@@ -58,6 +58,7 @@ import {
 } from "./letter-utils";
 import {
   isExellentCompany,
+  generateExellentCrispQrBuffer,
   generateExellentClarificationDocx,
 } from "./exellent-letter-engine";
 import { GOLDEN_STAMP_BASE64, GOLDEN_LOGO_BASE64 } from "./stamp-assets";
@@ -552,14 +553,11 @@ export function TabClarification({
       try {
         const activeCloud = cloudPdfUrl;
         const filename = `clarification_${registrationNumber || op.serialNumber || "doc"}.pdf`;
-        const qrPayload = await getStandardDocQrPayload(
-          activeCloud,
-          registrationNumber,
-          op.name ? `استفسارات عملية ${op.name}` : "خطاب استفسارات وتوضيحات فنية",
-          currentCompany?.name || "إكسلنت سرفيس",
-          filename
-        );
-        qrBinary = await generateHighResDocQrBuffer(qrPayload);
+        const targetPayload =
+          activeCloud && activeCloud.startsWith("http") && activeCloud.length <= 160
+            ? activeCloud
+            : filename;
+        qrBinary = await generateExellentCrispQrBuffer(targetPayload, registrationNumber);
       } catch (e) {
         console.warn("QR generation failed for Exellent clarification:", e);
       }

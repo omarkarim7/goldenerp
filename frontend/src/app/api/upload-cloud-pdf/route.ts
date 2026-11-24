@@ -141,6 +141,10 @@ export async function GET(req: NextRequest) {
       );
     }
 
+    if (searchParams.get("open") === "1" || searchParams.get("redirect") === "1") {
+      return NextResponse.redirect(directUrl, 307);
+    }
+
     return NextResponse.json({
       success: true,
       url: directUrl,

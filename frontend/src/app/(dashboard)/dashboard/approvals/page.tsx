@@ -25,6 +25,7 @@ import {
   applyExellentRecipient,
   applyExellentTenderMethod,
   applyExellentCommonDetails,
+  generateExellentCrispQrBuffer,
 } from "../operations/[id]/tabs/exellent-letter-engine";
 import {
   cleanAllDocxXml,
@@ -381,17 +382,8 @@ async function generateOfficialDocxBlob(item: ApprovalItem, companyInfo: any): P
   if (isCompB) {
     let qrBinary: Uint8Array | null = null;
     try {
-      const payload = await getStandardDocQrPayload(
-        null,
-        regNum,
-        tplInfo.type || item.type || "official_doc",
-        item.entityId || opCode
-      );
-      if (payload) {
-        qrBinary = await generateHighResDocQrBuffer(payload);
-      } else {
-        qrBinary = await generateHighResDocQrBuffer(regNum || opCode);
-      }
+      const targetFilename = `${tplInfo.type || item.type || "official_doc"}_${regNum}.pdf`;
+      qrBinary = await generateExellentCrispQrBuffer(targetFilename, regNum);
     } catch {
       qrBinary = null;
     }

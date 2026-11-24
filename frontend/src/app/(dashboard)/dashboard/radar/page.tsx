@@ -22,6 +22,14 @@ import { useCompany, CompanyCode } from "@/context/company-context";
 import { DocxViewer } from "@/components/docx-viewer";
 import { Portal } from "@/components/ui/portal";
 
+interface PulledOperationRef {
+  companyCode: string;
+  companyName?: string;
+  operationId: string;
+  displayCode?: string;
+  pulledAt?: string;
+}
+
 interface RadarItem {
   id: string;
   sourceId: string;
@@ -41,6 +49,7 @@ interface RadarItem {
   matchScore: number | null;
   isImported: boolean;
   operationId: string | null;
+  pulledOperations?: PulledOperationRef[];
   createdAt: string;
   rawDetails?: {
     refNo?: string;
@@ -339,12 +348,34 @@ export default function RadarPage() {
     }
   };
 
-  // Open Convert Modal
+  // Helper: list pulled operations per company for a tender
+  const getPulledOperations = (tender: RadarItem): PulledOperationRef[] => {
+    if (Array.isArray(tender.pulledOperations) && tender.pulledOperations.length > 0) {
+      return tender.pulledOperations;
+    }
+    if (Array.isArray((tender.rawDetails as any)?.pulledOperations)) {
+      return (tender.rawDetails as any).pulledOperations;
+    }
+    if (tender.isImported && tender.operationId) {
+      return [
+        {
+          companyCode: (tender.matchedCompanyCode || "A").toUpperCase(),
+          operationId: tender.operationId,
+        },
+      ];
+    }
+    return [];
+  };
+
+  // Open Convert Modal (auto-picking first company that hasn't pulled this tender yet)
   const openConvertModal = (item: RadarItem) => {
     setConvertModalItem(item);
-    // Align with active company selection if specific company is chosen, otherwise default to A
-    const initialComp = (selectedCompany && selectedCompany !== "ALL") ? selectedCompany : "A";
-    setTargetCompanyCode(initialComp);
+    const pulledCodes = new Set(getPulledOperations(item).map((p) => p.companyCode.toUpperCase()));
+    const preferred = selectedCompany && selectedCompany !== "ALL" ? selectedCompany : "A";
+    const firstUnpulled = !pulledCodes.has(preferred)
+      ? preferred
+      : ALL_COMPANIES.find((c) => !pulledCodes.has(c.code))?.code || preferred;
+    setTargetCompanyCode(firstUnpulled);
     setConvertNotes("");
   };
 
@@ -1647,26 +1678,41 @@ export default function RadarPage() {
 
                         {/* Actions */}
                         <td className="py-3.5 px-4 whitespace-nowrap text-center">
-                          <div className="flex items-center justify-center gap-2">
-                            {tender.isImported && tender.operationId ? (
-                              <Link href={`/dashboard/operations/${tender.operationId}`}>
-                                <Button className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs h-8 px-3 rounded-lg flex items-center gap-1 cursor-pointer shadow-xs">
-                                  <CheckCircle2 className="h-3.5 w-3.5" />
-                                  <span>فتح العملية</span>
-                                </Button>
-                              </Link>
-                            ) : (
-                              <Button
-                                onClick={() => {
-                                  markTenderAsViewed(tender.id);
-                                  openConvertModal(tender);
-                                }}
-                                className="bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs h-8 px-3 rounded-lg flex items-center gap-1 cursor-pointer shadow-xs active:scale-95 transition-all"
-                              >
-                                <Plus className="h-3.5 w-3.5" />
-                                <span>سحب كعملية</span>
-                              </Button>
-                            )}
+                          <div className="flex items-center justify-center gap-1.5 flex-wrap">
+                            {(() => {
+                              const pulled = getPulledOperations(tender);
+                              const activeMatch =
+                                selectedCompany && selectedCompany !== "ALL"
+                                  ? pulled.find((p) => p.companyCode === selectedCompany)
+                                  : pulled[0];
+                              const primaryOpId = activeMatch?.operationId || tender.operationId;
+                              const canPullMore = pulled.length < ALL_COMPANIES.length;
+
+                              return (
+                                <>
+                                  {tender.isImported && primaryOpId && (
+                                    <Link href={`/dashboard/operations/${primaryOpId}`}>
+                                      <Button className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs h-8 px-3 rounded-lg flex items-center gap-1 cursor-pointer shadow-xs">
+                                        <CheckCircle2 className="h-3.5 w-3.5" />
+                                        <span>فتح العملية{activeMatch?.displayCode ? ` (${activeMatch.displayCode})` : ""}</span>
+                                      </Button>
+                                    </Link>
+                                  )}
+                                  {(!tender.isImported || canPullMore) && (
+                                    <Button
+                                      onClick={() => {
+                                        markTenderAsViewed(tender.id);
+                                        openConvertModal(tender);
+                                      }}
+                                      className="bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs h-8 px-3 rounded-lg flex items-center gap-1 cursor-pointer shadow-xs active:scale-95 transition-all"
+                                    >
+                                      <Plus className="h-3.5 w-3.5" />
+                                      <span>{tender.isImported ? "سحب لشركة أخرى" : "سحب كعملية"}</span>
+                                    </Button>
+                                  )}
+                                </>
+                              );
+                            })()}
 
                             <Button
                               variant="outline"
@@ -1860,26 +1906,64 @@ export default function RadarPage() {
                   </div>
 
                   {/* Row 5: Action Buttons (Touch Friendly) */}
-                  <div className="grid grid-cols-[1fr_1fr_auto] gap-2 pt-2 border-t border-border/60">
-                    {tender.isImported && tender.operationId ? (
-                      <Link href={`/dashboard/operations/${tender.operationId}`} className="w-full">
-                        <Button className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs h-9 rounded-xl flex items-center justify-center gap-1.5 shadow-xs cursor-pointer">
-                          <CheckCircle2 className="h-3.5 w-3.5" />
-                          <span>فتح العملية</span>
-                        </Button>
-                      </Link>
-                    ) : (
-                      <Button
-                        onClick={() => {
-                          markTenderAsViewed(tender.id);
-                          openConvertModal(tender);
-                        }}
-                        className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs h-9 rounded-xl flex items-center justify-center gap-1.5 shadow-xs cursor-pointer"
-                      >
-                        <Plus className="h-3.5 w-3.5" />
-                        <span>سحب كعملية</span>
-                      </Button>
+                  <div className="flex flex-col gap-2 pt-2 border-t border-border/60">
+                    {getPulledOperations(tender).length > 0 && (
+                      <div className="flex flex-wrap gap-1.5">
+                        {getPulledOperations(tender).map((p) => (
+                          <Link key={`${p.companyCode}-${p.operationId}`} href={`/dashboard/operations/${p.operationId}`}>
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-500/30 text-[10px] font-bold hover:bg-emerald-500/25">
+                              <CheckCircle2 className="h-3 w-3" />
+                              <span>{p.companyName || `شركة ${p.companyCode}`}{p.displayCode ? ` [${p.displayCode}]` : ""}</span>
+                            </span>
+                          </Link>
+                        ))}
+                      </div>
                     )}
+                    <div className="grid grid-cols-[1fr_1fr_auto] gap-2">
+                      {(() => {
+                        const pulled = getPulledOperations(tender);
+                        const activeMatch =
+                          selectedCompany && selectedCompany !== "ALL"
+                            ? pulled.find((p) => p.companyCode === selectedCompany)
+                            : pulled[0];
+                        const primaryOpId = activeMatch?.operationId || tender.operationId;
+                        const canPullMore = pulled.length < ALL_COMPANIES.length;
+
+                        return tender.isImported && primaryOpId ? (
+                          <div className="flex items-center gap-1.5">
+                            <Link href={`/dashboard/operations/${primaryOpId}`} className="flex-1">
+                              <Button className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[11px] h-9 rounded-xl flex items-center justify-center gap-1 shadow-xs cursor-pointer">
+                                <CheckCircle2 className="h-3.5 w-3.5" />
+                                <span>فتح</span>
+                              </Button>
+                            </Link>
+                            {canPullMore && (
+                              <Button
+                                onClick={() => {
+                                  markTenderAsViewed(tender.id);
+                                  openConvertModal(tender);
+                                }}
+                                title="سحب العملية لشركة أخرى"
+                                className="bg-blue-600 hover:bg-blue-700 text-white font-bold text-[11px] h-9 px-2.5 rounded-xl flex items-center justify-center gap-1 shadow-xs cursor-pointer"
+                              >
+                                <Plus className="h-3.5 w-3.5" />
+                                <span>لشركة أخرى</span>
+                              </Button>
+                            )}
+                          </div>
+                        ) : (
+                          <Button
+                            onClick={() => {
+                              markTenderAsViewed(tender.id);
+                              openConvertModal(tender);
+                            }}
+                            className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs h-9 rounded-xl flex items-center justify-center gap-1.5 shadow-xs cursor-pointer"
+                          >
+                            <Plus className="h-3.5 w-3.5" />
+                            <span>سحب كعملية</span>
+                          </Button>
+                        );
+                      })()}
 
                     <Button
                       variant="outline"
@@ -1903,6 +1987,7 @@ export default function RadarPage() {
                     >
                       <Trash2 className="h-3.5 w-3.5" />
                     </Button>
+                    </div>
                   </div>
                 </div>
               );
@@ -2093,27 +2178,58 @@ export default function RadarPage() {
                 </div>
 
                 {/* Bottom Action Bar */}
-                <div className="pt-3 border-t border-border flex items-center justify-between gap-3 relative z-10">
-                  {/* Right Button in RTL: Convert/Import (Primary Action) */}
-                  {tender.isImported && tender.operationId ? (
-                    <Link href={`/dashboard/operations/${tender.operationId}`}>
-                      <Button className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs h-10 px-4 rounded-xl flex items-center gap-1.5 cursor-pointer shadow-md shadow-emerald-600/20 active:scale-95 transition-all">
-                        <CheckCircle2 className="h-4 w-4" />
-                        <span>فتح العملية بالمنظومة</span>
-                      </Button>
-                    </Link>
-                  ) : (
-                    <Button
-                      onClick={() => {
-                        markTenderAsViewed(tender.id);
-                        openConvertModal(tender);
-                      }}
-                      className="bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-700 hover:from-blue-500 hover:to-indigo-600 text-white font-bold text-xs h-10 px-4 rounded-xl shadow-md shadow-blue-500/25 flex items-center gap-1.5 active:scale-95 transition-all cursor-pointer border border-blue-400/30"
-                    >
-                      <Plus className="h-4 w-4" />
-                      <span>سحب وتسجيل كعملية</span>
-                    </Button>
+                <div className="pt-3 border-t border-border space-y-2 relative z-10">
+                  {getPulledOperations(tender).length > 0 && (
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <span className="text-[10px] font-bold text-muted-foreground">مسحوبة لـ:</span>
+                      {getPulledOperations(tender).map((p) => (
+                        <Link key={`${p.companyCode}-${p.operationId}`} href={`/dashboard/operations/${p.operationId}`}>
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-500/30 text-[10px] font-bold hover:bg-emerald-500/25 transition-colors">
+                            <CheckCircle2 className="h-3 w-3" />
+                            <span>{p.companyName || `شركة ${p.companyCode}`}{p.displayCode ? ` [${p.displayCode}]` : ""}</span>
+                          </span>
+                        </Link>
+                      ))}
+                    </div>
                   )}
+                  <div className="flex items-center justify-between gap-2 flex-wrap">
+                    {/* Right Button in RTL: Convert/Import (Primary Action) */}
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      {(() => {
+                        const pulled = getPulledOperations(tender);
+                        const activeMatch =
+                          selectedCompany && selectedCompany !== "ALL"
+                            ? pulled.find((p) => p.companyCode === selectedCompany)
+                            : pulled[0];
+                        const primaryOpId = activeMatch?.operationId || tender.operationId;
+                        const canPullMore = pulled.length < ALL_COMPANIES.length;
+
+                        return (
+                          <>
+                            {tender.isImported && primaryOpId && (
+                              <Link href={`/dashboard/operations/${primaryOpId}`}>
+                                <Button className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs h-10 px-4 rounded-xl flex items-center gap-1.5 cursor-pointer shadow-md shadow-emerald-600/20 active:scale-95 transition-all">
+                                  <CheckCircle2 className="h-4 w-4" />
+                                  <span>فتح العملية{activeMatch?.displayCode ? ` (${activeMatch.displayCode})` : " بالمنظومة"}</span>
+                                </Button>
+                              </Link>
+                            )}
+                            {(!tender.isImported || canPullMore) && (
+                              <Button
+                                onClick={() => {
+                                  markTenderAsViewed(tender.id);
+                                  openConvertModal(tender);
+                                }}
+                                className="bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-700 hover:from-blue-500 hover:to-indigo-600 text-white font-bold text-xs h-10 px-4 rounded-xl shadow-md shadow-blue-500/25 flex items-center gap-1.5 active:scale-95 transition-all cursor-pointer border border-blue-400/30"
+                              >
+                                <Plus className="h-4 w-4" />
+                                <span>{tender.isImported ? "سحب لشركة أخرى" : "سحب وتسجيل كعملية"}</span>
+                              </Button>
+                            )}
+                          </>
+                        );
+                      })()}
+                    </div>
 
                   <div className="flex items-center gap-1.5">
                     {/* Left Button in RTL: View Booklet & Details (Secondary Action) */}
@@ -2140,6 +2256,7 @@ export default function RadarPage() {
                     >
                       <Trash2 className="h-4 w-4" />
                     </Button>
+                  </div>
                   </div>
                 </div>
               </div>
@@ -2705,28 +2822,44 @@ export default function RadarPage() {
                   إغلاق
                 </Button>
 
-                {!activeDetailsItem.isImported ? (
-                  <Button
-                    onClick={() => {
-                      const item = activeDetailsItem;
-                      setActiveDetailsItem(null);
-                      openConvertModal(item);
-                    }}
-                    className="bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl text-xs cursor-pointer shadow-md"
-                  >
-                    سحب وتسجيل كعملية الآن
-                  </Button>
-                ) : activeDetailsItem.operationId ? (
-                  <Link href={`/dashboard/operations/${activeDetailsItem.operationId}`}>
-                    <Button
-                      onClick={() => setActiveDetailsItem(null)}
-                      className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-xs cursor-pointer shadow-md flex items-center gap-1.5"
-                    >
-                      <CheckCircle2 className="h-4 w-4" />
-                      <span>فتح تفاصيل العملية المسجلة</span>
-                    </Button>
-                  </Link>
-                ) : null}
+                {(() => {
+                  const pulled = getPulledOperations(activeDetailsItem);
+                  const activeMatch =
+                    selectedCompany && selectedCompany !== "ALL"
+                      ? pulled.find((p) => p.companyCode === selectedCompany)
+                      : pulled[0];
+                  const primaryOpId = activeMatch?.operationId || activeDetailsItem.operationId;
+                  const canPullMore = pulled.length < ALL_COMPANIES.length;
+
+                  return (
+                    <>
+                      {activeDetailsItem.isImported && primaryOpId && (
+                        <Link href={`/dashboard/operations/${primaryOpId}`}>
+                          <Button
+                            onClick={() => setActiveDetailsItem(null)}
+                            className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-xs cursor-pointer shadow-md flex items-center gap-1.5"
+                          >
+                            <CheckCircle2 className="h-4 w-4" />
+                            <span>فتح تفاصيل العملية{activeMatch?.displayCode ? ` (${activeMatch.displayCode})` : " المسجلة"}</span>
+                          </Button>
+                        </Link>
+                      )}
+                      {(!activeDetailsItem.isImported || canPullMore) && (
+                        <Button
+                          onClick={() => {
+                            const item = activeDetailsItem;
+                            setActiveDetailsItem(null);
+                            openConvertModal(item);
+                          }}
+                          className="bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl text-xs cursor-pointer shadow-md flex items-center gap-1.5"
+                        >
+                          <Plus className="h-4 w-4" />
+                          <span>{activeDetailsItem.isImported ? "سحب لشركة أخرى الآن" : "سحب وتسجيل كعملية الآن"}</span>
+                        </Button>
+                      )}
+                    </>
+                  );
+                })()}
               </div>
             </div>
           </div>
@@ -2773,24 +2906,37 @@ export default function RadarPage() {
                 </label>
                 <div className="grid grid-cols-2 gap-2">
                   {ALL_COMPANIES.map((comp) => {
-                    const isSelected = targetCompanyCode === comp.code;
+                    const existingPull = getPulledOperations(convertModalItem).find(
+                      (p) => p.companyCode.toUpperCase() === comp.code
+                    );
+                    const isAlreadyPulled = Boolean(existingPull);
+                    const isSelected = !isAlreadyPulled && targetCompanyCode === comp.code;
 
                     return (
                       <button
                         type="button"
                         key={comp.code}
-                        onClick={() => setTargetCompanyCode(comp.code)}
-                        className={`p-3 rounded-xl border text-right transition-all cursor-pointer ${
-                          isSelected
-                            ? "bg-blue-600/15 border-blue-600 font-bold shadow-xs text-foreground"
-                            : "bg-muted/30 border-border text-muted-foreground hover:bg-muted/60"
+                        disabled={isAlreadyPulled}
+                        onClick={() => !isAlreadyPulled && setTargetCompanyCode(comp.code)}
+                        className={`p-3 rounded-xl border text-right transition-all ${
+                          isAlreadyPulled
+                            ? "bg-emerald-500/10 border-emerald-500/30 opacity-80 cursor-not-allowed text-foreground"
+                            : isSelected
+                            ? "bg-blue-600/15 border-blue-600 font-bold shadow-xs text-foreground cursor-pointer"
+                            : "bg-muted/30 border-border text-muted-foreground hover:bg-muted/60 cursor-pointer"
                         }`}
                       >
                         <div className="flex items-center justify-between">
                           <span className="font-bold">{comp.shortName}</span>
-                          <span className="w-5 h-5 rounded-md bg-blue-600 text-white text-[10px] flex items-center justify-center font-bold">
-                            {comp.code}
-                          </span>
+                          {isAlreadyPulled ? (
+                            <span className="px-1.5 py-0.5 rounded bg-emerald-600 text-white text-[9px] font-bold">
+                              مسحوبة {existingPull?.displayCode ? `[${existingPull.displayCode}]` : ""}
+                            </span>
+                          ) : (
+                            <span className="w-5 h-5 rounded-md bg-blue-600 text-white text-[10px] flex items-center justify-center font-bold">
+                              {comp.code}
+                            </span>
+                          )}
                         </div>
                         <span className="text-[10px] opacity-75 block mt-0.5">{comp.name}</span>
                       </button>

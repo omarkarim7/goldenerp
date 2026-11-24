@@ -910,6 +910,28 @@ export class RadarService implements OnModuleInit {
       }
     }
 
+    // Enrich with pulledOperations across multiple companies without requiring DB migration
+    const importedOpIds = items
+      .map((i) => i.operationId)
+      .filter((id): id is string => Boolean(id));
+    const opCompaniesList =
+      importedOpIds.length > 0
+        ? await this.prisma.operationCompany.findMany({
+            where: { operationId: { in: importedOpIds } },
+            include: { company: { select: { code: true, name: true } } },
+          })
+        : [];
+    const opCompanyMap = new Map<string, { companyCode: string; companyName: string; displayCode: string }>();
+    for (const oc of opCompaniesList) {
+      if (oc.operationId && oc.company) {
+        opCompanyMap.set(oc.operationId, {
+          companyCode: oc.company.code,
+          companyName: oc.company.name,
+          displayCode: oc.displayCode || oc.company.code,
+        });
+      }
+    }
+
     // Parse rawData into clean object for frontend and normalize fields
     const parsedItems = items.map((item) => {
       let raw: any = null;
@@ -925,6 +947,34 @@ export class RadarService implements OnModuleInit {
           !a.name?.includes('جدول الكميات والمقايسة التثمينية')
         );
       }
+
+      const pulledMap = new Map<string, { companyCode: string; companyName: string; operationId: string; displayCode: string; pulledAt?: string }>();
+      if (Array.isArray(raw?.pulledOperations)) {
+        for (const p of raw.pulledOperations) {
+          if (p && p.companyCode && p.operationId) {
+            pulledMap.set(String(p.companyCode).toUpperCase(), {
+              companyCode: String(p.companyCode).toUpperCase(),
+              companyName: p.companyName || String(p.companyCode).toUpperCase(),
+              operationId: p.operationId,
+              displayCode: p.displayCode || '',
+              pulledAt: p.pulledAt,
+            });
+          }
+        }
+      }
+      if (item.isImported && item.operationId) {
+        const oc = opCompanyMap.get(item.operationId);
+        if (oc && !pulledMap.has(oc.companyCode.toUpperCase())) {
+          pulledMap.set(oc.companyCode.toUpperCase(), {
+            companyCode: oc.companyCode.toUpperCase(),
+            companyName: oc.companyName,
+            operationId: item.operationId,
+            displayCode: oc.displayCode,
+            pulledAt: item.createdAt?.toISOString?.() || undefined,
+          });
+        }
+      }
+
       const norm = this.normalizeRadarItemData(item, raw);
       return {
         ...item,
@@ -933,6 +983,7 @@ export class RadarService implements OnModuleInit {
         authority: norm.authority,
         temporaryInsurance: norm.temporaryInsurance,
         bookletPrice: norm.bookletPrice,
+        pulledOperations: Array.from(pulledMap.values()),
         rawDetails: raw,
       };
     });
@@ -994,14 +1045,6 @@ export class RadarService implements OnModuleInit {
       throw new NotFoundException('المناقصة غير موجودة في الرادار');
     }
 
-    if (item.isImported && item.operationId) {
-      return {
-        alreadyImported: true,
-        operationId: item.operationId,
-        message: 'تم سحب وتحويل هذه المناقصة مسبقاً كعملية في المنظومة.',
-      };
-    }
-
     let raw: any = {};
     if (item.rawData) {
       try {
@@ -1011,6 +1054,50 @@ export class RadarService implements OnModuleInit {
 
     // Determine target company code (A, B, C, or D)
     const targetCode = (payload?.companyCode || item.matchedCompanyCode || 'A').toUpperCase();
+
+    // Build list of companies that already pulled this tender
+    const existingPulled: Array<{
+      companyCode: string;
+      companyName?: string;
+      operationId: string;
+      displayCode?: string;
+      pulledAt?: string;
+    }> = Array.isArray(raw.pulledOperations) ? [...raw.pulledOperations] : [];
+
+    if (item.isImported && item.operationId && !existingPulled.some((p) => p.operationId === item.operationId)) {
+      const legacyOc = await this.prisma.operationCompany.findFirst({
+        where: { operationId: item.operationId },
+        include: { company: { select: { code: true, name: true } } },
+      });
+      if (legacyOc?.company) {
+        existingPulled.push({
+          companyCode: legacyOc.company.code.toUpperCase(),
+          companyName: legacyOc.company.name,
+          operationId: item.operationId,
+          displayCode: legacyOc.displayCode || legacyOc.company.code,
+          pulledAt: item.createdAt?.toISOString?.(),
+        });
+      }
+    }
+
+    // Check if THIS specific company already pulled this tender (and operation still exists)
+    const sameCompanyPull = existingPulled.find(
+      (p) => String(p.companyCode).toUpperCase() === targetCode && p.operationId,
+    );
+    if (sameCompanyPull) {
+      const stillExists = await this.prisma.operation.findUnique({
+        where: { id: sameCompanyPull.operationId },
+        select: { id: true },
+      });
+      if (stillExists) {
+        return {
+          alreadyImported: true,
+          operationId: sameCompanyPull.operationId,
+          companyCode: targetCode,
+          message: `تم سحب هذه المناقصة مسبقاً لشركة (${sameCompanyPull.companyName || targetCode}) بكود [${sameCompanyPull.displayCode || targetCode}].`,
+        };
+      }
+    }
 
     const company = await this.prisma.company.findUnique({
       where: { code: targetCode },
@@ -1245,12 +1332,28 @@ export class RadarService implements OnModuleInit {
         },
       });
 
-      // 7. Mark RadarItem as imported
+      // 7. Mark RadarItem as imported and record per-company pulled operations
+      const filteredPulled = existingPulled.filter(
+        (p) => String(p.companyCode).toUpperCase() !== targetCode,
+      );
+      filteredPulled.push({
+        companyCode: targetCode,
+        companyName: company.name,
+        operationId: operation.id,
+        displayCode,
+        pulledAt: new Date().toISOString(),
+      });
+      const updatedRawData = JSON.stringify({
+        ...raw,
+        pulledOperations: filteredPulled,
+      });
+
       await tx.radarItem.update({
         where: { id: item.id },
         data: {
           isImported: true,
-          operationId: operation.id,
+          operationId: item.operationId || operation.id,
+          rawData: updatedRawData,
         },
       });
 
@@ -1259,7 +1362,9 @@ export class RadarService implements OnModuleInit {
         alreadyImported: false,
         operationId: operation.id,
         displayCode,
+        companyCode: targetCode,
         companyName: company.name,
+        pulledOperations: filteredPulled,
         message: `تم تحويل المناقصة بنجاح إلى عملية رسمية بكود [${displayCode}] لـ ${company.name}، وتوثيق كراسة الشروط تلقائياً بالأرشيف!`,
       };
     });
