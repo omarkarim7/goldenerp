@@ -1,0 +1,157 @@
+{
+  "template": "final_insurance_deduction_and_initial_template.docx",
+  "company_profile": [
+    {
+      "key": "company_name_en",
+      "label": "اسم الشركة (بالإنجليزية/التجاري)"
+    },
+    {
+      "key": "company_cr",
+      "label": "رقم السجل التجاري"
+    },
+    {
+      "key": "company_tax",
+      "label": "رقم البطاقة الضريبية"
+    },
+    {
+      "key": "company_mobile",
+      "label": "رقم الموبايل"
+    },
+    {
+      "key": "company_address",
+      "label": "عنوان الشركة"
+    },
+    {
+      "key": "company_email",
+      "label": "البريد الإلكتروني / تفاصيل أخرى"
+    },
+    {
+      "key": "company_phone",
+      "label": "رقم الهاتف / الفاكس"
+    },
+    {
+      "key": "specialist_title",
+      "label": "مسمى المختص"
+    },
+    {
+      "key": "finance_manager_title",
+      "label": "مسمى المدير"
+    },
+    {
+      "key": "chairman_title",
+      "label": "مسمى الاعتماد"
+    },
+    {
+      "key": "specialist_name",
+      "label": "اسم المختص"
+    },
+    {
+      "key": "finance_manager_name",
+      "label": "اسم المدير"
+    },
+    {
+      "key": "board_chairman",
+      "label": "المعتمد / رئيس مجلس الإدارة"
+    }
+  ],
+  "auto_generated": [
+    {
+      "key": "barcode",
+      "label": "الباركود / رمز QR"
+    },
+    {
+      "key": "company_process_code",
+      "label": "كود العملية بالشركة"
+    },
+    {
+      "key": "issue_date",
+      "label": "تاريخ الإصدار"
+    },
+    {
+      "key": "registration_number",
+      "label": "رقم القيد الصادر"
+    }
+  ],
+  "user_form": [
+    {
+      "key": "recipient_title",
+      "label": "لقب المرسل إليه"
+    },
+    {
+      "key": "recipient_entity",
+      "label": "الجهة المرسل إليها"
+    },
+    {
+      "key": "process_name",
+      "label": "اسم العملية المسجلة"
+    },
+    {
+      "key": "process_number",
+      "label": "رقم العملية"
+    },
+    {
+      "key": "insurance_amount_digits",
+      "label": "مبلغ التأمين (أرقام)"
+    },
+    {
+      "key": "insurance_amount_words",
+      "label": "مبلغ التأمين (تفقيط)"
+    },
+    {
+      "key": "initial_amount_digits",
+      "label": "مبلغ التأمين الابتدائي (أرقام)"
+    },
+    {
+      "key": "initial_amount_words",
+      "label": "مبلغ التأمين الابتدائي (تفقيط)"
+    },
+    {
+      "key": "tender_method",
+      "label": "أسلوب الطرح"
+    },
+    {
+      "key": "tender_purpose",
+      "label": "الغرض / موضوع العملية"
+    },
+    {
+      "key": "fiscal_year",
+      "label": "العام المالي"
+    },
+    {
+      "key": "session_date",
+      "label": "تاريخ جلسة الفتح الفني"
+    },
+    {
+      "key": "delegate_name",
+      "label": "اسم المفوض / المندوب"
+    },
+    {
+      "key": "delegate_role",
+      "label": "صفة المندوب"
+    },
+    {
+      "key": "delegate_national_id",
+      "label": "الرقم القومي للمندوب"
+    },
+    {
+      "key": "delegate_powers",
+      "label": "صلاحيات التفويض"
+    },
+    {
+      "key": "guarantee_percentage",
+      "label": "نسبة التأمين النهائي (%)"
+    },
+    {
+      "key": "operation_total_digits",
+      "label": "إجمالي قيمة العملية (أرقام)"
+    },
+    {
+      "key": "operation_total_words",
+      "label": "إجمالي قيمة العملية (تفقيط)"
+    },
+    {
+      "key": "additional_notes",
+      "label": "ملاحظات إضافية"
+    }
+  ]
+}

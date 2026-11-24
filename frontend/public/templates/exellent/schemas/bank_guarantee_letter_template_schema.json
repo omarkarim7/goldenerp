@@ -1,0 +1,161 @@
+{
+  "template": "bank_guarantee_letter_template.docx",
+  "company_profile": [
+    {
+      "key": "company_name_en",
+      "label": "اسم الشركة (بالإنجليزية/التجاري)"
+    },
+    {
+      "key": "company_cr",
+      "label": "رقم السجل التجاري"
+    },
+    {
+      "key": "company_tax",
+      "label": "رقم البطاقة الضريبية"
+    },
+    {
+      "key": "company_mobile",
+      "label": "رقم الموبايل"
+    },
+    {
+      "key": "company_address",
+      "label": "عنوان الشركة"
+    },
+    {
+      "key": "company_email",
+      "label": "البريد الإلكتروني / تفاصيل أخرى"
+    },
+    {
+      "key": "company_phone",
+      "label": "رقم الهاتف / الفاكس"
+    },
+    {
+      "key": "bank_name",
+      "label": "اسم البنك"
+    },
+    {
+      "key": "bank_branch",
+      "label": "فرع البنك"
+    },
+    {
+      "key": "bank_account_number",
+      "label": "رقم الحساب البنكي"
+    },
+    {
+      "key": "account_bank_name",
+      "label": "بنك الحساب المسجل"
+    },
+    {
+      "key": "account_bank_branch",
+      "label": "فرع الحساب المسجل"
+    },
+    {
+      "key": "account_holder_name",
+      "label": "اسم صاحب الحساب"
+    },
+    {
+      "key": "account_national_id",
+      "label": "الرقم القومي لصاحب الحساب"
+    },
+    {
+      "key": "board_chairman",
+      "label": "المعتمد / رئيس مجلس الإدارة"
+    }
+  ],
+  "auto_generated": [
+    {
+      "key": "barcode",
+      "label": "الباركود / رمز QR"
+    },
+    {
+      "key": "company_process_code",
+      "label": "كود العملية بالشركة"
+    },
+    {
+      "key": "issue_date",
+      "label": "تاريخ الإصدار"
+    },
+    {
+      "key": "registration_number",
+      "label": "رقم القيد الصادر"
+    }
+  ],
+  "user_form": [
+    {
+      "key": "recipient_title",
+      "label": "لقب المرسل إليه"
+    },
+    {
+      "key": "guarantee_type",
+      "label": "نوع التأمين / الضمان (ابتدائي/نهائي)"
+    },
+    {
+      "key": "process_name",
+      "label": "اسم العملية المسجلة"
+    },
+    {
+      "key": "process_number",
+      "label": "رقم العملية"
+    },
+    {
+      "key": "recipient_entity",
+      "label": "الجهة المرسل إليها"
+    },
+    {
+      "key": "recipient_address",
+      "label": "عنوان جهة الإسناد"
+    },
+    {
+      "key": "request_action",
+      "label": "الإجراء المطلوب من البنك"
+    },
+    {
+      "key": "guarantee_amount_digits",
+      "label": "مبلغ خطاب الضمان (أرقام)"
+    },
+    {
+      "key": "guarantee_amount_words",
+      "label": "مبلغ خطاب الضمان (تفقيط)"
+    },
+    {
+      "key": "tender_method",
+      "label": "أسلوب الطرح"
+    },
+    {
+      "key": "tender_purpose",
+      "label": "الغرض / موضوع العملية"
+    },
+    {
+      "key": "fiscal_year",
+      "label": "العام المالي"
+    },
+    {
+      "key": "session_date",
+      "label": "تاريخ جلسة الفتح الفني"
+    },
+    {
+      "key": "guarantee_percentage",
+      "label": "نسبة التأمين النهائي (%)"
+    },
+    {
+      "key": "operation_total_digits",
+      "label": "إجمالي قيمة العملية (أرقام)"
+    },
+    {
+      "key": "operation_total_words",
+      "label": "إجمالي قيمة العملية (تفقيط)"
+    },
+    {
+      "key": "guarantee_duration",
+      "label": "مدة الارتباط بالتأمين"
+    },
+    {
+      "key": "guarantee_start_date",
+      "label": "تاريخ بداية الضمان"
+    },
+    {
+      "key": "guarantee_end_date",
+      "label": "تاريخ نهاية الضمان"
+    }
+  ]
+}

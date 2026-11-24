@@ -18,6 +18,20 @@ import { OnlyOfficeDocViewer } from "@/components/OnlyOfficeDocViewer";
 import { DocxViewer } from "@/components/docx-viewer";
 import { Portal } from "@/components/ui/portal";
 import JSZip from "jszip";
+import {
+  applyExellentHeaderFooter,
+  applyExellentTags,
+  applyExellentSignatures,
+  applyExellentRecipient,
+  applyExellentTenderMethod,
+  applyExellentCommonDetails,
+} from "../operations/[id]/tabs/exellent-letter-engine";
+import {
+  cleanAllDocxXml,
+  formatNumericDate,
+  generateHighResDocQrBuffer,
+  getStandardDocQrPayload,
+} from "../operations/[id]/tabs/letter-utils";
 
 interface ApprovalItem {
   id: string;
@@ -363,7 +377,142 @@ async function generateOfficialDocxBlob(item: ApprovalItem, companyInfo: any): P
   const regMatch = item.notes?.match(/رقم القيد:\s*([A-Z0-9]+)/i);
   const regNum = regMatch ? regMatch[1] : (item.entityId?.startsWith("letter-") ? item.entityId.replace("letter-", "") : `${opCode}26102128556`);
 
-  // 1. Process headers
+  // Custom path for Exellent Service (Company B) clean tag templates
+  if (isCompB) {
+    let qrBinary: Uint8Array | null = null;
+    try {
+      const payload = await getStandardDocQrPayload(
+        null,
+        regNum,
+        tplInfo.type || item.type || "official_doc",
+        item.entityId || opCode
+      );
+      if (payload) {
+        qrBinary = await generateHighResDocQrBuffer(payload);
+      } else {
+        qrBinary = await generateHighResDocQrBuffer(regNum || opCode);
+      }
+    } catch {
+      qrBinary = null;
+    }
+
+    const docFile = zip.file("word/document.xml");
+    if (docFile) {
+      let docXml = await docFile.async("text");
+      const rawNum = opCode.replace(/[^0-9]/g, "") || "617";
+      const docLabel = item.documentTitle || tplInfo.type || opName;
+
+      docXml = applyExellentRecipient(docXml, "الأستاذ", "رئيس لجنة البت والتعاقدات المختصة");
+      docXml = applyExellentTenderMethod(docXml, "المناقصة المحدودة");
+      docXml = applyExellentCommonDetails(docXml, {
+        operationRegisteredName: opName,
+        operationNumber: rawNum,
+        operationScope: opName,
+        fiscalYear: `${new Date().getFullYear()} / ${new Date().getFullYear() + 1}`,
+        technicalOpeningDate: formatNumericDate(new Date()),
+        delegateName: item.requestedBy || "مندوب التعاقدات المفوض",
+        delegateTitle: "مندوب التعاقدات المفوض",
+        delegateNationalId: "",
+      });
+
+      docXml = applyExellentTags(docXml, {
+        letter_subject: docLabel,
+        letter_body: item.notes || opName,
+        preamble_title: item.documentTitle || "خطاب رسمي",
+        company_name_ar: companyFullName,
+        commitment_details: "بكل ما جاء بكراسة الشروط والمواصفات",
+        clarification_subject: "توضيح واستفسار للأصناف والمواعيد",
+        clarification_scope: "الأصناف والمواعيد وبعض البنود الفنية والقانونية",
+        clarification_response_demand: "بخطاب معتمد وموافاتنا قبل الموعد المحدد لفتح المظاريف",
+        inquiry_nature: "أن البنود المشار إليها تتطلب التوضيح الفني والمالي",
+        requested_action: "الموافقة على التوضيح وإصدار ملحق رسمي",
+        grievance_stage: "نتيجة البت الفني والمالي",
+        grievance_subject: "التظلمات وطلبات الاعتراض على النتيجة",
+        grievance_aspect: "أن المستندات المقدمة مستوفاة وفقاً لكراسة الشروط",
+        grievance_request: "إعادة فحص العرض وقبول التظلم",
+        warranty_subject: "للأصناف الموردة",
+        supplied_items_category: opName,
+        authority_short: "الجهة الإدارية",
+        warranty_duration: "سنة",
+        warranty_coverage: "ضد عيوب الصناعة",
+        validity_duration: "ستة أشهر",
+        exclusion_case_1: "",
+        exclusion_case_2: "",
+        exclusion_case_3: "",
+        exclusion_case_4: "",
+        guarantee_type: "نهائي",
+        request_action: "إصدار خطاب ضمان",
+        bank_name: "مصر",
+        bank_branch: "دمنهور",
+        recipient_address: "",
+        guarantee_amount_digits: "0",
+        guarantee_amount_words: "",
+        guarantee_percentage: "5 %",
+        operation_total_digits: "0",
+        operation_total_words: "",
+        guarantee_duration: "سنة",
+        guarantee_start_date: formatNumericDate(new Date()),
+        guarantee_end_date: "",
+        bank_account_number: "",
+        account_bank_name: "مصر",
+        account_bank_branch: "دمنهور",
+        account_holder_name: companyFullName,
+        account_national_id: "",
+        insurance_amount_digits: "0",
+        insurance_amount_words: "",
+        initial_amount_digits: "0",
+        initial_amount_words: "",
+        refund_amount_digits: "0",
+        refund_amount_words: "",
+        payment_source_details: "",
+        deduction_operation_name: opName,
+        deduction_month: "",
+        deduction_year: "",
+        index: "1",
+        item_name: opName,
+        item_code: rawNum,
+        inquiry_description: item.notes || "",
+        company_proposal: "",
+        action_taken: item.notes || "",
+        correction_method: "",
+        unit: "عدد",
+        quantity: "1",
+        description: opName,
+        notes: "",
+      });
+
+      docXml = docXml.replace(/\{#?\/?items\}/g, "");
+      docXml = applyExellentSignatures(docXml, {
+        specialistName: item.requestedBy || "المسؤول المختص",
+        financeManagerName: item.approvedBy || "",
+        boardChairman: item.status === "APPROVED" && item.approvedBy ? item.approvedBy : "رئيس مجلس الإدارة",
+        additionalNotes: item.notes || "",
+      });
+      zip.file("word/document.xml", docXml);
+    }
+
+    await applyExellentHeaderFooter(zip, {
+      companyCommercialRegister: commReg,
+      companyTaxCard: taxCard,
+      companyOpCode: opCode,
+      outgoingDate: formatNumericDate(new Date()),
+      registrationNumber: regNum,
+      companyAddress: (companyInfo as any)?.address || "",
+      phoneWhatsapp: (companyInfo as any)?.phoneWhatsapp || "",
+      phoneMobile: (companyInfo as any)?.phoneMobile || "",
+      companyEmail: (companyInfo as any)?.email || "",
+      companyOtherDetails: (companyInfo as any)?.otherDetails || "",
+      qrBinary,
+    });
+    await cleanAllDocxXml(zip);
+
+    return zip.generateAsync({
+      type: "blob",
+      mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    });
+  }
+
+  // 1. Process headers (Golden Service - Company A)
   for (const hName of ["word/header1.xml", "word/header2.xml", "word/header3.xml"]) {
     const hdrFile = zip.file(hName);
     if (hdrFile) {

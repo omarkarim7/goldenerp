@@ -146,6 +146,19 @@ export function purgeTafqeetDuplicates(xml: string): string {
 
 
 /**
+ * استبدال جميع التاجات النظيفة {snake_case} داخل مستند XML بطريقة آمنة تدعم القوالب النظيفة والقديمة معاً
+ */
+export function applyExellentTags(xml: string, tags: Record<string, string | undefined>): string {
+  let out = xml;
+  for (const [key, val] of Object.entries(tags)) {
+    if (val === undefined) continue;
+    const escaped = escapeXml(val);
+    out = out.split(`{${key}}`).join(escaped);
+  }
+  return out;
+}
+
+/**
  * استبدال الترويسة والتذييل الخاصة بشركة إكسلنت بدقة متناهية
  */
 export async function applyExellentHeaderFooter(
@@ -232,32 +245,40 @@ export async function applyExellentHeaderFooter(
     let hXml = await zip.file(hFile)?.async("text");
     if (!hXml) continue;
 
-    // استبدال نص "الباركود" برسم الباركود الفعلي أو إفراغه
-    const barcodeRegex = /<w:r\b[^>]*>(?:(?!<\/w:r>)[\s\S])*?الباركود[\s\S]*?<\/w:r>/g;
+    // استبدال تاج {barcode} أو نص "الباركود" برسم الباركود الفعلي أو إفراغه
+    const barcodeRegex = /<w:r\b[^>]*>(?:(?!<\/w:r>)[\s\S])*?(?:\{barcode\}|الباركود)[\s\S]*?<\/w:r>/g;
     if (params.qrBinary) {
       const qrInline = buildQrInlineXml(1020000).replace(/rIdQR/g, "rIdHeaderQr");
       if (barcodeRegex.test(hXml)) {
         hXml = hXml.replace(barcodeRegex, qrInline);
-      } else if (hXml.includes("الباركود")) {
-        hXml = hXml.replace(/(<w:p\b[^>]*>(?:(?!<\/w:p>)[\s\S])*?)(?:الباركود)([\s\S]*?<\/w:p>)/g, `$1${qrInline}$2`);
+      } else if (hXml.includes("{barcode}") || hXml.includes("الباركود")) {
+        hXml = hXml.replace(/(<w:p\b[^>]*>(?:(?!<\/w:p>)[\s\S])*?)(?:\{barcode\}|الباركود)([\s\S]*?<\/w:p>)/g, `$1${qrInline}$2`);
       }
     } else {
       hXml = hXml.replace(barcodeRegex, "<w:r><w:t></w:t></w:r>");
     }
-    hXml = hXml.replace(/الباركود/g, "");
+    hXml = hXml.replace(/\{barcode\}|الباركود/g, "");
 
-    // استبدال قيم الترويسة بالقيم المحددة
+    // استبدال تاجات الترويسة النظيفة + دعم الترويسات القديمة احتياطياً
+    hXml = applyExellentTags(hXml, {
+      company_name_en: "Exellent Service",
+      company_cr: (params.companyCommercialRegister || "04042").trim(),
+      company_tax: (params.companyTaxCard || "7755731744").trim(),
+      company_process_code: (params.companyOpCode || "BZ-01").trim(),
+      registration_number: (params.registrationNumber || "").trim(),
+      issue_date: (params.outgoingDate || formatNumericDate(new Date())).trim(),
+    });
     hXml = hXml.replace(/04042/g, cr);
     hXml = hXml.replace(/7755731744/g, tax);
     hXml = hXml.replace(/\(\s*كود العملية بالشركه\s*\)/g, `( ${opCode} )`);
     hXml = hXml.replace(/15\/10\/2026/g, outDate);
-    hXml = hXml.replace(/رقم القيد:/g, `رقم القيد: ${regNum}`);
+    hXml = hXml.replace(/رقم القيد:(?!\s*\{)/g, `رقم القيد: ${regNum}`);
 
     hXml = purgeExellentRedMarks(hXml);
     zip.file(hFile, hXml);
   }
 
-  // 3. تحديث ملفات الفوتر
+  // 3. تحديث ملفات الفوتر (تشمل <mc:Choice> و <mc:Fallback> معاً)
   const footerFiles = Object.keys(zip.files).filter(
     (k) => k.startsWith("word/footer") && k.endsWith(".xml")
   );
@@ -266,26 +287,10 @@ export async function applyExellentHeaderFooter(
     let fXml = await zip.file(fFile)?.async("text");
     if (!fXml) continue;
 
-    // استبدال أرقام الهواتف بدقة
-    fXml = fXml.replace(/1111111111111/g, mobile);
-    fXml = fXml.replace(/1111111/g, phone);
-
-    // استبدال العنوان فقط إذا تم تغييره عن العنوان الافتراضي مع الحفاظ التام على بنية ومقاس الخط
     const defaultAddress = "عقار رقم 9 – شارع بيت الطالبات خلف مديرية الاسكان – دمنهور – البحيرة";
     const cleanAddress = (address || "").trim();
+    let formattedAddress = (cleanAddress || defaultAddress).replace(/^العنوان\s*:\s*/, "").trim();
 
-    if (cleanAddress && cleanAddress !== defaultAddress) {
-      let formattedAddress = cleanAddress;
-      if (formattedAddress.startsWith("العنوان :") || formattedAddress.startsWith("العنوان:")) {
-        formattedAddress = formattedAddress.replace(/^العنوان\s*:\s*/, "");
-      }
-      const addrPattern = /(<w:p\b[^>]*>(?:<w:pPr>[\s\S]*?<\/w:pPr>)?)(?:(?!<\/w:p>)[\s\S])*?العنوان\s*:\s*عقار رقم(?:(?!<\/w:p>)[\s\S])*?(<\/w:p>)/g;
-      const addrRun = `<w:r><w:rPr><w:rFonts w:ascii="Arial Unicode MS" w:eastAsia="Arial Unicode MS" w:hAnsi="Arial Unicode MS" w:cs="Arial Unicode MS"/><w:b/><w:bCs/><w:i/><w:iCs/><w:sz w:val="20"/><w:szCs w:val="20"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t xml:space="preserve">العنوان : ${formattedAddress}                               </w:t></w:r>`;
-      fXml = fXml.replace(addrPattern, `$1${addrRun}$2`);
-      fXml = fXml.replace(/عقار رقم 9 – شارع بيت الطالبات خلف مديرية الاسكان – دمنهور – البحيرة/g, formattedAddress);
-    }
-
-    // استبدال البريد الإلكتروني وتفاصيل التذييل بالمنطق الذكي المعتمد 100%
     const rawInput = (email || otherDetails || "").trim();
     let displayFooter = "";
     if (rawInput) {
@@ -305,11 +310,27 @@ export async function applyExellentHeaderFooter(
       displayFooter = "إيميل : exellentservice@gmail.com";
     }
 
+    // استبدال تاجات الفوتر النظيفة في نسختي Choice و Fallback بالتزامن التام
+    fXml = applyExellentTags(fXml, {
+      company_mobile: (params.phoneMobile || "01557018818").trim(),
+      company_address: formattedAddress,
+      company_email: displayFooter,
+      company_phone: (params.phoneWhatsapp || "01091708818").trim(),
+    });
+
+    // استبدال احتياطي للقوالب القديمة غير المحدثة
+    fXml = fXml.replace(/1111111111111/g, mobile);
+    fXml = fXml.replace(/1111111/g, phone);
+    if (cleanAddress && cleanAddress !== defaultAddress) {
+      const addrPattern = /(<w:p\b[^>]*>(?:<w:pPr>[\s\S]*?<\/w:pPr>)?)(?:(?!<\/w:p>)[\s\S])*?العنوان\s*:\s*عقار رقم(?:(?!<\/w:p>)[\s\S])*?(<\/w:p>)/g;
+      const addrRun = `<w:r><w:rPr><w:rFonts w:ascii="Arial Unicode MS" w:eastAsia="Arial Unicode MS" w:hAnsi="Arial Unicode MS" w:cs="Arial Unicode MS"/><w:b/><w:bCs/><w:i/><w:iCs/><w:sz w:val="20"/><w:szCs w:val="20"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t xml:space="preserve">العنوان : ${formattedAddress}                               </w:t></w:r>`;
+      fXml = fXml.replace(addrPattern, `$1${addrRun}$2`);
+      fXml = fXml.replace(/عقار رقم 9 – شارع بيت الطالبات خلف مديرية الاسكان – دمنهور – البحيرة/g, formattedAddress);
+    }
     fXml = fXml.replace(/تفاصيل أخرى\s*:\s*إيميل\s*WWWWWWWWWWW/g, displayFooter);
     fXml = fXml.replace(/تفاصيل أخرى\s*:\s*إيميل\s*/g, "");
     fXml = fXml.replace(/WWWWWWWWWWW/g, displayFooter);
 
-    // الحفاظ الكامل على إحداثيات ومقاسات مربعات النص الأصلية للقالب 100% دون أي تحريك أو إزاحة
     fXml = purgeExellentRedMarks(fXml);
     zip.file(fFile, fXml);
   }
@@ -330,57 +351,58 @@ export function applyExellentSignatures(
     additionalNotes?: string;
   }
 ): string {
-  const specTitle = escapeXml((params.specialistTitle || "المختص :").trim());
-  const spec = escapeXml((params.specialistName || "").trim());
-  const gmTitle = escapeXml((params.financeManagerTitle || "المدير العام").trim());
-  const gm = escapeXml((params.financeManagerName || "").trim());
-  const chairTitle = escapeXml((params.chairmanTitle || "يعتمد ،،،،،،").trim());
-  const chair = escapeXml((params.boardChairman || "رئيس مجلس الإدارة").trim());
+  const specTitle = (params.specialistTitle || "المختص :").trim();
+  const spec = (params.specialistName || "").trim() || " ";
+  const gmTitle = (params.financeManagerTitle || "المدير العام").trim();
+  const gm = (params.financeManagerName || "").trim() || " ";
+  const chairTitle = (params.chairmanTitle || "يعتمد ،،،،،،").trim();
+  const chair = (params.boardChairman || "رئيس مجلس الإدارة").trim();
 
-  // 1. تحديث وتصحيح عناوين الصف الأول بالجدول (المختص : / المدير العام / يعتمد)
-  docXml = docXml.replace(/(<w:t\b[^>]*>)\s*المدير\s*ا?العام\s*(<\/w:t>)/g, `$1${gmTitle}$2`);
+  // 1. استبدال التاجات النظيفة بجدول التوقيعات مباشرة
+  docXml = applyExellentTags(docXml, {
+    specialist_title: specTitle,
+    specialist_name: spec,
+    finance_manager_title: gmTitle,
+    finance_manager_name: gm,
+    chairman_title: chairTitle,
+    board_chairman: chair,
+  });
+
+  // 2. دعم احتياطي للقوالب القديمة
+  docXml = docXml.replace(/(<w:t\b[^>]*>)\s*المدير\s*ا?العام\s*(<\/w:t>)/g, `$1${escapeXml(gmTitle)}$2`);
   if (params.specialistTitle) {
-    docXml = docXml.replace(/(<w:t\b[^>]*>)\s*المختص\s*:?\s*(<\/w:t>)/g, `$1${specTitle}$2`);
+    docXml = docXml.replace(/(<w:t\b[^>]*>)\s*المختص\s*:?\s*(<\/w:t>)/g, `$1${escapeXml(specTitle)}$2`);
   }
   if (params.chairmanTitle) {
-    docXml = docXml.replace(/(<w:t\b[^>]*>)\s*يعتمد[\s\S]*?(<\/w:t>)/g, `$1${chairTitle}$2`);
+    docXml = docXml.replace(/(<w:t\b[^>]*>)\s*يعتمد[\s\S]*?(<\/w:t>)/g, `$1${escapeXml(chairTitle)}$2`);
   }
 
-  // 2. استبدال خلايا الصف الثاني بجدول التوقيعات الثلاثي بدقة متناهية عبر بنية الجدول (المختص | المدير العام | يعتمد)
   const sigTableRegex = /(<w:tbl\b[\s\S]*?<w:t[^>]*>[^<]*المختص[\s\S]*?<w:t[^>]*>[^<]*يعتمد[\s\S]*?<\/w:tr>\s*<w:tr\b[^>]*>[\s\S]*?<w:tc\b[^>]*>)([\s\S]*?)(<\/w:tc>\s*<w:tc\b[^>]*>)([\s\S]*?)(<\/w:tc>\s*<w:tc\b[^>]*>)([\s\S]*?)(<\/w:tc>[\s\S]*?<\/w:tr>[\s\S]*?<\/w:tbl>)/;
-  
   if (sigTableRegex.test(docXml)) {
     docXml = docXml.replace(
       sigTableRegex,
       (_match, trStart, cell1Content, sep1, cell2Content, sep2, cell3Content, cell3End) => {
-        const newCell1 = cell1Content
-          .replace(/<w:highlight\s+[^>]*\/>/g, "")
-          .replace(/<w:t\b[^>]*>[\s\S]*?<\/w:t>/g, `<w:t>${spec || " "}</w:t>`);
-        const newCell2 = cell2Content
-          .replace(/<w:highlight\s+[^>]*\/>/g, "")
-          .replace(/<w:t\b[^>]*>[\s\S]*?<\/w:t>/g, `<w:t>${gm || " "}</w:t>`);
-        const newCell3 = cell3Content
-          .replace(/<w:highlight\s+[^>]*\/>/g, "")
-          .replace(/<w:t\b[^>]*>[\s\S]*?<\/w:t>/g, `<w:t>${chair || "رئيس مجلس الإدارة"}</w:t>`);
+        const newCell1 = cell1Content.replace(/<w:highlight\s+[^>]*\/>/g, "").replace(/<w:t\b[^>]*>[\s\S]*?<\/w:t>/g, `<w:t>${escapeXml(spec)}</w:t>`);
+        const newCell2 = cell2Content.replace(/<w:highlight\s+[^>]*\/>/g, "").replace(/<w:t\b[^>]*>[\s\S]*?<\/w:t>/g, `<w:t>${escapeXml(gm)}</w:t>`);
+        const newCell3 = cell3Content.replace(/<w:highlight\s+[^>]*\/>/g, "").replace(/<w:t\b[^>]*>[\s\S]*?<\/w:t>/g, `<w:t>${escapeXml(chair)}</w:t>`);
         return `${trStart}${newCell1}${sep1}${newCell2}${sep2}${newCell3}${cell3End}`;
       }
     );
   }
 
-  // استبدال احتياطي على مستوى النصوص والخلايا الفردية داخل عناصر w:t حصراً
-  docXml = docXml.replace(/(<w:t\b[^>]*>)\s*أحمد محمد\s*(<\/w:t>)/g, `$1${spec || " "}$2`);
-  docXml = docXml.replace(/(<w:t\b[^>]*>)\s*اسم\s*(<\/w:t>)/g, `$1${gm || " "}$2`);
-  docXml = docXml.replace(/(<w:t\b[^>]*>)\s*\.{12,25}\s*(<\/w:t>)/g, `$1${chair || "رئيس مجلس الإدارة"}$2`);
+  docXml = docXml.replace(/(<w:t\b[^>]*>)\s*أحمد محمد\s*(<\/w:t>)/g, `$1${escapeXml(spec)}$2`);
+  docXml = docXml.replace(/(<w:t\b[^>]*>)\s*اسم\s*(<\/w:t>)/g, `$1${escapeXml(gm)}$2`);
+  docXml = docXml.replace(/(<w:t\b[^>]*>)\s*\.{12,25}\s*(<\/w:t>)/g, `$1${escapeXml(chair)}$2`);
 
-  // إزالة سطر "خانه خاليه للملاحظات"
   docXml = docXml.replace(
     /<w:p\b[^>]*>(?:(?!<\/w:p>)[\s\S])*?خانه خاليه للملاحظات(?:(?!<\/w:p>)[\s\S])*?<\/w:p>/gi,
     ""
   );
 
-  // خانة الملاحظات الإضافية: إما ملؤها بالقيمة الفعلية أو حذف السطر عند الفراغ لمنع النقط المشوهة
+  // خانة الملاحظات الإضافية: ملء {additional_notes} أو حذف السطر عند الفراغ
   if (params.additionalNotes && params.additionalNotes.trim()) {
     const safeNote = escapeXml(params.additionalNotes.trim());
+    docXml = docXml.split("{additional_notes}").join(safeNote);
     docXml = docXml.replace(
       /(<w:p\b[^>]*>(?:(?!<\/w:p>)[\s\S])*?اضافية[\s\S]*?<w:t[^>]*>)\s*\.{5,}\s*(<\/w:t>[\s\S]*?<\/w:p>)/gi,
       `$1${safeNote}$2`
@@ -390,6 +412,7 @@ export function applyExellentSignatures(
       /<w:p\b[^>]*>(?:(?!<\/w:p>)[\s\S])*?اضافية[\s\S]*?<\/w:p>/gi,
       ""
     );
+    docXml = docXml.split("{additional_notes}").join("");
   }
 
   return docXml;
@@ -427,7 +450,7 @@ export function formatTenderMethod(rawMethod?: string): { cleanMethod: string; m
 }
 
 /**
- * استبدال السطر التوجيهي (السيد الأستاذ / جهة الإسناد) بدقة وإزالة أي "الساده" مسبقة
+ * استبدال السطر التوجيهي (السيد الأستاذ / جهة الإسناد) بدقة
  */
 export function applyExellentRecipient(
   docXml: string,
@@ -436,15 +459,22 @@ export function applyExellentRecipient(
 ): string {
   const rawPrefix = (prefix || "الأستاذ").trim();
   const cleanPrefix = rawPrefix.replace(/^(?:الساده|السادة)\s*/, "").trim() || "الأستاذ";
-  const t = escapeXml((titleAndAuthority || "مدير الادارة العامة للمشتريات والمخازن").trim());
+  const authorityText = (titleAndAuthority || "مدير الادارة العامة للمشتريات والمخازن").trim();
 
+  if (docXml.includes("{recipient_title}") || docXml.includes("{recipient_entity}")) {
+    docXml = applyExellentTags(docXml, {
+      recipient_title: cleanPrefix,
+      recipient_entity: authorityText,
+    });
+  }
+
+  const t = escapeXml(authorityText);
   if (docXml.includes("مدير الادارة العامة للمشتريات والمخازن بجامعة دمنهور")) {
     docXml = docXml.replace(/مدير الادارة العامة للمشتريات والمخازن بجامعة دمنهور/g, t);
     docXml = docXml.replace(/(<w:t[^>]*>)الأستاذ(<\/w:t>)/g, `$1${escapeXml(cleanPrefix)}$2`);
     return docXml;
   }
 
-  // استبدال نصوص المرسل إليه داخل وسوم w:t حصراً لحفظ تنسيقات وخصائص القالب الأصلية كاملة
   let replaced = false;
   docXml = docXml.replace(/<w:p\b[\s\S]*?<\/w:p>/g, (pXml) => {
     if (replaced) return pXml;
@@ -477,12 +507,18 @@ export function applyExellentTenderMethod(
   const baXml = escapeXml(methodWithBa);
   const clXml = escapeXml(cleanMethod);
 
-  // تثبيت كلمة "والخاصة" بالتاء المربوطة دائماً وأبداً في كافة خطابات إكسلنت
+  // استبدال تاج {tender_method} بسياقه الصحيح (مع "والخاصة" يسبقها بالباء، ومع "وذلك في" بدون الباء)
+  docXml = docXml.replace(/والخاصة\s*<\/w:t><\/w:r><w:r\b[^>]*><w:rPr>[\s\S]*?<\/w:rPr><w:t[^>]*>\{tender_method\}/g, (m) =>
+    m.replace("{tender_method}", baXml)
+  );
+  docXml = docXml.replace(/والخاصة\s+\{tender_method\}/g, `والخاصة ${baXml}`);
+  docXml = docXml.split("{tender_method}").join(clXml);
+
+  // تثبيت كلمة "والخاصة" بالتاء المربوطة + دعم القوالب القديمة
   docXml = docXml.replace(/والخاص\s+بالمناقصة/g, "والخاصة بالمناقصة");
   docXml = docXml.replace(/والخاص\s+/g, "والخاصة ");
   docXml = docXml.replace(/والخاص(?=[^\u0621-\u064A])/g, "والخاصة");
 
-  // استبدال دقيق لطريقة الطرح بالمناقصة المحدودة / المناقصة المحدودة بدون تخريب أي نصوص سابقة
   docXml = docXml.replace(/(\(?)\s*بالمناقصة\s+المحدودة\s*(\)?)/g, baXml);
   docXml = docXml.replace(/(\(?)\s*المناقصة\s+المحدودة\s*(\)?)/g, clXml);
 
@@ -490,7 +526,7 @@ export function applyExellentTenderMethod(
 }
 
 /**
- * استبدال بيانات العملية المشتركة والمندوب وسنوات الطرح بدقة واحترافية وبشكل محصور داخل الفقرة الواحدة
+ * استبدال بيانات العملية المشتركة والمندوب وسنوات الطرح بدقة واحترافية
  */
 export function applyExellentCommonDetails(
   docXml: string,
@@ -506,6 +542,18 @@ export function applyExellentCommonDetails(
     delegatePowers?: string;
   }
 ): string {
+  docXml = applyExellentTags(docXml, {
+    process_name: params.operationRegisteredName !== undefined ? (params.operationRegisteredName || "") : undefined,
+    process_number: params.operationNumber !== undefined ? (params.operationNumber || "365") : undefined,
+    tender_purpose: params.operationScope !== undefined ? (params.operationScope || "") : undefined,
+    fiscal_year: params.fiscalYear !== undefined ? (params.fiscalYear || "") : undefined,
+    session_date: params.technicalOpeningDate !== undefined ? (params.technicalOpeningDate || "") : undefined,
+    delegate_name: params.delegateName !== undefined ? (params.delegateName || "") : undefined,
+    delegate_role: params.delegateTitle !== undefined ? (params.delegateTitle || "") : undefined,
+    delegate_national_id: params.delegateNationalId !== undefined ? (params.delegateNationalId || "") : undefined,
+    delegate_powers: params.delegatePowers || "والتوقيع على العقود واستلام الخطابات والمكاتبات الرسميه",
+  });
+
   if (params.operationRegisteredName !== undefined) {
     docXml = docXml.replace(/اسم العملية المسجله/g, escapeXml(params.operationRegisteredName || ""));
   }
@@ -678,6 +726,11 @@ export async function generateExellentInsurancePaymentDocx(params: {
   docXml = applyExellentRecipient(docXml, params.recipientPrefix, params.recipientTitleAndAuthority);
   docXml = applyExellentTenderMethod(docXml, params.tenderMethod);
   docXml = applyExellentCommonDetails(docXml, params);
+  const cleanPayTafqeet = cleanTafqeetForTemplate(params.insuranceTafqeet);
+  docXml = applyExellentTags(docXml, {
+    insurance_amount_digits: params.insuranceAmount || "10000",
+    insurance_amount_words: cleanPayTafqeet ? `${cleanPayTafqeet} جنيه` : (params.insuranceTafqeet || "عشرة ألاف جنيه"),
+  });
   if (params.insuranceAmount) {
     docXml = docXml.replace(/10000/g, escapeXml(params.insuranceAmount));
   }
@@ -746,11 +799,14 @@ export async function generateExellentBookletAndInsuranceDocx(params: {
     docXml = injectSingleQrIntoDocXml(docXml, qrXml, escapeXml(params.registrationNumber || ""));
   }
 
-  const { cleanMethod, methodWithBa } = formatTenderMethod(params.tenderMethod);
-
   docXml = applyExellentRecipient(docXml, params.recipientPrefix, params.recipientTitleAndAuthority);
   docXml = applyExellentTenderMethod(docXml, params.tenderMethod);
   docXml = applyExellentCommonDetails(docXml, params);
+  const cleanBiTafqeet = cleanTafqeetForTemplate(params.insuranceTafqeet);
+  docXml = applyExellentTags(docXml, {
+    insurance_amount_digits: params.insuranceAmount || "10000",
+    insurance_amount_words: cleanBiTafqeet ? `${cleanBiTafqeet} جنيه` : (params.insuranceTafqeet || "عشرة ألاف جنيه"),
+  });
   if (params.insuranceAmount) {
     docXml = docXml.replace(/10000/g, escapeXml(params.insuranceAmount));
   }
@@ -829,144 +885,85 @@ export async function generateExellentBankGuaranteeDocx(params: {
     docXml = injectSingleQrIntoDocXml(docXml, qrXml, escapeXml(params.registrationNumber || ""));
   }
 
-  const { cleanMethod, methodWithBa } = formatTenderMethod(params.tenderMethod);
   const isInitial = params.guaranteeType === "ابتدائي";
-
+  const gTypeWord = isInitial ? "ابتدائي" : "نهائي";
   const rawBankPrefix = (params.bankRecipientPrefix || "الأستاذ").trim();
   const cleanBankPrefix = rawBankPrefix.replace(/^(?:السيد|السادة|الساده)\s+/, "").trim() || "الأستاذ";
+
+  const rawBgTafqeet = cleanTafqeetForTemplate(params.bankGuaranteeTafqeet);
+  const cleanBgTafqeet = rawBgTafqeet.replace(/(?:جنيها[ً|اً]?\s*)?(?:مصريا[ً|اً]?\s*)?لا\s*غير\s*$/g, "").trim();
+  const rawTotalTafqeet = cleanTafqeetForTemplate(params.operationTotalTafqeet);
+  const cleanTotalTafqeet = rawTotalTafqeet.replace(/(?:جنيها[ً|اً]?\s*)?(?:مصريا[ً|اً]?\s*)?لا\s*غير\s*$/g, "").trim();
+  const rateStr = params.guaranteePercentage || "5 %";
+  const bgAmount = params.bankGuaranteeAmount || "";
+  const totalAmount = params.operationTotalAmount || "";
+  const durationVal = (params.guaranteeDurationText || "سنة").trim();
+  const sigName = params.authorizedSignatoryName || params.accountOwnerName || "إيهاب كامل عبدربه محمد";
+
+  // 1. استبدال التاجات النظيفة مباشرة في قالب خطاب الضمان
+  docXml = applyExellentTags(docXml, {
+    recipient_title: cleanBankPrefix,
+    bank_name: params.bankName || "مصر",
+    bank_branch: params.bankBranch || "دمنهور",
+    guarantee_type: gTypeWord,
+    recipient_entity: params.authorityName || "",
+    recipient_address: params.authorityAddress || "",
+    request_action: params.actionText || "إصدار خطاب ضمان",
+    guarantee_amount_digits: bgAmount || totalAmount || "",
+    guarantee_amount_words: cleanBgTafqeet || cleanTotalTafqeet || "",
+    guarantee_percentage: rateStr,
+    operation_total_digits: totalAmount || bgAmount || "",
+    operation_total_words: cleanTotalTafqeet || cleanBgTafqeet || "",
+    guarantee_duration: durationVal,
+    guarantee_start_date: params.guaranteeStartDate || "",
+    guarantee_end_date: params.guaranteeEndDate || "",
+    bank_account_number: params.bankAccountNumber || "",
+    account_bank_name: (params.accountBankName || "مصر الاسلامى").trim(),
+    account_bank_branch: (params.accountBankBranch || params.bankBranch || "دمنهور").trim(),
+    account_holder_name: params.accountOwnerName || "إيهاب كامل عبدربه محمد",
+    account_national_id: params.accountOwnerNationalId || "",
+    board_chairman: sigName,
+  });
+
+  // 2. دعم القوالب القديمة واستكمال طريقة الطرح والبيانات المشتركة
   docXml = docXml.replace(/الأستاذ/g, escapeXml(cleanBankPrefix));
 
-  // 1. عنوان وتوجيه البنك في السطر الأول بدقة بدون تكرارات
   const bankTitle = (params.bankRecipientTitle || `مدير بنك ${params.bankName || "مصر"} فرع ${params.bankBranch || "دمنهور"}`).trim();
-  const bankRecipRegex = /(<w:t[^>]*>\s*\/\s*<\/w:t><\/w:r>)([\s\S]*?)(<\/w:p>)/;
-  if (bankRecipRegex.test(docXml)) {
-    docXml = docXml.replace(
-      bankRecipRegex,
-      `$1<w:r><w:rPr><w:rFonts w:ascii="Arabic Typesetting" w:hAnsi="Arabic Typesetting" w:cs="Arabic Typesetting" w:hint="cs"/><w:b/><w:bCs/><w:sz w:val="28"/><w:szCs w:val="28"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t xml:space="preserve"> ${escapeXml(bankTitle)}</w:t></w:r>$3`
-    );
+  if (!docXml.includes(escapeXml(params.bankName || "مصر"))) {
+    const bankRecipRegex = /(<w:t[^>]*>\s*\/\s*<\/w:t><\/w:r>)([\s\S]*?)(<\/w:p>)/;
+    if (bankRecipRegex.test(docXml)) {
+      docXml = docXml.replace(
+        bankRecipRegex,
+        `$1<w:r><w:rPr><w:rFonts w:ascii="Arabic Typesetting" w:hAnsi="Arabic Typesetting" w:cs="Arabic Typesetting" w:hint="cs"/><w:b/><w:bCs/><w:sz w:val="28"/><w:szCs w:val="28"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t xml:space="preserve"> ${escapeXml(bankTitle)}</w:t></w:r>$3`
+      );
+    }
   }
 
-  // 2. نوع التأمين (ابتدائي / نهائي)
   docXml = docXml.replace(/سداد\s*تأمين\s*نهائي/g, `سداد تأمين ${isInitial ? "ابتدائي" : "نهائي"}`);
   docXml = docXml.replace(/قيمة\s*التأمين\s*النهائي/g, `قيمة التأمين ${isInitial ? "الابتدائي" : "النهائي"}`);
-
-  // 3. اسم العملية ورقمها
-  docXml = docXml.replace(/اسم العملية المسجله/g, escapeXml(params.operationRegisteredName || ""));
-  docXml = docXml.replace(/365/g, escapeXml(params.operationNumber || "365"));
-
-  // 4. استبدال جهة الإسناد وعنوانها عبر regex محصور يمنع تلويث العناوين
-  const authRegex = /(<w:t[^>]*>[^<]*لدى\s*الجهه\s*<\/w:t><\/w:r>)([\s\S]*?)(<w:r\b[^>]*>(?:(?!<\/w:r>)[\s\S])*?<w:t[^>]*>[^<]*وعنوانها\s*:\s*<\/w:t>[\s\S]*?<\/w:r>)([\s\S]*?)(<\/w:p>)/;
-  if (authRegex.test(docXml)) {
-    docXml = docXml.replace(authRegex, (m, a1, _oldAuth, a2, _oldAddr, endP) => {
-      const newAuthRun = `<w:r><w:rPr><w:rFonts w:hint="cs"/><w:b/><w:bCs/><w:sz w:val="28"/><w:szCs w:val="28"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t xml:space="preserve"> ${escapeXml(params.authorityName || "")} </w:t></w:r>`;
-      const newAddrRun = `<w:r><w:rPr><w:rFonts w:hint="cs"/><w:b/><w:bCs/><w:sz w:val="28"/><w:szCs w:val="28"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t xml:space="preserve"> ${escapeXml(params.authorityAddress || "")} </w:t></w:r>`;
-      return `${a1}${newAuthRun}${a2}${newAddrRun}${endP}`;
-    });
-  } else {
-    docXml = docXml.replace(/مديرية الصحة بالبحيرة/g, escapeXml(params.authorityName || ""));
-    docXml = docXml.replace(/البحيرة\s*–\s*دمنهور\s*-\s*خلف مستشفى الصدر/g, escapeXml(params.authorityAddress || ""));
-  }
-
-  // 5. متن الخطاب: مبالغ وتفقيط وطريقة الطرح ونطاق العملية والمدد
-  if (params.actionText) {
-    docXml = docXml.replace(/قبول\s*إصدار\s*خطاب\s*ضمان/g, escapeXml(params.actionText));
-  }
 
   docXml = applyExellentTenderMethod(docXml, params.tenderMethod);
   docXml = applyExellentCommonDetails(docXml, params);
 
-  // استبدال مبالغ ونسبة الضمان وإجمالي العملية بدقة تامة وبدون تكرار
-  const rawBgTafqeet = cleanTafqeetForTemplate(params.bankGuaranteeTafqeet);
-  const cleanBgTafqeet = rawBgTafqeet.replace(/(?:جنيها[ً|اً]?\s*)?(?:مصريا[ً|اً]?\s*)?لا\s*غير\s*$/g, "").trim();
+  docXml = docXml.replace(/مديرية الصحة بالبحيرة/g, escapeXml(params.authorityName || ""));
+  docXml = docXml.replace(/البحيرة\s*–\s*دمنهور\s*-\s*خلف مستشفى الصدر/g, escapeXml(params.authorityAddress || ""));
 
-  const rawTotalTafqeet = cleanTafqeetForTemplate(params.operationTotalTafqeet);
-  const cleanTotalTafqeet = rawTotalTafqeet.replace(/(?:جنيها[ً|اً]?\s*)?(?:مصريا[ً|اً]?\s*)?لا\s*غير\s*$/g, "").trim();
-
-  const rateStr = params.guaranteePercentage || "5 %";
-  const bgAmount = params.bankGuaranteeAmount || "";
-  const totalAmount = params.operationTotalAmount || "";
-
-  const amountPattern = /(<w:t[^>]*>[^<]*باجمالى\s*نسبة[^<]*<\/w:t>[\s\S]*?<w:t[^>]*>[^<]*جنيها\s*لا\s*غير[^<]*<\/w:t>)/;
-
-  let amountPhraseText = "";
-  if (totalAmount && bgAmount && totalAmount !== bgAmount) {
-    const finalTafqeet = cleanBgTafqeet || cleanTotalTafqeet;
-    amountPhraseText = `باجمالى نسبة ${rateStr} من مبلغ العمليه وقيمتها ${totalAmount} جنيها ومبلغ الضمان المطلوب ${bgAmount} فقط وقدره : ${finalTafqeet} جنيها لا غير`;
-  } else if (bgAmount) {
-    amountPhraseText = `باجمالى نسبة ${rateStr} من مبلغ العمليه ومبلغ الضمان المطلوب ${bgAmount} فقط وقدره : ${cleanBgTafqeet || cleanTotalTafqeet} جنيها لا غير`;
-  } else if (totalAmount) {
-    amountPhraseText = `باجمالى نسبة ${rateStr} من مبلغ العمليه وقيمتها ${totalAmount} فقط وقدره : ${cleanTotalTafqeet} جنيها لا غير`;
-  } else {
-    amountPhraseText = `باجمالى نسبة ${rateStr} من مبلغ العمليه وقيمتها 47547 فقط وقدره : سبعه وأربعون ألفا وخمسمائة وسبعه وأربعون جنيها لا غير`;
+  if (params.actionText) {
+    docXml = docXml.replace(/قبول\s*إصدار\s*خطاب\s*ضمان/g, escapeXml(params.actionText));
   }
 
-  if (amountPattern.test(docXml)) {
-    docXml = docXml.replace(amountPattern, `<w:t xml:space="preserve">${escapeXml(amountPhraseText)}</w:t>`);
-  } else {
-    docXml = docXml.replace(/5\s*%/g, escapeXml(rateStr));
-    docXml = docXml.replace(/47547/g, escapeXml(bgAmount || totalAmount || ""));
-    if (cleanBgTafqeet) {
-      docXml = docXml.replace(/سبعه وأربعون ألفا وخمسمائة وسبعه وأربعون/g, escapeXml(cleanBgTafqeet));
-    }
-  }
-
-  const durationVal = (params.guaranteeDurationText || "سنة").trim();
-  const durationRegex = /(<w:t[^>]*>[^<]*ومدة\s*الارتباط\s*بالتأمين[^<]*<\/w:t><\/w:r>)([\s\S]*?)(<w:r\b[^>]*>(?:(?!<\/w:r>)[\s\S])*?<w:t[^>]*>[^<]*تبدأ\s*من[^<]*<\/w:t>[\s\S]*?<\/w:r>)/;
-  if (durationRegex.test(docXml)) {
-    docXml = docXml.replace(
-      durationRegex,
-      `$1<w:r><w:rPr><w:rFonts w:hint="cs"/><w:b/><w:bCs/><w:sz w:val="32"/><w:szCs w:val="32"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t xml:space="preserve"> ${escapeXml(durationVal)} </w:t></w:r>$3`
-    );
-  } else {
-    docXml = docXml.replace(
-      /(?:<w:t[^>]*>\s*)?سنتين[\s\S]*?ثلاثة\s*أشهر(?:\s*<\/w:t>)?/g,
-      `<w:t xml:space="preserve"> ${escapeXml(durationVal)} </w:t>`
-    );
+  docXml = docXml.replace(/5\s*%/g, escapeXml(rateStr));
+  docXml = docXml.replace(/47547/g, escapeXml(bgAmount || totalAmount || ""));
+  if (cleanBgTafqeet) {
+    docXml = docXml.replace(/سبعه وأربعون ألفا وخمسمائة وسبعه وأربعون/g, escapeXml(cleanBgTafqeet));
   }
   docXml = docXml.replace(/سنتين[\s\S]*?ثلاثة أشهر/g, escapeXml(durationVal));
   docXml = docXml.replace(/12\/12\/2027/g, escapeXml(params.guaranteeStartDate || ""));
   docXml = docXml.replace(/12\/12\s*\/2028/g, escapeXml(params.guaranteeEndDate || ""));
-
-  // 6. بيانات الحساب البنكي المسجل (رقم الحساب + اسم البنك والفرع محصوراً داخل فقرته)
   docXml = docXml.replace(/2670220000004113/g, escapeXml(params.bankAccountNumber || ""));
-
-  const accBankPRegex = /(<w:p\b[^>]*>(?:(?!<\/w:p>)[\s\S])*?مصر\s*الاسلامى[\s\S]*?<\/w:p>)/;
-  if (accBankPRegex.test(docXml)) {
-    docXml = docXml.replace(accBankPRegex, (pXml) => {
-      let updatedP = pXml;
-      const accBank = (params.accountBankName || "مصر الاسلامى").trim();
-      const accBranch = (params.accountBankBranch || params.bankBranch || "دمنهور").trim();
-      updatedP = updatedP.replace(/(<w:t[^>]*>)\s*مصر\s*الاسلامى\s*(<\/w:t>)/g, `$1${escapeXml(accBank)}$2`);
-      updatedP = updatedP.replace(/(<w:t[^>]*>)\s*دمنهور\s*(<\/w:t>)/g, `$1${escapeXml(accBranch)}$2`);
-      return updatedP;
-    });
-  } else {
-    docXml = docXml.replace(/مصر الاسلامى/g, escapeXml(params.accountBankName || "مصر الاسلامى"));
-  }
-
-  // 7. اسم صاحب الحساب والرقم القومي
-  const nameRegex = /(<w:t[^>]*>[^<]*بإس[ـ]*م\s*:\s*<\/w:t><\/w:r>)([\s\S]*?)(<\/w:p>)/;
-  if (nameRegex.test(docXml)) {
-    docXml = docXml.replace(
-      nameRegex,
-      `$1<w:r><w:rPr><w:rFonts w:ascii="Arabic Typesetting" w:hAnsi="Arabic Typesetting" w:cs="Arabic Typesetting"/><w:b/><w:bCs/><w:sz w:val="28"/><w:szCs w:val="28"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t xml:space="preserve"> ${escapeXml(params.accountOwnerName || "إيهاب كامل عبدربه محمد")} </w:t></w:r>$3`
-    );
-  } else {
-    docXml = docXml.replace(/ســـحر حسن محمد أحمد عبد السلام(?:\s+جولدن سرفيس)?/g, escapeXml(params.accountOwnerName || "إيهاب كامل عبدربه محمد"));
-  }
-
-  const nidRegex = /(<w:t[^>]*>[^<]*رق[ـ]*م\s*قومى\s*:\s*<\/w:t><\/w:r>)([\s\S]*?)(<\/w:p>)/;
-  if (nidRegex.test(docXml)) {
-    docXml = docXml.replace(
-      nidRegex,
-      `$1<w:r><w:rPr><w:rFonts w:ascii="Arabic Typesetting" w:hAnsi="Arabic Typesetting" w:cs="Arabic Typesetting"/><w:b/><w:bCs/><w:sz w:val="28"/><w:szCs w:val="28"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t xml:space="preserve">     ${escapeXml(params.accountOwnerNationalId || "")} </w:t></w:r>$3`
-    );
-  } else {
-    docXml = docXml.replace(/28912111802623/g, escapeXml(params.accountOwnerNationalId || ""));
-  }
-
-  // 8. التوقيع بأسفل الصفحة
-  const sigName = params.authorizedSignatoryName || params.accountOwnerName || "إيهاب كامل عبدربه محمد";
+  docXml = docXml.replace(/مصر الاسلامى/g, escapeXml(params.accountBankName || "مصر الاسلامى"));
+  docXml = docXml.replace(/ســـحر حسن محمد أحمد عبد السلام(?:\s+جولدن سرفيس)?/g, escapeXml(params.accountOwnerName || "إيهاب كامل عبدربه محمد"));
+  docXml = docXml.replace(/28912111802623/g, escapeXml(params.accountOwnerNationalId || ""));
   docXml = docXml.replace(/إيهاب كامل عبدربه محمد/g, escapeXml(sigName));
 
   docXml = docXml.replace(
@@ -1034,12 +1031,29 @@ export async function generateExellentInsuranceDeductionOtherDocx(params: {
 
   let docXml = await zip.file("word/document.xml")!.async("text");
 
+  if (params.qrBinary) {
+    const qrXml = buildQrAnchorXml();
+    docXml = injectSingleQrIntoDocXml(docXml, qrXml, escapeXml(params.registrationNumber || ""));
+  }
+
   // 1. تطبيق السطر التوجيهي وطريقة الطرح وبيانات العملية والمندوب بدقة
   docXml = applyExellentRecipient(docXml, params.recipientPrefix, params.recipientTitleAndAuthority);
   docXml = applyExellentTenderMethod(docXml, params.tenderMethod);
   docXml = applyExellentCommonDetails(docXml, params);
 
-  // 2. استبدال مبالغ التأمين الابتدائي وتفقيطه
+  // 2. استبدال التاجات النظيفة لمبالغ التأمين وتفاصيل الخصم
+  const cleanDedTafqeet = cleanTafqeetForTemplate(params.insuranceTafqeet);
+  docXml = applyExellentTags(docXml, {
+    insurance_amount_digits: params.insuranceAmount || "10000",
+    insurance_amount_words: cleanDedTafqeet ? `${cleanDedTafqeet} جنيه` : (params.insuranceTafqeet || "عشرة ألاف جنيه"),
+    deduction_operation_name: (params.deductionOperationName || "").trim(),
+    deduction_month: (params.deductionMonth || "").trim(),
+    deduction_year: (params.deductionYear || "").trim(),
+    guarantee_percentage: "5 %",
+    operation_total_digits: "",
+    operation_total_words: "",
+  });
+
   if (params.insuranceAmount) {
     docXml = docXml.replace(/10000/g, escapeXml(params.insuranceAmount));
   }
@@ -1047,7 +1061,6 @@ export async function generateExellentInsuranceDeductionOtherDocx(params: {
     docXml = docXml.replace(/عشرة\s+[أاآ]لاف\s+جنيه/g, escapeXml(params.insuranceTafqeet));
   }
 
-  // 3. استبدال بيانات العملية المخصوم منها مستحقات الشركة والشهر والسنة بدقة داخل عناصر w:t
   const safeDedOp = (params.deductionOperationName || "").trim();
   const safeDedMonth = (params.deductionMonth || "").trim();
   const safeDedYear = (params.deductionYear || "").trim();
@@ -1065,12 +1078,11 @@ export async function generateExellentInsuranceDeductionOtherDocx(params: {
     docXml = docXml.replace(/لديكم/g, `لدى ${escapeXml(params.deductionEntityName.trim())}`);
   }
 
-  // 4. التوقيعات والاعتماد الثلاثي والملاحظات الإضافية
   docXml = applyExellentSignatures(docXml, params);
   docXml = purgeExellentRedMarks(docXml);
+  docXml = cleanDocxRepetitions(docXml);
   zip.file("word/document.xml", docXml);
 
-  // 5. ترويسات وتذييلات الشركة
   await applyExellentHeaderFooter(zip, params);
 
   return await zip.generateAsync({
@@ -1133,63 +1145,68 @@ export async function generateExellentDeclarationSpecsDocx(params: {
   // 1. استبدال فقرة المرسل إليه
   docXml = applyExellentRecipient(docXml, params.recipientPrefix, params.recipientTitleAndAuthority);
 
-  // 2. استبدال فقرة التمهيد بالكامل (تمهيد : إقرار الإلتزام بكراسة الشروط والمواصفات لعملية ... رقم ...)
+  // 2. استبدال التاجات النظيفة مباشرة مع دعم احتياطي للقوالب القديمة
   const pTitle = (params.preambleTitle || "إقرار الإلتزام بكراسة الشروط والمواصفات").trim();
   const opRegName = (params.operationRegisteredName || "").trim();
   const opNum = (params.operationNumber || "365").trim();
-  const preambleParagraphXml =
-    `<w:p><w:pPr><w:spacing w:before="240" w:after="0" w:line="240" w:lineRule="auto"/><w:jc w:val="both"/><w:rPr><w:rFonts w:asciiTheme="minorHAnsi" w:hAnsiTheme="minorHAnsi" w:cstheme="minorHAnsi"/><w:b/><w:bCs/><w:sz w:val="28"/><w:szCs w:val="28"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr></w:pPr>` +
-    `<w:r><w:rPr><w:rFonts w:asciiTheme="minorHAnsi" w:hAnsiTheme="minorHAnsi" w:cstheme="minorHAnsi"/><w:b/><w:bCs/><w:sz w:val="28"/><w:szCs w:val="28"/><w:u w:val="single"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t xml:space="preserve">تمهيد  : </w:t></w:r>` +
-    `<w:r><w:rPr><w:rFonts w:asciiTheme="minorHAnsi" w:hAnsiTheme="minorHAnsi" w:cstheme="minorHAnsi"/><w:b/><w:bCs/><w:sz w:val="28"/><w:szCs w:val="28"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t>${escapeXml(pTitle)} لعملية </w:t></w:r>` +
-    `<w:r><w:rPr><w:rFonts w:asciiTheme="minorHAnsi" w:hAnsiTheme="minorHAnsi" w:cstheme="minorHAnsi"/><w:b/><w:bCs/><w:sz w:val="28"/><w:szCs w:val="28"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t>${escapeXml(opRegName)}</w:t></w:r>` +
-    `<w:r><w:rPr><w:rFonts w:asciiTheme="minorHAnsi" w:hAnsiTheme="minorHAnsi" w:cstheme="minorHAnsi"/><w:b/><w:bCs/><w:sz w:val="28"/><w:szCs w:val="28"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t xml:space="preserve"> رقم   </w:t></w:r>` +
-    `<w:r><w:rPr><w:rFonts w:asciiTheme="minorHAnsi" w:hAnsiTheme="minorHAnsi" w:cstheme="minorHAnsi"/><w:b/><w:bCs/><w:sz w:val="28"/><w:szCs w:val="28"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t>${escapeXml(opNum)}</w:t></w:r></w:p>`;
-
-  docXml = docXml.replace(/<w:p\b(?:(?!<\/w:p>)[\s\S])*?تمهيد[\s\S]*?<\/w:p>/, preambleParagraphXml);
-
-  // 3. استبدال متن الإقرار الرئيسي بالكامل (تقر ... بأنها ملتزمة ... وذلك في ... وطبيعتها ... طرفكم للعام المالي ... والمحدد لها جلسة ... لفتح المظروف الفنى .)
   const company = (params.companyName || "اكسلانت سرفيس للنظافه والصيانه والنقل والخدمات والتوريدات").trim();
-  const commitment = (params.commitmentDetails || "بكل ما جاء بكراسة الشروط والمواصفات وتوضح").trim();
+  const commitment = (params.commitmentDetails || "بكل ما جاء بكراسة الشروط والمواصفات").trim();
   const { cleanMethod } = formatTenderMethod(params.tenderMethod);
   const scope = (params.operationScope || "توريد كاوتش وبطاريات للسيارات للجامعه").trim();
   const fYear = (params.fiscalYear || "2024 / 2025").trim();
   const oDate = (params.technicalOpeningDate || "14/ 1 /2024").trim();
 
-  const declarationParagraphXml =
-    `<w:p w14:paraId="071B403A" w14:textId="602CD6E1" w:rsidR="00482D1C" w:rsidRPr="00115CF9" w:rsidRDefault="00482D1C" w:rsidP="000A0E50">` +
-    `<w:pPr><w:spacing w:after="0" w:line="240" w:lineRule="auto"/><w:ind w:left="-41"/><w:jc w:val="highKashida"/><w:rPr><w:rFonts w:asciiTheme="minorHAnsi" w:hAnsiTheme="minorHAnsi" w:cstheme="minorHAnsi"/><w:b/><w:bCs/><w:sz w:val="32"/><w:szCs w:val="32"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr></w:pPr>` +
-    `<w:r><w:rPr><w:rFonts w:asciiTheme="minorHAnsi" w:hAnsiTheme="minorHAnsi" w:cstheme="minorHAnsi"/><w:b/><w:bCs/><w:sz w:val="32"/><w:szCs w:val="32"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t xml:space="preserve">تقر </w:t></w:r>` +
-    `<w:r><w:rPr><w:rFonts w:asciiTheme="minorHAnsi" w:hAnsiTheme="minorHAnsi" w:cstheme="minorHAnsi"/><w:b/><w:bCs/><w:sz w:val="32"/><w:szCs w:val="32"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t>${escapeXml(company)}</w:t></w:r>` +
-    `<w:r><w:rPr><w:rFonts w:asciiTheme="minorHAnsi" w:hAnsiTheme="minorHAnsi" w:cstheme="minorHAnsi"/><w:b/><w:bCs/><w:sz w:val="32"/><w:szCs w:val="32"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t xml:space="preserve"> بأنها ملتزمه </w:t></w:r>` +
-    `<w:r><w:rPr><w:rFonts w:asciiTheme="minorHAnsi" w:hAnsiTheme="minorHAnsi" w:cstheme="minorHAnsi"/><w:b/><w:bCs/><w:sz w:val="32"/><w:szCs w:val="32"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t>${escapeXml(commitment)} </w:t></w:r>` +
-    `<w:r><w:rPr><w:rFonts w:asciiTheme="minorHAnsi" w:hAnsiTheme="minorHAnsi" w:cstheme="minorHAnsi"/><w:b/><w:bCs/><w:sz w:val="32"/><w:szCs w:val="32"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t xml:space="preserve">وذلك في </w:t></w:r>` +
-    `<w:r><w:rPr><w:rFonts w:asciiTheme="minorHAnsi" w:hAnsiTheme="minorHAnsi" w:cstheme="minorHAnsi"/><w:b/><w:bCs/><w:sz w:val="32"/><w:szCs w:val="32"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t>${escapeXml(cleanMethod)}</w:t></w:r>` +
-    `<w:r><w:rPr><w:rFonts w:asciiTheme="minorHAnsi" w:hAnsiTheme="minorHAnsi" w:cstheme="minorHAnsi"/><w:b/><w:bCs/><w:sz w:val="32"/><w:szCs w:val="32"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t xml:space="preserve"> وطبيعتها </w:t></w:r>` +
-    `<w:r><w:rPr><w:rFonts w:asciiTheme="minorHAnsi" w:hAnsiTheme="minorHAnsi" w:cstheme="minorHAnsi"/><w:b/><w:bCs/><w:sz w:val="32"/><w:szCs w:val="32"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t xml:space="preserve"> ${escapeXml(scope)}</w:t></w:r>` +
-    `<w:r><w:rPr><w:rFonts w:asciiTheme="minorHAnsi" w:hAnsiTheme="minorHAnsi" w:cstheme="minorHAnsi"/><w:b/><w:bCs/><w:sz w:val="32"/><w:szCs w:val="32"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t xml:space="preserve"> طرفكم للعام المالى  </w:t></w:r>` +
-    `<w:r><w:rPr><w:rFonts w:asciiTheme="minorHAnsi" w:hAnsiTheme="minorHAnsi" w:cstheme="minorHAnsi"/><w:b/><w:bCs/><w:sz w:val="32"/><w:szCs w:val="32"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t>${escapeXml(fYear)}</w:t></w:r>` +
-    `<w:r><w:rPr><w:rFonts w:asciiTheme="minorHAnsi" w:hAnsiTheme="minorHAnsi" w:cstheme="minorHAnsi"/><w:b/><w:bCs/><w:sz w:val="32"/><w:szCs w:val="32"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t xml:space="preserve"> والمحدد لها جلسة </w:t></w:r>` +
-    `<w:r><w:rPr><w:rFonts w:asciiTheme="minorHAnsi" w:hAnsiTheme="minorHAnsi" w:cstheme="minorHAnsi"/><w:b/><w:bCs/><w:sz w:val="32"/><w:szCs w:val="32"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t>${escapeXml(oDate)}</w:t></w:r>` +
-    `<w:r><w:rPr><w:rFonts w:asciiTheme="minorHAnsi" w:hAnsiTheme="minorHAnsi" w:cstheme="minorHAnsi"/><w:b/><w:bCs/><w:sz w:val="32"/><w:szCs w:val="32"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t xml:space="preserve"> لفتح المظروف الفنى . </w:t></w:r></w:p>`;
+  if (docXml.includes("{preamble_title}") || docXml.includes("{commitment_details}")) {
+    docXml = applyExellentTags(docXml, {
+      preamble_title: pTitle,
+      company_name_ar: company,
+      commitment_details: commitment,
+    });
+    docXml = applyExellentTenderMethod(docXml, params.tenderMethod);
+    docXml = applyExellentCommonDetails(docXml, {
+      ...params,
+      operationScope: scope,
+      fiscalYear: fYear,
+      technicalOpeningDate: oDate,
+    });
+  } else {
+    const preambleParagraphXml =
+      `<w:p><w:pPr><w:spacing w:before="240" w:after="0" w:line="240" w:lineRule="auto"/><w:jc w:val="both"/><w:rPr><w:rFonts w:asciiTheme="minorHAnsi" w:hAnsiTheme="minorHAnsi" w:cstheme="minorHAnsi"/><w:b/><w:bCs/><w:sz w:val="28"/><w:szCs w:val="28"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr></w:pPr>` +
+      `<w:r><w:rPr><w:rFonts w:asciiTheme="minorHAnsi" w:hAnsiTheme="minorHAnsi" w:cstheme="minorHAnsi"/><w:b/><w:bCs/><w:sz w:val="28"/><w:szCs w:val="28"/><w:u w:val="single"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t xml:space="preserve">تمهيد  : </w:t></w:r>` +
+      `<w:r><w:rPr><w:rFonts w:asciiTheme="minorHAnsi" w:hAnsiTheme="minorHAnsi" w:cstheme="minorHAnsi"/><w:b/><w:bCs/><w:sz w:val="28"/><w:szCs w:val="28"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t>${escapeXml(pTitle)} لعملية </w:t></w:r>` +
+      `<w:r><w:rPr><w:rFonts w:asciiTheme="minorHAnsi" w:hAnsiTheme="minorHAnsi" w:cstheme="minorHAnsi"/><w:b/><w:bCs/><w:sz w:val="28"/><w:szCs w:val="28"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t>${escapeXml(opRegName)}</w:t></w:r>` +
+      `<w:r><w:rPr><w:rFonts w:asciiTheme="minorHAnsi" w:hAnsiTheme="minorHAnsi" w:cstheme="minorHAnsi"/><w:b/><w:bCs/><w:sz w:val="28"/><w:szCs w:val="28"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t xml:space="preserve"> رقم   </w:t></w:r>` +
+      `<w:r><w:rPr><w:rFonts w:asciiTheme="minorHAnsi" w:hAnsiTheme="minorHAnsi" w:cstheme="minorHAnsi"/><w:b/><w:bCs/><w:sz w:val="28"/><w:szCs w:val="28"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t>${escapeXml(opNum)}</w:t></w:r></w:p>`;
 
-  docXml = docXml.replace(/<w:p\b(?:(?!<\/w:p>)[\s\S])*?تقر[\s\S]*?<\/w:p>/, declarationParagraphXml);
+    docXml = docXml.replace(/<w:p\b(?:(?!<\/w:p>)[\s\S])*?تمهيد[\s\S]*?<\/w:p>/, preambleParagraphXml);
 
-  // 4. استبدال فقرة الملاحظات الإضافية (اضافية : ...)
-  const notesText = params.additionalNotes && params.additionalNotes.trim() ? params.additionalNotes.trim() : "";
-  const notesParagraphXml =
-    `<w:p><w:pPr><w:spacing w:after="0" w:line="240" w:lineRule="auto"/><w:jc w:val="right"/><w:rPr><w:rFonts w:asciiTheme="minorHAnsi" w:hAnsiTheme="minorHAnsi" w:cstheme="minorHAnsi"/><w:b/><w:bCs/><w:sz w:val="32"/><w:szCs w:val="32"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr></w:pPr>` +
-    `<w:r><w:rPr><w:rFonts w:asciiTheme="minorHAnsi" w:hAnsiTheme="minorHAnsi" w:cstheme="minorHAnsi"/><w:b/><w:bCs/><w:sz w:val="32"/><w:szCs w:val="32"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t xml:space="preserve">اضافية :  </w:t></w:r>` +
-    `<w:r><w:rPr><w:rFonts w:asciiTheme="minorHAnsi" w:hAnsiTheme="minorHAnsi" w:cstheme="minorHAnsi"/><w:b/><w:bCs/><w:sz w:val="32"/><w:szCs w:val="32"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t>${escapeXml(notesText || "..................................")}</w:t></w:r></w:p>`;
+    const declarationParagraphXml =
+      `<w:p w14:paraId="071B403A" w14:textId="602CD6E1" w:rsidR="00482D1C" w:rsidRPr="00115CF9" w:rsidRDefault="00482D1C" w:rsidP="000A0E50">` +
+      `<w:pPr><w:spacing w:after="0" w:line="240" w:lineRule="auto"/><w:ind w:left="-41"/><w:jc w:val="both"/><w:rPr><w:rFonts w:asciiTheme="minorHAnsi" w:hAnsiTheme="minorHAnsi" w:cstheme="minorHAnsi"/><w:b/><w:bCs/><w:sz w:val="32"/><w:szCs w:val="32"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr></w:pPr>` +
+      `<w:r><w:rPr><w:rFonts w:asciiTheme="minorHAnsi" w:hAnsiTheme="minorHAnsi" w:cstheme="minorHAnsi"/><w:b/><w:bCs/><w:sz w:val="32"/><w:szCs w:val="32"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t xml:space="preserve">تقر </w:t></w:r>` +
+      `<w:r><w:rPr><w:rFonts w:asciiTheme="minorHAnsi" w:hAnsiTheme="minorHAnsi" w:cstheme="minorHAnsi"/><w:b/><w:bCs/><w:sz w:val="32"/><w:szCs w:val="32"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t>${escapeXml(company)}</w:t></w:r>` +
+      `<w:r><w:rPr><w:rFonts w:asciiTheme="minorHAnsi" w:hAnsiTheme="minorHAnsi" w:cstheme="minorHAnsi"/><w:b/><w:bCs/><w:sz w:val="32"/><w:szCs w:val="32"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t xml:space="preserve"> بأنها ملتزمه </w:t></w:r>` +
+      `<w:r><w:rPr><w:rFonts w:asciiTheme="minorHAnsi" w:hAnsiTheme="minorHAnsi" w:cstheme="minorHAnsi"/><w:b/><w:bCs/><w:sz w:val="32"/><w:szCs w:val="32"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t>${escapeXml(commitment)} </w:t></w:r>` +
+      `<w:r><w:rPr><w:rFonts w:asciiTheme="minorHAnsi" w:hAnsiTheme="minorHAnsi" w:cstheme="minorHAnsi"/><w:b/><w:bCs/><w:sz w:val="32"/><w:szCs w:val="32"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t xml:space="preserve">وذلك في </w:t></w:r>` +
+      `<w:r><w:rPr><w:rFonts w:asciiTheme="minorHAnsi" w:hAnsiTheme="minorHAnsi" w:cstheme="minorHAnsi"/><w:b/><w:bCs/><w:sz w:val="32"/><w:szCs w:val="32"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t>${escapeXml(cleanMethod)}</w:t></w:r>` +
+      `<w:r><w:rPr><w:rFonts w:asciiTheme="minorHAnsi" w:hAnsiTheme="minorHAnsi" w:cstheme="minorHAnsi"/><w:b/><w:bCs/><w:sz w:val="32"/><w:szCs w:val="32"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t xml:space="preserve"> وطبيعتها </w:t></w:r>` +
+      `<w:r><w:rPr><w:rFonts w:asciiTheme="minorHAnsi" w:hAnsiTheme="minorHAnsi" w:cstheme="minorHAnsi"/><w:b/><w:bCs/><w:sz w:val="32"/><w:szCs w:val="32"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t xml:space="preserve"> ${escapeXml(scope)}</w:t></w:r>` +
+      `<w:r><w:rPr><w:rFonts w:asciiTheme="minorHAnsi" w:hAnsiTheme="minorHAnsi" w:cstheme="minorHAnsi"/><w:b/><w:bCs/><w:sz w:val="32"/><w:szCs w:val="32"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t xml:space="preserve"> طرفكم للعام المالى  </w:t></w:r>` +
+      `<w:r><w:rPr><w:rFonts w:asciiTheme="minorHAnsi" w:hAnsiTheme="minorHAnsi" w:cstheme="minorHAnsi"/><w:b/><w:bCs/><w:sz w:val="32"/><w:szCs w:val="32"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t>${escapeXml(fYear)}</w:t></w:r>` +
+      `<w:r><w:rPr><w:rFonts w:asciiTheme="minorHAnsi" w:hAnsiTheme="minorHAnsi" w:cstheme="minorHAnsi"/><w:b/><w:bCs/><w:sz w:val="32"/><w:szCs w:val="32"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t xml:space="preserve"> والمحدد لها جلسة </w:t></w:r>` +
+      `<w:r><w:rPr><w:rFonts w:asciiTheme="minorHAnsi" w:hAnsiTheme="minorHAnsi" w:cstheme="minorHAnsi"/><w:b/><w:bCs/><w:sz w:val="32"/><w:szCs w:val="32"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t>${escapeXml(oDate)}</w:t></w:r>` +
+      `<w:r><w:rPr><w:rFonts w:asciiTheme="minorHAnsi" w:hAnsiTheme="minorHAnsi" w:cstheme="minorHAnsi"/><w:b/><w:bCs/><w:sz w:val="32"/><w:szCs w:val="32"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t xml:space="preserve"> لفتح المظروف الفنى . </w:t></w:r></w:p>`;
 
-  docXml = docXml.replace(/<w:p\b(?:(?!<\/w:p>)[\s\S])*?اضافية[\s\S]*?<\/w:p>/, notesParagraphXml);
+    docXml = docXml.replace(/<w:p\b(?:(?!<\/w:p>)[\s\S])*?تقر[\s\S]*?<\/w:p>/, declarationParagraphXml);
+  }
 
-  // 5. إزالة الفقرة الوهمية "خانه خاليه للملاحظات"
+  // 3. إزالة الفقرة الوهمية "خانه خاليه للملاحظات"
   docXml = docXml.replace(/<w:p\b(?:(?!<\/w:p>)[\s\S])*?خانه\s*خاليه\s*للملاحظات[\s\S]*?<\/w:p>/g, "");
 
-  // 6. استبدال التوقيعات بأسفل الإقرار
+  // 4. استبدال التوقيعات والملاحظات الإضافية بأسفل الإقرار
   docXml = applyExellentSignatures(docXml, params);
 
-  // 7. إزالة أي علامات حمراء وتكرارات التفقيط
+  // 5. إزالة أي علامات حمراء وتكرارات التفقيط
   docXml = purgeExellentRedMarks(docXml);
   docXml = cleanDocxRepetitions(docXml);
 
@@ -1254,21 +1271,10 @@ export async function generateExellentDeclarationInsuranceDocx(params: {
   // 1. استبدال فقرة المرسل إليه
   docXml = applyExellentRecipient(docXml, params.recipientPrefix, params.recipientTitleAndAuthority);
 
-  // 2. استبدال فقرة التمهيد بالكامل
+  // 2. استبدال التاجات النظيفة مباشرة مع دعم احتياطي للقوالب القديمة
   const pTitle = (params.preambleTitle || "إقرار الإلتزام بالتأمينات والعماله الغير منتظمه والمساواه بين العاملين").trim();
   const opRegName = (params.operationRegisteredName || "").trim();
   const opNum = (params.operationNumber || "365").trim();
-  const preambleParagraphXml =
-    `<w:p><w:pPr><w:spacing w:before="240" w:after="0" w:line="240" w:lineRule="auto"/><w:jc w:val="both"/><w:rPr><w:rFonts w:asciiTheme="minorHAnsi" w:hAnsiTheme="minorHAnsi" w:cstheme="minorHAnsi"/><w:b/><w:bCs/><w:sz w:val="28"/><w:szCs w:val="28"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr></w:pPr>` +
-    `<w:r><w:rPr><w:rFonts w:asciiTheme="minorHAnsi" w:hAnsiTheme="minorHAnsi" w:cstheme="minorHAnsi"/><w:b/><w:bCs/><w:sz w:val="28"/><w:szCs w:val="28"/><w:u w:val="single"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t xml:space="preserve">تمهيد  : </w:t></w:r>` +
-    `<w:r><w:rPr><w:rFonts w:asciiTheme="minorHAnsi" w:hAnsiTheme="minorHAnsi" w:cstheme="minorHAnsi"/><w:b/><w:bCs/><w:sz w:val="28"/><w:szCs w:val="28"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t>${escapeXml(pTitle)} لعملية </w:t></w:r>` +
-    `<w:r><w:rPr><w:rFonts w:asciiTheme="minorHAnsi" w:hAnsiTheme="minorHAnsi" w:cstheme="minorHAnsi"/><w:b/><w:bCs/><w:sz w:val="28"/><w:szCs w:val="28"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t>${escapeXml(opRegName)}</w:t></w:r>` +
-    `<w:r><w:rPr><w:rFonts w:asciiTheme="minorHAnsi" w:hAnsiTheme="minorHAnsi" w:cstheme="minorHAnsi"/><w:b/><w:bCs/><w:sz w:val="28"/><w:szCs w:val="28"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t xml:space="preserve"> رقم  </w:t></w:r>` +
-    `<w:r><w:rPr><w:rFonts w:asciiTheme="minorHAnsi" w:hAnsiTheme="minorHAnsi" w:cstheme="minorHAnsi"/><w:b/><w:bCs/><w:sz w:val="28"/><w:szCs w:val="28"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t>${escapeXml(opNum)}   </w:t></w:r></w:p>`;
-
-  docXml = docXml.replace(/<w:p\b(?:(?!<\/w:p>)[\s\S])*?تمهيد[\s\S]*?<\/w:p>/, preambleParagraphXml);
-
-  // 3. استبدال متن الإقرار الرئيسي بالكامل
   const company = (params.companyName || "اكسلانت سرفيس للنظافه والصيانه والنقل والخدمات والتوريدات").trim();
   const rawCommitment = (params.commitmentDetails || "بسداد نسبة التأمينات على المقاولات والعماله الغير منتظمه وحسن التعامل مع العاملين بالشركة وعدم التفرقه بينهم").trim();
   const commitment = rawCommitment.replace(/^(?:بأنها\s+)?(?:ملتزم[ةه]\s+)?/, "").trim();
@@ -1277,41 +1283,53 @@ export async function generateExellentDeclarationInsuranceDocx(params: {
   const fYear = (params.fiscalYear || "2024 / 2025").trim();
   const oDate = (params.technicalOpeningDate || "14/ 1 /2024").trim();
 
-  const declarationParagraphXml =
-    `<w:p w14:paraId="071B403A" w14:textId="602CD6E1" w:rsidR="00482D1C" w:rsidRPr="00115CF9" w:rsidRDefault="00482D1C" w:rsidP="000A0E50">` +
-    `<w:pPr><w:spacing w:after="0" w:line="240" w:lineRule="auto"/><w:ind w:left="-41"/><w:jc w:val="highKashida"/><w:rPr><w:rFonts w:asciiTheme="minorHAnsi" w:hAnsiTheme="minorHAnsi" w:cstheme="minorHAnsi"/><w:b/><w:bCs/><w:sz w:val="32"/><w:szCs w:val="32"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr></w:pPr>` +
-    `<w:r><w:rPr><w:rFonts w:asciiTheme="minorHAnsi" w:hAnsiTheme="minorHAnsi" w:cstheme="minorHAnsi"/><w:b/><w:bCs/><w:sz w:val="32"/><w:szCs w:val="32"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t xml:space="preserve">تقر </w:t></w:r>` +
-    `<w:r><w:rPr><w:rFonts w:asciiTheme="minorHAnsi" w:hAnsiTheme="minorHAnsi" w:cstheme="minorHAnsi"/><w:b/><w:bCs/><w:sz w:val="32"/><w:szCs w:val="32"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t>${escapeXml(company)}</w:t></w:r>` +
-    `<w:r><w:rPr><w:rFonts w:asciiTheme="minorHAnsi" w:hAnsiTheme="minorHAnsi" w:cstheme="minorHAnsi"/><w:b/><w:bCs/><w:sz w:val="32"/><w:szCs w:val="32"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t xml:space="preserve"> بأنها ملتزمه </w:t></w:r>` +
-    `<w:r><w:rPr><w:rFonts w:asciiTheme="minorHAnsi" w:hAnsiTheme="minorHAnsi" w:cstheme="minorHAnsi"/><w:b/><w:bCs/><w:sz w:val="32"/><w:szCs w:val="32"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t>${escapeXml(commitment)} </w:t></w:r>` +
-    `<w:r><w:rPr><w:rFonts w:asciiTheme="minorHAnsi" w:hAnsiTheme="minorHAnsi" w:cstheme="minorHAnsi"/><w:b/><w:bCs/><w:sz w:val="32"/><w:szCs w:val="32"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t xml:space="preserve">وذلك في </w:t></w:r>` +
-    `<w:r><w:rPr><w:rFonts w:asciiTheme="minorHAnsi" w:hAnsiTheme="minorHAnsi" w:cstheme="minorHAnsi"/><w:b/><w:bCs/><w:sz w:val="32"/><w:szCs w:val="32"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t>${escapeXml(cleanMethod)}</w:t></w:r>` +
-    `<w:r><w:rPr><w:rFonts w:asciiTheme="minorHAnsi" w:hAnsiTheme="minorHAnsi" w:cstheme="minorHAnsi"/><w:b/><w:bCs/><w:sz w:val="32"/><w:szCs w:val="32"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t xml:space="preserve"> وطبيعتها </w:t></w:r>` +
-    `<w:r><w:rPr><w:rFonts w:asciiTheme="minorHAnsi" w:hAnsiTheme="minorHAnsi" w:cstheme="minorHAnsi"/><w:b/><w:bCs/><w:sz w:val="32"/><w:szCs w:val="32"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t xml:space="preserve"> ${escapeXml(scope)}</w:t></w:r>` +
-    `<w:r><w:rPr><w:rFonts w:asciiTheme="minorHAnsi" w:hAnsiTheme="minorHAnsi" w:cstheme="minorHAnsi"/><w:b/><w:bCs/><w:sz w:val="32"/><w:szCs w:val="32"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t xml:space="preserve"> طرفكم للعام المالى  </w:t></w:r>` +
-    `<w:r><w:rPr><w:rFonts w:asciiTheme="minorHAnsi" w:hAnsiTheme="minorHAnsi" w:cstheme="minorHAnsi"/><w:b/><w:bCs/><w:sz w:val="32"/><w:szCs w:val="32"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t>${escapeXml(fYear)}</w:t></w:r>` +
-    `<w:r><w:rPr><w:rFonts w:asciiTheme="minorHAnsi" w:hAnsiTheme="minorHAnsi" w:cstheme="minorHAnsi"/><w:b/><w:bCs/><w:sz w:val="32"/><w:szCs w:val="32"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t xml:space="preserve"> والمحدد لها جلسة </w:t></w:r>` +
-    `<w:r><w:rPr><w:rFonts w:asciiTheme="minorHAnsi" w:hAnsiTheme="minorHAnsi" w:cstheme="minorHAnsi"/><w:b/><w:bCs/><w:sz w:val="32"/><w:szCs w:val="32"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t>${escapeXml(oDate)}</w:t></w:r>` +
-    `<w:r><w:rPr><w:rFonts w:asciiTheme="minorHAnsi" w:hAnsiTheme="minorHAnsi" w:cstheme="minorHAnsi"/><w:b/><w:bCs/><w:sz w:val="32"/><w:szCs w:val="32"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t xml:space="preserve"> لفتح المظروف الفنى . </w:t></w:r></w:p>`;
+  if (docXml.includes("{preamble_title}") || docXml.includes("{commitment_details}")) {
+    docXml = applyExellentTags(docXml, {
+      preamble_title: pTitle,
+      company_name_ar: company,
+      commitment_details: commitment,
+    });
+    docXml = applyExellentTenderMethod(docXml, params.tenderMethod);
+    docXml = applyExellentCommonDetails(docXml, {
+      ...params,
+      operationScope: scope,
+      fiscalYear: fYear,
+      technicalOpeningDate: oDate,
+    });
+  } else {
+    const preambleParagraphXml =
+      `<w:p><w:pPr><w:spacing w:before="240" w:after="0" w:line="240" w:lineRule="auto"/><w:jc w:val="both"/><w:rPr><w:rFonts w:asciiTheme="minorHAnsi" w:hAnsiTheme="minorHAnsi" w:cstheme="minorHAnsi"/><w:b/><w:bCs/><w:sz w:val="28"/><w:szCs w:val="28"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr></w:pPr>` +
+      `<w:r><w:rPr><w:rFonts w:asciiTheme="minorHAnsi" w:hAnsiTheme="minorHAnsi" w:cstheme="minorHAnsi"/><w:b/><w:bCs/><w:sz w:val="28"/><w:szCs w:val="28"/><w:u w:val="single"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t xml:space="preserve">تمهيد  : </w:t></w:r>` +
+      `<w:r><w:rPr><w:rFonts w:asciiTheme="minorHAnsi" w:hAnsiTheme="minorHAnsi" w:cstheme="minorHAnsi"/><w:b/><w:bCs/><w:sz w:val="28"/><w:szCs w:val="28"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t>${escapeXml(pTitle)} لعملية </w:t></w:r>` +
+      `<w:r><w:rPr><w:rFonts w:asciiTheme="minorHAnsi" w:hAnsiTheme="minorHAnsi" w:cstheme="minorHAnsi"/><w:b/><w:bCs/><w:sz w:val="28"/><w:szCs w:val="28"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t>${escapeXml(opRegName)}</w:t></w:r>` +
+      `<w:r><w:rPr><w:rFonts w:asciiTheme="minorHAnsi" w:hAnsiTheme="minorHAnsi" w:cstheme="minorHAnsi"/><w:b/><w:bCs/><w:sz w:val="28"/><w:szCs w:val="28"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t xml:space="preserve"> رقم  </w:t></w:r>` +
+      `<w:r><w:rPr><w:rFonts w:asciiTheme="minorHAnsi" w:hAnsiTheme="minorHAnsi" w:cstheme="minorHAnsi"/><w:b/><w:bCs/><w:sz w:val="28"/><w:szCs w:val="28"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t>${escapeXml(opNum)}   </w:t></w:r></w:p>`;
 
-  docXml = docXml.replace(/<w:p\b(?:(?!<\/w:p>)[\s\S])*?تقر[\s\S]*?<\/w:p>/, declarationParagraphXml);
+    docXml = docXml.replace(/<w:p\b(?:(?!<\/w:p>)[\s\S])*?تمهيد[\s\S]*?<\/w:p>/, preambleParagraphXml);
 
-  // 4. استبدال فقرة الملاحظات الإضافية (اضافية : ...)
-  const notesText = params.additionalNotes && params.additionalNotes.trim() ? params.additionalNotes.trim() : "";
-  const notesParagraphXml =
-    `<w:p><w:pPr><w:spacing w:after="0" w:line="240" w:lineRule="auto"/><w:jc w:val="right"/><w:rPr><w:rFonts w:asciiTheme="minorHAnsi" w:hAnsiTheme="minorHAnsi" w:cstheme="minorHAnsi"/><w:b/><w:bCs/><w:sz w:val="32"/><w:szCs w:val="32"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr></w:pPr>` +
-    `<w:r><w:rPr><w:rFonts w:asciiTheme="minorHAnsi" w:hAnsiTheme="minorHAnsi" w:cstheme="minorHAnsi"/><w:b/><w:bCs/><w:sz w:val="32"/><w:szCs w:val="32"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t xml:space="preserve">اضافية :  </w:t></w:r>` +
-    `<w:r><w:rPr><w:rFonts w:asciiTheme="minorHAnsi" w:hAnsiTheme="minorHAnsi" w:cstheme="minorHAnsi"/><w:b/><w:bCs/><w:sz w:val="32"/><w:szCs w:val="32"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t>${escapeXml(notesText || "..................................")}</w:t></w:r></w:p>`;
+    const declarationParagraphXml =
+      `<w:p w14:paraId="071B403A" w14:textId="602CD6E1" w:rsidR="00482D1C" w:rsidRPr="00115CF9" w:rsidRDefault="00482D1C" w:rsidP="000A0E50">` +
+      `<w:pPr><w:spacing w:after="0" w:line="240" w:lineRule="auto"/><w:ind w:left="-41"/><w:jc w:val="both"/><w:rPr><w:rFonts w:asciiTheme="minorHAnsi" w:hAnsiTheme="minorHAnsi" w:cstheme="minorHAnsi"/><w:b/><w:bCs/><w:sz w:val="32"/><w:szCs w:val="32"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr></w:pPr>` +
+      `<w:r><w:rPr><w:rFonts w:asciiTheme="minorHAnsi" w:hAnsiTheme="minorHAnsi" w:cstheme="minorHAnsi"/><w:b/><w:bCs/><w:sz w:val="32"/><w:szCs w:val="32"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t xml:space="preserve">تقر </w:t></w:r>` +
+      `<w:r><w:rPr><w:rFonts w:asciiTheme="minorHAnsi" w:hAnsiTheme="minorHAnsi" w:cstheme="minorHAnsi"/><w:b/><w:bCs/><w:sz w:val="32"/><w:szCs w:val="32"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t>${escapeXml(company)}</w:t></w:r>` +
+      `<w:r><w:rPr><w:rFonts w:asciiTheme="minorHAnsi" w:hAnsiTheme="minorHAnsi" w:cstheme="minorHAnsi"/><w:b/><w:bCs/><w:sz w:val="32"/><w:szCs w:val="32"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t xml:space="preserve"> بأنها ملتزمه </w:t></w:r>` +
+      `<w:r><w:rPr><w:rFonts w:asciiTheme="minorHAnsi" w:hAnsiTheme="minorHAnsi" w:cstheme="minorHAnsi"/><w:b/><w:bCs/><w:sz w:val="32"/><w:szCs w:val="32"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t>${escapeXml(commitment)} </w:t></w:r>` +
+      `<w:r><w:rPr><w:rFonts w:asciiTheme="minorHAnsi" w:hAnsiTheme="minorHAnsi" w:cstheme="minorHAnsi"/><w:b/><w:bCs/><w:sz w:val="32"/><w:szCs w:val="32"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t xml:space="preserve">وذلك في </w:t></w:r>` +
+      `<w:r><w:rPr><w:rFonts w:asciiTheme="minorHAnsi" w:hAnsiTheme="minorHAnsi" w:cstheme="minorHAnsi"/><w:b/><w:bCs/><w:sz w:val="32"/><w:szCs w:val="32"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t>${escapeXml(cleanMethod)}</w:t></w:r>` +
+      `<w:r><w:rPr><w:rFonts w:asciiTheme="minorHAnsi" w:hAnsiTheme="minorHAnsi" w:cstheme="minorHAnsi"/><w:b/><w:bCs/><w:sz w:val="32"/><w:szCs w:val="32"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t xml:space="preserve"> وطبيعتها </w:t></w:r>` +
+      `<w:r><w:rPr><w:rFonts w:asciiTheme="minorHAnsi" w:hAnsiTheme="minorHAnsi" w:cstheme="minorHAnsi"/><w:b/><w:bCs/><w:sz w:val="32"/><w:szCs w:val="32"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t xml:space="preserve"> ${escapeXml(scope)}</w:t></w:r>` +
+      `<w:r><w:rPr><w:rFonts w:asciiTheme="minorHAnsi" w:hAnsiTheme="minorHAnsi" w:cstheme="minorHAnsi"/><w:b/><w:bCs/><w:sz w:val="32"/><w:szCs w:val="32"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t xml:space="preserve"> طرفكم للعام المالى  </w:t></w:r>` +
+      `<w:r><w:rPr><w:rFonts w:asciiTheme="minorHAnsi" w:hAnsiTheme="minorHAnsi" w:cstheme="minorHAnsi"/><w:b/><w:bCs/><w:sz w:val="32"/><w:szCs w:val="32"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t>${escapeXml(fYear)}</w:t></w:r>` +
+      `<w:r><w:rPr><w:rFonts w:asciiTheme="minorHAnsi" w:hAnsiTheme="minorHAnsi" w:cstheme="minorHAnsi"/><w:b/><w:bCs/><w:sz w:val="32"/><w:szCs w:val="32"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t xml:space="preserve"> والمحدد لها جلسة </w:t></w:r>` +
+      `<w:r><w:rPr><w:rFonts w:asciiTheme="minorHAnsi" w:hAnsiTheme="minorHAnsi" w:cstheme="minorHAnsi"/><w:b/><w:bCs/><w:sz w:val="32"/><w:szCs w:val="32"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t>${escapeXml(oDate)}</w:t></w:r>` +
+      `<w:r><w:rPr><w:rFonts w:asciiTheme="minorHAnsi" w:hAnsiTheme="minorHAnsi" w:cstheme="minorHAnsi"/><w:b/><w:bCs/><w:sz w:val="32"/><w:szCs w:val="32"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t xml:space="preserve"> لفتح المظروف الفنى . </w:t></w:r></w:p>`;
 
-  docXml = docXml.replace(/<w:p\b(?:(?!<\/w:p>)[\s\S])*?اضافية[\s\S]*?<\/w:p>/, notesParagraphXml);
+    docXml = docXml.replace(/<w:p\b(?:(?!<\/w:p>)[\s\S])*?تقر[\s\S]*?<\/w:p>/, declarationParagraphXml);
+  }
 
-  // 5. إزالة الفقرة الوهمية "خانه خاليه للملاحظات"
   docXml = docXml.replace(/<w:p\b(?:(?!<\/w:p>)[\s\S])*?خانه\s*خاليه\s*للملاحظات[\s\S]*?<\/w:p>/g, "");
 
-  // 6. استبدال التوقيعات بأسفل الإقرار
   docXml = applyExellentSignatures(docXml, params);
-
-  // 7. إزالة أي علامات حمراء وتكرارات التفقيط
   docXml = purgeExellentRedMarks(docXml);
   docXml = cleanDocxRepetitions(docXml);
 
@@ -1368,8 +1386,15 @@ export async function generateExellentGeneralLetterDocx(params: {
 
   docXml = applyExellentRecipient(docXml, params.recipientPrefix, params.recipientTitleAndAuthority);
 
-  // الموضوع بدقة متناهية دون المساس بنقاط جدول التوقيعات أو أي فقرة أخرى
-  const safeSubj = escapeXml((params.letterSubject || "خطاب رسمي").trim());
+  const safeSubjStr = (params.letterSubject || "خطاب رسمي").trim();
+  const safeBodyStr = (params.letterBody || "").trim();
+  docXml = applyExellentTags(docXml, {
+    letter_subject: safeSubjStr,
+    letter_body: safeBodyStr || "نتشرف بالإحاطة والتفضل باتخاذ اللازم نحو الموضوع المشار إليه بعاليه.",
+  });
+
+  // الموضوع والبدن احتياطياً للقوالب القديمة
+  const safeSubj = escapeXml(safeSubjStr);
   const subjPattern = /(<w:p\b[^>]*>(?:(?!<\/w:p>)[\s\S])*?تمهيد[\s\S]*?بخصوص[\s\S]*?<w:t[^>]*>)\s*\.{3,}\s*(<\/w:t>[\s\S]*?<\/w:p>)/;
   if (subjPattern.test(docXml)) {
     docXml = docXml.replace(subjPattern, `$1 ${safeSubj}$2`);
@@ -1377,9 +1402,8 @@ export async function generateExellentGeneralLetterDocx(params: {
     docXml = docXml.replace(/تمهيد\s*:\s*بخصوص\s*:\s*\.{3,}/g, `تمهيد : بخصوص : ${safeSubj}`);
   }
 
-  // استبدال متن الخطاب الكامل داخل نفس الفقرة الأصلية دون تدمير التنسيق أو حجم الخط
-  if (params.letterBody && params.letterBody.trim()) {
-    const safeBody = escapeXml(params.letterBody.trim());
+  if (safeBodyStr) {
+    const safeBody = escapeXml(safeBodyStr);
     if (/الرجاء من سيادتكم[\s\S]*?والمكاتبات الرسميه\s*\./.test(docXml)) {
       docXml = docXml.replace(/الرجاء من سيادتكم[\s\S]*?والمكاتبات الرسميه\s*\./g, safeBody);
     } else if (/الرجاء من سيادتكم[\s\S]*?والمكاتبات الرسميه/.test(docXml)) {
@@ -1491,16 +1515,27 @@ export async function generateExellentClarificationDocx(params: {
 
   docXml = applyExellentRecipient(docXml, params.recipientPrefix, params.recipientTitleAndAuthority);
 
+  // استبدال التاجات النظيفة مباشرة لخطاب التوضيح والاستفسار
+  docXml = applyExellentTags(docXml, {
+    clarification_subject: params.clarificationSubject || "توضيح واستفسار للأصناف والمواعيد",
+    clarification_scope:
+      (params.clarificationScopeText || params.clarificationTargetText || "").trim() ||
+      "التوضيح والاستفسار عن الأصناف – المواعيد – بعض البنود الفنيه والقانونيه",
+    clarification_response_demand:
+      (params.clarificationResponseDemand || "").trim() ||
+      "بخطاب معتمد وموافاتنا قبل الموعد المحدد لتقديم العطاءات وإصدار ملحق توضيحى وموافاتنا قبل المواعيد المحدده لفتح المظاريف الفنيه بوقت كاف والبنود والموضوعات المطلوب توضيحها",
+    inquiry_nature: (params.inquiryNatureText || "").trim() || "عن نوع الاستفسار من الناحية الفنية والمالية",
+    requested_action: (params.requestedAction || "").trim() || "توضيح البنود المشار إليها وإصدار ملحق رسمي قبل موعد فتح المظاريف",
+  });
+
   docXml = docXml.replace(
     /توضيح واستفسار للأصناف والمواعيد/g,
     escapeXml(params.clarificationSubject || "توضيح واستفسار للأصناف والمواعيد")
   );
-  docXml = applyExellentCommonDetails(docXml, params);
-
   docXml = applyExellentTenderMethod(docXml, params.tenderMethod);
   docXml = applyExellentCommonDetails(docXml, params);
 
-  // استبدال نطاق الاستفسار في الفقرة القانونية
+  // استبدال نطاق الاستفسار في الفقرة القانونية (دعم القوالب القديمة)
   const scopeVal = (params.clarificationScopeText || params.clarificationTargetText || "").trim();
   if (scopeVal) {
     const scopeXml = escapeXml(scopeVal);
@@ -1523,7 +1558,7 @@ export async function generateExellentClarificationDocx(params: {
     );
   }
 
-  // استبدال جدول البنود
+  // استبدال جدول البنود (يستبدل أيضاً صف {#items}...{/items} بالكامل بصفوف العناصر الفعلية)
   const tableMatch = docXml.match(/<w:tbl[\s\S]*?<\/w:tbl>/);
   if (tableMatch) {
     const originalTable = tableMatch[0];
@@ -1653,9 +1688,14 @@ export async function generateExellentGrievanceDocx(params: {
     docXml = injectSingleQrIntoDocXml(docXml, qrXml, escapeXml(params.registrationNumber || ""));
   }
 
-  const { cleanMethod, methodWithBa } = formatTenderMethod(params.tenderMethod);
-
   docXml = applyExellentRecipient(docXml, params.recipientPrefix, params.recipientTitleAndAuthority);
+
+  docXml = applyExellentTags(docXml, {
+    grievance_stage: params.grievanceStageTitle || "نتيجة البت الفني – البت المالي",
+    grievance_subject: params.grievanceReasonSubject || "التظلمات وطلبات الاعتراض على النتيجة الفنيه",
+    grievance_aspect: params.grievanceAspectText || "أن كافة البنود المستبعدة مستوفاة لشروط ومواصفات الطرح",
+    grievance_request: params.grievanceRequestText || "إعادة فحص العطاء الفني والمالي وقبول التظلم",
+  });
 
   if (params.grievanceStageTitle) {
     docXml = docXml.replace(
@@ -1667,8 +1707,6 @@ export async function generateExellentGrievanceDocx(params: {
       escapeXml(params.grievanceStageTitle)
     );
   }
-  docXml = applyExellentCommonDetails(docXml, params);
-
   docXml = applyExellentTenderMethod(docXml, params.tenderMethod);
   docXml = applyExellentCommonDetails(docXml, params);
 
@@ -1785,6 +1823,16 @@ export async function generateExellentFinalInsuranceCashDocx(params: {
   docXml = applyExellentTenderMethod(docXml, params.tenderMethod);
   docXml = applyExellentCommonDetails(docXml, params);
   const cleanInsTafqeet = cleanTafqeetForTemplate(params.insuranceTafqeet);
+  const cleanTotTafq = cleanTafqeetForTemplate(params.operationTotalTafqeet);
+
+  docXml = applyExellentTags(docXml, {
+    insurance_amount_digits: params.insuranceAmount || "10000",
+    insurance_amount_words: cleanInsTafqeet ? `${cleanInsTafqeet} جنيه` : "عشرة ألاف جنيه",
+    guarantee_percentage: params.guaranteePercentage || "5 %",
+    operation_total_digits: (params.operationTotalAmount || "").trim(),
+    operation_total_words: cleanTotTafq ? `${cleanTotTafq} جنيه مصري لا غير` : "",
+  });
+
   if (params.insuranceAmount) {
     docXml = docXml.replace(/10000/g, escapeXml(params.insuranceAmount));
   }
@@ -1801,7 +1849,6 @@ export async function generateExellentFinalInsuranceCashDocx(params: {
     );
     docXml = docXml.replace(/\(\s*\.{5,}\s*\)/g, `( ${totalVal} )`);
   }
-  const cleanTotTafq = cleanTafqeetForTemplate(params.operationTotalTafqeet);
   if (cleanTotTafq) {
     docXml = docXml.replace(
       /(\)\s*[\s\S]*?<w:t[^>]*>)\s*\.{5,}\s*(<\/w:t>)/,
@@ -1877,18 +1924,29 @@ export async function generateExellentFinalInsuranceDeductionDocx(params: {
     docXml = injectSingleQrIntoDocXml(docXml, qrXml, escapeXml(params.registrationNumber || ""));
   }
 
-  const { cleanMethod, methodWithBa } = formatTenderMethod(params.tenderMethod);
-
   docXml = applyExellentRecipient(docXml, params.recipientPrefix, params.recipientTitleAndAuthority);
+  docXml = applyExellentTenderMethod(docXml, params.tenderMethod);
   docXml = applyExellentCommonDetails(docXml, params);
 
   const cleanInsTafqeet = cleanTafqeetForTemplate(params.insuranceTafqeet);
+  const cleanTotTafq = cleanTafqeetForTemplate(params.operationTotalTafqeet);
+  docXml = applyExellentTags(docXml, {
+    insurance_amount_digits: params.insuranceAmount || "10000",
+    insurance_amount_words: cleanInsTafqeet ? `${cleanInsTafqeet} جنيه` : "عشرة ألاف جنيه",
+    deduction_operation_name: (params.deductionOperationName || "").trim(),
+    deduction_month: (params.deductionMonth || "").trim(),
+    deduction_year: (params.deductionYear || "").trim(),
+    guarantee_percentage: params.guaranteePercentage || "5 %",
+    operation_total_digits: (params.operationTotalAmount || "").trim(),
+    operation_total_words: cleanTotTafq ? `${cleanTotTafq} جنيه مصري لا غير` : "",
+  });
+
   docXml = docXml.replace(/10000/g, escapeXml(params.insuranceAmount || "10000"));
   if (cleanInsTafqeet) {
     docXml = docXml.replace(/عشرة\s+[أاآ]لاف\s+جنيه/g, escapeXml(cleanInsTafqeet) + " جنيه");
   }
 
-  // تفاصيل الخصم من مستحقات العملية
+  // تفاصيل الخصم من مستحقات العملية (دعم القوالب القديمة)
   if (params.deductionOperationName) {
     docXml = docXml.replace(
       /(في\s*العملي[ةه][\s\S]*?<w:t[^>]*>)\s*\.{3,}\s*(<\/w:t>)/,
@@ -1911,9 +1969,6 @@ export async function generateExellentFinalInsuranceDeductionDocx(params: {
     docXml = docXml.replace(/السنة\s*\.{3,}/g, `السنة ${escapeXml(params.deductionYear)}`);
   }
 
-  docXml = applyExellentTenderMethod(docXml, params.tenderMethod);
-  docXml = applyExellentCommonDetails(docXml, params);
-
   docXml = docXml.replace(/أحمد محمد أحمد\s*/g, escapeXml(params.delegateName || "................") + " ");
   docXml = docXml.replace(/مندوب التعاقدات المفوض/g, escapeXml(params.delegateTitle || "مندوب التعاقدات المفوض"));
   docXml = docXml.replace(/23056289523202/g, escapeXml(params.delegateNationalId || "................"));
@@ -1930,7 +1985,6 @@ export async function generateExellentFinalInsuranceDeductionDocx(params: {
     );
     docXml = docXml.replace(/\(\s*\.{5,}\s*\)/g, `( ${totalVal} )`);
   }
-  const cleanTotTafq = cleanTafqeetForTemplate(params.operationTotalTafqeet);
   if (cleanTotTafq) {
     docXml = docXml.replace(
       /(\)\s*[\s\S]*?<w:t[^>]*>)\s*\.{5,}\s*(<\/w:t>)/,
@@ -2005,19 +2059,28 @@ export async function generateExellentFinalInsuranceDeductionAndInitialDocx(para
     docXml = injectSingleQrIntoDocXml(docXml, qrXml, escapeXml(params.registrationNumber || ""));
   }
 
-  const { cleanMethod, methodWithBa } = formatTenderMethod(params.tenderMethod);
-
   docXml = applyExellentRecipient(docXml, params.recipientPrefix, params.recipientTitleAndAuthority);
+  docXml = applyExellentTenderMethod(docXml, params.tenderMethod);
   docXml = applyExellentCommonDetails(docXml, params);
+
+  const cleanCashTafq = cleanTafqeetForTemplate(params.cashTafqeet);
+  const cleanInitTafq = cleanTafqeetForTemplate(params.initialTransferredTafqeet);
+  const cleanTotTafq = cleanTafqeetForTemplate(params.operationTotalTafqeet);
+  docXml = applyExellentTags(docXml, {
+    insurance_amount_digits: params.cashAmount || "1000",
+    insurance_amount_words: cleanCashTafq ? `${cleanCashTafq} جنيه` : (params.cashTafqeet || "عشرة ألاف جنيه"),
+    initial_amount_digits: params.initialTransferredAmount || "11111",
+    initial_amount_words: cleanInitTafq ? `${cleanInitTafq} جنيه` : (params.initialTransferredTafqeet || "خمسة الاف جنيه"),
+    guarantee_percentage: params.guaranteePercentage || "5 %",
+    operation_total_digits: (params.operationTotalAmount || "").trim(),
+    operation_total_words: cleanTotTafq ? `${cleanTotTafq} جنيه مصري لا غير` : "",
+  });
 
   docXml = docXml.replace(/1000/g, escapeXml(params.cashAmount || "1000"));
   docXml = docXml.replace(/عشرة\s+[أاآ]لاف\s+جنيه/g, escapeXml(params.cashTafqeet || "عشرة ألاف جنيه"));
 
   docXml = docXml.replace(/11111/g, escapeXml(params.initialTransferredAmount || "11111"));
   docXml = docXml.replace(/خمسة الاف جنيه/g, escapeXml(params.initialTransferredTafqeet || "خمسة الاف جنيه"));
-
-  docXml = applyExellentTenderMethod(docXml, params.tenderMethod);
-  docXml = applyExellentCommonDetails(docXml, params);
 
   docXml = docXml.replace(/أحمد محمد أحمد\s*/g, escapeXml(params.delegateName || "................") + " ");
   docXml = docXml.replace(/مندوب التعاقدات المفوض/g, escapeXml(params.delegateTitle || "مندوب التعاقدات المفوض"));
@@ -2035,7 +2098,6 @@ export async function generateExellentFinalInsuranceDeductionAndInitialDocx(para
     );
     docXml = docXml.replace(/\(\s*\.{5,}\s*\)/g, `( ${totalVal} )`);
   }
-  const cleanTotTafq = cleanTafqeetForTemplate(params.operationTotalTafqeet);
   if (cleanTotTafq) {
     docXml = docXml.replace(
       /(\)\s*[\s\S]*?<w:t[^>]*>)\s*\.{5,}\s*(<\/w:t>)/,
@@ -2109,7 +2171,6 @@ export async function generateExellentFinalInsuranceRefundDocx(params: {
 
   let docXml = await zip.file("word/document.xml")!.async("text");
 
-  // 1. تضمين رمز الباركود QR المعتمد داخل جسم المستند مع ربط ملف العلاقات
   if (params.qrBinary) {
     try {
       zip.file("word/media/doc_qr.png", params.qrBinary);
@@ -2136,15 +2197,32 @@ export async function generateExellentFinalInsuranceRefundDocx(params: {
     }
   }
 
-  const { cleanMethod, methodWithBa } = formatTenderMethod(params.tenderMethod);
-
   docXml = applyExellentRecipient(docXml, params.recipientPrefix, params.recipientTitleAndAuthority);
+  docXml = applyExellentTenderMethod(docXml, params.tenderMethod);
   docXml = applyExellentCommonDetails(docXml, params);
 
-  // 2. استبدال المبلغ والتفقيط بدقة متناهية وبدون أي تكرار لكلمة (فقط وقدره) أو (لا غير)
-  docXml = docXml.replace(/10000/g, escapeXml(params.refundAmount || "10000"));
+  const tafqeetClean = (params.refundTafqeet || "عشرة آلاف جنيه مصري").trim();
+  const cleanRefundWords = cleanTafqeetForTemplate(tafqeetClean);
+  let paymentText = "";
+  if (params.paymentMethod === "DEDUCTION") {
+    paymentText = `خصما من مستحقات الشركة في عملية (${params.deductionOperationName || "........"}) عن شهر (${params.deductionMonth || "........"}) لسنة (${params.deductionYear || "...."})`;
+  } else {
+    paymentText = `بإيصال سداد نقدي رقم (${params.receiptNumber || "........"})${params.receiptDate ? ` بتاريخ (${params.receiptDate})` : ""}`;
+  }
 
-  const tafqeetClean = (params.refundTafqeet || "عشرة آلاف جنيه مصري لا غير").trim();
+  docXml = applyExellentTags(docXml, {
+    refund_amount_digits: params.refundAmount || "10000",
+    refund_amount_words: cleanRefundWords ? `${cleanRefundWords} جنيه مصري` : "عشرة آلاف جنيه",
+    payment_source_details: `والمسدد ( ${paymentText} )`,
+    bank_name: params.bankName || "بنك مصر",
+    bank_branch: params.bankBranch || "أحمد زويل",
+    account_holder_name: params.accountHolderName || "",
+    bank_account_number: params.bankAccountNumber || "",
+    account_national_id: params.accountNationalId || "",
+  });
+
+  // دعم القوالب القديمة
+  docXml = docXml.replace(/10000/g, escapeXml(params.refundAmount || "10000"));
   const sTafqeetToken = '<w:t xml:space="preserve"> فقط : </w:t>';
   const eTafqeetToken = 'لا غير </w:t></w:r>';
   const sTafIdx = docXml.indexOf(sTafqeetToken);
@@ -2155,15 +2233,7 @@ export async function generateExellentFinalInsuranceRefundDocx(params: {
     const afterTaf = docXml.substring(eTafIdx + eTafqeetToken.length);
     docXml = beforeTaf + `<w:t xml:space="preserve"> ( ${escapeXml(tafqeetClean)} ) </w:t></w:r>` + afterTaf;
   } else {
-    docXml = docXml.replace(/عشرة\s+[أاآ]لاف\s+جنيه(?:\s*لا\s*غير)?/g, escapeXml(cleanTafqeetForTemplate(tafqeetClean)));
-  }
-
-  // 3. استبدال جملة طريقة السداد بدقة شاملة لكامل الكتلة بين (والمسدد) و (والخاصة)
-  let paymentText = "";
-  if (params.paymentMethod === "DEDUCTION") {
-    paymentText = `خصما من مستحقات الشركة في عملية (${escapeXml(params.deductionOperationName || "........")}) عن شهر (${escapeXml(params.deductionMonth || "........")}) لسنة (${escapeXml(params.deductionYear || "....")})`;
-  } else {
-    paymentText = `بإيصال سداد نقدي رقم (${escapeXml(params.receiptNumber || "........")})${params.receiptDate ? ` بتاريخ (${escapeXml(params.receiptDate)})` : ""}`;
+    docXml = docXml.replace(/عشرة\s+[أاآ]لاف\s+جنيه(?:\s*لا\s*غير)?/g, escapeXml(cleanRefundWords));
   }
 
   const sPayToken = '<w:t>والمسدد';
@@ -2174,19 +2244,15 @@ export async function generateExellentFinalInsuranceRefundDocx(params: {
   if (sPayIdx !== -1 && ePayIdx !== -1) {
     const beforePay = docXml.substring(0, sPayIdx);
     const afterPay = docXml.substring(ePayIdx);
-    const replacementPay = `<w:t xml:space="preserve">والمسدد ( ${paymentText} ) </w:t></w:r><w:r><w:rPr><w:rFonts w:asciiTheme="minorHAnsi" w:hAnsiTheme="minorHAnsi" w:cstheme="minorHAnsi"/><w:b/><w:bCs/><w:sz w:val="32"/><w:szCs w:val="32"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t xml:space="preserve">`;
+    const replacementPay = `<w:t xml:space="preserve">والمسدد ( ${escapeXml(paymentText)} ) </w:t></w:r><w:r><w:rPr><w:rFonts w:asciiTheme="minorHAnsi" w:hAnsiTheme="minorHAnsi" w:cstheme="minorHAnsi"/><w:b/><w:bCs/><w:sz w:val="32"/><w:szCs w:val="32"/><w:rtl/><w:lang w:bidi="ar-EG"/></w:rPr><w:t xml:space="preserve">`;
     docXml = beforePay + replacementPay + afterPay;
   } else {
     docXml = docXml.replace(
       /والمسدد[\s\S]*?والخاصة/g,
-      `والمسدد ( ${paymentText} ) والخاصة`
+      `والمسدد ( ${escapeXml(paymentText)} ) والخاصة`
     );
   }
 
-  docXml = applyExellentTenderMethod(docXml, params.tenderMethod);
-  docXml = applyExellentCommonDetails(docXml, params);
-
-  // 4. استبدال بيانات الحساب البنكي
   docXml = docXml.replace(/بنك مصر/g, escapeXml(params.bankName || "بنك مصر"));
   docXml = docXml.replace(/أحمد زويل/g, escapeXml(params.bankBranch || "أحمد زويل"));
   docXml = docXml.replace(/إيهاب عبدربة بصل/g, escapeXml(params.accountHolderName || ""));
@@ -2297,13 +2363,16 @@ export async function generateExellentWarrantyCertificateDocx(params: {
     docXml = injectSingleQrIntoDocXml(docXml, qrXml, escapeXml(params.registrationNumber || ""));
   }
 
-  const { cleanMethod, methodWithBa } = formatTenderMethod(params.tenderMethod);
-
   docXml = applyExellentRecipient(docXml, params.recipientPrefix, params.recipientTitleAndAuthority);
 
-  docXml = docXml.replace(/للأصناف الموردة/g, escapeXml(params.subjectTarget || "للأصناف الموردة"));
-  docXml = applyExellentCommonDetails(docXml, params);
+  docXml = applyExellentTags(docXml, {
+    warranty_subject: params.subjectTarget || "للأصناف الموردة",
+    company_name_ar: params.companyName || "إكسلنت",
+    supplied_items_category: params.suppliedItemsCategory || "الأصناف والمهمات الموردة",
+    authority_short: params.authorityShort || "الجهة الإدارية",
+  });
 
+  docXml = docXml.replace(/للأصناف الموردة/g, escapeXml(params.subjectTarget || "للأصناف الموردة"));
   docXml = docXml.replace(/إكسلانت سرفيس|اكسلانت سرفيس/g, escapeXml(params.companyName || "إكسلنت"));
   docXml = docXml.replace(/كاوتش وبطاريات/g, escapeXml(params.suppliedItemsCategory || "الأصناف والمهمات الموردة"));
   docXml = docXml.replace(/الجامعه/g, escapeXml(params.authorityShort || "الجهة الإدارية"));
@@ -2311,7 +2380,7 @@ export async function generateExellentWarrantyCertificateDocx(params: {
   docXml = applyExellentTenderMethod(docXml, params.tenderMethod);
   docXml = applyExellentCommonDetails(docXml, params);
 
-  // استبدال جدول الأصناف
+  // استبدال جدول الأصناف (يستبدل أيضاً صف {#items}...{/items} بالكامل بصفوف الأصناف الفعلية)
   const tableMatch = docXml.match(/<w:tbl[\s\S]*?<\/w:tbl>/);
   if (tableMatch) {
     const originalTable = tableMatch[0];
@@ -2337,12 +2406,16 @@ export async function generateExellentWarrantyCertificateDocx(params: {
   }
   const durationCombined = `${escapeXml(duration)} ${escapeXml(coverage)}`.trim();
 
-    // استبدال نص مدة وتغطية الضمان داخل نفس الفقرة الأصلية لحفظ تنسيق وحجم خط القالب
-    if (/سنة ضد عيوب الصناعه في مداس الكاوتش\s*فقط/.test(docXml)) {
-      docXml = docXml.replace(/سنة ضد عيوب الصناعه في مداس الكاوتش\s*فقط/g, durationCombined);
-    } else {
-      docXml = docXml.replace(/(<w:t[^>]*>مدة الضمان<\/w:t>[\s\S]*?<w:t[^>]*>:\s*<\/w:t>\s*<w:t[^>]*>)[^<]*(<\/w:t>)/, `$1 ${durationCombined}$2`);
-    }
+  docXml = applyExellentTags(docXml, {
+    warranty_duration: duration,
+    warranty_coverage: coverage,
+  });
+
+  if (/سنة ضد عيوب الصناعه في مداس الكاوتش\s*فقط/.test(docXml)) {
+    docXml = docXml.replace(/سنة ضد عيوب الصناعه في مداس الكاوتش\s*فقط/g, durationCombined);
+  } else {
+    docXml = docXml.replace(/(<w:t[^>]*>مدة الضمان<\/w:t>[\s\S]*?<w:t[^>]*>:\s*<\/w:t>\s*<w:t[^>]*>)[^<]*(<\/w:t>)/, `$1 ${durationCombined}$2`);
+  }
 
   // 2. معالجة الحالات التي لا يسري فيها الضمان (الحذف التام للفقرة عند مسحها بالواجهة)
   const c1 = (params.case1 || "").trim();
@@ -2350,31 +2423,22 @@ export async function generateExellentWarrantyCertificateDocx(params: {
   const c3 = (params.case3 || "").trim();
   const c4 = (params.case4 || "").trim();
 
-  if (c1) {
-    docXml = docXml.replace(/زيادة ضغط الهواء بالاطارات\.?\s*/g, escapeXml(c1.replace(/\.$/, "")) + ".");
-  } else {
-    docXml = docXml.replace(/<w:p\b[^>]*>(?:(?!<\/w:p>)[\s\S])*?زيادة ضغط الهواء بالاطارات(?:(?!<\/w:p>)[\s\S])*?<\/w:p>/g, "");
-  }
+  const applyExclusionCase = (tag: string, legacyPattern: RegExp, legacyParaPattern: RegExp, val: string) => {
+    if (val) {
+      const cleanVal = val.replace(/\.$/, "") + ".";
+      docXml = docXml.split(`{${tag}}`).join(escapeXml(cleanVal));
+      docXml = docXml.replace(legacyPattern, escapeXml(cleanVal));
+    } else {
+      docXml = docXml.replace(new RegExp(`<w:p\\b[^>]*>(?:(?!<\\/w:p>)[\\s\\S])*?\\{${tag}\\}(?:(?!<\\/w:p>)[\\s\\S])*?<\\/w:p>`, "g"), "");
+      docXml = docXml.replace(legacyParaPattern, "");
+    }
+  };
 
-  if (c2) {
-    docXml = docXml.replace(/التعرض للصدمات أو اى الات حادة\.?\s*/g, escapeXml(c2.replace(/\.$/, "")) + ".");
-  } else {
-    docXml = docXml.replace(/<w:p\b[^>]*>(?:(?!<\/w:p>)[\s\S])*?التعرض للصدمات(?:(?!<\/w:p>)[\s\S])*?<\/w:p>/g, "");
-  }
+  applyExclusionCase("exclusion_case_1", /زيادة ضغط الهواء بالاطارات\.?\s*/g, /<w:p\b[^>]*>(?:(?!<\/w:p>)[\s\S])*?زيادة ضغط الهواء بالاطارات(?:(?!<\/w:p>)[\s\S])*?<\/w:p>/g, c1);
+  applyExclusionCase("exclusion_case_2", /التعرض للصدمات أو اى الات حادة\.?\s*/g, /<w:p\b[^>]*>(?:(?!<\/w:p>)[\s\S])*?التعرض للصدمات(?:(?!<\/w:p>)[\s\S])*?<\/w:p>/g, c2);
+  applyExclusionCase("exclusion_case_3", /سوء الاستخدام\.?\s*/g, /<w:p\b[^>]*>(?:(?!<\/w:p>)[\s\S])*?سوء الاستخدام(?:(?!<\/w:p>)[\s\S])*?<\/w:p>/g, c3);
+  applyExclusionCase("exclusion_case_4", /أي شطب أو تعديل في هذه الشهادة تعتبر لاغيه\.?\s*/g, /<w:p\b[^>]*>(?:(?!<\/w:p>)[\s\S])*?أي شطب أو تعديل(?:(?!<\/w:p>)[\s\S])*?<\/w:p>/g, c4);
 
-  if (c3) {
-    docXml = docXml.replace(/سوء الاستخدام\.?\s*/g, escapeXml(c3.replace(/\.$/, "")) + ".");
-  } else {
-    docXml = docXml.replace(/<w:p\b[^>]*>(?:(?!<\/w:p>)[\s\S])*?سوء الاستخدام(?:(?!<\/w:p>)[\s\S])*?<\/w:p>/g, "");
-  }
-
-  if (c4) {
-    docXml = docXml.replace(/أي شطب أو تعديل في هذه الشهادة تعتبر لاغيه\.?\s*/g, escapeXml(c4.replace(/\.$/, "")) + ".");
-  } else {
-    docXml = docXml.replace(/<w:p\b[^>]*>(?:(?!<\/w:p>)[\s\S])*?أي شطب أو تعديل(?:(?!<\/w:p>)[\s\S])*?<\/w:p>/g, "");
-  }
-
-  // إذا تم مسح كافة الحالات الأربعة -> حذف عنوان "لا يسرى الضمان في الحالات الاتيه"
   if (!c1 && !c2 && !c3 && !c4) {
     docXml = docXml.replace(/<w:p\b[^>]*>(?:(?!<\/w:p>)[\s\S])*?لا يسرى الضمان في الحالات الاتيه(?:(?!<\/w:p>)[\s\S])*?<\/w:p>/g, "");
   }
@@ -2382,6 +2446,7 @@ export async function generateExellentWarrantyCertificateDocx(params: {
   // 3. مدة سريان الشهادة
   const valDur = (params.validityDuration || "").trim();
   if (valDur) {
+    docXml = applyExellentTags(docXml, { validity_duration: valDur });
     docXml = docXml.replace(
       /مدة سريان الشهادة\s*\(\s*ستة أشهر\s*\)/g,
       `مدة سريان الشهادة ( ${escapeXml(valDur)} )`

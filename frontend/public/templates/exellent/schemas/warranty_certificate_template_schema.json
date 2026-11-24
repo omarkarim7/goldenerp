@@ -1,0 +1,183 @@
+{
+  "template": "warranty_certificate_template.docx",
+  "company_profile": [
+    {
+      "key": "company_name_en",
+      "label": "اسم الشركة (بالإنجليزية/التجاري)"
+    },
+    {
+      "key": "company_cr",
+      "label": "رقم السجل التجاري"
+    },
+    {
+      "key": "company_tax",
+      "label": "رقم البطاقة الضريبية"
+    },
+    {
+      "key": "company_mobile",
+      "label": "رقم الموبايل"
+    },
+    {
+      "key": "company_address",
+      "label": "عنوان الشركة"
+    },
+    {
+      "key": "company_email",
+      "label": "البريد الإلكتروني / تفاصيل أخرى"
+    },
+    {
+      "key": "company_phone",
+      "label": "رقم الهاتف / الفاكس"
+    },
+    {
+      "key": "company_name_ar",
+      "label": "اسم الشركة الكامل (بالعربية)"
+    },
+    {
+      "key": "specialist_title",
+      "label": "مسمى المختص"
+    },
+    {
+      "key": "finance_manager_title",
+      "label": "مسمى المدير"
+    },
+    {
+      "key": "chairman_title",
+      "label": "مسمى الاعتماد"
+    },
+    {
+      "key": "specialist_name",
+      "label": "اسم المختص"
+    },
+    {
+      "key": "finance_manager_name",
+      "label": "اسم المدير"
+    },
+    {
+      "key": "board_chairman",
+      "label": "المعتمد / رئيس مجلس الإدارة"
+    }
+  ],
+  "auto_generated": [
+    {
+      "key": "barcode",
+      "label": "الباركود / رمز QR"
+    },
+    {
+      "key": "company_process_code",
+      "label": "كود العملية بالشركة"
+    },
+    {
+      "key": "issue_date",
+      "label": "تاريخ الإصدار"
+    },
+    {
+      "key": "registration_number",
+      "label": "رقم القيد الصادر"
+    }
+  ],
+  "user_form": [
+    {
+      "key": "recipient_title",
+      "label": "لقب المرسل إليه"
+    },
+    {
+      "key": "recipient_entity",
+      "label": "الجهة المرسل إليها"
+    },
+    {
+      "key": "warranty_subject",
+      "label": "موضوع شهادة الضمان"
+    },
+    {
+      "key": "process_name",
+      "label": "اسم العملية المسجلة"
+    },
+    {
+      "key": "process_number",
+      "label": "رقم العملية"
+    },
+    {
+      "key": "supplied_items_category",
+      "label": "فئة الأصناف الموردة"
+    },
+    {
+      "key": "authority_short",
+      "label": "اسم الجهة المصدرة لأمر التوريد"
+    },
+    {
+      "key": "tender_method",
+      "label": "أسلوب الطرح"
+    },
+    {
+      "key": "tender_purpose",
+      "label": "الغرض / موضوع العملية"
+    },
+    {
+      "key": "fiscal_year",
+      "label": "العام المالي"
+    },
+    {
+      "key": "session_date",
+      "label": "تاريخ جلسة الفتح الفني"
+    },
+    {
+      "key": "warranty_duration",
+      "label": "مدة الضمان"
+    },
+    {
+      "key": "warranty_coverage",
+      "label": "نطاق تغطية الضمان"
+    },
+    {
+      "key": "exclusion_case_1",
+      "label": "حالة استثناء الضمان (1)"
+    },
+    {
+      "key": "exclusion_case_2",
+      "label": "حالة استثناء الضمان (2)"
+    },
+    {
+      "key": "exclusion_case_3",
+      "label": "حالة استثناء الضمان (3)"
+    },
+    {
+      "key": "exclusion_case_4",
+      "label": "حالة استثناء الضمان (4)"
+    },
+    {
+      "key": "validity_duration",
+      "label": "مدة سريان الشهادة"
+    },
+    {
+      "key": "additional_notes",
+      "label": "ملاحظات إضافية"
+    }
+  ],
+  "items": [
+    {
+      "key": "index",
+      "label": "index"
+    },
+    {
+      "key": "item_name",
+      "label": "item_name"
+    },
+    {
+      "key": "unit",
+      "label": "unit"
+    },
+    {
+      "key": "quantity",
+      "label": "quantity"
+    },
+    {
+      "key": "description",
+      "label": "description"
+    },
+    {
+      "key": "notes",
+      "label": "notes"
+    }
+  ]
+}
