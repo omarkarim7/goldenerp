@@ -121,22 +121,8 @@ export default function RadarPage() {
   // Track Viewed Tenders (معاينة كراسة الشروط)
   const [viewedTenderIds, setViewedTenderIds] = useState<Set<string>>(new Set());
 
-  // Auto-Scan Daily Config State
-  const [autoScanConfig, setAutoScanConfig] = useState<{
-    enabled: boolean;
-    scheduledTime: string;
-    lastAutoScan: string | null;
-  }>({
-    enabled: true,
-    scheduledTime: "09:00 ص",
-    lastAutoScan: null,
-  });
-  const [isUpdatingAutoScan, setIsUpdatingAutoScan] = useState(false);
-
-  // Scanning Overlay & Interactive Animation
-  const [isScanning, setIsScanning] = useState(false);
-  const [scanStep, setScanStep] = useState(0);
-  const [scanResult, setScanResult] = useState<{ success: boolean; total: number; totalAll?: number; message: string; isNew?: boolean } | null>(null);
+  // Desktop Program Guide Modal State
+  const [desktopGuideOpen, setDesktopGuideOpen] = useState(false);
 
   // Document Viewer Modal State (Supports both PDF & Word DOCX in-app)
   const [previewPdfUrl, setPreviewPdfUrl] = useState<string | null>(null);
@@ -280,37 +266,16 @@ export default function RadarPage() {
   const fetchData = async () => {
     try {
       setLoading(true);
-      const [itemsRes, statsRes, autoScanRes] = await Promise.all([
+      const [itemsRes, statsRes] = await Promise.all([
         api.get("/radar/items?limit=100&sortBy=newest"),
         api.get("/radar/stats"),
-        api.get("/radar/auto-scan-config").catch(() => ({ data: { enabled: true, scheduledTime: "09:00 ص", lastAutoScan: null } })),
       ]);
 
       const loadedItems = (itemsRes.data?.items || []).map(normalizeRadarItem);
       setItems(loadedItems);
       setStats(statsRes.data);
-      if (autoScanRes?.data) {
-        setAutoScanConfig(autoScanRes.data);
-      }
       setLoading(false); // Unblock immediately!
       return loadedItems;
-
-      // Check proxy status
-      api.get("/radar/proxy-config").then((res) => {
-        if (res.data) {
-          setProxyConfigured(Boolean(res.data.configured));
-          if (res.data.proxyUrl) setProxyUrlInput(res.data.proxyUrl);
-        }
-      }).catch(() => {});
-
-      // Check external portal connection asynchronously in background without freezing UI
-      api.get("/radar/status")
-        .then((res) => {
-          if (res.data) setConnectionStatus(res.data);
-        })
-        .catch(() => {
-          setConnectionStatus({ connected: true, message: "الاتصال مؤمن ومشفر" });
-        });
     } catch (err: any) {
       toast.error("فشل تحميل بيانات الرادار من السيرفر");
       setLoading(false);
@@ -337,188 +302,6 @@ export default function RadarPage() {
       } catch {}
       return next;
     });
-  };
-
-  // Toggle Daily Auto-Scan
-  const handleToggleAutoScan = async () => {
-    try {
-      setIsUpdatingAutoScan(true);
-      const newEnabled = !autoScanConfig.enabled;
-      const res = await api.post("/radar/auto-scan-config", {
-        enabled: newEnabled,
-        scheduledTime: autoScanConfig.scheduledTime,
-      });
-      if (res.data) {
-        setAutoScanConfig(res.data);
-      }
-      const activeTime = res.data?.scheduledTime || autoScanConfig.scheduledTime || "09:00 ص";
-      toast.success(
-        newEnabled
-          ? `تم تفعيل الفحص اليومي التلقائي بنجاح (يومياً ${activeTime})`
-          : "تم إيقاف الفحص اليومي التلقائي مؤقتاً"
-      );
-    } catch {
-      toast.error("فشل تحديث إعدادات الفحص التلقائي");
-    } finally {
-      setIsUpdatingAutoScan(false);
-    }
-  };
-
-  // Update Daily Scheduled Scan Time
-  const handleUpdateScheduledTime = async (newTime: string) => {
-    try {
-      setIsUpdatingAutoScan(true);
-      const res = await api.post("/radar/auto-scan-config", {
-        enabled: autoScanConfig.enabled,
-        scheduledTime: newTime,
-      });
-      if (res.data) {
-        setAutoScanConfig(res.data);
-      }
-      toast.success(`تم تحديث موعد السحب التلقائي اليومي إلى (${newTime}) بنجاح`);
-    } catch {
-      toast.error("فشل حفظ توقيت السحب التلقائي");
-    } finally {
-      setIsUpdatingAutoScan(false);
-    }
-  };
-
-  // Trigger Live Scan: Local Desktop Bridge first, otherwise Server Scan / Desktop Guidance
-  const handleScan = async () => {
-    setIsScanning(true);
-    setScanStep(0);
-    setScanResult(null);
-
-    const initialCount = items.length;
-
-    // Progressive animation step ticker
-    const timer1 = setTimeout(() => setScanStep(1), 2500);
-    const timer2 = setTimeout(() => setScanStep(2), 6000);
-    const timer3 = setTimeout(() => setScanStep(3), 11000);
-
-    // 1. فحص المحرك المحلي على جهاز المستخدم (IP مصري مباشر)
-    let isLocalBridge = false;
-    try {
-      const pingCtrl = new AbortController();
-      const pingTimeout = setTimeout(() => pingCtrl.abort(), 1200);
-      const pingRes = await fetch("http://127.0.0.1:4545/ping", { signal: pingCtrl.signal });
-      clearTimeout(pingTimeout);
-      if (pingRes.ok) {
-        isLocalBridge = true;
-      }
-    } catch {}
-
-    if (isLocalBridge) {
-      toast.info("⚡ تم الاتصال بالمحرك المحلي على جهازك! جاري الفحص المباشر عبر اتصالك المصري...", { duration: 4000 });
-      setScanStep(1);
-      try {
-        const bridgeRes = await fetch("http://127.0.0.1:4545/scan", { method: "POST" });
-        await bridgeRes.json();
-        setScanStep(3);
-        await new Promise((r) => setTimeout(r, 1200));
-        const refreshedItems = await fetchData();
-        const totalItemsCount = refreshedItems?.length || items.length;
-        const newItemsCount = Math.max(0, totalItemsCount - initialCount);
-        setScanStep(4);
-        clearTimeout(timer1);
-        clearTimeout(timer2);
-        clearTimeout(timer3);
-        const completionMsg = newItemsCount > 0
-          ? `✓ تم رصد وتحديث ${newItemsCount} مناقصة جديدة اليوم وإضافتها للرادار بنجاح!`
-          : `✓ اكتمل الفحص: الرادار محدث بالكامل (يتوفر ${totalItemsCount} مناقصة مسجلة).`;
-        setScanResult({
-          success: true,
-          total: newItemsCount,
-          totalAll: totalItemsCount,
-          isNew: newItemsCount > 0,
-          message: completionMsg,
-        });
-        toast.success(completionMsg, { duration: 6000 });
-        return;
-      } catch (bridgeErr) {
-        console.warn("Local bridge scan failed, trying server scan:", bridgeErr);
-      }
-    }
-
-    try {
-      const res = await api.post("/radar/scan", { pagesCount: 10 });
-      clearTimeout(timer1);
-      clearTimeout(timer2);
-      clearTimeout(timer3);
-
-      if (!res.data?.success) {
-        setScanStep(4);
-        const guideMsg =
-          res.data?.message ||
-          "يرجى تشغيل برنامج الرادار على جهازك (GoldenERP_Radar.exe) لسحب أحدث المناقصات وكراسات الشروط ثم الضغط على تحديث الشاشة.";
-        setScanResult({
-          success: false,
-          total: 0,
-          totalAll: res.data?.totalScanned ?? items.length,
-          isNew: false,
-          message: guideMsg,
-        });
-        toast.info("يرجى تشغيل برنامج GoldenERP_Radar.exe على جهازك للحصول على أحدث المناقصات.", { duration: 6000 });
-        return;
-      }
-
-      const refreshedItems = await fetchData();
-      const totalItemsCount = refreshedItems?.length || res.data?.totalScanned || items.length;
-      const newItemsCount = res.data?.newCount ?? Math.max(0, totalItemsCount - initialCount);
-
-      setScanStep(4);
-      const completionMsg =
-        newItemsCount > 0
-          ? `✓ تم رصد وتحديث ${newItemsCount} مناقصة جديدة اليوم وإضافتها للرادار بنجاح!`
-          : `✓ اكتمل الفحص: الرادار محدث بالكامل (يتوفر ${totalItemsCount} مناقصة مسجلة).`;
-
-      setScanResult({
-        success: true,
-        total: newItemsCount,
-        totalAll: totalItemsCount,
-        isNew: newItemsCount > 0,
-        message: completionMsg,
-      });
-
-      if (newItemsCount > 0) {
-        toast.success(completionMsg, { duration: 6000 });
-      } else {
-        toast.info(completionMsg, { duration: 5000 });
-      }
-    } catch (err: any) {
-      clearTimeout(timer1);
-      clearTimeout(timer2);
-      clearTimeout(timer3);
-
-      const errorMsg =
-        err.response?.data?.message ||
-        "يرجى تشغيل برنامج الرادار على جهازك (GoldenERP_Radar.exe) للحصول على أحدث المناقصات وكراسات الشروط.";
-      setScanResult({
-        success: false,
-        total: 0,
-        totalAll: items.length,
-        isNew: false,
-        message: errorMsg,
-      });
-      toast.info(errorMsg);
-    }
-  };
-
-  const closeScanOverlay = async () => {
-    setIsScanning(false);
-    setScanResult(null);
-    setScanStep(0);
-    // Reset filters so that all radar items are unconditionally visible to user
-    setSearchQuery("");
-    setSelectedMethod("ALL");
-    setSelectedCategory("ALL");
-    setImportFilter("ALL");
-    setSelectedCompany("ALL");
-    setCurrentPage(1);
-    await fetchData();
-    setTimeout(() => {
-      document.getElementById("radar-tenders-grid")?.scrollIntoView({ behavior: "smooth" });
-    }, 150);
   };
 
   // Convert to Operation
@@ -1303,26 +1086,19 @@ export default function RadarPage() {
     );
   };
 
-  const scanSteps = [
-    { label: "المصادقة وتأمين جلسة الاتصال المشفرة", detail: "التحقق من الهوية الرقمية والاعتماد الحكومي المعتمد" },
-    { label: "الاتصال المباشر بقاعدة بيانات التعاقدات العامة", detail: "مزامنة البيانات الحية مع بوابة التعاقدات الحكومية المركزية" },
-    { label: "مسح وتحليل أحدث العمليات المطروحة اليوم", detail: "سحب أحدث المناقصات وتاريخ الطرح والمواعيد الحساسة" },
-    { label: "استخراج كراسات الشروط والبنود التفصيلية", detail: "تجهيز كراسات الشروط والبنود للتحميل والمعاينة المباشرة" },
-  ];
-
   return (
     <div className="space-y-6 sm:space-y-8 animate-fade-in pb-16">
       {/* ========================================================================= */}
       {/* 1. Header Banner: Standalone Unified Central Radar for all Companies      */}
       {/* ========================================================================= */}
-      <div className="relative overflow-hidden rounded-3xl glass-card p-5 sm:p-7 border border-border dark:border-slate-700/80 shadow-2xl">
+      <div className="relative overflow-hidden rounded-3xl glass-card p-5 sm:p-7 border border-border dark:border-slate-700/80 shadow-xl">
         <div className="absolute top-0 right-0 w-96 h-96 bg-blue-500/10 rounded-full blur-3xl pointer-events-none" />
         <div className="absolute bottom-0 left-0 w-80 h-80 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none" />
 
         <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-5">
           <div className="space-y-2">
             <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full badge-blue text-xs font-semibold">
-              <Globe2 className="h-3.5 w-3.5 text-blue-400" />
+              <Globe2 className="h-3.5 w-3.5 text-blue-500" />
               <span>الرادار الحكومي المركزي العام • رصد واستكشاف الفرص والمناقصات الحكومية</span>
             </div>
             <h1 className="text-2xl sm:text-3xl font-black text-foreground">
@@ -1334,15 +1110,15 @@ export default function RadarPage() {
           </div>
 
           <div className="flex items-center gap-2.5 shrink-0 flex-wrap">
-            {/* Desktop Program Sync Trigger Button */}
+            {/* Single Clear Desktop Program Instructions Button */}
             <Button
-              onClick={handleScan}
-              disabled={isScanning}
-              className="bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-700 hover:from-blue-500 hover:to-indigo-500 text-white font-black px-5 py-2.5 rounded-2xl text-xs sm:text-sm cursor-pointer shadow-lg shadow-blue-500/25 active:scale-95 transition-all flex items-center gap-2"
-              title="قم بتشغيل برنامج الرادار على جهازك أو اضغط هنا للتحقق وسحب أحدث المناقصات"
+              type="button"
+              onClick={() => setDesktopGuideOpen(true)}
+              className="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-black px-5 py-2.5 rounded-2xl text-xs sm:text-sm cursor-pointer shadow-lg shadow-blue-500/20 active:scale-95 transition-all flex items-center gap-2"
+              title="عرض خطوات تشغيل برنامج الرادار على جهازك"
             >
-              <Monitor className={`h-4 w-4 text-amber-300 ${isScanning ? "animate-pulse" : ""}`} />
-              <span>سحب التحديثات عبر برنامج الجهاز 💻</span>
+              <HelpCircle className="h-4 w-4 text-amber-300" />
+              <span>خطوات تشغيل البرنامج 💻</span>
             </Button>
 
             {/* Refresh Live Items Button */}
@@ -1350,10 +1126,10 @@ export default function RadarPage() {
               variant="outline"
               onClick={fetchData}
               disabled={loading}
-              className="border-border bg-card hover:bg-muted font-bold px-4 py-2.5 rounded-2xl text-xs sm:text-sm cursor-pointer shadow-xs flex items-center gap-2"
+              className="border-border bg-card hover:bg-muted text-foreground font-bold px-4 py-2.5 rounded-2xl text-xs sm:text-sm cursor-pointer shadow-xs flex items-center gap-2"
               title="تحديث واستعراض العمليات الحالية"
             >
-              <RefreshCw className={`h-4 w-4 text-blue-500 ${loading ? "animate-spin" : ""}`} />
+              <RefreshCw className={`h-4 w-4 text-blue-600 dark:text-blue-400 ${loading ? "animate-spin" : ""}`} />
               <span>تحديث الشاشة</span>
             </Button>
 
@@ -1361,7 +1137,7 @@ export default function RadarPage() {
             <Button
               variant="outline"
               onClick={handleClearAllPending}
-              className="border-rose-500/30 bg-rose-500/10 hover:bg-rose-600 hover:text-white text-rose-400 font-bold px-4 py-2.5 rounded-2xl text-xs sm:text-sm transition-all cursor-pointer shadow-sm active:scale-95 flex items-center gap-1.5"
+              className="border-rose-300 dark:border-rose-500/30 bg-rose-50 dark:bg-rose-500/10 hover:bg-rose-600 hover:text-white text-rose-600 dark:text-rose-400 font-bold px-4 py-2.5 rounded-2xl text-xs sm:text-sm transition-all cursor-pointer shadow-xs active:scale-95 flex items-center gap-1.5"
               title="مسح وحذف كافة المناقصات الملتقطة بالرادار غير المسحوبة"
             >
               <Trash2 className="h-4 w-4" />
@@ -1370,54 +1146,27 @@ export default function RadarPage() {
           </div>
         </div>
 
-        {/* Clear Desktop Program Guidance Banner */}
-        <div className="mt-6 pt-5 border-t border-border flex flex-col lg:flex-row lg:items-center justify-between gap-4 text-xs">
-          <div className="flex items-start sm:items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-blue-500/15 border border-blue-500/30 text-blue-400 flex items-center justify-center shrink-0">
+        {/* Clean High-Contrast Desktop Notice Bar */}
+        <div className="relative z-10 mt-5 p-3.5 sm:p-4 rounded-2xl bg-blue-50/90 dark:bg-slate-900/70 border border-blue-200 dark:border-blue-500/30 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-xl bg-blue-600 text-white flex items-center justify-center shrink-0 shadow-sm">
               <Monitor className="h-4 w-4" />
             </div>
-            <div className="space-y-0.5">
-              <p className="font-black text-xs sm:text-sm text-foreground flex items-center gap-2 flex-wrap">
-                <span>قم بتشغيل البرنامج على جهازك للحصول على أحدث المناقصات وكراسات الشروط</span>
-                <Badge className="bg-emerald-500/15 text-emerald-400 border-emerald-500/30 font-mono text-[11px]">
-                  GoldenERP_Radar.exe
-                </Badge>
-              </p>
-              <p className="text-[11px] sm:text-xs text-muted-foreground">
-                لأن البوابة الحكومية تتطلب اتصالاً من داخل مصر، شغّل برنامج <span className="font-mono font-bold text-foreground">GoldenERP_Radar.exe</span> على جهازك في أي وقت ثم اضغط <strong>تحديث الشاشة</strong> لتظهر أحدث العمليات فوراً.
-              </p>
+            <p className="text-xs sm:text-sm font-bold text-slate-800 dark:text-slate-100 leading-relaxed">
+              لتحديث الرادار بأحدث المناقصات وكراسات الشروط: شغّل برنامج{" "}
+              <span className="inline-block font-mono font-black text-emerald-800 dark:text-emerald-300 bg-emerald-100 dark:bg-emerald-500/20 border border-emerald-300 dark:border-emerald-500/30 px-2 py-0.5 rounded-lg mx-0.5">
+                GoldenERP_Radar.exe
+              </span>{" "}
+              على جهازك ثم اضغط <span className="text-blue-700 dark:text-blue-400 font-black">تحديث الشاشة</span>.
+            </p>
+          </div>
+
+          {stats?.lastScanTime && (
+            <div className="flex items-center gap-1.5 text-xs text-slate-700 dark:text-slate-300 font-mono bg-white dark:bg-slate-800 px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 shrink-0 self-start sm:self-auto shadow-2xs">
+              <Clock className="h-3.5 w-3.5 text-blue-600 dark:text-blue-400" />
+              <span>آخر تحديث: {new Date(stats.lastScanTime).toLocaleString("ar-EG")}</span>
             </div>
-          </div>
-
-          <div className="flex items-center gap-2.5 flex-wrap shrink-0">
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => {
-                setIsScanning(true);
-                setScanStep(4);
-                setScanResult({
-                  success: false,
-                  total: 0,
-                  totalAll: totalCount || items.length,
-                  isNew: false,
-                  message: "يرجى تشغيل برنامج الرادار على جهازك (GoldenERP_Radar.exe) لسحب أحدث المناقصات وكراسات الشروط عبر اتصالك المصري.",
-                });
-              }}
-              className="h-8 px-3 rounded-xl border-blue-500/30 bg-blue-500/10 hover:bg-blue-500/20 text-blue-400 font-bold text-xs cursor-pointer flex items-center gap-1.5"
-            >
-              <HelpCircle className="h-3.5 w-3.5" />
-              <span>خطوات التشغيل</span>
-            </Button>
-
-            {stats?.lastScanTime && (
-              <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground font-mono bg-muted/50 px-3 py-1.5 rounded-xl border border-border">
-                <Clock className="h-3.5 w-3.5 text-blue-500" />
-                <span>آخر تحديث: {new Date(stats.lastScanTime).toLocaleString("ar-EG")}</span>
-              </div>
-            )}
-          </div>
+          )}
         </div>
       </div>
 
@@ -1698,12 +1447,12 @@ export default function RadarPage() {
           </p>
           <div className="flex items-center justify-center gap-3 flex-wrap">
             <Button
-              onClick={handleScan}
-              disabled={isScanning}
+              type="button"
+              onClick={() => setDesktopGuideOpen(true)}
               className="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white text-xs font-bold rounded-xl px-6 py-3 cursor-pointer shadow-md flex items-center gap-2"
             >
-              <Monitor className="h-4 w-4 text-amber-300" />
-              <span>سحب التحديثات عبر برنامج الجهاز 💻</span>
+              <HelpCircle className="h-4 w-4 text-amber-300" />
+              <span>خطوات تشغيل البرنامج 💻</span>
             </Button>
             <Button
               onClick={fetchData}
@@ -2406,382 +2155,101 @@ export default function RadarPage() {
     )}
 
       {/* ========================================================================= */}
-      {/* HIGH-TECH RADAR SCANNING OVERLAY MODAL (High-Contrast in Light & Dark Mode) */}
+      {/* DESKTOP RADAR PROGRAM INSTRUCTIONS MODAL (Clean Theme-Aware Dialog)      */}
       {/* ========================================================================= */}
-      {isScanning && (
+      {desktopGuideOpen && (
         <Portal>
-          <div className="fixed inset-0 z-[99999] bg-black/90 backdrop-blur-md flex items-center justify-center p-4 animate-fade-in">
-            <div
-              className={`rounded-3xl p-6 sm:p-7 border max-w-lg w-full shadow-2xl space-y-5 text-center animate-scale-up relative overflow-hidden bg-slate-950 text-white transition-colors duration-500 ${
-                scanResult?.success && scanResult?.isNew
-                  ? "border-emerald-400/60 shadow-[0_0_60px_rgba(16,185,129,0.35)]"
-                  : scanResult?.success && !scanResult?.isNew
-                  ? "border-teal-400/50 shadow-[0_0_60px_rgba(20,184,166,0.3)]"
-                  : scanResult && !scanResult?.success
-                  ? "border-rose-500/60 shadow-[0_0_60px_rgba(244,63,94,0.35)]"
-                  : "border-emerald-500/40 shadow-[0_0_50px_rgba(16,185,129,0.25)]"
-              }`}
-            >
-              {/* Dismiss / Close Button */}
-              <button
-                type="button"
-                onClick={closeScanOverlay}
-                className="absolute top-4 left-4 z-20 w-8 h-8 rounded-full bg-slate-800/80 hover:bg-slate-700 text-slate-300 hover:text-white flex items-center justify-center transition-all cursor-pointer border border-slate-700/60"
-                title="إغلاق نافذة الرادار"
-              >
-                <X className="h-4 w-4" />
-              </button>
-
-              {/* Ambient Background Glow */}
-              <div
-                className={`absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-80 h-80 rounded-full blur-3xl pointer-events-none transition-colors duration-700 ${
-                  scanResult?.success && scanResult?.isNew
-                    ? "bg-emerald-500/20"
-                    : scanResult?.success && !scanResult?.isNew
-                    ? "bg-teal-500/20"
-                    : scanResult && !scanResult?.success
-                    ? "bg-rose-500/20"
-                    : "bg-emerald-500/15"
-                }`}
-              />
-
-              {/* Status Header Chip */}
-              <div className="relative z-10 space-y-1.5 pt-2">
-                <div
-                  className={`inline-flex items-center gap-2 px-3.5 py-1 rounded-full text-xs font-bold font-mono border transition-all ${
-                    scanResult?.success && scanResult?.isNew
-                      ? "bg-emerald-950/90 border-emerald-400/50 text-emerald-300 shadow-sm"
-                      : scanResult?.success && !scanResult?.isNew
-                      ? "bg-teal-950/90 border-teal-400/50 text-teal-300 shadow-sm"
-                      : scanResult && !scanResult?.success
-                      ? "bg-rose-950/90 border-rose-500/50 text-rose-300 shadow-sm"
-                      : "bg-emerald-950/90 border-emerald-500/40 text-emerald-300"
-                  }`}
+          <div className="fixed inset-0 z-[99999] bg-black/65 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in">
+            <div className="glass-panel bg-card border border-border rounded-3xl p-6 sm:p-7 max-w-lg w-full shadow-2xl space-y-5 text-right animate-scale-up">
+              <div className="flex items-start justify-between gap-3 pb-3 border-b border-border">
+                <div className="flex items-center gap-3">
+                  <div className="w-11 h-11 rounded-2xl bg-blue-600 text-white flex items-center justify-center shrink-0 shadow-md">
+                    <Monitor className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-base sm:text-lg font-black text-foreground">
+                      خطوات تشغيل برنامج الرادار على جهازك
+                    </h3>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      لتحديث المناقصات وكراسات الشروط مباشرة عبر اتصالك المصري
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setDesktopGuideOpen(false)}
+                  className="text-muted-foreground hover:text-foreground p-1 rounded-lg cursor-pointer"
+                  title="إغلاق"
                 >
-                  <span
-                    className={`w-2 h-2 rounded-full ${
-                      scanResult?.success && scanResult?.isNew
-                        ? "bg-emerald-400 animate-ping"
-                        : scanResult?.success && !scanResult?.isNew
-                        ? "bg-teal-400"
-                        : scanResult && !scanResult?.success
-                        ? "bg-rose-400 animate-ping"
-                        : "bg-emerald-400 animate-ping"
-                    }`}
-                  />
-                  <span>
-                    {scanResult?.success && scanResult?.isNew
-                      ? "🎯 صيد جديد • تم اكتشاف مناقصات اليوم"
-                      : scanResult?.success && !scanResult?.isNew
-                      ? "🛡️ درع الرادار النشط • كافة البيانات محدثة"
-                      : scanResult && !scanResult?.success
-                      ? "⚠️ تنبيه الشبكة • فشل الاتصال بالبوابة"
-                      : "فحص مباشر ومؤمن لبوابة التعاقدات الحكومية"}
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+
+              <div className="space-y-3 text-xs sm:text-sm">
+                <div className="flex items-start gap-3 p-3.5 rounded-2xl bg-muted/50 border border-border">
+                  <span className="w-6 h-6 rounded-full bg-blue-600 text-white font-black text-xs flex items-center justify-center shrink-0 mt-0.5">
+                    1
                   </span>
+                  <div className="space-y-1">
+                    <p className="font-bold text-foreground">شغّل برنامج الرادار من جهازك</p>
+                    <p className="text-xs text-muted-foreground leading-relaxed">
+                      اضغط ضغطتين على أيقونة البرنامج{" "}
+                      <span className="font-mono font-bold text-emerald-700 dark:text-emerald-300 bg-emerald-100 dark:bg-emerald-500/20 px-1.5 py-0.5 rounded">
+                        GoldenERP_Radar.exe
+                      </span>{" "}
+                      الموجودة على سطح المكتب.
+                    </p>
+                  </div>
                 </div>
 
-                <h3 className="text-lg sm:text-xl font-black text-white tracking-wide">
-                  {scanResult?.success && scanResult?.isNew
-                    ? `✓ تم رصد ${scanResult.total} مناقصة جديدة اليوم!`
-                    : scanResult?.success && !scanResult?.isNew
-                    ? "✓ اكتمل الفحص: الرادار محدث بالكامل ومحمي!"
-                    : scanResult && !scanResult?.success
-                    ? "تعذر إكمال الفحص المباشر للبوابة الحكومية"
-                    : "جاري تشغيل رادار المناقصات الحكومية..."}
-                </h3>
+                <div className="flex items-start gap-3 p-3.5 rounded-2xl bg-muted/50 border border-border">
+                  <span className="w-6 h-6 rounded-full bg-blue-600 text-white font-black text-xs flex items-center justify-center shrink-0 mt-0.5">
+                    2
+                  </span>
+                  <div className="space-y-1">
+                    <p className="font-bold text-foreground">انتظر 15 ثانية حتى تكتمل المزامنة</p>
+                    <p className="text-xs text-muted-foreground leading-relaxed">
+                      سيقوم البرنامج بتسجيل الدخول لبوابة التعاقدات، وسحب أحدث المناقصات وكراسات الشروط تلقائياً حتى تظهر عبارة{" "}
+                      <span className="font-mono font-bold text-emerald-600 dark:text-emerald-400">SUCCESS</span>.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-start gap-3 p-3.5 rounded-2xl bg-muted/50 border border-border">
+                  <span className="w-6 h-6 rounded-full bg-emerald-600 text-white font-black text-xs flex items-center justify-center shrink-0 mt-0.5">
+                    3
+                  </span>
+                  <div className="space-y-1">
+                    <p className="font-bold text-foreground">حدّث الشاشة لعرض العمليات الجديدة</p>
+                    <p className="text-xs text-muted-foreground leading-relaxed">
+                      بعد انتهاء البرنامج، اضغط على زر <strong>تحديث الشاشة الآن</strong> بالأسفل وستظهر كافة المناقصات وكراساتها فوراً.
+                    </p>
+                  </div>
+                </div>
               </div>
 
-              {/* Radar Scope Visual Chassis */}
-              <div
-                className={`relative mx-auto w-56 h-56 sm:w-64 sm:h-64 rounded-full border-2 bg-slate-900/95 flex items-center justify-center overflow-hidden transition-all duration-700 shadow-2xl ${
-                  scanResult?.success && scanResult?.isNew
-                    ? "border-emerald-400/60 shadow-[0_0_50px_rgba(16,185,129,0.4)]"
-                    : scanResult?.success && !scanResult?.isNew
-                    ? "border-teal-400/60 shadow-[0_0_50px_rgba(20,184,166,0.35)]"
-                    : scanResult && !scanResult?.success
-                    ? "border-rose-500/60 shadow-[0_0_50px_rgba(244,63,94,0.4)]"
-                    : "border-emerald-500/40 shadow-[0_0_40px_rgba(16,185,129,0.3)]"
-                }`}
-              >
-                {/* Outer Rotating Degree Compass Ring */}
-                <div className="absolute inset-1 rounded-full border border-dashed border-emerald-500/25 animate-ring-reverse pointer-events-none flex items-center justify-center">
-                  <span className="absolute top-1 text-[8px] font-mono text-emerald-400/60 font-bold">000°</span>
-                  <span className="absolute right-1 text-[8px] font-mono text-emerald-400/60 font-bold">090°</span>
-                  <span className="absolute bottom-1 text-[8px] font-mono text-emerald-400/60 font-bold">180°</span>
-                  <span className="absolute left-1 text-[8px] font-mono text-emerald-400/60 font-bold">270°</span>
-                </div>
-
-                {/* Concentric Range Rings */}
-                <div className="absolute inset-8 rounded-full border border-emerald-500/20 pointer-events-none" />
-                <div className="absolute inset-16 rounded-full border border-emerald-500/25 pointer-events-none" />
-                <div className="absolute inset-24 rounded-full border border-emerald-500/30 pointer-events-none" />
-
-                {/* Crosshairs with Measurement Lines */}
-                <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                  <div
-                    className={`w-full h-px ${
-                      scanResult && !scanResult.success ? "bg-rose-500/30" : "bg-emerald-500/25"
-                    }`}
-                  />
-                </div>
-                <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                  <div
-                    className={`h-full w-px ${
-                      scanResult && !scanResult.success ? "bg-rose-500/30" : "bg-emerald-500/25"
-                    }`}
-                  />
-                </div>
-
-                {/* Sonar Expanding Waves (Active while scanning or up-to-date) */}
-                {(!scanResult || (scanResult?.success && !scanResult?.isNew)) && (
-                  <div className="absolute inset-0 rounded-full border-2 border-emerald-400/80 animate-radar-pulse pointer-events-none" />
-                )}
-
-                {/* Rotating Sweep Beam (Active while scanning) */}
-                {!scanResult && (
-                  <div
-                    className="absolute inset-0 rounded-full animate-radar-sweep pointer-events-none"
-                    style={{
-                      background:
-                        "conic-gradient(from 0deg, transparent 0deg, transparent 280deg, rgba(16, 185, 129, 0.55) 360deg)",
-                    }}
-                  />
-                )}
-
-                {/* DYNAMIC SCENARIO VISUALS */}
-
-                {/* SCENARIO 0: Active Scanning Blips */}
-                {!scanResult && (
-                  <>
-                    <div className="absolute top-1/4 right-1/3 w-3 h-3 rounded-full bg-emerald-400 animate-radar-blip shadow-[0_0_10px_#10b981]" />
-                    <div className="absolute bottom-1/3 left-1/4 w-2.5 h-2.5 rounded-full bg-cyan-400 animate-radar-blip shadow-[0_0_10px_#06b6d4] [animation-delay:600ms]" />
-                    <div className="absolute top-1/2 left-1/4 w-2.5 h-2.5 rounded-full bg-blue-400 animate-radar-blip shadow-[0_0_10px_#3b82f6] [animation-delay:1200ms]" />
-                    {/* Center Core */}
-                    <div className="relative z-10 w-4 h-4 rounded-full bg-emerald-400 shadow-[0_0_15px_#10b981] animate-pulse" />
-                  </>
-                )}
-
-                {/* SCENARIO 1: New Tenders Discovered - Target Lock HUD */}
-                {scanResult?.success && scanResult?.isNew && (
-                  <>
-                    {/* Target Lock 1 */}
-                    <div className="absolute top-1/4 right-1/4 animate-target-lock z-10 flex flex-col items-center">
-                      <div className="w-8 h-8 rounded-full border-2 border-emerald-400 border-dashed animate-spin flex items-center justify-center [animation-duration:8s]">
-                        <div className="w-2.5 h-2.5 rounded-full bg-emerald-400 shadow-[0_0_10px_#10b981]" />
-                      </div>
-                      <span className="text-[9px] font-mono font-bold bg-emerald-950/90 text-emerald-300 border border-emerald-500/50 px-1 rounded mt-0.5 shadow">
-                        TARGET #1
-                      </span>
-                    </div>
-
-                    {/* Target Lock 2 */}
-                    <div className="absolute bottom-1/4 left-1/4 animate-target-lock [animation-delay:150ms] z-10 flex flex-col items-center">
-                      <div className="w-8 h-8 rounded-full border-2 border-cyan-400 border-dashed animate-spin flex items-center justify-center [animation-duration:8s]">
-                        <div className="w-2.5 h-2.5 rounded-full bg-cyan-400 shadow-[0_0_10px_#06b6d4]" />
-                      </div>
-                      <span className="text-[9px] font-mono font-bold bg-cyan-950/90 text-cyan-300 border border-cyan-500/50 px-1 rounded mt-0.5 shadow">
-                        TARGET #2
-                      </span>
-                    </div>
-
-                    {/* Target Lock 3 if count >= 3 */}
-                    {scanResult.total >= 3 && (
-                      <div className="absolute top-1/3 left-1/5 animate-target-lock [animation-delay:300ms] z-10 flex flex-col items-center">
-                        <div className="w-7 h-7 rounded-full border-2 border-amber-400 border-dashed animate-spin flex items-center justify-center [animation-duration:8s]">
-                          <div className="w-2 h-2 rounded-full bg-amber-400 shadow-[0_0_10px_#f59e0b]" />
-                        </div>
-                        <span className="text-[8px] font-mono font-bold bg-amber-950/90 text-amber-300 border border-amber-500/50 px-1 rounded mt-0.5 shadow">
-                          TARGET #3
-                        </span>
-                      </div>
-                    )}
-
-                    {/* Center Radiant Celebration Burst */}
-                    <div className="relative z-20 flex flex-col items-center justify-center animate-celebration-pop">
-                      <div className="w-14 h-14 rounded-full bg-gradient-to-tr from-emerald-600 to-teal-400 flex items-center justify-center shadow-[0_0_30px_rgba(16,185,129,0.8)] border-2 border-emerald-200">
-                        <Target className="h-7 w-7 text-slate-950 animate-pulse" />
-                      </div>
-                      <span className="text-[10px] font-black font-mono tracking-wider text-emerald-300 bg-slate-950/90 border border-emerald-500/60 px-2 py-0.5 rounded-full mt-1.5 shadow">
-                        +{scanResult.total} NEW
-                      </span>
-                    </div>
-                  </>
-                )}
-
-                {/* SCENARIO 2: Up-to-Date (All Clear) - Harmonic Shield HUD */}
-                {scanResult?.success && !scanResult?.isNew && (
-                  <div className="relative z-20 flex flex-col items-center justify-center animate-shield-glow">
-                    <div className="w-16 h-16 rounded-full bg-gradient-to-tr from-teal-600 to-emerald-400 flex items-center justify-center shadow-[0_0_30px_rgba(20,184,166,0.8)] border-2 border-teal-200">
-                      <ShieldCheck className="h-9 w-9 text-slate-950" />
-                    </div>
-                    <span className="text-[10px] font-black font-mono tracking-wider text-teal-300 bg-slate-950/90 border border-teal-500/60 px-2.5 py-0.5 rounded-full mt-2 shadow">
-                      100% SECURE
-                    </span>
-                  </div>
-                )}
-
-                {/* SCENARIO 3: Error / Failed Connection */}
-                {scanResult && !scanResult?.success && (
-                  <div className="relative z-20 flex flex-col items-center justify-center animate-alert-glow">
-                    <div className="w-16 h-16 rounded-full bg-gradient-to-tr from-rose-600 to-amber-500 flex items-center justify-center shadow-[0_0_30px_rgba(244,63,94,0.8)] border-2 border-rose-200">
-                      <AlertTriangle className="h-8 w-8 text-white" />
-                    </div>
-                    <span className="text-[10px] font-black font-mono tracking-wider text-rose-300 bg-slate-950/90 border border-rose-500/60 px-2.5 py-0.5 rounded-full mt-2 shadow">
-                      DISCONNECTED
-                    </span>
-                  </div>
-                )}
+              <div className="flex flex-col sm:flex-row items-center gap-2.5 pt-2 border-t border-border">
+                <Button
+                  type="button"
+                  onClick={async () => {
+                    setDesktopGuideOpen(false);
+                    await fetchData();
+                    toast.success("تم تحديث قائمة الرادار من السيرفر");
+                  }}
+                  className="w-full sm:flex-1 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-black rounded-xl text-xs py-2.5 cursor-pointer shadow-md flex items-center justify-center gap-2"
+                >
+                  <RefreshCw className="h-4 w-4" />
+                  <span>تحديث الشاشة الآن</span>
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setDesktopGuideOpen(false)}
+                  className="w-full sm:w-auto border-border text-foreground hover:bg-muted rounded-xl text-xs py-2.5 px-5 cursor-pointer font-bold"
+                >
+                  إغلاق
+                </Button>
               </div>
-
-              {/* Bottom Telemetry Strip */}
-              <div className="text-[10px] font-mono text-slate-400 flex items-center justify-center gap-3">
-                <span>FREQ: 9.42 GHz</span>
-                <span>•</span>
-                <span>
-                  {scanResult?.success && scanResult?.isNew
-                    ? "TARGETS ACQUIRED"
-                    : scanResult?.success && !scanResult?.isNew
-                    ? "ALL CLEAR // NO GAPS"
-                    : scanResult && !scanResult?.success
-                    ? "LINK INTERRUPTED"
-                    : "SCANNING RADIAL 360°"}
-                </span>
-                <span>•</span>
-                <span>EGYPT_ETENDERS</span>
-              </div>
-
-              {/* BODY SECTION: Dynamic Outcome UI */}
-
-              {/* WHILE SCANNING: Steps tracker & Progress Bar */}
-              {!scanResult && (
-                <div className="space-y-3 relative z-10">
-                  <div className="space-y-2 text-right bg-slate-900/90 p-4 rounded-2xl border border-slate-800 text-xs shadow-inner">
-                    {scanSteps.map((step, idx) => {
-                      const isDone = scanStep > idx;
-                      const isCurrent = scanStep === idx;
-
-                      return (
-                        <div
-                          key={idx}
-                          className={`flex items-start gap-2.5 transition-all ${
-                            isDone
-                              ? "text-emerald-400"
-                              : isCurrent
-                              ? "text-cyan-400 font-bold"
-                              : "text-slate-400 opacity-60"
-                          }`}
-                        >
-                          <div className="mt-0.5 shrink-0">
-                            {isDone ? (
-                              <CheckCircle2 className="h-4 w-4 text-emerald-400" />
-                            ) : isCurrent ? (
-                              <RefreshCw className="h-4 w-4 animate-spin text-cyan-400" />
-                            ) : (
-                              <div className="w-4 h-4 rounded-full border border-slate-600 flex items-center justify-center text-[10px] text-slate-400">
-                                {idx + 1}
-                              </div>
-                            )}
-                          </div>
-                          <div className="flex-1">
-                            <span className="font-bold block leading-tight text-slate-100">{step.label}</span>
-                            <span className="text-[11px] text-slate-400 block mt-0.5">{step.detail}</span>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-
-                  <div className="w-full bg-slate-800 rounded-full h-2 overflow-hidden border border-slate-700/60">
-                    <div
-                      className="bg-gradient-to-r from-cyan-500 via-blue-500 to-emerald-400 h-2 rounded-full transition-all duration-500"
-                      style={{ width: `${Math.min(95, (scanStep + 1) * 25)}%` }}
-                    />
-                  </div>
-                </div>
-              )}
-
-              {/* CASE A: New Tenders Discovered Card */}
-              {scanResult?.success && scanResult?.isNew && (
-                <div className="p-4 rounded-2xl bg-emerald-950/85 border border-emerald-400/50 text-emerald-100 text-xs space-y-3 shadow-lg">
-                  <p className="font-bold text-sm text-white leading-relaxed">
-                    {scanResult.message}
-                  </p>
-                  <div className="grid grid-cols-2 gap-2 text-[11px] text-emerald-300/90 text-right pt-1">
-                    <div className="flex items-center gap-1.5 bg-emerald-900/40 p-2 rounded-xl border border-emerald-700/40">
-                      <Sparkles className="h-3.5 w-3.5 text-emerald-400 shrink-0" />
-                      <span>سحب كراسات الشروط والبنود</span>
-                    </div>
-                    <div className="flex items-center gap-1.5 bg-emerald-900/40 p-2 rounded-xl border border-emerald-700/40">
-                      <Clock className="h-3.5 w-3.5 text-cyan-400 shrink-0" />
-                      <span>تثبيت مواعيد فتح المظاريف</span>
-                    </div>
-                  </div>
-                  <Button
-                    onClick={closeScanOverlay}
-                    className="w-full bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-black rounded-xl text-xs py-3 cursor-pointer shadow-lg shadow-emerald-900/40 active:scale-95 transition-all flex items-center justify-center gap-2"
-                  >
-                    <span>عرض واستكشاف كافة المناقصات الجديدة ({scanResult.total})</span>
-                    <ArrowRight className="h-4 w-4" />
-                  </Button>
-                </div>
-              )}
-
-              {/* CASE B: All Up to Date Card */}
-              {scanResult?.success && !scanResult?.isNew && (
-                <div className="p-4 rounded-2xl bg-teal-950/80 border border-teal-400/40 text-teal-100 text-xs space-y-3 shadow-lg">
-                  <p className="font-bold text-xs sm:text-sm text-teal-200 leading-relaxed text-right">
-                    {scanResult.message || "الرادار محدث: لا توجد مناقصات جديدة منذ آخر فحص"}
-                  </p>
-                  <p className="text-[11px] text-teal-300/80 text-right leading-relaxed">
-                    تم التأكد من فحص أحدث المناقصات الحكومية المنشورة وتطابقها. كافة العمليات المسجلة بالرادار ({scanResult.totalAll || totalCount || items.length || 10} مناقصة رسمية) محدثة وجاهزة للسحب والدراسة.
-                  </p>
-                  <div className="flex flex-col sm:flex-row items-center gap-2 pt-1">
-                    <Button
-                      onClick={closeScanOverlay}
-                      className="w-full sm:flex-1 bg-teal-600 hover:bg-teal-500 text-white font-black rounded-xl text-xs py-2.5 cursor-pointer shadow-md active:scale-95 transition-all flex items-center justify-center gap-2"
-                    >
-                      <span>عرض مناقصات الرادار ({scanResult.totalAll || totalCount || items.length || 10})</span>
-                      <ArrowRight className="h-4 w-4" />
-                    </Button>
-                  </div>
-                </div>
-              )}
-
-              {/* CASE C: Desktop Program Guide / Connection Blocked Card */}
-              {scanResult && !scanResult?.success && (
-                <div className="p-4 rounded-2xl bg-slate-900/95 border border-blue-500/40 text-slate-100 text-xs space-y-3 shadow-lg text-right">
-                  <div className="flex items-center gap-2 text-blue-300 font-black text-sm">
-                    <Monitor className="h-5 w-5 text-amber-400 shrink-0" />
-                    <span>قم بتشغيل برنامج الرادار على جهازك للحصول على أحدث المناقصات</span>
-                  </div>
-                  <p className="text-[11px] text-slate-300 leading-relaxed">
-                    {scanResult.message}
-                  </p>
-                  <div className="p-3 rounded-xl bg-slate-950/80 border border-slate-800 space-y-1.5 text-[11px] text-slate-300">
-                    <div className="font-bold text-emerald-400">خطوات التحديث السريع (15 ثانية):</div>
-                    <div>1. افتح أيقونة برنامج <span className="font-mono font-bold text-white bg-slate-800 px-1.5 py-0.5 rounded">GoldenERP_Radar.exe</span> على جهازك.</div>
-                    <div>2. انتظر ثواني حتى يكتمل سحب المناقصات وكراسات الشروط وظهور <span className="font-mono text-emerald-400">SUCCESS</span>.</div>
-                    <div>3. اضغط زر <strong>تحديث وعرض القائمة</strong> بالأسفل لتظهر أحدث العمليات فوراً.</div>
-                  </div>
-                  <div className="flex flex-col sm:flex-row items-center gap-2 pt-1">
-                    <Button
-                      onClick={closeScanOverlay}
-                      className="w-full sm:flex-1 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-black rounded-xl text-xs py-2.5 cursor-pointer shadow-md active:scale-95 transition-all flex items-center justify-center gap-2"
-                    >
-                      <RefreshCw className="h-4 w-4" />
-                      <span>تحديث وعرض القائمة الآن</span>
-                    </Button>
-                    <Link
-                      href="/dashboard/settings?tab=radar"
-                      onClick={closeScanOverlay}
-                      className="w-full sm:w-auto px-4 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 font-bold rounded-xl text-xs py-2.5 cursor-pointer shadow-md active:scale-95 transition-all flex items-center justify-center gap-1.5 text-center"
-                    >
-                      <Settings className="h-3.5 w-3.5" />
-                      <span>إعدادات البروكسي ⚙️</span>
-                    </Link>
-                  </div>
-                </div>
-              )}
             </div>
           </div>
         </Portal>
