@@ -11,7 +11,7 @@ import {
   TrendingUp, Activity, CheckCircle, FilePlus2, Timer, Globe2,
   FileSearch, Maximize2, Minimize2, Gavel, Handshake, ArrowRightLeft, Info,
   LayoutGrid, LayoutList, Archive, Trash2, ChevronRight, ChevronsLeft, ChevronsRight,
-  ShieldCheck, Target, Crosshair, Upload, Cloud, Settings
+  ShieldCheck, Target, Crosshair, Upload, Settings, Monitor
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -222,12 +222,10 @@ export default function RadarPage() {
   const [importUrlInput, setImportUrlInput] = useState("");
   const [isImporting, setIsImporting] = useState(false);
 
-  // Free Proxy & GitHub Cloud Actions Configuration State
+  // Egyptian Proxy Configuration State
   const [proxyModalOpen, setProxyModalOpen] = useState(false);
   const [proxyUrlInput, setProxyUrlInput] = useState("");
   const [proxyConfigured, setProxyConfigured] = useState(false);
-  const [githubTokenInput, setGithubTokenInput] = useState("");
-  const [githubConfigured, setGithubConfigured] = useState(false);
   const [isSavingProxy, setIsSavingProxy] = useState(false);
 
   const handleSaveProxy = async () => {
@@ -235,12 +233,10 @@ export default function RadarPage() {
       setIsSavingProxy(true);
       const res = await api.post("/radar/proxy-config", {
         proxyUrl: proxyUrlInput.trim(),
-        githubToken: githubTokenInput.trim(),
       });
       if (res.data?.success) {
-        toast.success(res.data.message || "تم حفظ الإعدادات وتفعيل الفحص بنجاح!");
+        toast.success(res.data.message || "تم حفظ إعدادات البروكسي وتفعيل الفحص بنجاح!");
         setProxyConfigured(Boolean(proxyUrlInput.trim()));
-        setGithubConfigured(Boolean(githubTokenInput.trim()));
         setProxyModalOpen(false);
       } else {
         toast.error(res.data?.message || "فشل حفظ الإعدادات");
@@ -299,13 +295,11 @@ export default function RadarPage() {
       setLoading(false); // Unblock immediately!
       return loadedItems;
 
-      // Check proxy & GitHub cloud actions status
+      // Check proxy status
       api.get("/radar/proxy-config").then((res) => {
         if (res.data) {
           setProxyConfigured(Boolean(res.data.configured));
           if (res.data.proxyUrl) setProxyUrlInput(res.data.proxyUrl);
-          setGithubConfigured(Boolean(res.data.githubConfigured));
-          if (res.data.githubTokenMasked) setGithubTokenInput(res.data.githubTokenMasked);
         }
       }).catch(() => {});
 
@@ -389,7 +383,7 @@ export default function RadarPage() {
     }
   };
 
-  // Trigger Live Scan with High-Tech Animated Radar Overlay (Incremental & Waits for GitHub Actions)
+  // Trigger Live Scan: Local Desktop Bridge first, otherwise Server Scan / Desktop Guidance
   const handleScan = async () => {
     setIsScanning(true);
     setScanStep(0);
@@ -398,9 +392,9 @@ export default function RadarPage() {
     const initialCount = items.length;
 
     // Progressive animation step ticker
-    const timer1 = setTimeout(() => setScanStep(1), 3000);
-    const timer2 = setTimeout(() => setScanStep(2), 7000);
-    const timer3 = setTimeout(() => setScanStep(3), 15000);
+    const timer1 = setTimeout(() => setScanStep(1), 2500);
+    const timer2 = setTimeout(() => setScanStep(2), 6000);
+    const timer3 = setTimeout(() => setScanStep(3), 11000);
 
     // 1. فحص المحرك المحلي على جهاز المستخدم (IP مصري مباشر)
     let isLocalBridge = false;
@@ -442,97 +436,37 @@ export default function RadarPage() {
         toast.success(completionMsg, { duration: 6000 });
         return;
       } catch (bridgeErr) {
-        console.warn("Local bridge scan failed, falling back to cloud:", bridgeErr);
+        console.warn("Local bridge scan failed, trying server scan:", bridgeErr);
       }
     }
 
     try {
       const res = await api.post("/radar/scan", { pagesCount: 10 });
-
-      if (res.data?.requiresToken) {
-        clearTimeout(timer1);
-        clearTimeout(timer2);
-        clearTimeout(timer3);
-        setScanResult({
-          success: true,
-          total: 0,
-          totalAll: items.length,
-          isNew: false,
-          message: res.data.message,
-        });
-        toast.info("يرجى حفظ رمز GitHub Token في الإعدادات لتفعيل الفحص السحابي بضغطة زر.", {
-          duration: 6000,
-        });
-        setIsScanning(false);
-        return;
-      }
-
-      const runId = res.data?.runId;
-
-      // KEEP LOADING & POLL GitHub Actions and DB until the runner finishes pulling data!
-      // Polling loop: checks every 3 seconds for up to 36 seconds
-      const maxPolls = 12;
-      let finalCount = initialCount;
-      let runnerDone = false;
-      let runnerFailed = false;
-
-      for (let p = 0; p < maxPolls; p++) {
-        if (p >= 1) setScanStep(1);
-        if (p >= 3) setScanStep(2);
-        if (p >= 6) setScanStep(3);
-
-        await new Promise((resolve) => setTimeout(resolve, 3000));
-
-        // Check backend scan status if runId exists
-        if (runId) {
-          try {
-            const statusRes = await api.get(`/radar/scan-status/${runId}`);
-            if (statusRes.data?.status === "completed") {
-              runnerDone = true;
-              if (statusRes.data?.conclusion === "failure") {
-                runnerFailed = true;
-              }
-            }
-          } catch {}
-        }
-
-        // Fetch latest items from DB
-        const refreshedItems = await fetchData();
-        if (refreshedItems && refreshedItems.length > initialCount) {
-          finalCount = refreshedItems.length;
-          runnerDone = true;
-          break;
-        }
-
-        if (runnerDone) {
-          finalCount = refreshedItems?.length || initialCount;
-          break;
-        }
-      }
-
       clearTimeout(timer1);
       clearTimeout(timer2);
       clearTimeout(timer3);
 
-      if (runnerFailed && finalCount <= initialCount) {
+      if (!res.data?.success) {
         setScanStep(4);
-        const errMsg = "⚠️ تعذر اتصال السحابة ببوابة التعاقدات الحكومية بسبب جدار الحماية الجغرافي (Geoblock). يرجى تشغيل أداة سطح المكتب (GoldenERP Radar) للسحب المباشر باتصالك المصري الموثوق.";
+        const guideMsg =
+          res.data?.message ||
+          "يرجى تشغيل برنامج الرادار على جهازك (GoldenERP_Radar.exe) لسحب أحدث المناقصات وكراسات الشروط ثم الضغط على تحديث الشاشة.";
         setScanResult({
           success: false,
           total: 0,
-          totalAll: items.length,
+          totalAll: res.data?.totalScanned ?? items.length,
           isNew: false,
-          message: errMsg,
+          message: guideMsg,
         });
-        toast.error(errMsg, { duration: 8000 });
+        toast.info("يرجى تشغيل برنامج GoldenERP_Radar.exe على جهازك للحصول على أحدث المناقصات.", { duration: 6000 });
         return;
       }
 
-      // ONLY NOW mark as complete!
-      setScanStep(4);
-      const newItemsCount = Math.max(0, finalCount - initialCount);
-      const totalItemsCount = finalCount || items.length;
+      const refreshedItems = await fetchData();
+      const totalItemsCount = refreshedItems?.length || res.data?.totalScanned || items.length;
+      const newItemsCount = res.data?.newCount ?? Math.max(0, totalItemsCount - initialCount);
 
+      setScanStep(4);
       const completionMsg =
         newItemsCount > 0
           ? `✓ تم رصد وتحديث ${newItemsCount} مناقصة جديدة اليوم وإضافتها للرادار بنجاح!`
@@ -557,7 +491,8 @@ export default function RadarPage() {
       clearTimeout(timer3);
 
       const errorMsg =
-        err.response?.data?.message || err.message || "حدث خطأ أثناء فحص البوابة الحكومية";
+        err.response?.data?.message ||
+        "يرجى تشغيل برنامج الرادار على جهازك (GoldenERP_Radar.exe) للحصول على أحدث المناقصات وكراسات الشروط.";
       setScanResult({
         success: false,
         total: 0,
@@ -565,7 +500,7 @@ export default function RadarPage() {
         isNew: false,
         message: errorMsg,
       });
-      toast.error(errorMsg);
+      toast.info(errorMsg);
     }
   };
 
@@ -1399,15 +1334,15 @@ export default function RadarPage() {
           </div>
 
           <div className="flex items-center gap-2.5 shrink-0 flex-wrap">
-            {/* Sync Now Button (سحب ومزامنة الآن بضغطة زر) */}
+            {/* Desktop Program Sync Trigger Button */}
             <Button
               onClick={handleScan}
               disabled={isScanning}
               className="bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-700 hover:from-blue-500 hover:to-indigo-500 text-white font-black px-5 py-2.5 rounded-2xl text-xs sm:text-sm cursor-pointer shadow-lg shadow-blue-500/25 active:scale-95 transition-all flex items-center gap-2"
-              title="تشغيل فحص وسحب فوري الآن من بوابة التعاقدات الحكومية"
+              title="قم بتشغيل برنامج الرادار على جهازك أو اضغط هنا للتحقق وسحب أحدث المناقصات"
             >
-              <Zap className={`h-4 w-4 text-amber-300 ${isScanning ? "animate-spin" : ""}`} />
-              <span>سحب ومزامنة الآن ⚡</span>
+              <Monitor className={`h-4 w-4 text-amber-300 ${isScanning ? "animate-pulse" : ""}`} />
+              <span>سحب التحديثات عبر برنامج الجهاز 💻</span>
             </Button>
 
             {/* Refresh Live Items Button */}
@@ -1435,68 +1370,51 @@ export default function RadarPage() {
           </div>
         </div>
 
-        {/* Daily Auto-Scan Scheduler & Cloud Control Bar */}
-        <div className="mt-6 pt-5 border-t border-border flex flex-wrap items-center justify-between gap-4 text-xs">
-          {/* Status & Toggle */}
-          <div className="flex items-center gap-3 flex-wrap">
-            <div className="flex items-center gap-2 font-bold text-foreground">
-              <span className={`w-2.5 h-2.5 rounded-full ${autoScanConfig.enabled ? "bg-emerald-500 animate-ping" : "bg-slate-500"}`} />
-              <span className="flex items-center gap-1.5 text-xs sm:text-sm font-black">
-                <Clock className="h-4 w-4 text-blue-400" />
-                <span>السحب الأوتوماتيكي اليومي:</span>
-              </span>
-              <Badge className={autoScanConfig.enabled ? "bg-emerald-500/20 text-emerald-400 border-emerald-500/40 font-bold text-xs" : "bg-slate-700 text-slate-300 font-bold text-xs"}>
-                {autoScanConfig.enabled ? "مفعل 24/7 سحابياً 🟢" : "متوقف مؤقتاً ⏸️"}
-              </Badge>
+        {/* Clear Desktop Program Guidance Banner */}
+        <div className="mt-6 pt-5 border-t border-border flex flex-col lg:flex-row lg:items-center justify-between gap-4 text-xs">
+          <div className="flex items-start sm:items-center gap-3">
+            <div className="w-9 h-9 rounded-xl bg-blue-500/15 border border-blue-500/30 text-blue-400 flex items-center justify-center shrink-0">
+              <Monitor className="h-4 w-4" />
             </div>
-
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={isUpdatingAutoScan}
-              onClick={handleToggleAutoScan}
-              className={`h-7 px-3 text-xs font-bold rounded-xl border transition-all cursor-pointer ${
-                autoScanConfig.enabled
-                  ? "border-amber-500/40 bg-amber-500/10 hover:bg-amber-500/20 text-amber-300"
-                  : "border-emerald-500/40 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-300"
-              }`}
-            >
-              {autoScanConfig.enabled ? "إيقاف مؤقت" : "تفعيل الفحص اليومي"}
-            </Button>
+            <div className="space-y-0.5">
+              <p className="font-black text-xs sm:text-sm text-foreground flex items-center gap-2 flex-wrap">
+                <span>قم بتشغيل البرنامج على جهازك للحصول على أحدث المناقصات وكراسات الشروط</span>
+                <Badge className="bg-emerald-500/15 text-emerald-400 border-emerald-500/30 font-mono text-[11px]">
+                  GoldenERP_Radar.exe
+                </Badge>
+              </p>
+              <p className="text-[11px] sm:text-xs text-muted-foreground">
+                لأن البوابة الحكومية تتطلب اتصالاً من داخل مصر، شغّل برنامج <span className="font-mono font-bold text-foreground">GoldenERP_Radar.exe</span> على جهازك في أي وقت ثم اضغط <strong>تحديث الشاشة</strong> لتظهر أحدث العمليات فوراً.
+              </p>
+            </div>
           </div>
 
-          {/* Schedule Time Selector & Last Scan info */}
-          <div className="flex items-center gap-3 flex-wrap">
-            <div className="flex items-center gap-2">
-              <span className="text-muted-foreground font-semibold flex items-center gap-1">
-                <Calendar className="h-3.5 w-3.5 text-blue-400" />
-                <span>موعد السحب كل يوم:</span>
-              </span>
-              <select
-                value={autoScanConfig.scheduledTime || "09:00 ص"}
-                disabled={isUpdatingAutoScan}
-                onChange={(e) => handleUpdateScheduledTime(e.target.value)}
-                className="bg-slate-900/90 hover:bg-slate-800 border border-blue-500/40 text-blue-300 font-bold font-mono rounded-xl px-3 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer transition-all shadow-inner"
-              >
-                <option value="07:00 ص">07:00 ص (باكراً)</option>
-                <option value="08:00 ص">08:00 ص</option>
-                <option value="09:00 ص">09:00 ص (موعد نشر البوابة الافتراضي ⭐)</option>
-                <option value="10:00 ص">10:00 ص</option>
-                <option value="11:00 ص">11:00 ص</option>
-                <option value="12:00 م">12:00 م (ظهراً)</option>
-                <option value="01:00 م">01:00 م</option>
-                <option value="02:00 م">02:00 م</option>
-                <option value="03:00 م">03:00 م</option>
-                <option value="04:00 م">04:00 م (عصراً)</option>
-                <option value="06:00 م">06:00 م</option>
-                <option value="08:00 م">08:00 م (مساءً)</option>
-              </select>
-            </div>
+          <div className="flex items-center gap-2.5 flex-wrap shrink-0">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setIsScanning(true);
+                setScanStep(4);
+                setScanResult({
+                  success: false,
+                  total: 0,
+                  totalAll: totalCount || items.length,
+                  isNew: false,
+                  message: "يرجى تشغيل برنامج الرادار على جهازك (GoldenERP_Radar.exe) لسحب أحدث المناقصات وكراسات الشروط عبر اتصالك المصري.",
+                });
+              }}
+              className="h-8 px-3 rounded-xl border-blue-500/30 bg-blue-500/10 hover:bg-blue-500/20 text-blue-400 font-bold text-xs cursor-pointer flex items-center gap-1.5"
+            >
+              <HelpCircle className="h-3.5 w-3.5" />
+              <span>خطوات التشغيل</span>
+            </Button>
 
-            {autoScanConfig.lastAutoScan && (
-              <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground font-mono bg-muted/50 px-2.5 py-1 rounded-lg border border-border">
-                <ShieldCheck className="h-3.5 w-3.5 text-emerald-400" />
-                <span>آخر فحص تلقائي: {autoScanConfig.lastAutoScan}</span>
+            {stats?.lastScanTime && (
+              <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground font-mono bg-muted/50 px-3 py-1.5 rounded-xl border border-border">
+                <Clock className="h-3.5 w-3.5 text-blue-500" />
+                <span>آخر تحديث: {new Date(stats.lastScanTime).toLocaleString("ar-EG")}</span>
               </div>
             )}
           </div>
@@ -1774,9 +1692,9 @@ export default function RadarPage() {
       ) : filteredItems.length === 0 ? (
         <div className="p-16 text-center glass-card rounded-3xl border border-border space-y-4">
           <Radar className="h-14 w-14 text-blue-500/50 mx-auto animate-pulse" />
-          <h3 className="text-lg font-bold text-foreground">رادار المناقصات الحكومية جاهز للفحص</h3>
+          <h3 className="text-lg font-bold text-foreground">قم بتشغيل برنامج الرادار على جهازك للحصول على أحدث المناقصات</h3>
           <p className="text-xs text-muted-foreground max-w-md mx-auto leading-relaxed">
-            قاعدة بيانات الرادار جاهزة حالياً. يمكنك الضغط على "سحب ومزامنة الآن" لفحص البوابة الحكومية وسحب أحدث العمليات المطروحة اليوم سحابياً في ثوانٍ.
+            شغّل برنامج <span className="font-mono font-bold text-foreground">GoldenERP_Radar.exe</span> الموجود على جهازك لسحب أحدث المناقصات وكراسات الشروط من البوابة الحكومية، ثم اضغط تحديث الشاشة لتظهر فوراً.
           </p>
           <div className="flex items-center justify-center gap-3 flex-wrap">
             <Button
@@ -1784,8 +1702,8 @@ export default function RadarPage() {
               disabled={isScanning}
               className="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white text-xs font-bold rounded-xl px-6 py-3 cursor-pointer shadow-md flex items-center gap-2"
             >
-              <Zap className="h-4 w-4 text-amber-300" />
-              <span>سحب ومزامنة الآن ⚡</span>
+              <Monitor className="h-4 w-4 text-amber-300" />
+              <span>سحب التحديثات عبر برنامج الجهاز 💻</span>
             </Button>
             <Button
               onClick={fetchData}
@@ -2825,54 +2743,42 @@ export default function RadarPage() {
                       <span>عرض مناقصات الرادار ({scanResult.totalAll || totalCount || items.length || 10})</span>
                       <ArrowRight className="h-4 w-4" />
                     </Button>
-                    <a
-                      href="https://github.com/omarkarim7/goldenerp/actions/workflows/radar-auto-scan.yml"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="w-full sm:w-auto px-4 bg-slate-800 hover:bg-slate-700 text-emerald-300 border border-emerald-500/30 font-bold rounded-xl text-xs py-2.5 cursor-pointer shadow-md active:scale-95 transition-all flex items-center justify-center gap-1.5 text-center"
-                      title="تشغيل فحص سحابي إضافي 24/7 عبر GitHub بدون فتح جهازك"
-                    >
-                      <Cloud className="h-3.5 w-3.5" />
-                      <span>فحص سحابي يدوي 🚀</span>
-                    </a>
                   </div>
                 </div>
               )}
 
-              {/* CASE C: Error / Failed Connection Card */}
+              {/* CASE C: Desktop Program Guide / Connection Blocked Card */}
               {scanResult && !scanResult?.success && (
-                <div className="p-4 rounded-2xl bg-rose-950/80 border border-rose-500/40 text-rose-100 text-xs space-y-3 shadow-lg">
-                  <p className="font-bold text-xs sm:text-sm text-rose-200 leading-relaxed text-right">
+                <div className="p-4 rounded-2xl bg-slate-900/95 border border-blue-500/40 text-slate-100 text-xs space-y-3 shadow-lg text-right">
+                  <div className="flex items-center gap-2 text-blue-300 font-black text-sm">
+                    <Monitor className="h-5 w-5 text-amber-400 shrink-0" />
+                    <span>قم بتشغيل برنامج الرادار على جهازك للحصول على أحدث المناقصات</span>
+                  </div>
+                  <p className="text-[11px] text-slate-300 leading-relaxed">
                     {scanResult.message}
                   </p>
-                  <p className="text-[11px] text-rose-300/80 text-right leading-relaxed">
-                    جدار حماية البوابة يمنع الاتصال المباشر من السيرفر الخارجي. يمكنك استيراد أي مناقصة وسحب كراستها فوراً عبر وضع الرابط أو كود الصفحة.
-                  </p>
+                  <div className="p-3 rounded-xl bg-slate-950/80 border border-slate-800 space-y-1.5 text-[11px] text-slate-300">
+                    <div className="font-bold text-emerald-400">خطوات التحديث السريع (15 ثانية):</div>
+                    <div>1. افتح أيقونة برنامج <span className="font-mono font-bold text-white bg-slate-800 px-1.5 py-0.5 rounded">GoldenERP_Radar.exe</span> على جهازك.</div>
+                    <div>2. انتظر ثواني حتى يكتمل سحب المناقصات وكراسات الشروط وظهور <span className="font-mono text-emerald-400">SUCCESS</span>.</div>
+                    <div>3. اضغط زر <strong>تحديث وعرض القائمة</strong> بالأسفل لتظهر أحدث العمليات فوراً.</div>
+                  </div>
                   <div className="flex flex-col sm:flex-row items-center gap-2 pt-1">
-                    <a
-                      href="https://github.com/omarkarim7/goldenerp/actions/workflows/radar-auto-scan.yml"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="w-full sm:flex-1 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold rounded-xl text-xs py-2.5 cursor-pointer shadow-md active:scale-95 transition-all flex items-center justify-center gap-1.5 text-center"
+                    <Button
+                      onClick={closeScanOverlay}
+                      className="w-full sm:flex-1 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-black rounded-xl text-xs py-2.5 cursor-pointer shadow-md active:scale-95 transition-all flex items-center justify-center gap-2"
                     >
-                      <Cloud className="h-4 w-4" />
-                      <span>تشغيل الفحص السحابي (GitHub Cloud) 🚀</span>
-                    </a>
+                      <RefreshCw className="h-4 w-4" />
+                      <span>تحديث وعرض القائمة الآن</span>
+                    </Button>
                     <Link
                       href="/dashboard/settings?tab=radar"
                       onClick={closeScanOverlay}
-                      className="w-full sm:flex-1 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold rounded-xl text-xs py-2.5 cursor-pointer shadow-md active:scale-95 transition-all flex items-center justify-center gap-1.5 text-center"
+                      className="w-full sm:w-auto px-4 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 font-bold rounded-xl text-xs py-2.5 cursor-pointer shadow-md active:scale-95 transition-all flex items-center justify-center gap-1.5 text-center"
                     >
                       <Settings className="h-3.5 w-3.5" />
-                      <span>إعدادات الرادار والسحابة ⚙️</span>
+                      <span>إعدادات البروكسي ⚙️</span>
                     </Link>
-                    <Button
-                      variant="outline"
-                      onClick={closeScanOverlay}
-                      className="w-full sm:w-auto border-slate-700 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs py-2.5 cursor-pointer font-bold"
-                    >
-                      إغلاق
-                    </Button>
                   </div>
                 </div>
               )}

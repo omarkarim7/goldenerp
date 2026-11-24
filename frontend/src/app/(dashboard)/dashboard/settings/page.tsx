@@ -509,11 +509,8 @@ export default function SettingsPage() {
     configured: boolean;
     proxyUrl: string;
     isCustom: boolean;
-    githubConfigured: boolean;
-    githubTokenMasked: string;
-  }>({ configured: false, proxyUrl: "", isCustom: false, githubConfigured: false, githubTokenMasked: "" });
+  }>({ configured: false, proxyUrl: "", isCustom: false });
   const [radarProxyInput, setRadarProxyInput] = useState("");
-  const [radarGithubTokenInput, setRadarGithubTokenInput] = useState("");
   const [isSavingRadarProxy, setIsSavingRadarProxy] = useState(false);
   const [isUpdatingRadarAutoScan, setIsUpdatingRadarAutoScan] = useState(false);
 
@@ -535,8 +532,6 @@ export default function SettingsPage() {
           configured: Boolean(proxyRes.data.configured),
           proxyUrl: proxyRes.data.proxyUrl || "",
           isCustom: Boolean(proxyRes.data.isCustom),
-          githubConfigured: Boolean(proxyRes.data.githubConfigured),
-          githubTokenMasked: proxyRes.data.githubTokenMasked || "",
         });
       }
     } catch {}
@@ -565,13 +560,11 @@ export default function SettingsPage() {
       setIsSavingRadarProxy(true);
       const res = await api.post("/radar/proxy-config", {
         proxyUrl: radarProxyInput,
-        githubToken: radarGithubTokenInput,
       });
       if (res.data?.success) {
-        toast.success(res.data?.message || "تم حفظ وتفعيل إعدادات البروكسي والسحابة بنجاح 🟢");
+        toast.success(res.data?.message || "تم حفظ وتفعيل إعدادات البروكسي بنجاح 🟢");
         await fetchRadarConfig();
         setRadarProxyInput("");
-        setRadarGithubTokenInput("");
       } else {
         toast.error(res.data?.message || "فشل حفظ الإعدادات");
       }
@@ -1958,10 +1951,10 @@ export default function SettingsPage() {
                   </div>
                   <div>
                     <h3 className="font-black text-base sm:text-lg text-foreground">
-                      مركز التحكم في رادار المناقصات والسحابة 24/7
+                      مركز التحكم في رادار المناقصات الحكومية
                     </h3>
                     <p className="text-xs text-muted-foreground mt-0.5">
-                      ضبط الفحص التلقائي المجدول، إعداد بروكسي تجاوز الحجب، وتشغيل الرصد السحابي على مدار الساعة
+                      تشغيل السحب المباشر عبر برنامج الجهاز (GoldenERP_Radar.exe) أو إعداد بروكسي مصري للفحص التلقائي من السيرفر
                     </p>
                   </div>
                 </div>
@@ -1975,111 +1968,65 @@ export default function SettingsPage() {
                 </Link>
               </div>
 
-              {/* Cloud 24/7 Engine Hub (GitHub Actions Full Width) */}
-              <div className="rounded-3xl border-2 border-emerald-500/30 bg-emerald-500/[0.03] p-5 sm:p-7 space-y-6 shadow-xl">
+              {/* Desktop Tool + Optional Egyptian Proxy Card */}
+              <div className="rounded-3xl border-2 border-emerald-500/30 bg-emerald-500/[0.03] p-5 sm:p-7 space-y-5 shadow-xl">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-border/80 pb-4">
                   <div className="flex items-center gap-3.5">
                     <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-emerald-600 to-teal-500 flex items-center justify-center text-white shadow-lg shadow-emerald-500/30 shrink-0">
-                      <Cloud className="h-6 w-6" />
+                      <Zap className="h-6 w-6" />
                     </div>
                     <div>
                       <h4 className="font-black text-base sm:text-lg text-foreground">
-                        محرك الرصد السحابي المستقل 24/7 (GitHub Actions Engine)
+                        تحديث الرادار عبر برنامج الجهاز (أو بروكسي مصري)
                       </h4>
                       <p className="text-xs text-muted-foreground mt-0.5">
-                        يعمل ذاتياً عبر سحابة مايكروسوفت دون الحاجة لفتح جهازك، ويتصل بالبوابة الحكومية ويسحب المناقصات مباشرة لموقعك
+                        بوابة التعاقدات المصرية تتطلب اتصالاً من داخل مصر؛ شغّل برنامج GoldenERP_Radar.exe على جهازك أو أضف رابط بروكسي مصري أدناه
                       </p>
                     </div>
                   </div>
 
                   <Badge className="bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/30 font-mono text-xs px-3 py-1.5 self-start sm:self-auto">
-                    {radarProxy.githubConfigured ? "السحابة نشطة ومربوطة بالزر 🟢" : "السحابة مبرمجة 🚀"}
+                    {radarProxy.configured ? "البروكسي مفعل 🟢" : "يعمل ببرنامج الجهاز 💻"}
                   </Badge>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {/* Schedule Details */}
-                  <div className="p-4 rounded-2xl bg-card border border-border text-xs leading-relaxed space-y-2 text-muted-foreground">
-                    <div className="flex items-center gap-2 font-bold text-foreground">
-                      <Clock className="h-4 w-4 text-emerald-500" />
-                      <span>جدول الفحص التلقائي اليومي (24/7):</span>
-                    </div>
-                    <p>
-                      السحابة مبرمجة لتعمل أوتوماتيكياً كل يوم في تمام الساعة <strong>09:00 صباحاً بتوقيت القاهرة</strong>. سواء كان جهازك مغلقاً أو كنت غير متواجد؛ السحابة تفحص البوابة وتضخ العمليات والكراسات فوراً في موقعك ahdahd.eu.
-                    </p>
-                  </div>
-
-                  {/* Manual Run Option */}
-                  <div className="p-4 rounded-2xl bg-card border border-border text-xs leading-relaxed space-y-2 text-muted-foreground flex flex-col justify-between">
-                    <div>
-                      <div className="flex items-center gap-2 font-bold text-foreground">
-                        <Zap className="h-4 w-4 text-amber-500" />
-                        <span>تشغيل يدوي فوري في أي لحظة (من هاتفك أو أي متصفح):</span>
-                      </div>
-                      <p className="mt-1">
-                        يمكنك تشغيل الفحص السحابي يدوياً بنقرة واحدة من صفحة أتمتة GitHub Actions، وسيتم فحص البوابة وتحديث الموقع خلال 25 ثانية فقط.
-                      </p>
-                    </div>
-                    <div className="pt-2">
-                      <a
-                        href="https://github.com/omarkarim7/goldenerp/actions/workflows/radar-auto-scan.yml"
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="inline-flex items-center justify-center gap-2 w-full bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold py-2.5 px-4 rounded-xl text-xs shadow-md active:scale-95 transition-all cursor-pointer"
-                      >
-                        <Cloud className="h-4 w-4" />
-                        <span>تشغيل الفحص السحابي الآن عبر GitHub ↗</span>
-                      </a>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Token Configuration Section */}
+                {/* Proxy URL Input Section */}
                 <div className="p-4 rounded-2xl bg-card border border-border space-y-3">
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                     <div>
                       <h5 className="font-bold text-xs sm:text-sm text-foreground flex items-center gap-1.5">
                         <KeyRound className="h-4 w-4 text-blue-500" />
-                        <span>ربط زر "تشغيل فحص الرادار" بالسحابة (GitHub Token):</span>
+                        <span>رابط البروكسي المصري الاختياري (Proxy URL):</span>
                       </h5>
                       <p className="text-[11px] text-muted-foreground mt-0.5">
-                        عند حفظ هذا الرمز، سيقوم زر "تشغيل فحص الرادار" في شاشة الرادار بإطلاق السحابة تلقائياً دون مغادرة الموقع.
+                        اختياري: إذا كان لديك بروكسي مصري (IP مصري) أدخله هنا لتشغيل الفحص التلقائي مباشرة من السيرفر.
                       </p>
                     </div>
 
-                    {radarProxy.githubConfigured && (
+                    {radarProxy.configured && (
                       <span className="text-xs text-emerald-500 font-mono font-bold bg-emerald-500/10 px-2.5 py-1 rounded-lg border border-emerald-500/20">
-                        الرمز محفوظ ومفعل: {radarProxy.githubTokenMasked}
+                        {radarProxy.proxyUrl}
                       </span>
                     )}
                   </div>
 
                   <div className="flex flex-col sm:flex-row items-center gap-2 pt-1">
                     <Input
-                      type="password"
-                      placeholder={radarProxy.githubConfigured ? "أدخل رمزاً جديداً لتحديث الرمز الحالي..." : "ghp_xxxxxxxxxxxxxxxxxxxx"}
-                      value={radarGithubTokenInput}
-                      onChange={(e) => setRadarGithubTokenInput(e.target.value)}
+                      type="text"
+                      placeholder="http://user:pass@ip:port أو ip:port:user:pass"
+                      value={radarProxyInput}
+                      onChange={(e) => setRadarProxyInput(e.target.value)}
                       className="bg-muted/40 border-border text-xs h-10 font-mono flex-1 w-full"
+                      dir="ltr"
                     />
                     <Button
                       onClick={handleSaveRadarProxyConfig}
-                      disabled={isSavingRadarProxy || !radarGithubTokenInput}
+                      disabled={isSavingRadarProxy}
                       className="w-full sm:w-auto bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-bold px-5 h-10 rounded-xl text-xs flex items-center justify-center gap-1.5 shadow-md active:scale-95 transition-all cursor-pointer"
                     >
                       {isSavingRadarProxy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-                      <span>حفظ رمز السحابة 💾</span>
+                      <span>حفظ البروكسي 💾</span>
                     </Button>
-                  </div>
-
-                  {/* How to get GitHub Token in 3 steps */}
-                  <div className="p-3 rounded-xl bg-muted/40 border border-border text-[11px] text-muted-foreground space-y-1">
-                    <div className="font-bold text-foreground">💡 كيف تحصل على هذا الرمز المجاني من GitHub في دقيقة واحدة؟</div>
-                    <ol className="list-decimal list-inside space-y-0.5 pr-1">
-                      <li>ادخل إلى حسابك في GitHub ثم <strong>Settings</strong> ➡️ <strong>Developer settings</strong> ➡️ <strong>Personal access tokens (classic)</strong>.</li>
-                      <li>اضغط <strong>Generate new token (classic)</strong> وضع علامة صح على خياري <strong>workflow</strong> و <strong>repo</strong>.</li>
-                      <li>انسخ الكود الناتج والصقه في هذه الخانة واضغط "حفظ رمز السحابة".</li>
-                    </ol>
                   </div>
                 </div>
               </div>

@@ -47,13 +47,7 @@ export class RadarController {
     }
   }
 
-  // 2.0 Check cloud runner status
-  @Get('scan-status/:runId')
-  async getScanStatus(@Param('runId') runId: string) {
-    return this.service.getCloudRunStatus(runId);
-  }
-
-  // 2.1 Ingest scraped tenders (From Cloud Crawler / GitHub Actions / External Bridges)
+  // 2.1 Ingest scraped tenders (From Desktop Radar / Local Bridge)
   @Post('ingest')
   async ingestTenders(@Body() body: { items?: any[]; item?: any }) {
     const list = body.items || (body.item ? [body.item] : []);
@@ -84,8 +78,8 @@ export class RadarController {
   }
 
   @Post('proxy-config')
-  saveProxyConfig(@Body() body: { proxyUrl?: string; githubToken?: string }) {
-    return this.service.saveProxyConfig(body.proxyUrl, body.githubToken);
+  saveProxyConfig(@Body() body: { proxyUrl?: string }) {
+    return this.service.saveProxyConfig(body.proxyUrl);
   }
 
   // 3. Radar KPIs & Statistics

@@ -149,135 +149,42 @@ export class RadarService implements OnModuleInit {
     }
   }
 
-  // --- Live Scan (100% Real Portal Scraper with Cloud Runner Dispatch & Smart Incremental Crawling) ---
+  // --- Live Scan (Direct / Egyptian Proxy Scraper with Desktop Tool Guidance) ---
   async scan(pagesCount: number = 10) {
     try {
       // Run automatic cleanup first to keep DB pristine
       await this.cleanupLegacyMockData().catch(() => {});
       await this.autoRepairRadarItems().catch(() => {});
 
-      // 1. PRIMARY: Trigger GitHub Actions Cloud Runner
-      const ghSetting = await this.prisma.systemSetting.findUnique({
-        where: { key: 'radar.github_token' },
-      }).catch(() => null);
-      const githubToken = ghSetting?.value || process.env.GITHUB_TOKEN;
-      const githubRepo = process.env.GITHUB_REPO || 'omarkarim7/goldenerp';
-
-      // Persist token in DB if not saved yet
-      if (!ghSetting && githubToken) {
-        await this.prisma.systemSetting.upsert({
-          where: { key: 'radar.github_token' },
-          update: { value: githubToken },
-          create: { key: 'radar.github_token', value: githubToken, group: 'radar' },
-        }).catch(() => {});
+      const result = await this.scraper.scan(pagesCount);
+      if (result.success) {
+        return result;
       }
 
-      if (githubToken) {
-        try {
-          this.logger.log(`Triggering GitHub Actions Cloud Scan on ${githubRepo}...`);
-          const ghRes = await fetch(`https://api.github.com/repos/${githubRepo}/actions/workflows/radar-auto-scan.yml/dispatches`, {
-            method: 'POST',
-            headers: {
-              Authorization: `Bearer ${githubToken}`,
-              Accept: 'application/vnd.github.v3+json',
-              'User-Agent': 'GoldenERP-Cloud-Trigger',
-            },
-            body: JSON.stringify({ ref: 'main' }),
-          });
-
-          if (ghRes.ok || ghRes.status === 204) {
-            this.logger.log('Successfully dispatched GitHub Actions cloud scan. Fetching run details...');
-            let runId: number | null = null;
-            try {
-              await new Promise((r) => setTimeout(r, 1500));
-              const runsRes = await fetch(
-                `https://api.github.com/repos/${githubRepo}/actions/workflows/radar-auto-scan.yml/runs?per_page=1`,
-                {
-                  headers: {
-                    Authorization: `Bearer ${githubToken}`,
-                    Accept: 'application/vnd.github.v3+json',
-                    'User-Agent': 'GoldenERP-Cloud-Trigger',
-                  },
-                },
-              );
-              if (runsRes.ok) {
-                const runsData = await runsRes.json();
-                runId = runsData.workflow_runs?.[0]?.id || null;
-              }
-            } catch {}
-
-            return {
-              success: true,
-              isCloudRun: true,
-              runId,
-              totalScanned: 0,
-              newCount: 0,
-              message: '🚀 تم إطلاق الفحص السحابي بنجاح عبر سحابة GitHub! جاري فحص البوابة الحكومية وسحب المناقصات والكراسات وتحديث الشاشة تلقائياً.',
-            };
-          } else {
-            const errTxt = await ghRes.text();
-            this.logger.warn(`GitHub Actions dispatch responded with ${ghRes.status}: ${errTxt}`);
-          }
-        } catch (ghErr: any) {
-          this.logger.warn(`GitHub dispatch failed: ${ghErr.message}`);
-        }
-      }
-
-      // If no token or dispatch failed, guide user cleanly
-      const totalInDb = await this.prisma.radarItem.count();
+      const totalInDb = await this.prisma.radarItem.count().catch(() => 0);
       return {
-        success: true,
-        isCloudGuided: true,
-        requiresToken: !githubToken,
-        cloudWorkflowUrl: `https://github.com/${githubRepo}/actions/workflows/radar-auto-scan.yml`,
+        success: false,
+        needsDesktopTool: true,
         totalScanned: totalInDb,
         newCount: 0,
-        message: '🚀 لتشغيل الفحص السحابي بضغطة زر مباشرة من داخل السيستم، يرجى حفظ رمز GitHub Token في الإعدادات، أو الضغط على تشغيل السحابة فوراً عبر GitHub.',
+        updatedCount: 0,
+        message:
+          result.message ||
+          'تعذر الاتصال بالبوابة من السيرفر الخارجي. يرجى تشغيل برنامج الرادار على جهازك (GoldenERP_Radar.exe) لسحب أحدث المناقصات وكراسات الشروط ثم الضغط على تحديث الشاشة.',
       };
     } catch (err: any) {
       this.logger.warn(`Radar live scan handled: ${err.message}`);
       const totalInDb = await this.prisma.radarItem.count().catch(() => 0);
       return {
         success: false,
+        needsDesktopTool: true,
         totalScanned: totalInDb,
         newCount: 0,
-        message: err.message || 'حدث خطأ أثناء فحص البوابة الحكومية',
+        updatedCount: 0,
+        message:
+          'تعذر الاتصال بالبوابة الحكومية من السيرفر مباشرة. يرجى تشغيل برنامج الرادار على جهازك (GoldenERP_Radar.exe) لسحب أحدث العمليات وكراسات الشروط.',
       };
     }
-  }
-
-  // --- Track Cloud Runner Status ---
-  async getCloudRunStatus(runId: string) {
-    const ghSetting = await this.prisma.systemSetting.findUnique({
-      where: { key: 'radar.github_token' },
-    }).catch(() => null);
-    const githubToken = ghSetting?.value || process.env.GITHUB_TOKEN;
-    const githubRepo = process.env.GITHUB_REPO || 'omarkarim7/goldenerp';
-
-    let runData: any = null;
-    if (githubToken && runId) {
-      try {
-        const res = await fetch(`https://api.github.com/repos/${githubRepo}/actions/runs/${runId}`, {
-          headers: {
-            Authorization: `Bearer ${githubToken}`,
-            Accept: 'application/vnd.github.v3+json',
-            'User-Agent': 'GoldenERP-Cloud-Tracker',
-          },
-        });
-        if (res.ok) {
-          runData = await res.json();
-        }
-      } catch {}
-    }
-
-    const totalCount = await this.prisma.radarItem.count();
-    return {
-      runId,
-      status: runData?.status || 'completed',
-      conclusion: runData?.conclusion || null,
-      totalCount,
-      htmlUrl: runData?.html_url || null,
-    };
   }
 
   // --- Auto Daily Scan Scheduled Task (Checks dynamically against configured scheduledTime) ---
@@ -372,7 +279,7 @@ export class RadarService implements OnModuleInit {
     return this.getAutoScanConfig();
   }
 
-  // --- Ingest real tenders discovered by Cloud Crawler / GitHub Actions / Bridge ---
+  // --- Ingest real tenders discovered by Desktop Radar / Local Bridge ---
   async ingestRealTenders(items: any[]) {
     if (!Array.isArray(items) || items.length === 0) {
       return { success: true, newCount: 0, updatedCount: 0, message: 'لا توجد مناقصات للإدراج' };
@@ -775,25 +682,21 @@ export class RadarService implements OnModuleInit {
     };
   }
 
-  // --- Proxy & Cloud Configuration (Webshare.io & GitHub Actions) ---
+  // --- Proxy Configuration (Egyptian Proxy for Server-Side Scanning) ---
   async getProxyConfig() {
-    const [proxySetting, ghSetting] = await Promise.all([
-      this.prisma.systemSetting.findUnique({ where: { key: 'radar.proxy_url' } }).catch(() => null),
-      this.prisma.systemSetting.findUnique({ where: { key: 'radar.github_token' } }).catch(() => null),
-    ]);
+    const proxySetting = await this.prisma.systemSetting
+      .findUnique({ where: { key: 'radar.proxy_url' } })
+      .catch(() => null);
     const envProxy = process.env.RADAR_PROXY_URL || process.env.HTTPS_PROXY || '';
     const activeUrl = proxySetting?.value || envProxy;
-    const activeGh = ghSetting?.value || process.env.GITHUB_TOKEN || '';
     return {
       configured: Boolean(activeUrl),
       proxyUrl: activeUrl ? activeUrl.replace(/:[^:]*@/, ':****@') : '',
       isCustom: Boolean(proxySetting?.value),
-      githubConfigured: Boolean(activeGh),
-      githubTokenMasked: activeGh ? activeGh.substring(0, 4) + '****' + activeGh.slice(-4) : '',
     };
   }
 
-  async saveProxyConfig(proxyUrl?: string, githubToken?: string) {
+  async saveProxyConfig(proxyUrl?: string) {
     if (proxyUrl !== undefined) {
       let cleanProxy = (proxyUrl || '').trim();
       // Auto-detect format: IP:PORT:USER:PASS or USER:PASS:IP:PORT and convert to standard URL
@@ -821,22 +724,7 @@ export class RadarService implements OnModuleInit {
       }
     }
 
-    if (githubToken !== undefined) {
-      const cleanGh = (githubToken || '').trim();
-      if (!cleanGh) {
-        await this.prisma.systemSetting.deleteMany({
-          where: { key: 'radar.github_token' },
-        });
-      } else {
-        await this.prisma.systemSetting.upsert({
-          where: { key: 'radar.github_token' },
-          update: { value: cleanGh },
-          create: { key: 'radar.github_token', value: cleanGh, group: 'radar', label: 'توكن GitHub للفحص السحابي' },
-        });
-      }
-    }
-
-    return { success: true, message: 'تم حفظ وتفعيل الإعدادات بنجاح! يمكنك الآن تشغيل الفحص المباشر.' };
+    return { success: true, message: 'تم حفظ وتفعيل إعدادات البروكسي بنجاح!' };
   }
 
   // Helper to normalize and auto-correct inverted or missing radar fields
