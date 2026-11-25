@@ -88,6 +88,10 @@
     {
       "key": "letter_body",
       "label": "متن الخطاب العام"
+    },
+    {
+      "key": "additional_notes",
+      "label": "ملاحظات إضافية"
     }
   ]
 }

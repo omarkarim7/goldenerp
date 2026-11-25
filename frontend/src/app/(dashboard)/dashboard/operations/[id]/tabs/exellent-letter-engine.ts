@@ -161,7 +161,7 @@ export async function generateExellentCrispQrBuffer(payloadOrFileName: string, r
 
   const qrDataUrl = await QRCode.toDataURL(targetUrl, {
     width: 1200,
-    margin: 4,
+    margin: 2,
     errorCorrectionLevel: targetUrl.length > 150 ? "L" : "M",
     color: {
       dark: "#000000",
@@ -307,10 +307,10 @@ export async function applyExellentHeaderFooter(
       hXml.includes("{company_cr}") ||
       hXml.includes("{barcode}");
 
-    // استبدال تاج {barcode} أو نص "الباركود" برسم الباركود الفعلي بحجم أكبر وأوضح للمسح (1280000 EMU)
+    // استبدال تاج {barcode} أو نص "الباركود" برسم الباركود الفعلي بحجم أكبر وأوضح للمسح (1340000 EMU)
     const barcodeRegex = /<w:r\b[^>]*>(?:(?!<\/w:r>)[\s\S])*?(?:\{barcode\}|الباركود)[\s\S]*?<\/w:r>/g;
     if (effectiveQrBinary) {
-      const qrInline = buildQrInlineXml(1280000).replace(/rIdQR/g, "rIdHeaderQr");
+      const qrInline = buildQrInlineXml(1340000).replace(/rIdQR/g, "rIdHeaderQr");
       if (barcodeRegex.test(hXml)) {
         hXml = hXml.replace(barcodeRegex, qrInline);
       } else if (hXml.includes("{barcode}") || hXml.includes("الباركود")) {
@@ -463,17 +463,32 @@ export function applyExellentSignatures(
     ""
   );
 
-  // خانة الملاحظات الإضافية: ملء {additional_notes} أو حذف السطر عند الفراغ
+  // خانة الملاحظات الإضافية: ملء {additional_notes} أو إدراجها قبل التوقيعات عند عدم وجود التاج، وحذف السطر عند الفراغ
   if (params.additionalNotes && params.additionalNotes.trim()) {
     const safeNote = escapeXml(params.additionalNotes.trim());
-    docXml = docXml.split("{additional_notes}").join(safeNote);
-    docXml = docXml.replace(
-      /(<w:p\b[^>]*>(?:(?!<\/w:p>)[\s\S])*?اضافية[\s\S]*?<w:t[^>]*>)\s*\.{5,}\s*(<\/w:t>[\s\S]*?<\/w:p>)/gi,
-      `$1${safeNote}$2`
-    );
+    if (docXml.includes("{additional_notes}")) {
+      docXml = docXml.split("{additional_notes}").join(safeNote);
+    } else if (/اضافية[\s\S]*?\.{5,}/.test(docXml)) {
+      docXml = docXml.replace(
+        /(<w:p\b[^>]*>(?:(?!<\/w:p>)[\s\S])*?اضافية[\s\S]*?<w:t[^>]*>)\s*\.{5,}\s*(<\/w:t>[\s\S]*?<\/w:p>)/gi,
+        `$1${safeNote}$2`
+      );
+    } else {
+      const noteRPr = '<w:rFonts w:asciiTheme="minorHAnsi" w:hAnsiTheme="minorHAnsi" w:cstheme="minorHAnsi"/><w:b/><w:bCs/><w:sz w:val="32"/><w:szCs w:val="32"/><w:rtl/><w:lang w:bidi="ar-EG"/>';
+      const notePara = `<w:p><w:pPr><w:spacing w:before="80" w:after="40" w:line="240" w:lineRule="auto"/><w:bidi/><w:jc w:val="right"/><w:rPr>${noteRPr}</w:rPr></w:pPr><w:r><w:rPr>${noteRPr}</w:rPr><w:t xml:space="preserve">ملاحظات إضافية : ${safeNote}</w:t></w:r></w:p>`;
+      const respectRegex = /<w:p\b[^>]*>(?:(?!<\/w:p>)[\s\S])*?(?:مع\s+وافر|وتفضلوا|المختص)[\s\S]*?<\/w:p>/;
+      if (respectRegex.test(docXml)) {
+        docXml = docXml.replace(respectRegex, (m) => `${notePara}${m}`);
+      } else {
+        const tblIdx = docXml.lastIndexOf("<w:tbl");
+        if (tblIdx !== -1) {
+          docXml = docXml.slice(0, tblIdx) + notePara + docXml.slice(tblIdx);
+        }
+      }
+    }
   } else {
     docXml = docXml.replace(
-      /<w:p\b[^>]*>(?:(?!<\/w:p>)[\s\S])*?اضافية[\s\S]*?<\/w:p>/gi,
+      /<w:p\b[^>]*>(?:(?!<\/w:p>)[\s\S])*?(?:(?:ملاحظات\s*)?(?:اضافية|إضافية)\s*:?|\{additional_notes\})(?:(?!<\/w:p>)[\s\S])*?<\/w:p>/gi,
       ""
     );
     docXml = docXml.split("{additional_notes}").join("");
