@@ -475,7 +475,7 @@ export function applyExellentSignatures(
       );
     } else {
       const noteRPr = '<w:rFonts w:asciiTheme="minorHAnsi" w:hAnsiTheme="minorHAnsi" w:cstheme="minorHAnsi"/><w:b/><w:bCs/><w:sz w:val="32"/><w:szCs w:val="32"/><w:rtl/><w:lang w:bidi="ar-EG"/>';
-      const notePara = `<w:p><w:pPr><w:spacing w:before="80" w:after="40" w:line="240" w:lineRule="auto"/><w:bidi/><w:jc w:val="right"/><w:rPr>${noteRPr}</w:rPr></w:pPr><w:r><w:rPr>${noteRPr}</w:rPr><w:t xml:space="preserve">ملاحظات إضافية : ${safeNote}</w:t></w:r></w:p>`;
+      const notePara = `<w:p><w:pPr><w:spacing w:before="80" w:after="40" w:line="240" w:lineRule="auto"/><w:ind w:left="-41"/><w:jc w:val="both"/><w:rPr>${noteRPr}</w:rPr></w:pPr><w:r><w:rPr>${noteRPr}</w:rPr><w:t xml:space="preserve">ملاحظات إضافية : ${safeNote}</w:t></w:r></w:p>`;
       const respectRegex = /<w:p\b[^>]*>(?:(?!<\/w:p>)[\s\S])*?(?:مع\s+وافر|وتفضلوا|المختص)[\s\S]*?<\/w:p>/;
       if (respectRegex.test(docXml)) {
         docXml = docXml.replace(respectRegex, (m) => `${notePara}${m}`);
